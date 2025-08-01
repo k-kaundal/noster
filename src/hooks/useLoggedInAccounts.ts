@@ -17,9 +17,11 @@ export function useLoggedInAccounts() {
   const { data: authors = [] } = useQuery({
     queryKey: ['logins', logins.map((l) => l.id).join(';')],
     queryFn: async ({ signal }) => {
+      if (!logins.length) return [];
+
       const events = await nostr.query(
         [{ kinds: [0], authors: logins.map((l) => l.pubkey) }],
-        { signal: AbortSignal.any([signal, AbortSignal.timeout(1500)]) },
+        { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]) },
       );
 
       return logins.map(({ id, pubkey }): Account => {
@@ -33,6 +35,8 @@ export function useLoggedInAccounts() {
       });
     },
     retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
+    enabled: logins.length > 0,
   });
 
   // Current user is the first login
@@ -40,11 +44,11 @@ export function useLoggedInAccounts() {
     const login = logins[0];
     if (!login) return undefined;
     const author = authors.find((a) => a.id === login.id);
-    return { metadata: {}, ...author, id: login.id, pubkey: login.pubkey };
+    return author || { id: login.id, pubkey: login.pubkey, metadata: {} };
   })();
 
   // Other users are all logins except the current one
-  const otherUsers = (authors || []).slice(1) as Account[];
+  const otherUsers = authors.slice(1) as Account[];
 
   return {
     authors,
