@@ -194,28 +194,8 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Footer */}
       <footer className="border-t py-6">
-        <div className="container flex flex-col items-center justify-between gap-4 text-center text-sm leading-loose text-muted-foreground sm:flex-row sm:text-left">
-          <p>
-            Built with{' '}
-            <a
-              href="https://nostr.com"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium underline underline-offset-4"
-            >
-              Nostr
-            </a>
-            . Vibed with{' '}
-            <a
-              href="https://soapbox.pub/mkstack"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium underline underline-offset-4"
-            >
-              MKStack
-            </a>
-            .
-          </p>
+        <div className="container flex justify-center text-center text-sm text-muted-foreground">
+          <p>&copy; {new Date().getFullYear()} nostrfeed.com</p>
         </div>
       </footer>
 
