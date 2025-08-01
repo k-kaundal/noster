@@ -1,5 +1,5 @@
 {
-  "model": "claude-sonnet-4",
+  "model": "ai/llama3.2:latest",
   "temperature": 0.2,
   "mcpServers": {
     "js-dev": {
