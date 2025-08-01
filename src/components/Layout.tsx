@@ -9,6 +9,7 @@ import { FloatingActionButton } from '@/components/FloatingActionButton';
 import { SearchDialog } from '@/components/SearchDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { NotificationBadge } from '@/components/NotificationBadge';
+import { SuggestedFollows } from '@/components/SuggestedFollows';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { Home, User, PenTool, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -110,6 +111,8 @@ export function Layout({ children }: LayoutProps) {
                   </Link>
                 </div>
               )}
+
+              <SuggestedFollows />
 
               <div className="rounded-lg border bg-card p-4 hover-lift transition-all duration-200">
                 <h3 className="font-semibold mb-2">Quick Actions</h3>

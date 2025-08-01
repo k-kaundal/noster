@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useSeoMeta } from '@unhead/react';
 import { Layout } from '@/components/Layout';
 import { Profile } from '@/components/Profile';
+import { PostPage } from '@/components/PostPage';
 import NotFound from './NotFound';
 
 export function NIP19Page() {
@@ -42,24 +43,16 @@ export function NIP19Page() {
       );
 
     case 'note':
-      // AI agent should implement note view here
       return (
         <Layout>
-          <div className="text-center py-12">
-            <h2 className="text-xl font-semibold mb-2">Note View</h2>
-            <p className="text-muted-foreground">Note view coming soon...</p>
-          </div>
+          <PostPage eventId={data} />
         </Layout>
       );
 
     case 'nevent':
-      // AI agent should implement event view here
       return (
         <Layout>
-          <div className="text-center py-12">
-            <h2 className="text-xl font-semibold mb-2">Event View</h2>
-            <p className="text-muted-foreground">Event view coming soon...</p>
-          </div>
+          <PostPage eventId={data.id} />
         </Layout>
       );
 

@@ -1,6 +1,9 @@
+import { Link } from 'react-router-dom';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useFollows } from '@/hooks/useFollows';
+import { useFollowers } from '@/hooks/useFollowers';
 import { genUserName } from '@/lib/genUserName';
 import { Post } from '@/components/Post';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,8 +12,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RelaySelector } from '@/components/RelaySelector';
-import { Calendar, Link as LinkIcon, MapPin, Users } from 'lucide-react';
+import { Calendar, Link as LinkIcon, MapPin, Users, Loader2, UserPlus, UserMinus } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { nip19 } from 'nostr-tools';
 
 interface ProfileProps {
   pubkey: string;
@@ -20,6 +24,8 @@ export function Profile({ pubkey }: ProfileProps) {
   const { data: profileData, isLoading, error } = useProfile(pubkey);
   const author = useAuthor(pubkey);
   const { user } = useCurrentUser();
+  const { followingCount, isFollowing, follow, unfollow, isFollowLoading } = useFollows(pubkey);
+  const { followerCount } = useFollowers(pubkey);
 
   const metadata = author.data?.metadata;
   const displayName = metadata?.display_name || metadata?.name || genUserName(pubkey);
@@ -30,6 +36,7 @@ export function Profile({ pubkey }: ProfileProps) {
   const website = metadata?.website;
   const location = (metadata as Record<string, unknown>)?.location as string | undefined;
   const isCurrentUser = user?.pubkey === pubkey;
+  const npub = nip19.npubEncode(pubkey);
 
   if (error) {
     return (
@@ -166,8 +173,27 @@ export function Profile({ pubkey }: ProfileProps) {
                   Edit Profile
                 </Button>
               ) : (
-                <Button>
-                  Follow
+                <Button
+                  onClick={() => isFollowing ? unfollow(pubkey) : follow(pubkey)}
+                  disabled={isFollowLoading}
+                  variant={isFollowing ? "outline" : "default"}
+                >
+                  {isFollowLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      {isFollowing ? 'Unfollowing...' : 'Following...'}
+                    </>
+                  ) : isFollowing ? (
+                    <>
+                      <UserMinus className="h-4 w-4 mr-2" />
+                      Unfollow
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Follow
+                    </>
+                  )}
                 </Button>
               )}
             </div>
@@ -212,14 +238,20 @@ export function Profile({ pubkey }: ProfileProps) {
                 <span className="font-semibold">{posts.length}</span>
                 <span className="text-muted-foreground">Posts</span>
               </div>
-              <div className="flex items-center space-x-1">
-                <span className="font-semibold">0</span>
+              <Link
+                to={`/${npub}/following`}
+                className="flex items-center space-x-1 hover:underline"
+              >
+                <span className="font-semibold">{followingCount}</span>
                 <span className="text-muted-foreground">Following</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <span className="font-semibold">0</span>
+              </Link>
+              <Link
+                to={`/${npub}/followers`}
+                className="flex items-center space-x-1 hover:underline"
+              >
+                <span className="font-semibold">{followerCount}</span>
                 <span className="text-muted-foreground">Followers</span>
-              </div>
+              </Link>
             </div>
           </div>
         </CardContent>
