@@ -361,7 +361,7 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
               className="text-muted-foreground hover:text-blue-600 transition-all duration-200 hover:scale-105 w-full sm:w-auto text-xs sm:text-sm"
               onClick={handleReply}
             >
-              <MessageCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+              <MessageCircle className="h-3 w-3" />
               <span>
                 {replyCount > 0 ? replyCount : 'Reply'}
               </span>
@@ -374,9 +374,9 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
               disabled={isReposting}
             >
               {isReposting ? (
-                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
+                <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
-                <Repeat2 className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 ${isReposted ? 'fill-green-600' : ''}`} />
+                <Repeat2 className={`h-3 w-3 ${isReposted ? 'fill-green-600' : ''}`} />
               )}
               <span>
                 {repostCount > 0 ? repostCount : 'Repost'}
@@ -390,9 +390,9 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
               disabled={isLiking}
             >
               {isLiking ? (
-                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
+                <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
-                <Heart className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 ${isLiked ? 'fill-red-600' : ''}`} />
+                <Heart className={`h-3 w-3 ${isLiked ? 'fill-red-600' : ''}`} />
               )}
               <span>
                 {likeCount > 0 ? likeCount : 'Like'}
@@ -406,23 +406,23 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
               disabled={isZapping}
             >
               {isZapping ? (
-                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
+                <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
-                <Zap className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 ${isZapping ? 'fill-yellow-600' : ''}`} />
+                <Zap className={`h-3 w-3 ${isZapping ? 'fill-yellow-600' : ''}`} />
               )}
               <span>
                 {zapCount > 0 ? `${zapCount} (${totalSats}sats)` : 'Zap'}
               </span>
             </Button>
-            <Button
+            {/* <Button
               variant="ghost"
               size="sm"
               className="text-muted-foreground hover:text-blue-600 transition-all duration-200 hover:scale-105 w-full sm:w-auto text-xs sm:text-sm"
               onClick={handleShare}
             >
-              <Share className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+              <Share className="h-3 w-3" />
               <span>Share</span>
-            </Button>
+            </Button> */}
           </div>
         </div>
       </CardContent>

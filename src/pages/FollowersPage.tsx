@@ -27,7 +27,8 @@ export function FollowersPage() {
     } else {
       return <NotFound />;
     }
-  } catch {
+  } catch (error) {
+    console.error('Failed to decode NIP-19 identifier:', error);
     return <NotFound />;
   }
 

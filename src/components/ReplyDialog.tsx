@@ -21,6 +21,13 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { NoteContent } from '@/components/NoteContent';
 import { Image, X, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { Post } from '@/components/Post'; // Import Post component for recursive rendering
+
+// Placeholder hook to fetch original event (same as in Post)
+const useOriginalEvent = (eventId: string) => {
+  const [originalEvent, setOriginalEvent] = useState<NostrEvent | null>(null);
+  return { data: originalEvent, isLoading: false };
+};
 
 interface ReplyDialogProps {
   open: boolean;
@@ -63,6 +70,77 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
     }
   })();
 
+  // Parse embedded event for reposts (same as in Post)
+  const parseEmbeddedEvent = (content: string): NostrEvent | null => {
+    try {
+      const jsonMatch = content.match(/\{.*\}/s);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]) as NostrEvent;
+      return null;
+    } catch (error) {
+      console.error('Failed to parse embedded event:', error);
+      return null;
+    }
+  };
+
+  // Render content logic (adapted from Post)
+  const renderContent = () => {
+    const isRepost = replyingTo.kind === 6 || replyingTo.kind === 16;
+    const eTags = replyingTo.tags.filter(tag => tag[0] === 'e');
+    const originalEventId = eTags[0]?.[1];
+    const imageUrls = replyingTo.content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/gi) || [];
+
+    const { data: fetchedOriginalEvent } = useOriginalEvent(originalEventId || '');
+    const embeddedOriginalEvent = isRepost ? parseEmbeddedEvent(replyingTo.content) : null;
+    const originalEvent = fetchedOriginalEvent || embeddedOriginalEvent;
+
+    if (isRepost && originalEvent) {
+      return (
+        <div className="space-y-3">
+          <div className="pl-4 border-l-2 border-gray-300 bg-gray-50 p-3 rounded-md">
+            <Post event={originalEvent} showReplies={false} />
+            <div className="text-sm text-muted-foreground mt-2">
+              Reposted by {replyingToDisplayName}
+            </div>
+          </div>
+          {imageUrls.length > 0 && (
+            <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
+              {imageUrls.map((url, index) => (
+                <div key={index} className="rounded-lg overflow-hidden border">
+                  <img
+                    src={url}
+                    alt={`Post image ${index + 1}`}
+                    className="w-full h-auto max-h-96 object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="whitespace-pre-wrap break-words">
+        <NoteContent event={replyingTo} />
+        {imageUrls.length > 0 && (
+          <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
+            {imageUrls.map((url, index) => (
+              <div key={index} className="rounded-lg overflow-hidden border">
+                <img
+                  src={url}
+                  alt={`Post image ${index + 1}`}
+                  className="w-full h-auto max-h-96 object-cover"
+                  loading="lazy"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -70,7 +148,6 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
     try {
       const file = files[0];
 
-      // Check file size (max 10MB)
       if (file.size > 10 * 1024 * 1024) {
         toast({
           title: "File too large",
@@ -80,7 +157,6 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
         return;
       }
 
-      // Check file type
       if (!file.type.startsWith('image/')) {
         toast({
           title: "Invalid file type",
@@ -91,7 +167,7 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
       }
 
       const tags = await uploadFile(file);
-      const imageUrl = tags[0][1]; // First tag contains the URL
+      const imageUrl = tags[0][1];
 
       setUploadedImages(prev => [...prev, imageUrl]);
       toast({
@@ -107,7 +183,6 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
       });
     }
 
-    // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -141,7 +216,6 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
     setIsSubmitting(true);
 
     try {
-      // Combine text content with image URLs
       let replyContent = content.trim();
       if (uploadedImages.length > 0) {
         if (replyContent) {
@@ -150,17 +224,15 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
         replyContent += uploadedImages.join('\n');
       }
 
-      // Create tags for images (NIP-94 compatible)
       const imageTags = uploadedImages.map(url => [
         'imeta',
         `url ${url}`,
         `m ${getImageMimeType(url)}`,
       ]);
 
-      // Create reply tags according to NIP-10
       const replyTags = [
-        ['e', replyingTo.id, '', replyingTo.pubkey], // Reply to this event
-        ['p', replyingTo.pubkey], // Mention the author
+        ['e', replyingTo.id, '', replyingTo.pubkey],
+        ['p', replyingTo.pubkey],
         ...imageTags,
       ];
 
@@ -175,10 +247,8 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
         description: "Your reply has been published successfully.",
       });
 
-      // Invalidate replies query to refresh the list
       queryClient.invalidateQueries({ queryKey: ['replies', replyingTo.id] });
 
-      // Reset form and close dialog
       setContent('');
       setUploadedImages([]);
       onOpenChange(false);
@@ -241,7 +311,7 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
             </CardHeader>
             <CardContent className="pt-0">
               <div className="text-sm">
-                <NoteContent event={replyingTo} />
+                {renderContent()}
               </div>
             </CardContent>
           </Card>
@@ -276,7 +346,6 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
                     {content.length}/280
                   </div>
 
-                  {/* Image Previews */}
                   {uploadedImages.length > 0 && (
                     <div className={`grid gap-2 ${uploadedImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
                       {uploadedImages.map((url, index) => (
@@ -329,20 +398,29 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
                       )}
                     </div>
 
-                    <Button
-                      type="submit"
-                      disabled={isSubmitting || (!content.trim() && uploadedImages.length === 0)}
-                      className="px-6"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Replying...
-                        </>
-                      ) : (
-                        'Reply'
-                      )}
-                    </Button>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => onOpenChange(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={isSubmitting || (!content.trim() && uploadedImages.length === 0)}
+                        className="px-6"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Replying...
+                          </>
+                        ) : (
+                          'Reply'
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -359,3 +437,4 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
     </Dialog>
   );
 }
+
