@@ -11,43 +11,49 @@ interface NoteContentProps {
   className?: string;
 }
 
-/** Parses content of text note events so that URLs and hashtags are linkified. */
-export function NoteContent({
-  event, 
-  className, 
-}: NoteContentProps) {  
-  // Process the content to render mentions, links, etc.
+/** Parses content of text note events so that URLs, mentions, and hashtags are linkified. */
+export function NoteContent({ event, className }: NoteContentProps) {
   const content = useMemo(() => {
-    const text = event.content;
-    
-    // Regex to find URLs, Nostr references, and hashtags
+    const text = event.content.trim(); // Remove leading/trailing whitespace
+
+    // Enhanced regex to handle URLs, Nostr references, and hashtags
     const regex = /(https?:\/\/[^\s]+)|nostr:(npub1|note1|nprofile1|nevent1)([023456789acdefghjklmnpqrstuvwxyz]+)|(#\w+)/g;
-    
+
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
     let match: RegExpExecArray | null;
     let keyCounter = 0;
-    
+
     while ((match = regex.exec(text)) !== null) {
       const [fullMatch, url, nostrPrefix, nostrData, hashtag] = match;
       const index = match.index;
-      
-      // Add text before this match
+
+      // Add text before this match, split by newlines
       if (index > lastIndex) {
-        parts.push(text.substring(lastIndex, index));
+        const beforeText = text.substring(lastIndex, index).split('\n');
+        beforeText.forEach((line, i) => {
+          const trimmedLine = line.trim();
+          if (trimmedLine) {
+            parts.push(
+              <p key={`text-${keyCounter++}-${i}`} className="mb-2 leading-relaxed text-base">
+                {trimmedLine}
+              </p>
+            );
+          }
+        });
       }
-      
+
       if (url) {
-        // Handle URLs
+        // Handle URLs with truncation and better styling
         parts.push(
-          <a 
+          <a
             key={`url-${keyCounter++}`}
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-500 hover:underline"
+            className="text-blue-600 hover:text-blue-800 underline underline-offset-2 break-words"
           >
-            {url}
+            {url.length > 50 ? `${url.slice(0, 50)}…` : url}
           </a>
         );
       } else if (nostrPrefix && nostrData) {
@@ -55,63 +61,71 @@ export function NoteContent({
         try {
           const nostrId = `${nostrPrefix}${nostrData}`;
           const decoded = nip19.decode(nostrId);
-          
+
           if (decoded.type === 'npub') {
             const pubkey = decoded.data;
-            parts.push(
-              <NostrMention key={`mention-${keyCounter++}`} pubkey={pubkey} />
-            );
+            parts.push(<NostrMention key={`mention-${keyCounter++}`} pubkey={pubkey} />);
           } else {
-            // For other types, just show as a link
             parts.push(
-              <Link 
+              <Link
                 key={`nostr-${keyCounter++}`}
                 to={`/${nostrId}`}
-                className="text-blue-500 hover:underline"
+                className="text-blue-600 hover:text-blue-800 underline underline-offset-2"
               >
                 {fullMatch}
               </Link>
             );
           }
         } catch {
-          // If decoding fails, just render as text
           parts.push(fullMatch);
         }
       } else if (hashtag) {
-        // Handle hashtags
-        const tag = hashtag.slice(1); // Remove the #
+        // Handle hashtags with improved styling
+        const tag = hashtag.slice(1);
         parts.push(
-          <Link 
+          <Link
             key={`hashtag-${keyCounter++}`}
             to={`/t/${tag}`}
-            className="text-blue-500 hover:underline"
+            className="text-blue-600 hover:text-blue-800 underline underline-offset-2"
           >
             {hashtag}
           </Link>
         );
       }
-      
+
       lastIndex = index + fullMatch.length;
     }
-    
-    // Add any remaining text
+
+    // Add any remaining text, split by newlines
     if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
+      const remainingText = text.substring(lastIndex).split('\n');
+      remainingText.forEach((line, i) => {
+        const trimmedLine = line.trim();
+        if (trimmedLine) {
+          parts.push(
+            <p key={`text-${keyCounter++}-${i}`} className="mb-2 leading-relaxed text-base">
+              {trimmedLine}
+            </p>
+          );
+        }
+      });
     }
-    
-    // If no special content was found, just use the plain text
+
+    // If no special content was found, use plain text with paragraphs
     if (parts.length === 0) {
-      parts.push(text);
+      return text.split('\n').map((line, i) => (
+        line.trim() && (
+          <p key={i} className="mb-2 leading-relaxed text-base">
+            {line.trim()}
+          </p>
+        )
+      ));
     }
-    
+
     return parts;
   }, [event]);
 
-  return (
-    <div className={cn("whitespace-pre-wrap break-words", className)}>
-      {content.length > 0 ? content : event.content}
-    </div>
-  );
+  return <div className={cn("prose prose-sm max-w-none", className)}>{content}</div>;
 }
 
 // Helper component to display user mentions
@@ -122,13 +136,11 @@ function NostrMention({ pubkey }: { pubkey: string }) {
   const displayName = author.data?.metadata?.name ?? genUserName(pubkey);
 
   return (
-    <Link 
+    <Link
       to={`/${npub}`}
       className={cn(
         "font-medium hover:underline",
-        hasRealName 
-          ? "text-blue-500" 
-          : "text-gray-500 hover:text-gray-700"
+        hasRealName ? "text-blue-600 hover:text-blue-800" : "text-gray-500 hover:text-gray-700"
       )}
     >
       @{displayName}

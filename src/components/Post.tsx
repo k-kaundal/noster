@@ -16,21 +16,42 @@ import { NoteContent } from '@/components/NoteContent';
 import { ReplyDialog } from '@/components/ReplyDialog';
 import { RepliesSection } from '@/components/RepliesSection';
 import { FollowButton } from '@/components/FollowButton';
-import { Heart, MessageCircle, Repeat2, Share, MoreHorizontal, Loader2, ArrowUpRight } from 'lucide-react';
+import { Heart, MessageCircle, Repeat2, Share, MoreHorizontal, Loader2, ArrowUpRight, Zap } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { nip19 } from 'nostr-tools';
+import { useZaps } from '@/hooks/useZaps';
+import { useNWC } from '@/hooks/useNWCContext';
+import type { WebLNProvider } from 'webln';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'; // Assuming you have a UI library like shadcn/ui
+import { Input } from '@/components/ui/input'; // Assuming Input component
+
+// Placeholder hook to fetch original event
+const useOriginalEvent = (eventId: string) => {
+  const [originalEvent, setOriginalEvent] = useState<NostrEvent | null>(null);
+  return { data: originalEvent, isLoading: false };
+};
 
 interface PostProps {
   event: NostrEvent;
   showReplies?: boolean;
+  webln?: WebLNProvider;
 }
 
-export function Post({ event, showReplies = true }: PostProps) {
+export function Post({ event, showReplies = true, webln }: PostProps) {
   const author = useAuthor(event.pubkey);
   const metadata = author.data?.metadata;
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
+  const [zapDialogOpen, setZapDialogOpen] = useState(false); // State for zap dialog
+  const [zapAmount, setZapAmount] = useState<number>(10); // Default zap amount
+  const [zapComment, setZapComment] = useState<string>('Great post!'); // Default comment
 
   const { isLiked, likeCount, like, isLiking } = useReactions(event.id);
   const { isReposted, repostCount, repost, isReposting } = useReposts(event.id);
@@ -45,6 +66,7 @@ export function Post({ event, showReplies = true }: PostProps) {
   const isRepost = event.kind === 6 || event.kind === 16;
   const eTags = event.tags.filter(tag => tag[0] === 'e');
   const isReply = eTags.length > 0;
+  const originalEventId = eTags[0]?.[1];
 
   const imageUrls = event.content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/gi) || [];
 
@@ -59,6 +81,69 @@ export function Post({ event, showReplies = true }: PostProps) {
       return 'unknown time';
     }
   })();
+
+  const { data: fetchedOriginalEvent } = useOriginalEvent(originalEventId || '');
+  const parseEmbeddedEvent = (content: string): NostrEvent | null => {
+    try {
+      const jsonMatch = content.match(/\{.*\}/s);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]) as NostrEvent;
+      return null;
+    } catch (error) {
+      console.error('Failed to parse embedded event:', error);
+      return null;
+    }
+  };
+
+  const embeddedOriginalEvent = isRepost ? parseEmbeddedEvent(event.content) : null;
+  const originalEvent = fetchedOriginalEvent || embeddedOriginalEvent;
+
+  const renderContent = () => {
+    if (isRepost && originalEvent) {
+      return (
+        <div className="space-y-3">
+          <div className="pl-4 border-l-2 border-gray-300 bg-gray-50 p-3 rounded-md">
+            <Post event={originalEvent} showReplies={false} webln={webln} />
+            <div className="text-sm text-muted-foreground mt-2">
+              Reposted by {displayName}
+            </div>
+          </div>
+          {imageUrls.length > 0 && (
+            <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
+              {imageUrls.map((url, index) => (
+                <div key={index} className="rounded-lg overflow-hidden border">
+                  <img
+                    src={url}
+                    alt=""
+                    className="w-full h-auto max-h-96 object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="whitespace-pre-wrap break-words">
+        <NoteContent event={event} />
+        {imageUrls.length > 0 && (
+          <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
+            {imageUrls.map((url, index) => (
+              <div key={index} className="rounded-lg overflow-hidden border">
+                <img
+                  src={url}
+                  alt=""
+                  className="w-full h-auto max-h-96 object-cover"
+                  loading="lazy"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const handleReply = () => {
     if (!user) {
@@ -136,7 +221,6 @@ export function Post({ event, showReplies = true }: PostProps) {
           description: 'Post shared successfully',
         });
       } catch (error) {
-        // Ignore if user cancelled
         if (error.name !== 'AbortError') {
           toast({
             title: 'Error',
@@ -163,9 +247,40 @@ export function Post({ event, showReplies = true }: PostProps) {
     }
   };
 
+  // Use the useZaps hook
+  const { zap, isZapping, zapCount, totalSats } = useZaps(
+    event,
+    webln ?? null,
+    useNWC().getActiveConnection(),
+    () => {
+      toast({ title: 'Zap Success', description: 'Zap sent successfully!' });
+      setZapDialogOpen(false);
+    }
+  );
+
+  const handleZap = async () => {
+    if (!user) {
+      toast({
+        title: 'Error',
+        description: 'You must be logged in to zap',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      await zap(zapAmount, zapComment);
+    } catch (error) {
+      toast({
+        title: 'Zap Failed',
+        description: error.message || 'Failed to send zap',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
-    <Card className="mb-4 animate-slide-up hover-lift transition-all duration-200 group">
-      {isRepost && (
+    <Card className="mb-4 animate-slide-up hover-lift transition-all duration-200 group w-full">
+      {isRepost && originalEventId && (
         <div className="px-4 pt-3 pb-1">
           <div className="flex items-center text-sm text-muted-foreground">
             <Repeat2 className="h-4 w-4 mr-2" />
@@ -195,18 +310,18 @@ export function Post({ event, showReplies = true }: PostProps) {
         </div>
       )}
 
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between">
+      <CardHeader className="pb-2 p-4 sm:p-6">
+        <div className="flex flex-row items-start justify-between">
           <div className="flex items-center space-x-3">
             <Link to={`/${npub}`}>
-              <Avatar className="h-10 w-10">
+              <Avatar className="h-10 w-10 sm:h-12 sm:w-12">
                 <AvatarImage src={profileImage} alt={displayName} />
                 <AvatarFallback>{displayName.slice(0, 2).toUpperCase()}</AvatarFallback>
               </Avatar>
             </Link>
             <div className="flex flex-col">
               <div className="flex items-center space-x-2">
-                <Link to={`/${npub}`} className="font-semibold hover:underline">
+                <Link to={`/${npub}`} className="font-semibold hover:underline text-sm sm:text-base">
                   {displayName}
                 </Link>
                 {metadata?.nip05 && (
@@ -215,7 +330,7 @@ export function Post({ event, showReplies = true }: PostProps) {
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+              <div className="flex items-center space-x-2 text-xs sm:text-sm text-muted-foreground">
                 <span>@{username}</span>
                 <span>·</span>
                 <Link to={`/${noteId}`} className="hover:underline">
@@ -224,7 +339,7 @@ export function Post({ event, showReplies = true }: PostProps) {
               </div>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 mt-2 sm:mt-0">
             <FollowButton
               pubkey={event.pubkey}
               className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
@@ -236,89 +351,125 @@ export function Post({ event, showReplies = true }: PostProps) {
         </div>
       </CardHeader>
 
-      <CardContent className="pb-2">
+      <CardContent className="pb-2 p-4 sm:p-6">
         <div className="space-y-3">
-          <div className="whitespace-pre-wrap break-words">
-            <NoteContent event={event} className="text-sm" />
-          </div>
-          {imageUrls.length > 0 && (
-            <div className={`grid gap-2 ${imageUrls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-              {imageUrls.map((url, index) => (
-                <div key={index} className="rounded-lg overflow-hidden border">
-                  <img
-                    src={url}
-                    alt=""
-                    className="w-full h-auto max-h-96 object-cover"
-                    loading="lazy"
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="flex items-center justify-between pt-2 max-w-md">
+          {renderContent()}
+          <div className="flex flex-row items-center justify-between pt-2">
             <Button
               variant="ghost"
               size="sm"
-              className="text-muted-foreground hover:text-blue-600 transition-all duration-200 hover:scale-105"
+              className="text-muted-foreground hover:text-blue-600 transition-all duration-200 hover:scale-105 w-full sm:w-auto text-xs sm:text-sm"
               onClick={handleReply}
             >
-              <MessageCircle className="h-4 w-4 mr-2" />
-              <span className="text-sm">
+              <MessageCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+              <span>
                 {replyCount > 0 ? replyCount : 'Reply'}
               </span>
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className={`text-muted-foreground hover:text-green-600 transition-all duration-200 hover:scale-105 ${isReposted ? 'text-green-600 font-semibold' : ''}`}
+              className={`text-muted-foreground hover:text-green-600 transition-all duration-200 hover:scale-105 w-full sm:w-auto text-xs sm:text-sm ${isReposted ? 'text-green-600 font-semibold' : ''}`}
               onClick={handleRepost}
               disabled={isReposting}
             >
               {isReposting ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
               ) : (
-                <Repeat2 className={`h-4 w-4 mr-2 ${isReposted ? 'fill-green-600' : ''}`} />
+                <Repeat2 className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 ${isReposted ? 'fill-green-600' : ''}`} />
               )}
-              <span className="text-sm">
+              <span>
                 {repostCount > 0 ? repostCount : 'Repost'}
               </span>
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className={`text-muted-foreground hover:text-red-600 transition-all duration-200 hover:scale-105 ${isLiked ? 'text-red-600 font-semibold' : ''}`}
+              className={`text-muted-foreground hover:text-red-600 transition-all duration-200 hover:scale-105 w-full sm:w-auto text-xs sm:text-sm ${isLiked ? 'text-red-600 font-semibold' : ''}`}
               onClick={handleLike}
               disabled={isLiking}
             >
               {isLiking ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
               ) : (
-                <Heart className={`h-4 w-4 mr-2 ${isLiked ? 'fill-red-600' : ''}`} />
+                <Heart className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 ${isLiked ? 'fill-red-600' : ''}`} />
               )}
-              <span className="text-sm">
+              <span>
                 {likeCount > 0 ? likeCount : 'Like'}
               </span>
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="text-muted-foreground hover:text-blue-600 transition-all duration-200 hover:scale-105"
+              className={`text-muted-foreground hover:text-yellow-600 transition-all duration-200 hover:scale-105 w-full sm:w-auto text-xs sm:text-sm ${isZapping ? 'text-yellow-600 font-semibold' : ''}`}
+              onClick={() => setZapDialogOpen(true)}
+              disabled={isZapping}
+            >
+              {isZapping ? (
+                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
+              ) : (
+                <Zap className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 ${isZapping ? 'fill-yellow-600' : ''}`} />
+              )}
+              <span>
+                {zapCount > 0 ? `${zapCount} (${totalSats}sats)` : 'Zap'}
+              </span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-blue-600 transition-all duration-200 hover:scale-105 w-full sm:w-auto text-xs sm:text-sm"
               onClick={handleShare}
             >
-              <Share className="h-4 w-4 mr-2" />
-              <span className="text-sm">Share</span>
+              <Share className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+              <span>Share</span>
             </Button>
           </div>
         </div>
       </CardContent>
-      {showReplies && (
-        <RepliesSection eventId={event.id} className="px-6 pb-4" />
-      )}
-      <ReplyDialog
-        open={replyDialogOpen}
-        onOpenChange={setReplyDialogOpen}
-        replyingTo={event}
-      />
+      {showReplies && <RepliesSection eventId={event.id} className="px-4 sm:px-6 pb-4" />}
+      <ReplyDialog open={replyDialogOpen} onOpenChange={setReplyDialogOpen} replyingTo={event} />
+      <Dialog open={zapDialogOpen} onOpenChange={setZapDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send a Zap</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Amount (sats)</label>
+              <Input
+                type="number"
+                value={zapAmount}
+                onChange={(e) => setZapAmount(Math.max(1, parseInt(e.target.value) || 10))} // Minimum 1 sat
+                className="mt-1 w-full"
+                min="1"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Comment</label>
+              <Input
+                type="text"
+                value={zapComment}
+                onChange={(e) => setZapComment(e.target.value)}
+                className="mt-1 w-full"
+                placeholder="Optional comment"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setZapDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleZap}
+              disabled={isZapping}
+              className={`ml-2 ${isZapping ? 'bg-yellow-600 text-white' : 'bg-yellow-500 hover:bg-yellow-600 text-white'}`}
+            >
+              {isZapping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+              {isZapping ? 'Zapping...' : 'Send Zap'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
