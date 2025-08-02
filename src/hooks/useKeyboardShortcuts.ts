@@ -47,7 +47,7 @@ export function useKeyboardShortcuts({ onSearch }: UseKeyboardShortcutsProps = {
           break;
         case '?':
           // Show help dialog (could be implemented later)
-          console.log('Keyboard shortcuts: h=home, t=trending, e=explore, c=compose, /=search');
+          // console.log('Keyboard shortcuts: h=home, t=trending, e=explore, c=compose, /=search');
           break;
       }
     };

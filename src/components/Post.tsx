@@ -32,7 +32,6 @@ export function Post({ event, showReplies = true }: PostProps) {
   const { toast } = useToast();
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
 
-  // Use the new hooks for reactions, reposts, and replies
   const { isLiked, likeCount, like, isLiking } = useReactions(event.id);
   const { isReposted, repostCount, repost, isReposting } = useReposts(event.id);
   const { replyCount } = useReplies(event.id);
@@ -43,14 +42,10 @@ export function Post({ event, showReplies = true }: PostProps) {
   const npub = nip19.npubEncode(event.pubkey);
   const noteId = nip19.noteEncode(event.id);
 
-  // Handle reposts
   const isRepost = event.kind === 6 || event.kind === 16;
-
-  // Check if this is a reply
   const eTags = event.tags.filter(tag => tag[0] === 'e');
   const isReply = eTags.length > 0;
 
-  // Extract image URLs from content
   const imageUrls = event.content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/gi) || [];
 
   const timeAgo = (() => {
@@ -65,10 +60,13 @@ export function Post({ event, showReplies = true }: PostProps) {
     }
   })();
 
-  // Handle action clicks
   const handleReply = () => {
     if (!user) {
-      // Could show a login prompt here
+      toast({
+        title: 'Error',
+        description: 'You must be logged in to reply',
+        variant: 'destructive',
+      });
       return;
     }
     setReplyDialogOpen(true);
@@ -76,25 +74,49 @@ export function Post({ event, showReplies = true }: PostProps) {
 
   const handleRepost = async () => {
     if (!user) {
-      // Could show a login prompt here
+      toast({
+        title: 'Error',
+        description: 'You must be logged in to repost',
+        variant: 'destructive',
+      });
       return;
     }
     try {
       await repost({ targetEvent: event });
+      toast({
+        title: 'Success',
+        description: 'Post reposted successfully',
+      });
     } catch (error) {
-      console.error('Repost error:', error);
+      toast({
+        title: 'Error',
+        description: `Failed to repost: ${error.message || 'Unknown error'}`,
+        variant: 'destructive',
+      });
     }
   };
 
   const handleLike = async () => {
     if (!user) {
-      // Could show a login prompt here
+      toast({
+        title: 'Error',
+        description: 'You must be logged in to like',
+        variant: 'destructive',
+      });
       return;
     }
     try {
       await like({ targetEvent: event });
+      toast({
+        title: 'Success',
+        description: isLiked ? 'Like removed' : 'Post liked',
+      });
     } catch (error) {
-      console.error('Like error:', error);
+      toast({
+        title: 'Error',
+        description: `Failed to like: ${error.message || 'Unknown error'}`,
+        variant: 'destructive',
+      });
     }
   };
 
@@ -107,26 +129,35 @@ export function Post({ event, showReplies = true }: PostProps) {
         await navigator.share({
           title: 'Nostr Post',
           text: event.content.slice(0, 100) + (event.content.length > 100 ? '...' : ''),
-          url: url,
+          url,
+        });
+        toast({
+          title: 'Success',
+          description: 'Post shared successfully',
         });
       } catch (error) {
-        // User cancelled sharing or error occurred
-        console.log('Share cancelled or failed:', error);
+        // Ignore if user cancelled
+        if (error.name !== 'AbortError') {
+          toast({
+            title: 'Error',
+            description: 'Failed to share post',
+            variant: 'destructive',
+          });
+        }
       }
     } else {
-      // Fallback: copy to clipboard
       try {
         await navigator.clipboard.writeText(url);
         toast({
-          title: "Link copied",
-          description: "Post link copied to clipboard",
+          title: 'Link copied',
+          description: 'Post link copied to clipboard',
         });
       } catch (error) {
-        console.error('Failed to copy to clipboard:', error);
+        console.error('Post: Clipboard error:', error);
         toast({
-          title: "Share failed",
-          description: "Failed to copy link to clipboard",
-          variant: "destructive",
+          title: 'Error',
+          description: 'Failed to copy link to clipboard',
+          variant: 'destructive',
         });
       }
     }
@@ -207,12 +238,9 @@ export function Post({ event, showReplies = true }: PostProps) {
 
       <CardContent className="pb-2">
         <div className="space-y-3">
-          {/* Post Content */}
           <div className="whitespace-pre-wrap break-words">
             <NoteContent event={event} className="text-sm" />
           </div>
-
-          {/* Images */}
           {imageUrls.length > 0 && (
             <div className={`grid gap-2 ${imageUrls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
               {imageUrls.map((url, index) => (
@@ -227,8 +255,6 @@ export function Post({ event, showReplies = true }: PostProps) {
               ))}
             </div>
           )}
-
-          {/* Action Buttons */}
           <div className="flex items-center justify-between pt-2 max-w-md">
             <Button
               variant="ghost"
@@ -238,48 +264,41 @@ export function Post({ event, showReplies = true }: PostProps) {
             >
               <MessageCircle className="h-4 w-4 mr-2" />
               <span className="text-sm">
-                {replyCount > 0 ? `${replyCount}` : 'Reply'}
+                {replyCount > 0 ? replyCount : 'Reply'}
               </span>
             </Button>
-
             <Button
               variant="ghost"
               size="sm"
-              className={`text-muted-foreground hover:text-green-600 transition-all duration-200 hover:scale-105 ${
-                isReposted ? 'text-green-600' : ''
-              }`}
+              className={`text-muted-foreground hover:text-green-600 transition-all duration-200 hover:scale-105 ${isReposted ? 'text-green-600 font-semibold' : ''}`}
               onClick={handleRepost}
               disabled={isReposting}
             >
               {isReposting ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
-                <Repeat2 className={`h-4 w-4 mr-2 ${isReposted ? 'animate-pulse' : ''}`} />
+                <Repeat2 className={`h-4 w-4 mr-2 ${isReposted ? 'fill-green-600' : ''}`} />
               )}
               <span className="text-sm">
-                {repostCount > 0 ? `${repostCount}` : 'Repost'}
+                {repostCount > 0 ? repostCount : 'Repost'}
               </span>
             </Button>
-
             <Button
               variant="ghost"
               size="sm"
-              className={`text-muted-foreground hover:text-red-600 transition-all duration-200 hover:scale-105 ${
-                isLiked ? 'text-red-600' : ''
-              }`}
+              className={`text-muted-foreground hover:text-red-600 transition-all duration-200 hover:scale-105 ${isLiked ? 'text-red-600 font-semibold' : ''}`}
               onClick={handleLike}
               disabled={isLiking}
             >
               {isLiking ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
-                <Heart className={`h-4 w-4 mr-2 transition-all duration-200 ${isLiked ? 'fill-current animate-pulse' : ''}`} />
+                <Heart className={`h-4 w-4 mr-2 ${isLiked ? 'fill-red-600' : ''}`} />
               )}
               <span className="text-sm">
-                {likeCount > 0 ? `${likeCount}` : 'Like'}
+                {likeCount > 0 ? likeCount : 'Like'}
               </span>
             </Button>
-
             <Button
               variant="ghost"
               size="sm"
@@ -292,13 +311,9 @@ export function Post({ event, showReplies = true }: PostProps) {
           </div>
         </div>
       </CardContent>
-
-      {/* Replies Section */}
       {showReplies && (
         <RepliesSection eventId={event.id} className="px-6 pb-4" />
       )}
-
-      {/* Reply Dialog */}
       <ReplyDialog
         open={replyDialogOpen}
         onOpenChange={setReplyDialogOpen}

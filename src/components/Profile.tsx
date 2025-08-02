@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -15,6 +16,8 @@ import { RelaySelector } from '@/components/RelaySelector';
 import { Calendar, Link as LinkIcon, MapPin, Users, Loader2, UserPlus, UserMinus } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { nip19 } from 'nostr-tools';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger, DialogPortal, DialogOverlay } from '@radix-ui/react-dialog';
+import { EditProfileForm } from './EditProfileForm';
 
 interface ProfileProps {
   pubkey: string;
@@ -26,6 +29,7 @@ export function Profile({ pubkey }: ProfileProps) {
   const { user } = useCurrentUser();
   const { followingCount, isFollowing, follow, unfollow, isFollowLoading } = useFollows(pubkey);
   const { followerCount } = useFollowers(pubkey);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
 
   const metadata = author.data?.metadata;
   const displayName = metadata?.display_name || metadata?.name || genUserName(pubkey);
@@ -58,7 +62,7 @@ export function Profile({ pubkey }: ProfileProps) {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        {/* Profile Header Skeleton */}
+        {/* Skeleton code unchanged */}
         <Card>
           <div className="relative">
             <Skeleton className="h-48 w-full" />
@@ -84,8 +88,6 @@ export function Profile({ pubkey }: ProfileProps) {
             </div>
           </CardContent>
         </Card>
-
-        {/* Posts Skeleton */}
         <div className="space-y-4">
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}>
@@ -127,10 +129,8 @@ export function Profile({ pubkey }: ProfileProps) {
 
   return (
     <div className="space-y-6">
-      {/* Profile Header */}
       <Card>
         <div className="relative">
-          {/* Banner */}
           <div className="h-48 bg-gradient-to-r from-blue-500 to-purple-600 rounded-t-lg overflow-hidden">
             {bannerImage && (
               <img
@@ -140,8 +140,6 @@ export function Profile({ pubkey }: ProfileProps) {
               />
             )}
           </div>
-
-          {/* Profile Picture */}
           <div className="absolute -bottom-16 left-6">
             <Avatar className="h-32 w-32 border-4 border-background">
               <AvatarImage src={profileImage} alt={displayName} />
@@ -154,7 +152,6 @@ export function Profile({ pubkey }: ProfileProps) {
 
         <CardContent className="pt-20 pb-6">
           <div className="space-y-4">
-            {/* Name and Actions */}
             <div className="flex justify-between items-start">
               <div className="space-y-1">
                 <div className="flex items-center space-x-2">
@@ -167,11 +164,27 @@ export function Profile({ pubkey }: ProfileProps) {
                 </div>
                 <p className="text-muted-foreground">@{username}</p>
               </div>
-
               {isCurrentUser ? (
-                <Button variant="outline">
-                  Edit Profile
-                </Button>
+                <Dialog open={isEditProfileOpen} onOpenChange={(open) => {
+                  setIsEditProfileOpen(open);
+                }}>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                    >
+                      Edit Profile
+                    </Button>
+                  </DialogTrigger>
+                  <DialogPortal>
+                    <DialogOverlay className="fixed inset-0 bg-black/50" />
+                    <DialogContent className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-lg shadow-lg max-w-lg w-full">
+                      <DialogTitle>Edit Profile</DialogTitle>
+                      <EditProfileForm onSuccess={() => {
+                        setIsEditProfileOpen(false);
+                      }} />
+                    </DialogContent>
+                  </DialogPortal>
+                </Dialog>
               ) : (
                 <Button
                   onClick={() => isFollowing ? unfollow(pubkey) : follow(pubkey)}
@@ -197,13 +210,9 @@ export function Profile({ pubkey }: ProfileProps) {
                 </Button>
               )}
             </div>
-
-            {/* Bio */}
             {bio && (
               <p className="text-sm leading-relaxed">{bio}</p>
             )}
-
-            {/* Metadata */}
             <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
               {location && (
                 <div className="flex items-center space-x-1">
@@ -231,8 +240,6 @@ export function Profile({ pubkey }: ProfileProps) {
                 </span>
               </div>
             </div>
-
-            {/* Stats */}
             <div className="flex space-x-6 text-sm">
               <div className="flex items-center space-x-1">
                 <span className="font-semibold">{posts.length}</span>
@@ -256,11 +263,8 @@ export function Profile({ pubkey }: ProfileProps) {
           </div>
         </CardContent>
       </Card>
-
-      {/* Posts */}
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Posts</h2>
-
         {posts.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="py-12 px-8 text-center">
