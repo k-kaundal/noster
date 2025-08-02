@@ -1,21 +1,25 @@
+import { NostrSigner } from "@nostrify/nostrify";
 import { createContext } from "react";
 
-export type Theme = "dark" | "light" | "system";
+import { z } from 'zod';
+
+export type Theme = 'dark' | 'light' | 'system';
 
 export interface AppConfig {
-  /** Current theme */
   theme: Theme;
-  /** Selected relay URL */
   relayUrl: string;
 }
 
 export interface AppContextType {
-  /** Current application configuration */
   config: AppConfig;
-  /** Update configuration using a callback that receives current config and returns new config */
   updateConfig: (updater: (currentConfig: AppConfig) => AppConfig) => void;
-  /** Optional list of preset relays to display in the RelaySelector */
-  presetRelays?: { name: string; url: string }[];
+  presetRelays?: { name: string; url: string; active?: boolean }[];
+  syncAccountToRelays: (signer: NostrSigner, profileData?: any, contacts?: string[]) => Promise<void>;
 }
+
+export const AppConfigSchema: z.ZodType<AppConfig, z.ZodTypeDef, unknown> = z.object({
+  theme: z.enum(['dark', 'light', 'system']),
+  relayUrl: z.string().url(),
+});
 
 export const AppContext = createContext<AppContextType | undefined>(undefined);

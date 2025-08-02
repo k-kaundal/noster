@@ -50,6 +50,10 @@ export function Profile({ pubkey }: ProfileProps) {
   const isCurrentUser = user?.pubkey === pubkey;
   const npub = nip19.npubEncode(pubkey);
 
+  // Hardcode a specific public key as verified
+  const HARDCODED_VERIFIED_PUBKEY = '<HARDCODED_PUBLIC_KEY>'; // Replace with actual pubkey
+  const isVerified = !!metadata?.nip05 || pubkey === HARDCODED_VERIFIED_PUBKEY;
+
   if (error) {
     return (
       <div className="col-span-full">
@@ -130,8 +134,6 @@ export function Profile({ pubkey }: ProfileProps) {
       return new Date();
     }
   })();
-
-  const isVerified = !!metadata?.nip05;
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -258,11 +260,11 @@ export function Profile({ pubkey }: ProfileProps) {
                   <h1 className="text-3xl font-bold text-foreground dark:text-foreground/90 transition-colors hover:text-blue-600 dark:hover:text-blue-400">{displayName}</h1>
                   {isVerified ? (
                     <Badge variant="secondary" className="bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-900/70 relative group">
-                      <span className="tooltip" data-tooltip={metadata.nip05}>
+                      <span className="tooltip" data-tooltip={metadata?.nip05 || 'Verified User'}>
                         ✓ Verified
                       </span>
                       <span className="absolute hidden group-hover:block bg-gray-800 dark:bg-gray-900 text-white dark:text-gray-200 text-xs p-2 rounded-md -top-10 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
-                        {metadata.nip05}
+                        {metadata?.nip05 || 'Verified User'}
                       </span>
                     </Badge>
                   ) : (

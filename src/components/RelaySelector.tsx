@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/popover";
 import { useState } from "react";
 import { useAppContext } from "@/hooks/useAppContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useFollows } from "@/hooks/useFollows";
 
 interface RelaySelectorProps {
   className?: string;
@@ -23,11 +25,52 @@ interface RelaySelectorProps {
 
 export function RelaySelector(props: RelaySelectorProps) {
   const { className } = props;
-  const { config, updateConfig, presetRelays = [] } = useAppContext();
-  
+  const { config, updateConfig, presetRelays = [], syncAccountToRelays } = useAppContext();
+  const { user, metadata } = useCurrentUser();
+  const { followList } = useFollows(user?.pubkey ?? "");
+
+  // Auto-follow public keys (in hex format)
+  const autoFollowPubkeys = [
+    "ccca7505ff5f19b90dc4b8cc1ec6760f6a1f9f4a7b7f4d4d0735a48b2ce8b3cb",
+    "0e9dc3b18e5f7a3a6e258a4e2b5c803a47e3f98c7b81c2d345c3db008f3c2d43",
+    "82c8c3b5097a7ed00bc4ae6d58c6d7eb8222f4b8f9962fa0c17a9b1d7738f1cb",
+    "ed1c3f4d8c8c2c5f6d0f0e6b5f6d8c8c2c5f6d0f0e6b5f6d8c8c2c5f6d0f0e6b",
+    "2f8c3b5097a7ed00bc4ae6d58c6d7eb8222f4b8f9962fa0c17a9b1d7738f1cb2",
+  ];
+
   const selectedRelay = config.relayUrl;
-  const setSelectedRelay = (relay: string) => {
+  const setSelectedRelay = async (relay: string) => {
+    // Always update the relay URL
     updateConfig((current) => ({ ...current, relayUrl: relay }));
+
+    // Skip sync if no user is available
+    if (!user?.pubkey) {
+      console.log("No user available, relay updated but sync skipped");
+      return;
+    }
+
+    // Use profile data from useProfile, fallback to defaults
+    const profile = {
+      name: metadata?.name || 'Steady Fox',
+      about: metadata?.about || '',
+      picture: metadata?.picture || '',
+      lud16: metadata?.lud16 || '',
+    };
+
+    // Extract pubkeys from followList tags (kind 3 event)
+    const existingContacts = followList?.tags
+      ?.filter(tag => tag[0] === 'p')
+      .map(tag => tag[1]) || [];
+
+    // Combine existing follows with auto-follow pubkeys, ensuring uniqueness
+    const contacts = Array.from(new Set([...existingContacts, ...autoFollowPubkeys]));
+
+    try {
+      await syncAccountToRelays(user.signer, profile, contacts);
+      console.log(`Synced profile and follows to ${relay}`);
+    } catch (error) {
+      console.error(`Failed to sync to ${relay}:`, error);
+    }
   };
 
   const [open, setOpen] = useState(false);
@@ -35,33 +78,22 @@ export function RelaySelector(props: RelaySelectorProps) {
 
   const selectedOption = presetRelays.find((option) => option.url === selectedRelay);
 
-  // Function to normalize relay URL by adding wss:// if no protocol is present
   const normalizeRelayUrl = (url: string): string => {
     const trimmed = url.trim();
     if (!trimmed) return trimmed;
-    
-    // Check if it already has a protocol
-    if (trimmed.includes('://')) {
-      return trimmed;
-    }
-    
-    // Add wss:// prefix
+    if (trimmed.includes('://')) return trimmed;
     return `wss://${trimmed}`;
   };
 
-  // Handle adding a custom relay
   const handleAddCustomRelay = (url: string) => {
-    setSelectedRelay?.(normalizeRelayUrl(url));
+    setSelectedRelay(normalizeRelayUrl(url));
     setOpen(false);
     setInputValue("");
   };
 
-  // Check if input value looks like a valid relay URL
   const isValidRelayInput = (value: string): boolean => {
     const trimmed = value.trim();
     if (!trimmed) return false;
-    
-    // Basic validation - should contain at least a domain-like structure
     const normalized = normalizeRelayUrl(trimmed);
     try {
       new URL(normalized);
