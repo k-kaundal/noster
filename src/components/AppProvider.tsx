@@ -5,7 +5,7 @@ import { AppContext, type AppConfig, type AppContextType, type Theme } from '@/c
 import { SimplePool, Event, EventTemplate, Filter } from 'nostr-tools';
 import { NostrSigner } from '@nostrify/nostrify';
 
-// Validation schema for profile data
+// Validation schemas remain unchanged
 const ProfileSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   about: z.string().max(500).optional(),
@@ -13,10 +13,8 @@ const ProfileSchema = z.object({
   lud16: z.string().email().optional(),
 });
 
-// Validation schema for contacts
 const ContactsSchema = z.array(z.string().regex(/^[0-9a-f]{64}$/, 'Invalid pubkey'));
 
-// Validation schema for app config
 const AppConfigSchema: z.ZodType<AppConfig, z.ZodTypeDef, unknown> = z.object({
   theme: z.enum(['dark', 'light', 'system']),
   relayUrl: z.string().url(),
@@ -49,9 +47,14 @@ export function AppProvider(props: AppProviderProps) {
   }, [setConfig]);
 
   const syncAccountToRelays = useCallback(
-    async (user: NostrSigner, profileData?: any, contacts?: string[], options: { forceSync?: boolean } = {}) => {
-      const { forceSync = false } = options;
-      const relays = presetRelays?.filter(relay => relay.active).map(relay => relay.url) || [config.relayUrl];
+    async (
+      user: NostrSigner,
+      profileData?: any,
+      contacts?: string[],
+      options: { forceSync?: boolean; relayUrls?: string[] } = {}
+    ) => {
+      const { forceSync = false, relayUrls } = options;
+      const relays = relayUrls || (presetRelays?.filter(relay => relay.active).map(relay => relay.url) || [config.relayUrl]);
       const pool = new SimplePool();
       const events: Event[] = [];
 
@@ -86,8 +89,11 @@ export function AppProvider(props: AppProviderProps) {
         }
       }
 
-      // Fetch existing events to avoid overwriting newer data
+      // Check if profile or contacts exist on any relay
+      let hasProfile = false;
+      let hasContacts = false;
       const existingEvents: { [kind: number]: Event | null } = { 0: null, 3: null };
+
       for (const url of relays) {
         try {
           const relay = await pool.ensureRelay(url);
@@ -104,10 +110,6 @@ export function AppProvider(props: AppProviderProps) {
                 sub.close();
                 resolve();
               },
-              // onerror: (error: any) => {
-              //   sub.close();
-              //   reject(error);
-              // },
             });
 
             // Timeout after 5 seconds to prevent hanging
@@ -119,9 +121,15 @@ export function AppProvider(props: AppProviderProps) {
 
           // Process collected events
           collectedEvents.forEach(event => {
-            if (event.kind === 0 || event.kind === 3) {
-              if (!existingEvents[event.kind] || existingEvents[event.kind]!.created_at < event.created_at) {
-                existingEvents[event.kind] = event;
+            if (event.kind === 0) {
+              hasProfile = true;
+              if (!existingEvents[0] || existingEvents[0]!.created_at < event.created_at) {
+                existingEvents[0] = event;
+              }
+            } else if (event.kind === 3) {
+              hasContacts = true;
+              if (!existingEvents[3] || existingEvents[3]!.created_at < event.created_at) {
+                existingEvents[3] = event;
               }
             }
           });
@@ -131,7 +139,7 @@ export function AppProvider(props: AppProviderProps) {
       }
 
       // Profile metadata (kind 0)
-      if (validatedProfile) {
+      if (validatedProfile && (!hasProfile || forceSync)) {
         const profileEvent: EventTemplate = {
           kind: 0,
           created_at: Math.floor(Date.now() / 1000),
@@ -139,22 +147,21 @@ export function AppProvider(props: AppProviderProps) {
           content: JSON.stringify(validatedProfile),
         };
 
-        // Skip if existing profile event is newer, unless forceSync is true
-        if (!forceSync && existingEvents[0] && existingEvents[0].created_at >= profileEvent.created_at) {
-          console.log('Skipping profile sync: existing event is newer');
-        } else {
-          try {
-            const finalizedProfileEvent = await user.signEvent(profileEvent);
-            events.push(finalizedProfileEvent);
-          } catch (error) {
-            console.error('Failed to sign profile event:', error);
-            throw new Error('Profile event signing failed');
-          }
+        // Only publish if forceSync or no existing profile
+        try {
+          const finalizedProfileEvent = await user.signEvent(profileEvent);
+          events.push(finalizedProfileEvent);
+          console.log(`Preparing to publish new profile event to relays`);
+        } catch (error) {
+          console.error('Failed to sign profile event:', error);
+          throw new Error('Profile event signing failed');
         }
+      } else if (hasProfile && !forceSync) {
+        console.log('Skipping profile sync: profile already exists on at least one relay');
       }
 
       // Contact list (kind 3)
-      if (validatedContacts.length > 0) {
+      if (validatedContacts.length > 0 && (!hasContacts || forceSync)) {
         const contactEvent: EventTemplate = {
           kind: 3,
           created_at: Math.floor(Date.now() / 1000),
@@ -162,49 +169,52 @@ export function AppProvider(props: AppProviderProps) {
           content: '',
         };
 
-        // Skip if existing contact event is newer, unless forceSync is true
-        if (!forceSync && existingEvents[3] && existingEvents[3].created_at >= contactEvent.created_at) {
-          console.log('Skipping contacts sync: existing event is newer');
-        } else {
-          try {
-            const finalizedContactEvent = await user.signEvent(contactEvent);
-            events.push(finalizedContactEvent);
-          } catch (error) {
-            console.error('Failed to sign contact event:', error);
-            throw new Error('Contact event signing failed');
-          }
+        // Only publish if forceSync or no existing contacts
+        try {
+          const finalizedContactEvent = await user.signEvent(contactEvent);
+          events.push(finalizedContactEvent);
+          console.log(`Preparing to publish new contact event to relays`);
+        } catch (error) {
+          console.error('Failed to sign contact event:', error);
+          throw new Error('Contact event signing failed');
         }
+      } else if (hasContacts && !forceSync) {
+        console.log('Skipping contacts sync: contacts already exist on at least one relay');
       }
 
       // Publish to all relays with retry logic
-      const publishPromises: Promise<void>[] = [];
-      for (const url of relays) {
-        publishPromises.push(
-          (async () => {
-            let retries = 3;
-            while (retries > 0) {
-              try {
-                const relay = await pool.ensureRelay(url);
-                for (const event of events) {
-                  await relay.publish(event);
-                  console.log(`Published event ${event.kind} to ${url}`);
+      if (events.length > 0) {
+        const publishPromises: Promise<void>[] = [];
+        for (const url of relays) {
+          publishPromises.push(
+            (async () => {
+              let retries = 3;
+              while (retries > 0) {
+                try {
+                  const relay = await pool.ensureRelay(url);
+                  for (const event of events) {
+                    await relay.publish(event);
+                    console.log(`Published event ${event.kind} to ${url}`);
+                  }
+                  break; // Success, exit retry loop
+                } catch (error) {
+                  console.warn(`Failed to publish to ${url}, retrying (${retries} left):`, error);
+                  retries--;
+                  if (retries === 0) {
+                    console.error(`Failed to publish to ${url} after retries`);
+                  }
+                  await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retry
                 }
-                break; // Success, exit retry loop
-              } catch (error) {
-                console.warn(`Failed to publish to ${url}, retrying (${retries} left):`, error);
-                retries--;
-                if (retries === 0) {
-                  console.error(`Failed to publish to ${url} after retries`);
-                }
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before retry
               }
-            }
-          })()
-        );
-      }
+            })()
+          );
+        }
 
-      // Wait for all publish operations to complete
-      await Promise.all(publishPromises);
+        // Wait for all publish operations to complete
+        await Promise.all(publishPromises);
+      } else {
+        console.log('No events to publish');
+      }
 
       // Clean up
       pool.close(relays);
