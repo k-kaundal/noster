@@ -151,7 +151,6 @@ export function AppProvider(props: AppProviderProps) {
         try {
           const finalizedProfileEvent = await user.signEvent(profileEvent);
           events.push(finalizedProfileEvent);
-          console.log(`Preparing to publish new profile event to relays`);
         } catch (error) {
           console.error('Failed to sign profile event:', error);
           throw new Error('Profile event signing failed');
@@ -173,7 +172,6 @@ export function AppProvider(props: AppProviderProps) {
         try {
           const finalizedContactEvent = await user.signEvent(contactEvent);
           events.push(finalizedContactEvent);
-          console.log(`Preparing to publish new contact event to relays`);
         } catch (error) {
           console.error('Failed to sign contact event:', error);
           throw new Error('Contact event signing failed');
@@ -194,7 +192,6 @@ export function AppProvider(props: AppProviderProps) {
                   const relay = await pool.ensureRelay(url);
                   for (const event of events) {
                     await relay.publish(event);
-                    console.log(`Published event ${event.kind} to ${url}`);
                   }
                   break; // Success, exit retry loop
                 } catch (error) {

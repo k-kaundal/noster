@@ -28,8 +28,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog'; // Assuming you have a UI library like shadcn/ui
-import { Input } from '@/components/ui/input'; // Assuming Input component
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { QRCodeSVG } from 'qrcode.react'; // Import QRCodeSVG
 
 // Placeholder hook to fetch original event
 const useOriginalEvent = (eventId: string) => {
@@ -49,9 +50,9 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
-  const [zapDialogOpen, setZapDialogOpen] = useState(false); // State for zap dialog
-  const [zapAmount, setZapAmount] = useState<number>(10); // Default zap amount
-  const [zapComment, setZapComment] = useState<string>('Great post!'); // Default comment
+  const [zapDialogOpen, setZapDialogOpen] = useState(false);
+  const [zapAmount, setZapAmount] = useState<number>(10);
+  const [zapComment, setZapComment] = useState<string>('Great post!');
 
   const { isLiked, likeCount, like, isLiking } = useReactions(event.id);
   const { isReposted, repostCount, repost, isReposting } = useReposts(event.id);
@@ -67,6 +68,17 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
   const eTags = event.tags.filter(tag => tag[0] === 'e');
   const isReply = eTags.length > 0;
   const originalEventId = eTags[0]?.[1];
+  const canZap = author.data?.metadata?.lud06 || author.data?.metadata?.lud16;
+
+  const { zap, isZapping, zapCount, totalSats, invoice, resetInvoice } = useZaps(
+    event,
+    webln ?? null,
+    useNWC().getActiveConnection(),
+    () => {
+      toast({ title: 'Zap Success', description: 'Zap sent successfully!' });
+      setZapDialogOpen(false);
+    }
+  );
 
   const imageUrls = event.content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/gi) || [];
 
@@ -247,17 +259,6 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
     }
   };
 
-  // Use the useZaps hook
-  const { zap, isZapping, zapCount, totalSats } = useZaps(
-    event,
-    webln ?? null,
-    useNWC().getActiveConnection(),
-    () => {
-      toast({ title: 'Zap Success', description: 'Zap sent successfully!' });
-      setZapDialogOpen(false);
-    }
-  );
-
   const handleZap = async () => {
     if (!user) {
       toast({
@@ -267,12 +268,21 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
       });
       return;
     }
+    if (!canZap) {
+      toast({
+        title: 'Error',
+        description: 'Author does not have a Lightning address configured',
+        variant: 'destructive',
+      });
+      return;
+    }
     try {
       await zap(zapAmount, zapComment);
     } catch (error) {
+      console.error('handleZap error:', error);
       toast({
         title: 'Zap Failed',
-        description: error.message || 'Failed to send zap',
+        description: (error as Error).message || 'Failed to send zap',
         variant: 'destructive',
       });
     }
@@ -403,7 +413,7 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
               size="sm"
               className={`text-muted-foreground hover:text-yellow-600 transition-all duration-200 hover:scale-105 w-full sm:w-auto text-xs sm:text-sm ${isZapping ? 'text-yellow-600 font-semibold' : ''}`}
               onClick={() => setZapDialogOpen(true)}
-              disabled={isZapping}
+              disabled={isZapping || !canZap}
             >
               {isZapping ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -414,15 +424,6 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
                 {zapCount > 0 ? `${zapCount} (${totalSats}sats)` : 'Zap'}
               </span>
             </Button>
-            {/* <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-blue-600 transition-all duration-200 hover:scale-105 w-full sm:w-auto text-xs sm:text-sm"
-              onClick={handleShare}
-            >
-              <Share className="h-3 w-3" />
-              <span>Share</span>
-            </Button> */}
           </div>
         </div>
       </CardContent>
@@ -439,7 +440,7 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
               <Input
                 type="number"
                 value={zapAmount}
-                onChange={(e) => setZapAmount(Math.max(1, parseInt(e.target.value) || 10))} // Minimum 1 sat
+                onChange={(e) => setZapAmount(Math.max(1, parseInt(e.target.value) || 10))}
                 className="mt-1 w-full"
                 min="1"
               />
@@ -454,6 +455,35 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
                 placeholder="Optional comment"
               />
             </div>
+            {invoice && (
+              <div className="mt-4">
+                <p className="text-sm text-gray-700 mb-2">
+                  Scan this QR code or copy the invoice to pay with a Lightning wallet:
+                </p>
+                <QRCodeSVG value={invoice} className="mt-2" size={200} />
+                <p className="text-xs text-gray-500 break-all mt-2">{invoice}</p>
+                <div className="mt-2 flex space-x-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(invoice);
+                      toast({ title: 'Invoice copied', description: 'The invoice has been copied to your clipboard.' });
+                    }}
+                  >
+                    Copy Invoice
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      resetInvoice();
+                      toast({ title: 'Invoice cleared', description: 'You can try zapping again.' });
+                    }}
+                  >
+                    Clear Invoice
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setZapDialogOpen(false)}>
@@ -461,7 +491,7 @@ export function Post({ event, showReplies = true, webln }: PostProps) {
             </Button>
             <Button
               onClick={handleZap}
-              disabled={isZapping}
+              disabled={isZapping || !canZap || !!invoice}
               className={`ml-2 ${isZapping ? 'bg-yellow-600 text-white' : 'bg-yellow-500 hover:bg-yellow-600 text-white'}`}
             >
               {isZapping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}

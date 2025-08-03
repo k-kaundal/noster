@@ -50,9 +50,7 @@ export function Profile({ pubkey }: ProfileProps) {
   const isCurrentUser = user?.pubkey === pubkey;
   const npub = nip19.npubEncode(pubkey);
 
-  // Hardcode a specific public key as verified
-  const HARDCODED_VERIFIED_PUBKEY = '<HARDCODED_PUBLIC_KEY>'; // Replace with actual pubkey
-  const isVerified = !!metadata?.nip05 || pubkey === HARDCODED_VERIFIED_PUBKEY;
+  const isVerified = !!metadata?.nip05
 
   if (error) {
     return (
