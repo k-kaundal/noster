@@ -39,10 +39,51 @@ export function Layout({ children }: LayoutProps) {
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 animate-slide-up">
         <div className="container flex h-14 items-center justify-between px-4">
-          <div className="flex items-center">
+            <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2 hover-lift transition-all duration-200">
-              <div className="h-6 w-6 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full animate-pulse-slow" />
-              <span className="hidden font-bold sm:inline-block bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+              <svg
+                className="logo-svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <style>
+                  {`
+                    :root {
+                      --text-color: #000000;
+                      --bg-color: #ffffff;
+                      --node-color: #000000;
+                      --line-color: #666666;
+                    }
+                    @media (prefers-color-scheme: dark) {
+                      :root {
+                        --text-color: #ffffff;
+                        --bg-color: #1a1a1a;
+                        --node-color: #ffffff;
+                        --line-color: #999999;
+                      }
+                    }
+                    .logo-svg {
+                      fill: var(--text-color);
+                      stroke: var(--line-color);
+                    }
+                  `}
+                </style>
+                {/* Network design */}
+                <g fill="none" stroke="var(--line-color)" stroke-width="1">
+                  <circle cx="6" cy="6" r="1" fill="var(--node-color)"/>
+                  <circle cx="12" cy="4" r="1" fill="var(--node-color)"/>
+                  <circle cx="18" cy="8" r="1" fill="var(--node-color)"/>
+                  <line x1="6" y1="6" x2="12" y2="4"/>
+                  <line x1="12" y1="4" x2="18" y2="8"/>
+                </g>
+                {/* Text */}
+                <text x="2" y="20" font-family="Arial, sans-serif" font-size="12" fill="var(--text-color)">
+                  NostrFeed
+                </text>
+              </svg>
+              <span className="font-bold sm:inline-block bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
                 NostrFeed
               </span>
             </Link>
