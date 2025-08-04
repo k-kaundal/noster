@@ -7,10 +7,11 @@ import { useNWC } from '@/hooks/useNWCContext';
 import type { NWCConnection } from '@/hooks/useNWC';
 import { nip57 } from 'nostr-tools';
 import type { Event } from 'nostr-tools';
-import type { WebLNProvider } from 'webln';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent } from '@nostrify/nostrify';
+import { LightningAddress } from '@getalby/lightning-tools'; // Import LightningAddress
+import { WebLNProvider } from 'webln/lib/provider';
 
 export function useZaps(
   target: Event | Event[],
@@ -27,7 +28,7 @@ export function useZaps(
   const actualTarget = Array.isArray(target) ? (target.length > 0 ? target[0] : null) : target;
 
   const author = useAuthor(actualTarget?.pubkey);
-  const { sendPayment, getActiveConnection } = useNWC();
+  const { getActiveConnection } = useNWC();
   const [isZapping, setIsZapping] = useState(false);
   const [invoice, setInvoice] = useState<string | null>(null);
 
@@ -203,115 +204,77 @@ export function useZaps(
         return;
       }
 
-      const zapEndpoint = await nip57.getZapEndpoint(author.data.event);
-      if (!zapEndpoint) {
-        toast({ title: 'Zap endpoint not found', description: 'Could not find a zap endpoint for the author.', variant: 'destructive' });
-        setIsZapping(false);
-        return;
+      const lnAddress = lud16 || lud06;
+      if (!lnAddress) {
+        throw new Error('No valid Lightning address found');
       }
 
-      const zapAmount = amount * 1000;
-      const isLongFormContent = actualTarget.kind >= 30000 && actualTarget.kind < 40000;
+      const ln = new LightningAddress(lnAddress);
+      await ln.fetch();
 
       const relays = [
         ...(config.relayUrl ? [config.relayUrl] : []),
         ...(presetRelays?.map(r => r.url) || defaultRelays),
       ];
 
-      let zapRequest;
-      if (isLongFormContent) {
-        zapRequest = nip57.makeZapRequest({
-          event: actualTarget,
-          amount: zapAmount,
-          relays,
-          comment,
-        });
-      } else {
-        if (!actualTarget.pubkey) {
-          throw new Error('No pubkey available for zap request');
-        }
-        zapRequest = nip57.makeZapRequest({
-          profile: actualTarget.pubkey,
-          amount: zapAmount,
-          relays,
-          comment,
-        });
-        zapRequest.tags.push(['e', actualTarget.id]);
-      }
+      const isLongFormContent = actualTarget.kind >= 30000 && actualTarget.kind < 40000;
+      const zapParams = {
+        satoshi: amount,
+        comment,
+        relays,
+        e: isLongFormContent ? undefined : actualTarget.id,
+        a: isLongFormContent ? `${actualTarget.kind}:${actualTarget.pubkey}:${actualTarget.tags.find(t => t[0] === 'd')?.[1] || ''}` : undefined,
+      };
 
-      if (!user.signer) throw new Error('No signer available');
-      const signedZapRequest = await user.signer.signEvent(zapRequest);
-
-      const zapRequestUrl = `${zapEndpoint}?amount=${zapAmount}&nostr=${encodeURI(JSON.stringify(signedZapRequest))}`;
       try {
-        const res = await fetch(zapRequestUrl);
-        const responseText = await res.text();
-        const responseData = JSON.parse(responseText);
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${responseData.reason || 'Unknown error'}`);
-        const newInvoice = responseData.pr;
-        if (!newInvoice || typeof newInvoice !== 'string') throw new Error('Lightning service did not return a valid invoice');
+        const response = await ln.zap(zapParams);
 
-        const currentNWCConnection = getActiveConnection();
-        if (currentNWCConnection && currentNWCConnection.connectionString && currentNWCConnection.isConnected) {
-          try {
-            await sendPayment(currentNWCConnection, newInvoice);
-            setIsZapping(false);
-            setInvoice(null);
-            toast({ title: 'Zap successful!', description: `You sent ${amount} sats via NWC to the author.` });
-            queryClient.invalidateQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
-            queryClient.refetchQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
-            onZapSuccess?.();
-            return;
-          } catch (nwcError) {
-            console.error('NWC payment failed:', nwcError);
-            toast({
-              title: 'NWC payment failed',
-              description: `${nwcError.message || 'Unknown NWC error'}. Falling back to manual payment...`,
-              variant: 'destructive',
-            });
-          }
+        if (response.preimage) {
+          // Payment successful (via WebLN/NWC)
+          setIsZapping(false);
+          setInvoice(null);
+          toast({ title: 'Zap successful!', description: `You sent ${amount} sats to the author.` });
+          queryClient.invalidateQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
+          queryClient.refetchQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
+          onZapSuccess?.();
+          return;
+        } else if (response.pr) {
+          // Invoice generated, requires manual payment
+          setInvoice(response.pr);
+          setIsZapping(false);
+          toast({
+            title: 'Invoice generated',
+            description: 'Please scan the QR code or copy the invoice to pay with a Lightning wallet.',
+            variant: 'default',
+          });
+        } else {
+          throw new Error('No preimage or invoice returned from zap request');
         }
-
-        console.log('WebLN Available:', !!webln);
-        if (webln) {
-          try {
-            await webln.sendPayment(newInvoice);
+      } catch (zapError) {
+        console.error('Zap error:', zapError);
+        if (zapError.message.includes('No wallet available')) {
+          if (zapError.pr) {
+            setInvoice(zapError.pr);
             setIsZapping(false);
-            setInvoice(null);
-            toast({ title: 'Zap successful!', description: `You sent ${amount} sats to the author.` });
-            queryClient.invalidateQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
-            queryClient.refetchQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
-            onZapSuccess?.();
-            return;
-          } catch (weblnError) {
-            console.error('WebLN payment failed:', weblnError);
             toast({
-              title: 'WebLN payment failed',
-              description: `${weblnError.message || 'Unknown WebLN error'}. Falling back to manual payment...`,
-              variant: 'destructive',
+              title: 'Invoice generated',
+              description: 'Please scan the QR code or copy the invoice to pay with a Lightning wallet.',
+              variant: 'default',
             });
+          } else {
+            throw new Error('No invoice returned from zap request');
           }
+        } else {
+          throw zapError;
         }
-
-        setInvoice(newInvoice);
-        setIsZapping(false);
-        toast({
-          title: 'Invoice generated',
-          description: 'Please scan the QR code or copy the invoice to pay with a Lightning wallet.',
-          variant: 'default',
-        });
-      } catch (fetchError) {
-        console.error('Fetch error:', fetchError);
-        throw fetchError;
       }
     } catch (err) {
-      // console.error('Zap process error:', err, {
-      //   zapEndpoint,
-      //   lud06: author.data?.metadata?.lud06,
-      //   lud16: author.data?.metadata?.lud16,
-      //   nwcConnected: !!getActiveConnection()?.isConnected,
-      //   weblnAvailable: !!webln,
-      // });
+      console.error('Zap process error:', err, {
+        lud06: author.data?.metadata?.lud06,
+        lud16: author.data?.metadata?.lud16,
+        nwcConnected: !!getActiveConnection()?.isConnected,
+        weblnAvailable: !!webln,
+      });
       toast({
         title: 'Zap failed',
         description: (err as Error).message || 'An error occurred while sending the zap.',
