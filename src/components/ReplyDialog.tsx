@@ -6,6 +6,7 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
+import { POST_CHARACTER_LIMIT } from '@/lib/constants';
 import { useToast } from '@/hooks/useToast';
 import {
   Dialog,
@@ -339,11 +340,11 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     className="min-h-[100px] resize-none"
-                    maxLength={280}
+                    maxLength={POST_CHARACTER_LIMIT}
                   />
 
                   <div className="text-sm text-muted-foreground text-right">
-                    {content.length}/280
+                    {content.length}/{POST_CHARACTER_LIMIT}
                   </div>
 
                   {uploadedImages.length > 0 && (
