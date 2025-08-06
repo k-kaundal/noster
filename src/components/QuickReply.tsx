@@ -5,6 +5,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
+import { POST_CHARACTER_LIMIT } from '@/lib/constants';
 import { useToast } from '@/hooks/useToast';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -120,12 +121,12 @@ export function QuickReply({ replyingTo, onReplyPosted, className }: QuickReplyP
               value={content}
               onChange={(e) => setContent(e.target.value)}
               className="min-h-[80px] resize-none text-sm"
-              maxLength={280}
+              maxLength={POST_CHARACTER_LIMIT}
             />
 
             <div className="flex items-center justify-between">
               <div className="text-xs text-muted-foreground">
-                {content.length}/280
+                {content.length}/{POST_CHARACTER_LIMIT}
               </div>
 
               <Button
