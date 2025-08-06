@@ -211,12 +211,12 @@ export function Compose() {
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 className="min-h-[120px] resize-none border-0 p-0 focus-visible:ring-0 text-lg"
-                maxLength={280}
+                // maxLength={1000}
               />
 
-              <div className="text-sm text-muted-foreground text-right">
-                {content.length}/280
-              </div>
+              {/* <div className="text-sm text-muted-foreground text-right">
+                {content.length}/1000
+              </div> */}
 
               {/* Image Previews */}
               {uploadedImages.length > 0 && (
