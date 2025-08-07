@@ -39,7 +39,7 @@ export function Layout({ children }: LayoutProps) {
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 animate-slide-up">
         <div className="container flex h-14 items-center justify-between px-4">
-            <div className="flex items-center">
+          <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2 hover-lift transition-all duration-200">
               <svg
                 className="logo-svg"
@@ -70,7 +70,6 @@ export function Layout({ children }: LayoutProps) {
                     }
                   `}
                 </style>
-                {/* Network design */}
                 <g fill="none" stroke="var(--line-color)" stroke-width="1">
                   <circle cx="6" cy="6" r="1" fill="var(--node-color)"/>
                   <circle cx="12" cy="4" r="1" fill="var(--node-color)"/>
@@ -78,7 +77,6 @@ export function Layout({ children }: LayoutProps) {
                   <line x1="6" y1="6" x2="12" y2="4"/>
                   <line x1="12" y1="4" x2="18" y2="8"/>
                 </g>
-                {/* Text */}
                 <text x="2" y="20" font-family="Arial, sans-serif" font-size="12" fill="var(--text-color)">
                   NostrFeed
                 </text>
@@ -202,7 +200,7 @@ export function Layout({ children }: LayoutProps) {
                       size="lg"
                     >
                       <PenTool className="h-4 w-4 mr-2" />
-                      New Post
+                      Compose
                     </Button>
                   </Link>
                 </div>
