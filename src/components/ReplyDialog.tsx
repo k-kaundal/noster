@@ -17,17 +17,9 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { NoteContent } from '@/components/NoteContent';
+import { Card } from '@/components/ui/card';
 import { Image, X, Loader2 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { Post } from '@/components/Post'; // Import Post component for recursive rendering
-
-// Placeholder hook to fetch original event (same as in Post)
-const useOriginalEvent = (eventId: string) => {
-  const [originalEvent, setOriginalEvent] = useState<NostrEvent | null>(null);
-  return { data: originalEvent, isLoading: false };
-};
+import { Post } from '@/components/Post';
 
 interface ReplyDialogProps {
   open: boolean;
@@ -45,101 +37,12 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
 
   const { user } = useCurrentUser();
   const currentUserAuthor = useAuthor(user?.pubkey || '');
-  const replyingToAuthor = useAuthor(replyingTo.pubkey);
   const { mutateAsync: createEvent } = useNostrPublish();
   const { mutateAsync: uploadFile, isPending: isUploading } = useUploadFile();
 
   const currentUserMetadata = currentUserAuthor.data?.metadata;
-  const replyingToMetadata = replyingToAuthor.data?.metadata;
-
   const currentUserDisplayName = currentUserMetadata?.display_name || currentUserMetadata?.name || genUserName(user?.pubkey || '');
   const currentUserProfileImage = currentUserMetadata?.picture;
-
-  const replyingToDisplayName = replyingToMetadata?.display_name || replyingToMetadata?.name || genUserName(replyingTo.pubkey);
-  const replyingToProfileImage = replyingToMetadata?.picture;
-
-  const timeAgo = (() => {
-    try {
-      const timestamp = replyingTo.created_at * 1000;
-      if (!timestamp || timestamp <= 0 || timestamp > Date.now() + 86400000) {
-        return 'unknown time';
-      }
-      return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
-    } catch {
-      return 'unknown time';
-    }
-  })();
-
-  // Parse embedded event for reposts (same as in Post)
-  const parseEmbeddedEvent = (content: string): NostrEvent | null => {
-    try {
-      const jsonMatch = content.match(/\{.*\}/s);
-      if (jsonMatch) return JSON.parse(jsonMatch[0]) as NostrEvent;
-      return null;
-    } catch (error) {
-      console.error('Failed to parse embedded event:', error);
-      return null;
-    }
-  };
-
-  // Render content logic (adapted from Post)
-  const renderContent = () => {
-    const isRepost = replyingTo.kind === 6 || replyingTo.kind === 16;
-    const eTags = replyingTo.tags.filter(tag => tag[0] === 'e');
-    const originalEventId = eTags[0]?.[1];
-    const imageUrls = replyingTo.content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/gi) || [];
-
-    const { data: fetchedOriginalEvent } = useOriginalEvent(originalEventId || '');
-    const embeddedOriginalEvent = isRepost ? parseEmbeddedEvent(replyingTo.content) : null;
-    const originalEvent = fetchedOriginalEvent || embeddedOriginalEvent;
-
-    if (isRepost && originalEvent) {
-      return (
-        <div className="space-y-3">
-          <div className="pl-4 border-l-2 border-gray-300 bg-gray-50 p-3 rounded-md">
-            <Post event={originalEvent} showReplies={false} />
-            <div className="text-sm text-muted-foreground mt-2">
-              Reposted by {replyingToDisplayName}
-            </div>
-          </div>
-          {imageUrls.length > 0 && (
-            <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
-              {imageUrls.map((url, index) => (
-                <div key={index} className="rounded-lg overflow-hidden border">
-                  <img
-                    src={url}
-                    alt={`Post image ${index + 1}`}
-                    className="w-full h-auto max-h-96 object-cover"
-                    loading="lazy"
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div className="whitespace-pre-wrap break-words">
-        <NoteContent event={replyingTo} />
-        {imageUrls.length > 0 && (
-          <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
-            {imageUrls.map((url, index) => (
-              <div key={index} className="rounded-lg overflow-hidden border">
-                <img
-                  src={url}
-                  alt={`Post image ${index + 1}`}
-                  className="w-full h-auto max-h-96 object-cover"
-                  loading="lazy"
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -289,31 +192,9 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Original Post */}
-          <Card className="border-l-4 border-l-blue-500">
-            <CardHeader className="pb-2">
-              <div className="flex items-center space-x-3">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={replyingToProfileImage} alt={replyingToDisplayName} />
-                  <AvatarFallback>{replyingToDisplayName.slice(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div className="flex items-center space-x-2">
-                  <span className="font-semibold text-sm">{replyingToDisplayName}</span>
-                  {replyingToMetadata?.nip05 && (
-                    <Badge variant="secondary" className="text-xs">
-                      ✓
-                    </Badge>
-                  )}
-                  <span className="text-xs text-muted-foreground">·</span>
-                  <span className="text-xs text-muted-foreground">{timeAgo}</span>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="text-sm">
-                {renderContent()}
-              </div>
-            </CardContent>
+          {/* The note being replied to, rendered read-only */}
+          <Card className="overflow-hidden border-l-4 border-l-primary bg-muted/30">
+            <Post event={replyingTo} showReplies={false} embedded />
           </Card>
 
           {/* Reply Form */}
@@ -338,12 +219,24 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
                     placeholder="Write your reply..."
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
-                    className="min-h-[100px] resize-none"
-                    maxLength={280}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSubmit(e);
+                      }
+                    }}
+                    className="min-h-[110px] resize-none"
+                    autoFocus
                   />
 
-                  <div className="text-sm text-muted-foreground text-right">
-                    {content.length}/280
+                  <div className="flex items-center justify-end gap-3 text-xs text-muted-foreground">
+                    <span>
+                      <kbd className="rounded border bg-muted px-1 font-mono">⌘</kbd>
+                      {' + '}
+                      <kbd className="rounded border bg-muted px-1 font-mono">↵</kbd>
+                      {' to send'}
+                    </span>
+                    <span className="tabular-nums">{content.length}</span>
                   </div>
 
                   {uploadedImages.length > 0 && (

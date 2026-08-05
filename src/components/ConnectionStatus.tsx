@@ -1,37 +1,66 @@
 import { useState, useEffect } from 'react';
 import { useAppContext } from '@/hooks/useAppContext';
-import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, AlertCircle } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
-export function ConnectionStatus() {
+type Status = 'connected' | 'connecting' | 'disconnected';
+
+const STATUS_COPY: Record<Status, { label: string; dot: string; ring: string }> = {
+  connected: {
+    label: 'Connected',
+    dot: 'bg-success',
+    ring: 'bg-success/40',
+  },
+  connecting: {
+    label: 'Connecting…',
+    dot: 'bg-warning',
+    ring: 'bg-warning/40',
+  },
+  disconnected: {
+    label: 'Disconnected — retrying',
+    dot: 'bg-destructive',
+    ring: 'bg-destructive/40',
+  },
+};
+
+/**
+ * Compact relay connection indicator. Renders as a status dot with the relay
+ * URL in a tooltip, so it stays out of the way until something goes wrong.
+ */
+export function ConnectionStatus({ className }: { className?: string }) {
   const { config } = useAppContext();
-  const [status, setStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
-  const [, setLastUpdate] = useState<Date>(new Date());
+  const [status, setStatus] = useState<Status>('connecting');
 
   useEffect(() => {
     let ws: WebSocket | null = null;
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
 
     const connect = () => {
+      if (cancelled) return;
       try {
         setStatus('connecting');
         ws = new WebSocket(config.relayUrl);
 
         ws.onopen = () => {
-          setStatus('connected');
-          setLastUpdate(new Date());
+          if (!cancelled) setStatus('connected');
         };
 
         ws.onclose = () => {
+          if (cancelled) return;
           setStatus('disconnected');
-          // Attempt to reconnect after 5 seconds
           timeoutId = setTimeout(connect, 5000);
         };
 
         ws.onerror = () => {
-          setStatus('disconnected');
+          if (!cancelled) setStatus('disconnected');
         };
       } catch {
+        if (cancelled) return;
         setStatus('disconnected');
         timeoutId = setTimeout(connect, 5000);
       }
@@ -40,51 +69,44 @@ export function ConnectionStatus() {
     connect();
 
     return () => {
-      if (ws) {
-        ws.close();
-      }
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
+      cancelled = true;
+      ws?.close();
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [config.relayUrl]);
 
-  const getStatusConfig = () => {
-    switch (status) {
-      case 'connected':
-        return {
-          icon: Wifi,
-          text: 'Connected',
-          variant: 'default' as const,
-          className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-        };
-      case 'connecting':
-        return {
-          icon: AlertCircle,
-          text: 'Connecting...',
-          variant: 'secondary' as const,
-          className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-        };
-      case 'disconnected':
-        return {
-          icon: WifiOff,
-          text: 'Disconnected',
-          variant: 'destructive' as const,
-          className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-        };
-    }
-  };
-
-  const statusConfig = getStatusConfig();
-  const Icon = statusConfig.icon;
+  const { label, dot, ring } = STATUS_COPY[status];
+  const relayHost = config.relayUrl.replace(/^wss?:\/\//, '').replace(/\/$/, '');
 
   return (
-    <Badge
-      variant={statusConfig.variant}
-      className={`${statusConfig.className} transition-all duration-200 animate-pulse`}
-    >
-      <Icon className="h-3 w-3 mr-1" />
-      {statusConfig.text}
-    </Badge>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className={cn(
+            'flex h-9 w-9 items-center justify-center rounded-md',
+            className
+          )}
+          role="status"
+          aria-live="polite"
+          aria-label={`Relay ${relayHost}: ${label}`}
+        >
+          <span className="relative flex h-2.5 w-2.5">
+            {status !== 'connected' && (
+              <span
+                className={cn(
+                  'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
+                  ring
+                )}
+              />
+            )}
+            <span className={cn('relative inline-flex h-2.5 w-2.5 rounded-full', dot)} />
+          </span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <p className="font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{relayHost}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }

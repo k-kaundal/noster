@@ -22,7 +22,7 @@ export function useReactions(eventId: string) {
           '#e': [eventId],
           limit: 1000,
         }],
-        { signal: AbortSignal.timeout(1500) }
+        { signal: AbortSignal.any([signal, AbortSignal.timeout(1500)]) }
       );
       return events;
     },

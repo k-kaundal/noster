@@ -1,4 +1,4 @@
-import { NostrSigner } from "@nostrify/nostrify";
+import { NostrMetadata, NostrSigner } from "@nostrify/nostrify";
 import { createContext } from "react";
 
 import { z } from 'zod';
@@ -14,7 +14,7 @@ export interface AppContextType {
   config: AppConfig;
   updateConfig: (updater: (currentConfig: AppConfig) => AppConfig) => void;
   presetRelays?: { name: string; url: string; active?: boolean }[];
-  syncAccountToRelays: (signer: NostrSigner, profileData?: any, contacts?: string[]) => Promise<void>;
+  syncAccountToRelays: (signer: NostrSigner, profileData?: NostrMetadata, contacts?: string[]) => Promise<void>;
 }
 
 export const AppConfigSchema: z.ZodType<AppConfig, z.ZodTypeDef, unknown> = z.object({

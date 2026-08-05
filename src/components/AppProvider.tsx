@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { AppContext, type AppConfig, type AppContextType, type Theme } from '@/contexts/AppContext';
 import { SimplePool, Event, EventTemplate, Filter } from 'nostr-tools';
-import { NostrSigner } from '@nostrify/nostrify';
+import { NostrMetadata, NostrSigner } from '@nostrify/nostrify';
 
 // Validation schemas remain unchanged
 const ProfileSchema = z.object({
@@ -49,7 +49,7 @@ export function AppProvider(props: AppProviderProps) {
   const syncAccountToRelays = useCallback(
     async (
       user: NostrSigner,
-      profileData?: any,
+      profileData?: NostrMetadata,
       contacts?: string[],
       options: { forceSync?: boolean; relayUrls?: string[] } = {}
     ) => {
@@ -68,7 +68,7 @@ export function AppProvider(props: AppProviderProps) {
       }
 
       // Validate profile data
-      let validatedProfile: any = null;
+      let validatedProfile: NostrMetadata | null = null;
       if (profileData) {
         try {
           validatedProfile = ProfileSchema.parse(profileData);
@@ -101,7 +101,7 @@ export function AppProvider(props: AppProviderProps) {
           const collectedEvents: Event[] = [];
 
           // Use subscription to collect events
-          await new Promise<void>((resolve, reject) => {
+          await new Promise<void>((resolve) => {
             const sub = relay.subscribe([filter], {
               onevent: (event: Event) => {
                 collectedEvents.push(event);

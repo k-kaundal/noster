@@ -17,7 +17,6 @@ import {
 import { useState, useEffect } from "react";
 import { useAppContext } from "@/hooks/useAppContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { useFollows } from "@/hooks/useFollows";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Relay, Event, SimplePool } from "nostr-tools";
 
@@ -34,8 +33,7 @@ interface RelaySelectorProps {
 export function RelaySelector(props: RelaySelectorProps) {
   const { className } = props;
   const { config, updateConfig, presetRelays = [], syncAccountToRelays } = useAppContext();
-  const { user, metadata } = useCurrentUser();
-  const { followList } = useFollows(user?.pubkey ?? "");
+  const { user } = useCurrentUser();
   const [open, setOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [customRelays, setCustomRelays] = useState<RelayOption[]>([]);

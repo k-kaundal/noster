@@ -9,7 +9,6 @@ import { useToast } from '@/hooks/useToast';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Loader2, Send } from 'lucide-react';
 
 interface QuickReplyProps {
@@ -99,52 +98,45 @@ export function QuickReply({ replyingTo, onReplyPosted, className }: QuickReplyP
 
   return (
     <div className={className}>
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="flex items-start space-x-3">
-          <Avatar className="h-8 w-8">
-            <AvatarImage src={currentUserProfileImage} alt={currentUserDisplayName} />
-            <AvatarFallback>{currentUserDisplayName.slice(0, 2).toUpperCase()}</AvatarFallback>
+      <form onSubmit={handleSubmit}>
+        <div className="flex items-start gap-2.5">
+          <Avatar className="h-8 w-8 shrink-0">
+            <AvatarImage src={currentUserProfileImage} alt="" />
+            <AvatarFallback className="text-[10px]">
+              {currentUserDisplayName.slice(0, 2).toUpperCase()}
+            </AvatarFallback>
           </Avatar>
-          <div className="flex-1 space-y-2">
-            <div className="flex items-center space-x-2">
-              <span className="text-sm font-semibold">{currentUserDisplayName}</span>
-              {currentUserMetadata?.nip05 && (
-                <Badge variant="secondary" className="text-xs">
-                  ✓
-                </Badge>
-              )}
-            </div>
 
+          <div className="min-w-0 flex-1 space-y-2">
             <Textarea
-              placeholder="Write a reply..."
+              placeholder="Write a reply…"
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="min-h-[80px] resize-none text-sm"
-              maxLength={280}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSubmit(e);
+                }
+              }}
+              aria-label="Write a reply"
+              className="min-h-[72px] resize-none bg-background text-sm"
             />
 
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-muted-foreground">
-                {content.length}/280
-              </div>
-
+            <div className="flex items-center justify-end gap-3">
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {content.length}
+              </span>
               <Button
                 type="submit"
                 size="sm"
                 disabled={isSubmitting || !content.trim()}
-                className="px-4"
               >
                 {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-3 w-3 mr-2 animate-spin" />
-                    Posting...
-                  </>
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
                 ) : (
-                  <>
-                    <Send className="h-3 w-3 mr-2" />
-                    Reply
-                  </>
+                  <Send className="mr-2 h-3 w-3" />
                 )}
+                Reply
               </Button>
             </div>
           </div>

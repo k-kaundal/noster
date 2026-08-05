@@ -7,6 +7,9 @@
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
 
+    /* Slightly recessed page behind cards, so cards read as elevated surfaces */
+    --surface: 240 20% 98%;
+
     --card: 0 0% 100%;
     --card-foreground: 240 10% 3.9%;
 
@@ -28,11 +31,27 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
     --border: 220 13% 91%;
     --input: 220 13% 91%;
     --ring: 262.1 83.3% 57.8%;
 
-    --radius: 0.75rem;
+    --radius: 0.875rem;
+
+    /* Brand gradient endpoints — single source of truth for accent gradients */
+    --brand-from: 262 83% 58%;
+    --brand-to: 217 91% 60%;
+
+    /* Semantic colors for post interactions */
+    --like: 347 77% 50%;
+    --repost: 142 71% 45%;
+    --reply: 217 91% 60%;
+    --zap: 38 92% 50%;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -42,45 +61,65 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 262.1 83.3% 57.8%;
+
+    /* Height of the sticky header, used for scroll offsets and sticky rails */
+    --header-height: 3.5rem;
   }
 
   .dark {
     --background: 240 10% 3.9%;
     --foreground: 0 0% 98%;
 
-    --card: 240 10% 3.9%;
+    --surface: 240 10% 3.9%;
+
+    /* Cards sit above the page in dark mode instead of disappearing into it */
+    --card: 240 8% 7%;
     --card-foreground: 0 0% 98%;
 
-    --popover: 240 10% 3.9%;
+    --popover: 240 8% 7%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 263.4 70% 50.4%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 263.4 70% 60%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 3.7% 15.9%;
+    --secondary: 240 4% 14%;
     --secondary-foreground: 0 0% 98%;
 
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
+    --muted: 240 4% 14%;
+    --muted-foreground: 240 5% 68%;
 
-    --accent: 240 3.7% 15.9%;
+    --accent: 240 4% 16%;
     --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 263.4 70% 50.4%;
+    --success: 142 69% 45%;
+    --success-foreground: 0 0% 100%;
 
-    --sidebar-background: 240 5.9% 10%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 240 10% 4%;
+
+    --border: 240 5% 17%;
+    --input: 240 5% 17%;
+    --ring: 263.4 70% 60%;
+
+    --brand-from: 263 70% 62%;
+    --brand-to: 217 91% 65%;
+
+    --like: 347 85% 60%;
+    --repost: 142 69% 50%;
+    --reply: 217 91% 65%;
+    --zap: 38 92% 55%;
+
+    --sidebar-background: 240 8% 7%;
     --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 263.4 70% 50.4%;
+    --sidebar-primary: 263.4 70% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent: 240 4% 14%;
     --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 263.4 70% 50.4%;
+    --sidebar-border: 240 5% 17%;
+    --sidebar-ring: 263.4 70% 60%;
   }
 }
 
@@ -89,95 +128,118 @@
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+    /* Anchored scrolls (e.g. threads) clear the sticky header */
+    scroll-padding-top: calc(var(--header-height) + 1rem);
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-surface text-foreground antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Keyboard users get a clear ring; pointer users don't see one on click */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Headings tighten up as they grow, which reads better at display sizes */
+  h1,
+  h2,
+  h3 {
+    @apply tracking-tight;
+  }
+
+  ::selection {
+    background-color: hsl(var(--primary) / 0.25);
+  }
+}
+
+@layer components {
+  /* Thin, theme-aware scrollbars for scroll containers inside the app shell */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
   }
 }
 
 @layer utilities {
-  .animate-fade-in {
-    animation: fadeIn 0.5s ease-in-out;
+  /* Brand gradient helpers — use these instead of repeating purple/blue classes */
+  .bg-brand-gradient {
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--brand-from)),
+      hsl(var(--brand-to))
+    );
   }
 
-  .animate-slide-up {
-    animation: slideUp 0.3s ease-out;
-  }
-
-  .animate-scale-in {
-    animation: scaleIn 0.2s ease-out;
-  }
-
-  .animate-pulse-slow {
-    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  .text-brand-gradient {
+    background-image: linear-gradient(
+      to right,
+      hsl(var(--brand-from)),
+      hsl(var(--brand-to))
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 
   .hover-lift {
-    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    @apply transition-[transform,box-shadow] duration-200 ease-out;
   }
 
   .hover-lift:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px -8px rgba(0, 0, 0, 0.1);
+    @apply -translate-y-0.5 shadow-lg;
   }
 
-  .glass-effect {
-    backdrop-filter: blur(10px);
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+  /* Fades the bottom of a clipped block so truncation reads as intentional */
+  .mask-fade-bottom {
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   }
 
-  .dark .glass-effect {
-    background: rgba(0, 0, 0, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-}
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
+/* Respect the OS "reduce motion" setting across every animation in the app */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
-}
-
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideRight {
-  from { opacity: 0; transform: translateX(10px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-.animate-slide-up {
-  animation: slideUp 0.4s ease-out;
-}
-
-.animate-slide-right {
-  animation: slideRight 0.3s ease-out;
 }

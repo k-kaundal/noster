@@ -1,459 +1,453 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { nip19 } from 'nostr-tools';
+import type { NostrEvent } from '@nostrify/nostrify';
+import { formatDistanceToNow } from 'date-fns';
+import {
+  BadgeCheck,
+  Calendar,
+  Copy,
+  Link as LinkIcon,
+  MapPin,
+  PenSquare,
+  QrCode,
+  UserRound,
+  Zap,
+} from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useFollows } from '@/hooks/useFollows';
 import { useFollowers } from '@/hooks/useFollowers';
+import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { Post } from '@/components/Post';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { NoteContent } from '@/components/NoteContent';
+import { EmptyState } from '@/components/EmptyState';
+import { PostSkeletonList } from '@/components/PostSkeleton';
+import { FollowButton } from '@/components/FollowButton';
+import { EditProfileForm } from '@/components/EditProfileForm';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { RelaySelector } from '@/components/RelaySelector';
-import { Calendar, Link as LinkIcon, MapPin, Users, Loader2, UserPlus, UserMinus, QrCode, Copy } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { nip19 } from 'nostr-tools';
-import { Dialog, DialogContent, DialogTrigger, DialogTitle } from '@radix-ui/react-dialog';
-import { EditProfileForm } from './EditProfileForm';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { QRCodeSVG } from 'qrcode.react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from '@/hooks/useToast';
-import sanitizeHtml from 'sanitize-html';
-import * as emoji from 'node-emoji'
+import { cn } from '@/lib/utils';
 
 interface ProfileProps {
   pubkey: string;
 }
 
+const IMAGE_URL = /https?:\/\/\S+\.(?:jpe?g|png|gif|webp|avif|mp4|webm|mov)/i;
+
 export function Profile({ pubkey }: ProfileProps) {
   const { data: profileData, isLoading, error } = useProfile(pubkey);
   const author = useAuthor(pubkey);
   const { user } = useCurrentUser();
-  const { followingCount, isFollowing, follow, unfollow, isFollowLoading } = useFollows(pubkey);
+  const { followingCount } = useFollows(pubkey);
   const { followerCount } = useFollowers(pubkey);
+  const { toast } = useToast();
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
 
   const metadata = author.data?.metadata;
-  const displayName = metadata?.display_name || metadata?.name || genUserName(pubkey);
+  const displayName =
+    metadata?.display_name || metadata?.name || genUserName(pubkey);
   const username = metadata?.name || genUserName(pubkey);
-  const profileImage = metadata?.picture;
-  const bannerImage = metadata?.banner;
-  const bio = metadata?.about;
-  const website = metadata?.website;
-  const location = (metadata as Record<string, unknown>)?.location as string | undefined;
-  const lud06 = metadata?.lud06;
-  const lud16 = metadata?.lud16;
+  const lightningAddress = metadata?.lud16 || metadata?.lud06;
   const isCurrentUser = user?.pubkey === pubkey;
   const npub = nip19.npubEncode(pubkey);
 
-  const isVerified = !!metadata?.nip05
+  const posts = useMemo(() => profileData?.posts ?? [], [profileData]);
+
+  const { notes, replies, media } = useMemo(() => {
+    const notes = posts.filter(
+      (post) => !post.tags.some(([name]) => name === 'e')
+    );
+    const replies = posts.filter((post) =>
+      post.tags.some(([name]) => name === 'e')
+    );
+    const media = posts.filter((post) => IMAGE_URL.test(post.content));
+    return { notes, replies, media };
+  }, [posts]);
+
+  const joinedDate = useMemo(() => {
+    const timestamps = posts.map((post) => post.created_at).filter((t) => t > 0);
+    if (!timestamps.length) return null;
+    const oldest = Math.min(...timestamps) * 1000;
+    return oldest > 0 && oldest <= Date.now() ? new Date(oldest) : null;
+  }, [posts]);
+
+  const copy = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast({ title: `${label} copied`, duration: 2000 });
+    } catch {
+      toast({
+        title: 'Copy failed',
+        description: 'Your browser blocked clipboard access.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   if (error) {
     return (
-      <div className="col-span-full">
-        <Card className="border-dashed bg-card/50 dark:bg-card/30 backdrop-blur-sm">
-          <CardContent className="py-12 px-8 text-center">
-            <div className="max-w-sm mx-auto space-y-6">
-              <p className="text-muted-foreground dark:text-muted-foreground/80">Failed to load profile. Try another relay?</p>
-              <RelaySelector className="w-full" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <EmptyState
+        icon={UserRound}
+        title="Couldn't load this profile"
+        description="The relay didn't return anything for this key."
+        showRelaySelector
+      />
     );
   }
 
   if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <Card className="bg-card/50 dark:bg-card/30 backdrop-blur-sm">
-          <div className="relative">
-            <Skeleton className="h-48 w-full bg-muted/50 dark:bg-muted/30" />
-            <div className="absolute -bottom-16 left-6">
-              <Skeleton className="h-32 w-32 rounded-full border-4 border-background bg-muted/50 dark:bg-muted/30" />
-            </div>
-          </div>
-          <CardContent className="pt-20 pb-6">
-            <div className="space-y-4">
-              <div className="flex justify-between items-start">
-                <div className="space-y-2">
-                  <Skeleton className="h-6 w-32 bg-muted/50 dark:bg-muted/30" />
-                  <Skeleton className="h-4 w-24 bg-muted/50 dark:bg-muted/30" />
-                </div>
-                <Skeleton className="h-9 w-24 bg-muted/50 dark:bg-muted/30" />
-              </div>
-              <Skeleton className="h-4 w-full bg-muted/50 dark:bg-muted/30" />
-              <div className="flex space-x-4">
-                <Skeleton className="h-4 w-20 bg-muted/50 dark:bg-muted/30" />
-                <Skeleton className="h-4 w-20 bg-muted/50 dark:bg-muted/30" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <div className="space-y-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i} className="bg-card/50 dark:bg-card/30 backdrop-blur-sm">
-              <CardContent className="p-6">
-                <div className="flex items-start space-x-3">
-                  <Skeleton className="h-10 w-10 rounded-full bg-muted/50 dark:bg-muted/30" />
-                  <div className="space-y-2 flex-1">
-                    <div className="flex items-center space-x-2">
-                      <Skeleton className="h-4 w-24 bg-muted/50 dark:bg-muted/30" />
-                      <Skeleton className="h-4 w-16 bg-muted/50 dark:bg-muted/30" />
-                    </div>
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-full bg-muted/50 dark:bg-muted/30" />
-                      <Skeleton className="h-4 w-4/5 bg-muted/50 dark:bg-muted/30" />
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    );
+    return <ProfileSkeleton />;
   }
 
-  const posts = profileData?.posts || [];
-  const joinedDate = (() => {
-    try {
-      if (posts.length === 0) return new Date();
-      const timestamps = posts.map(p => p.created_at).filter(t => t > 0);
-      if (timestamps.length === 0) return new Date();
-      const minTimestamp = Math.min(...timestamps) * 1000;
-      if (minTimestamp <= 0 || minTimestamp > Date.now()) return new Date();
-      return new Date(minTimestamp);
-    } catch {
-      return new Date();
-    }
-  })();
-
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      toast({ title: `${label} copied to clipboard!`, description: text.substring(0, 20) + '...', duration: 2000 });
-    }).catch(err => {
-      toast({ title: 'Copy failed', description: err.message, variant: 'destructive' });
-    });
-  };
-
-  const renderBio = (bio: string, pubkey: string) => {
-    if (!bio) return null;
-
-    const mentionRegex = /@([a-zA-Z0-9_]+|npub1[0-9a-zA-Z]+)/g;
-    const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
-    const emojiRegex = /:([a-zA-Z0-9_]+):/g;
-
-    const parts = bio.split(/(https?:\/\/[^\s<]+[^<.,:;"')\]\s]|@[a-zA-Z0-9_]+|@[npub1][0-9a-zA-Z]+|:([a-zA-Z0-9_]+):)/g).filter(part => part !== undefined && part !== null);
-
-    return parts.map((part, index) => {
-      if (!part || typeof part !== 'string') {
-        return null;
-      }
-
-      if (part.match(mentionRegex)) {
-        const mention = part.slice(1);
-        if (mention.startsWith('npub1')) {
-          try {
-            const { data } = nip19.decode(mention);
-            return (
-              <Link
-                key={index}
-                to={`/${mention}`}
-                className="text-blue-600 dark:text-blue-400 hover:underline"
-                title={`View profile for ${mention}`}
-              >
-                {part}
-              </Link>
-            );
-          } catch {
-            return <span key={index}>{part}</span>;
-          }
-        }
-        return (
-          <Link
-            key={index}
-            to={`/${mention}`}
-            className="text-blue-600 dark:text-blue-400 hover:underline"
-            title={`View profile for ${mention}`}
-          >
-            {part}
-          </Link>
-        );
-      }
-
-      if (part.match(urlRegex)) {
-        return (
-          <a
-            key={index}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 dark:text-blue-400 hover:underline"
-            title="Open link in new tab"
-          >
-            {part}
-          </a>
-        );
-      }
-
-      if (part.match(emojiRegex)) {
-        const emojiName = part.slice(1, -1);
-        const emojiChar = emoji.get(emojiName);
-        return emojiChar ? (
-          <span key={index} title={emojiName}>
-            {emojiChar}
-          </span>
-        ) : (
-          <span key={index}>{part}</span>
-        );
-      }
-
-      return (
-        <span
-          key={index}
-          dangerouslySetInnerHTML={{
-            __html: sanitizeHtml(part, {
-              allowedTags: [],
-              allowedAttributes: {},
-            }),
-          }}
-        />
-      );
-    });
-  };
-
   return (
-    <div className="space-y-6 mx-auto">
-      <Card className="overflow-hidden shadow-lg bg-card/80 dark:bg-card/50 backdrop-blur-md border border-border/50 dark:border-border/30 rounded-xl">
+    <div className="space-y-5">
+      <Card className="overflow-hidden">
         <div className="relative">
-          <div className="h-48 bg-gradient-to-r from-blue-500 to-purple-600 dark:from-blue-700 dark:to-purple-800 rounded-t-xl overflow-hidden">
-            {bannerImage ? (
-              <img src={bannerImage} alt="Profile banner" className="w-full h-full object-cover transition-opacity duration-300 hover:opacity-90" />
-            ) : (
-              <div className="w-full h-full bg-muted/50 dark:bg-muted/30 flex items-center justify-center">
-                <span className="text-muted-foreground dark:text-muted-foreground/80 text-sm">No banner set</span>
-              </div>
+          <div className="h-32 bg-brand-gradient sm:h-44">
+            {metadata?.banner && (
+              <img
+                src={metadata.banner}
+                alt=""
+                className="h-full w-full object-cover"
+              />
             )}
           </div>
-          <div className="absolute -bottom-16 left-6">
-            <Avatar className="h-32 w-32 border-4 border-background dark:border-background/80 shadow-lg transition-transform duration-300 hover:scale-105">
-              <AvatarImage src={profileImage} alt={displayName} className="object-cover" />
-              <AvatarFallback className="text-2xl bg-muted/50 dark:bg-muted/30 text-foreground/80 dark:text-foreground/60 flex items-center justify-center">
+
+          <div className="absolute -bottom-12 left-4 sm:left-6">
+            <Avatar className="h-24 w-24 border-4 border-card shadow-md">
+              <AvatarImage src={metadata?.picture} alt="" className="object-cover" />
+              <AvatarFallback className="text-xl">
                 {displayName.slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
           </div>
         </div>
 
-        <CardContent className="pt-20 pb-6 px-6">
-          <div className="space-y-6">
-            <div className="flex justify-between items-start">
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <h1 className="text-3xl font-bold text-foreground dark:text-foreground/90 transition-colors hover:text-blue-600 dark:hover:text-blue-400">{displayName}</h1>
-                  {isVerified ? (
-                    <Badge variant="secondary" className="bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-900/70 relative group">
-                      <span className="tooltip" data-tooltip={metadata?.nip05 || 'Verified User'}>
-                        ✓ Verified
-                      </span>
-                      <span className="absolute hidden group-hover:block bg-gray-800 dark:bg-gray-900 text-white dark:text-gray-200 text-xs p-2 rounded-md -top-10 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
-                        {metadata?.nip05 || 'Verified User'}
-                      </span>
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-900/70">
-                      Unverified
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-muted-foreground dark:text-muted-foreground/80 text-sm">@{username}</p>
-              </div>
-              {isCurrentUser ? (
-                <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" className="bg-card hover:bg-muted/50 dark:bg-card/50 dark:hover:bg-muted/30 border-2 border-border/50 dark:border-border/30 transition-all duration-300 hover:shadow-md">
-                      Edit Profile
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="bg-card/90 dark:bg-card/70 backdrop-blur-md p-6 rounded-xl shadow-lg max-w-md">
-                    <DialogTitle className="text-2xl font-semibold text-foreground dark:text-foreground/90">Edit Profile</DialogTitle>
-                    <EditProfileForm onSuccess={() => setIsEditProfileOpen(false)} />
-                  </DialogContent>
-                </Dialog>
-              ) : (
-                <Button
-                  onClick={() => isFollowing ? unfollow(pubkey) : follow(pubkey)}
-                  disabled={isFollowLoading}
-                  variant={isFollowing ? "outline" : "default"}
-                  className={`${
-                    isFollowing
-                      ? "bg-card hover:bg-muted/50 dark:bg-card/50 dark:hover:bg-muted/30 border-2 border-border/50 dark:border-border/30"
-                      : "bg-blue-600 dark:bg-blue-700 text-white dark:text-white hover:bg-blue-700 dark:hover:bg-blue-800"
-                  } transition-all duration-300 hover:shadow-md`}
-                >
-                  {isFollowLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      {isFollowing ? 'Unfollowing...' : 'Following...'}
-                    </>
-                  ) : isFollowing ? (
-                    <>
-                      <UserMinus className="h-4 w-4 mr-2" />
-                      Unfollow
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="h-4 w-4 mr-2" />
-                      Follow
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
-            {bio && (
-              <p className="text-sm leading-relaxed text-foreground/80 dark:text-foreground/70 transition-opacity duration-300 hover:opacity-80">
-                {renderBio(bio, pubkey)}
-              </p>
+        <CardContent className="space-y-4 px-4 pb-5 pt-4 sm:px-6">
+          <div className="flex justify-end gap-2">
+            {isCurrentUser ? (
+              <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <PenSquare className="mr-2 h-4 w-4" />
+                    Edit profile
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Edit profile</DialogTitle>
+                  </DialogHeader>
+                  <EditProfileForm onSuccess={() => setIsEditProfileOpen(false)} />
+                </DialogContent>
+              </Dialog>
+            ) : (
+              <FollowButton pubkey={pubkey} size="default" variant="default" />
             )}
-            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground dark:text-muted-foreground/80">
-              {location && (
-                <div className="flex items-center space-x-1 transition-transform duration-300 hover:scale-105">
-                  <MapPin className="h-4 w-4 text-muted-foreground dark:text-muted-foreground/80" />
-                  <span className="text-foreground/80 dark:text-foreground/70">{location}</span>
-                </div>
+
+            <ShareProfileDialog
+              npub={npub}
+              displayName={displayName}
+              lightningAddress={lightningAddress}
+              onCopy={copy}
+            />
+          </div>
+
+          {/* Identity block sits below the avatar overhang */}
+          <div className="space-y-1 pt-6 sm:pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-bold sm:text-2xl">{displayName}</h1>
+              {metadata?.nip05 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <BadgeCheck
+                      className="h-5 w-5 text-primary"
+                      aria-label="Verified NIP-05 address"
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>{metadata.nip05}</TooltipContent>
+                </Tooltip>
               )}
-              {website && (
-                <div className="flex items-center space-x-1 transition-transform duration-300 hover:scale-105">
-                  <LinkIcon className="h-4 w-4 text-muted-foreground dark:text-muted-foreground/80" />
-                  <a
-                    href={website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 dark:text-blue-400 hover:underline transition-colors"
-                  >
-                    {website.replace(/^https?:\/\//, '')}
-                  </a>
-                </div>
-              )}
-              <div className="flex items-center space-x-1 transition-transform duration-300 hover:scale-105">
-                <Calendar className="h-4 w-4 text-muted-foreground dark:text-muted-foreground/80" />
-                <span className="text-foreground/80 dark:text-foreground/70">
-                  Joined {formatDistanceToNow(joinedDate, { addSuffix: true })}
-                </span>
-              </div>
             </div>
-            <div className="flex space-x-6 text-sm font-medium">
-              <Link
-                to={`/${npub}`}
-                className="flex items-center space-x-1 text-foreground dark:text-foreground/90 hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-300 relative group"
+            <p className="text-sm text-muted-foreground">@{username}</p>
+          </div>
+
+          {metadata?.about && (
+            /* The bio is plaintext, so it gets the same link/mention treatment as notes */
+            <NoteContent
+              className="text-sm"
+              event={{
+                id: `${pubkey}-about`,
+                pubkey,
+                kind: 0,
+                tags: [],
+                content: metadata.about,
+                created_at: 0,
+                sig: '',
+              }}
+            />
+          )}
+
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
+            {typeof (metadata as Record<string, unknown>)?.location ===
+              'string' && (
+              <span className="flex items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5" />
+                {(metadata as Record<string, unknown>).location as string}
+              </span>
+            )}
+            {metadata?.website && (
+              <a
+                href={metadata.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-primary hover:underline"
               >
-                <span>{posts.length}</span>
-                <span className="text-muted-foreground dark:text-muted-foreground/80">Posts</span>
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-600 dark:bg-blue-400 transition-all duration-300 group-hover:w-full" />
-              </Link>
-              <Link
-                to={`/${npub}/following`}
-                className="flex items-center space-x-1 text-foreground dark:text-foreground/90 hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-300 relative group"
-              >
-                <span>{followingCount}</span>
-                <span className="text-muted-foreground dark:text-muted-foreground/80">Following</span>
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-600 dark:bg-blue-400 transition-all duration-300 group-hover:w-full" />
-              </Link>
-              <Link
-                to={`/${npub}/followers`}
-                className="flex items-center space-x-1 text-foreground dark:text-foreground/90 hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-300 relative group"
-              >
-                <span>{followerCount}</span>
-                <span className="text-muted-foreground dark:text-muted-foreground/80">Followers</span>
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-blue-600 dark:bg-blue-400 transition-all duration-300 group-hover:w-full" />
-              </Link>
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => setShowDetails(!showDetails)}
-              className="mt-4 w-full md:w-auto bg-card hover:bg-muted/50 dark:bg-card/50 dark:hover:bg-muted/30 border-2 border-border/50 dark:border-border/30 transition-all duration-300 hover:shadow-md"
-            >
-              <QrCode className="h-4 w-4 mr-2" />
-              {showDetails ? 'Hide Details' : 'Show Lightning & Pubkey'}
-            </Button>
-            <AnimatePresence>
-              {showDetails && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="mt-4 space-y-4 overflow-hidden"
-                >
-                  {(lud06 || lud16) && (
-                    <Card className="bg-card/80 dark:bg-card/50 backdrop-blur-md border border-border/50 dark:border-border/30 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                      <h3 className="text-sm font-medium text-foreground dark:text-foreground/90">Lightning Address</h3>
-                      <div className="flex items-center justify-between mt-2">
-                        <p className="text-sm text-foreground/80 dark:text-foreground/70 break-all">{lud06 || lud16}</p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(lud06 || lud16 || '', 'Lightning Address')}
-                          className="text-muted-foreground dark:text-muted-foreground/80 hover:text-foreground dark:hover:text-foreground/90"
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <QRCodeSVG value={lud06 || lud16 || ''} size={128} className="mt-2 w-full" />
-                    </Card>
-                  )}
-                  <Card className="bg-card/80 dark:bg-card/50 backdrop-blur-md border border-border/50 dark:border-border/30 p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                    <h3 className="text-sm font-medium text-foreground dark:text-foreground/90">Public Key</h3>
-                    <div className="flex items-center justify-between mt-2">
-                      <p className="text-sm text-foreground/80 dark:text-foreground/70 break-all">{pubkey}</p>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyToClipboard(pubkey, 'Public Key')}
-                        className="text-muted-foreground dark:text-muted-foreground/80 hover:text-foreground dark:hover:text-foreground/90"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <QRCodeSVG value={pubkey} size={128} className="mt-2 w-full" />
-                  </Card>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                <LinkIcon className="h-3.5 w-3.5" />
+                {metadata.website.replace(/^https?:\/\//, '')}
+              </a>
+            )}
+            {lightningAddress && (
+              <span className="flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5 text-zap" />
+                {lightningAddress}
+              </span>
+            )}
+            {joinedDate && (
+              <span className="flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5" />
+                Active since{' '}
+                {formatDistanceToNow(joinedDate, { addSuffix: true })}
+              </span>
+            )}
+          </div>
+
+          <div className="flex gap-5 text-sm">
+            <Stat label="Notes" value={posts.length} />
+            <Stat
+              label="Following"
+              value={followingCount}
+              to={`/${npub}/following`}
+            />
+            <Stat
+              label="Followers"
+              value={followerCount}
+              to={`/${npub}/followers`}
+            />
           </div>
         </CardContent>
       </Card>
-      <div className="space-y-4">
-        <h2 className="text-2xl font-semibold text-foreground dark:text-foreground/90">Posts</h2>
-        {posts.length === 0 ? (
-          <Card className="border-dashed bg-card/50 dark:bg-card/30 backdrop-blur-sm">
-            <CardContent className="py-12 px-8 text-center">
-              <div className="max-w-sm mx-auto space-y-4">
-                <Users className="h-12 w-12 mx-auto text-muted-foreground dark:text-muted-foreground/80" />
-                <p className="text-muted-foreground dark:text-muted-foreground/80">
-                  {isCurrentUser ? "You haven't posted anything yet." : "No posts found."}
-                </p>
-                {isCurrentUser && (
-                  <Button className="bg-blue-600 dark:bg-blue-700 text-white dark:text-white hover:bg-blue-700 dark:hover:bg-blue-800 transition-all duration-300 hover:shadow-md">
-                    Create your first post
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {posts.map((post, index) => (
-              <Post key={post.id} event={post} />
-            ))}
+
+      <Tabs defaultValue="notes" className="space-y-4">
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="notes" className="flex-1 sm:flex-none">
+            Notes
+          </TabsTrigger>
+          <TabsTrigger value="replies" className="flex-1 sm:flex-none">
+            Replies
+          </TabsTrigger>
+          <TabsTrigger value="media" className="flex-1 sm:flex-none">
+            Media
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="notes" className="space-y-4">
+          <PostGroup
+            posts={notes}
+            emptyTitle={
+              isCurrentUser ? "You haven't posted yet" : 'No notes found'
+            }
+            showCompose={isCurrentUser}
+          />
+        </TabsContent>
+
+        <TabsContent value="replies" className="space-y-4">
+          <PostGroup posts={replies} emptyTitle="No replies found" />
+        </TabsContent>
+
+        <TabsContent value="media" className="space-y-4">
+          <PostGroup posts={media} emptyTitle="No media found" />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  to,
+}: {
+  label: string;
+  value: number;
+  to?: string;
+}) {
+  const body = (
+    <>
+      <span className="font-semibold tabular-nums">{value}</span>{' '}
+      <span className="text-muted-foreground">{label}</span>
+    </>
+  );
+
+  if (!to) return <span>{body}</span>;
+
+  return (
+    <Link to={to} className="transition-colors hover:text-primary">
+      {body}
+    </Link>
+  );
+}
+
+function PostGroup({
+  posts,
+  emptyTitle,
+  showCompose = false,
+}: {
+  posts: NostrEvent[];
+  emptyTitle: string;
+  showCompose?: boolean;
+}) {
+  if (posts.length === 0) {
+    return (
+      <EmptyState
+        icon={UserRound}
+        title={emptyTitle}
+        description="Notes may live on a relay this client isn't connected to."
+        showRelaySelector={!showCompose}
+        action={
+          showCompose ? (
+            <Button asChild className="bg-brand-gradient">
+              <Link to="/compose">Write your first note</Link>
+            </Button>
+          ) : undefined
+        }
+      />
+    );
+  }
+
+  return (
+    <>
+      {posts.map((post) => (
+        <Post key={post.id} event={post} />
+      ))}
+    </>
+  );
+}
+
+function ShareProfileDialog({
+  npub,
+  displayName,
+  lightningAddress,
+  onCopy,
+}: {
+  npub: string;
+  displayName: string;
+  lightningAddress?: string;
+  onCopy: (value: string, label: string) => void;
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="icon" aria-label="Show profile QR code">
+          <QrCode className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{displayName}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="flex justify-center rounded-lg bg-white p-4">
+            <QRCodeSVG value={`nostr:${npub}`} size={200} />
           </div>
-        )}
+
+          <CopyRow label="Public key" value={npub} onCopy={onCopy} />
+          {lightningAddress && (
+            <CopyRow
+              label="Lightning address"
+              value={lightningAddress}
+              onCopy={onCopy}
+            />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CopyRow({
+  label,
+  value,
+  onCopy,
+  className,
+}: {
+  label: string;
+  value: string;
+  onCopy: (value: string, label: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn('space-y-1', className)}>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1.5 font-mono text-xs">
+          {value}
+        </code>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          aria-label={`Copy ${label.toLowerCase()}`}
+          onClick={() => onCopy(value, label)}
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
       </div>
+    </div>
+  );
+}
+
+function ProfileSkeleton() {
+  return (
+    <div className="space-y-5">
+      <Card className="overflow-hidden">
+        <Skeleton className="h-32 w-full rounded-none sm:h-44" />
+        <CardContent className="space-y-4 px-4 pb-5 pt-4 sm:px-6">
+          <div className="-mt-16 mb-2">
+            <Skeleton className="h-24 w-24 rounded-full border-4 border-card" />
+          </div>
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-4 w-full" />
+          <div className="flex gap-4">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-20" />
+          </div>
+        </CardContent>
+      </Card>
+      <PostSkeletonList count={3} />
     </div>
   );
 }

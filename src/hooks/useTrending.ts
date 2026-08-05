@@ -35,15 +35,21 @@ export function useTrending() {
 
       // Extract hashtags and mentions
       validEvents.forEach(event => {
-        // Extract hashtags from content
+        // Extract hashtags from content, stored without the leading "#"
         const hashtags = event.content.match(/#\w+/g) || [];
         hashtags.forEach(tag => {
-          const cleanTag = tag.toLowerCase();
+          const cleanTag = tag.slice(1).toLowerCase();
           hashtagCounts.set(cleanTag, (hashtagCounts.get(cleanTag) || 0) + 1);
         });
 
-        // Extract mentions from tags
         event.tags.forEach(tag => {
+          // Indexed hashtags ("t") count alongside the ones written inline
+          if (tag[0] === 't' && tag[1]) {
+            const cleanTag = tag[1].toLowerCase();
+            hashtagCounts.set(cleanTag, (hashtagCounts.get(cleanTag) || 0) + 1);
+          }
+
+          // Mentions
           if (tag[0] === 'p' && tag[1]) {
             mentionCounts.set(tag[1], (mentionCounts.get(tag[1]) || 0) + 1);
           }
