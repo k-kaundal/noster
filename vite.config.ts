@@ -12,6 +12,20 @@ export default defineConfig(() => ({
   plugins: [
     react(),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Vendor code changes far less often than app code, so splitting it
+        // keeps returning visitors on a warm cache after every deploy.
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          nostr: ['nostr-tools', '@nostrify/nostrify', '@nostrify/react'],
+          query: ['@tanstack/react-query'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 700,
+  },
   test: {
     globals: true,
     environment: 'jsdom',

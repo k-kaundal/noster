@@ -1,9 +1,9 @@
 import { useSeoMeta } from "@unhead/react";
 import { useLocation, Link } from "react-router-dom";
 import { useEffect } from "react";
+import { Compass, Home, Search } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
-import { Home } from 'lucide-react';
 
 const NotFound = () => {
   const location = useLocation();
@@ -22,21 +22,35 @@ const NotFound = () => {
 
   return (
     <Layout>
-      <div className="flex items-center justify-center py-24">
-        <div className="text-center space-y-6">
-          <div className="space-y-2">
-            <h1 className="text-6xl font-bold text-muted-foreground">404</h1>
-            <h2 className="text-2xl font-semibold">Page not found</h2>
-            <p className="text-muted-foreground max-w-md">
-              Sorry, we couldn't find the page you're looking for. It might have been moved, deleted, or you entered the wrong URL.
-            </p>
-          </div>
-          <Link to="/">
-            <Button>
-              <Home className="h-4 w-4 mr-2" />
-              Return to Home
-            </Button>
-          </Link>
+      <div className="flex flex-col items-center justify-center gap-6 py-20 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
+          <Search className="h-7 w-7 text-muted-foreground" />
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+            404
+          </p>
+          <h1 className="text-2xl font-bold">This page doesn't exist</h1>
+          <p className="mx-auto max-w-md text-sm text-muted-foreground">
+            The link may be broken, or the note or profile you're looking for
+            isn't on this relay.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button asChild className="bg-brand-gradient">
+            <Link to="/">
+              <Home className="mr-2 h-4 w-4" />
+              Back home
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/explore">
+              <Compass className="mr-2 h-4 w-4" />
+              Explore
+            </Link>
+          </Button>
         </div>
       </div>
     </Layout>

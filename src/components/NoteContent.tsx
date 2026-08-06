@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { type NostrEvent } from '@nostrify/nostrify';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
@@ -11,190 +11,234 @@ interface NoteContentProps {
   className?: string;
 }
 
-/** Parses content of text note events so that URLs, mentions, hashtags, and videos are linkified/embedded. */
+type Media =
+  | { type: 'image'; url: string }
+  | { type: 'video'; url: string }
+  | { type: 'youtube'; url: string; id: string }
+  | { type: 'vimeo'; url: string; id: string };
+
+const TOKEN_REGEX =
+  /(https?:\/\/[^\s<>"']+)|nostr:((?:npub1|note1|nprofile1|nevent1|naddr1)[023456789acdefghjklmnpqrstuvwxyz]+)|(^|\s)(#[\p{L}\p{N}_]+)/giu;
+
+const IMAGE_EXT = /\.(jpe?g|png|gif|webp|avif|bmp|svg)(\?[^\s]*)?$/i;
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v)(\?[^\s]*)?$/i;
+
+function classifyUrl(url: string): Media | null {
+  if (IMAGE_EXT.test(url)) return { type: 'image', url };
+  if (VIDEO_EXT.test(url)) return { type: 'video', url };
+
+  const youtube = url.match(
+    /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{6,})/i
+  );
+  if (youtube) return { type: 'youtube', url, id: youtube[1] };
+
+  const vimeo = url.match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+  if (vimeo) return { type: 'vimeo', url, id: vimeo[1] };
+
+  return null;
+}
+
+/**
+ * Renders the plaintext `content` of a note: URLs, Nostr references and
+ * hashtags become links, while images and videos are lifted out of the text
+ * and embedded below it so the same URL is never shown twice.
+ */
 export function NoteContent({ event, className }: NoteContentProps) {
-  const content = useMemo(() => {
-    const text = event.content.trim(); // Remove leading/trailing whitespace
+  const { inline, media } = useMemo(() => {
+    const text = event.content.trim();
+    const inline: React.ReactNode[] = [];
+    const media: Media[] = [];
 
-    // Enhanced regex to handle URLs, Nostr references, hashtags, and video URLs
-    const regex = /((https?:\/\/[^\s]+(\.(mp4|webm|mov)|youtube\.com\/watch\?v=|vimeo\.com\/))\S*)|nostr:(npub1|note1|nprofile1|nevent1)([023456789acdefghjklmnpqrstuvwxyz]+)|(#\w+)/g;
-
-    const parts: React.ReactNode[] = [];
     let lastIndex = 0;
+    let key = 0;
     let match: RegExpExecArray | null;
-    let keyCounter = 0;
+
+    // `lastIndex` state is per-call, so the regex is rebuilt on every parse
+    const regex = new RegExp(TOKEN_REGEX.source, TOKEN_REGEX.flags);
+
+    const pushText = (value: string) => {
+      if (value) inline.push(value);
+    };
 
     while ((match = regex.exec(text)) !== null) {
-      const [fullMatch, url, videoUrl, nostrPrefix, nostrData, hashtag] = match;
-      const index = match.index;
+      const [full, url, nostrRef, hashtagLead, hashtag] = match;
 
-      // Add text before this match, split by newlines
-      if (index > lastIndex) {
-        const beforeText = text.substring(lastIndex, index).split('\n');
-        beforeText.forEach((line, i) => {
-          const trimmedLine = line.trim();
-          if (trimmedLine) {
-            parts.push(
-              <p key={`text-${keyCounter++}-${i}`} className="mb-2 leading-relaxed text-base">
-                {trimmedLine}
-              </p>
-            );
-          }
-        });
-      }
+      pushText(text.slice(lastIndex, match.index));
+      lastIndex = match.index + full.length;
 
       if (url) {
-        // Handle video URLs
-        if (videoUrl) {
-          if (url.includes('youtube.com/watch?v=')) {
-            const videoId = url.split('v=')[1]?.split('&')[0];
-            parts.push(
-              <div key={`video-${keyCounter++}`} className="mt-2 w-full">
-                <iframe
-                  src={`https://www.youtube.com/embed/${videoId}`}
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  className="w-full aspect-video rounded-lg border border-gray-200 shadow-md"
-                  title="YouTube Video"
-                  loading="lazy"
-                />
-              </div>
-            );
-          } else if (url.includes('vimeo.com/')) {
-            const videoId = url.split('vimeo.com/')[1]?.split('?')[0];
-            parts.push(
-              <div key={`video-${keyCounter++}`} className="mt-2 w-full">
-                <iframe
-                  src={`https://player.vimeo.com/video/${videoId}`}
-                  frameBorder="0"
-                  allow="autoplay; fullscreen; picture-in-picture"
-                  allowFullScreen
-                  className="w-full aspect-video rounded-lg border border-gray-200 shadow-md"
-                  title="Vimeo Video"
-                  loading="lazy"
-                />
-              </div>
-            );
-          } else if (url.match(/\.(mp4|webm|mov)$/i)) {
-            parts.push(
-              <div key={`video-${keyCounter++}`} className="mt-2 w-full">
-                <video
-                  controls
-                  className="w-full aspect-video rounded-lg border border-gray-200 shadow-md"
-                  preload="metadata"
-                >
-                  <source src={url} type={`video/${url.split('.').pop()}`} />
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-            );
-          } else {
-            // Fallback for other URLs
-            parts.push(
-              <a
-                key={`url-${keyCounter++}`}
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 underline underline-offset-2 break-words transition-colors duration-200"
-                title={url}
-              >
-                {url.length > 50 ? `${url.slice(0, 50)}…` : url}
-              </a>
-            );
-          }
-        } else {
-          // Handle non-video URLs
-          parts.push(
-            <a
-              key={`url-${keyCounter++}`}
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 underline underline-offset-2 break-words transition-colors duration-200"
-              title={url}
-            >
-              {url.length > 50 ? `${url.slice(0, 50)}…` : url}
-            </a>
-          );
+        const asMedia = classifyUrl(url);
+        if (asMedia) {
+          media.push(asMedia);
+          continue;
         }
-      } else if (nostrPrefix && nostrData) {
-        // Handle Nostr references
-        try {
-          const nostrId = `${nostrPrefix}${nostrData}`;
-          const decoded = nip19.decode(nostrId);
+        inline.push(
+          <a
+            key={`url-${key++}`}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-words font-medium text-primary underline-offset-2 hover:underline"
+          >
+            {url}
+          </a>
+        );
+        continue;
+      }
 
+      if (nostrRef) {
+        try {
+          const decoded = nip19.decode(nostrRef);
           if (decoded.type === 'npub') {
-            const pubkey = decoded.data;
-            parts.push(<NostrMention key={`mention-${keyCounter++}`} pubkey={pubkey} />);
+            inline.push(
+              <NostrMention key={`mention-${key++}`} pubkey={decoded.data} />
+            );
+          } else if (decoded.type === 'nprofile') {
+            inline.push(
+              <NostrMention
+                key={`mention-${key++}`}
+                pubkey={decoded.data.pubkey}
+              />
+            );
           } else {
-            parts.push(
+            inline.push(
               <Link
-                key={`nostr-${keyCounter++}`}
-                to={`/${nostrId}`}
-                className="text-blue-600 hover:text-blue-800 underline underline-offset-2 transition-colors duration-200"
-                title={nostrId}
+                key={`ref-${key++}`}
+                to={`/${nostrRef}`}
+                className="font-medium text-primary underline-offset-2 hover:underline"
               >
-                {fullMatch}
+                {`${nostrRef.slice(0, 12)}…`}
               </Link>
             );
           }
         } catch {
-          parts.push(fullMatch);
+          pushText(full);
         }
-      } else if (hashtag) {
-        // Handle hashtags with enhanced styling and interactivity
-        const tag = hashtag.slice(1);
-        parts.push(
+        continue;
+      }
+
+      if (hashtag) {
+        // The leading space is part of the match, so it is re-emitted here
+        pushText(hashtagLead);
+        inline.push(
           <Link
-            key={`hashtag-${keyCounter++}`}
-            to={`/t/${tag}`}
-            className="text-blue-600 hover:bg-gradient-to-r from-blue-500 to-purple-600 hover:text-white rounded px-1 transition-all duration-300 underline underline-offset-2"
-            data-tag={tag} // For potential future use (e.g., analytics)
-            title={`Search #${tag}`}
+            key={`hashtag-${key++}`}
+            to={`/t/${encodeURIComponent(hashtag.slice(1).toLowerCase())}`}
+            className="font-medium text-primary underline-offset-2 hover:underline"
           >
             {hashtag}
           </Link>
         );
       }
-
-      lastIndex = index + fullMatch.length;
     }
 
-    // Add any remaining text, split by newlines
-    if (lastIndex < text.length) {
-      const remainingText = text.substring(lastIndex).split('\n');
-      remainingText.forEach((line, i) => {
-        const trimmedLine = line.trim();
-        if (trimmedLine) {
-          parts.push(
-            <p key={`text-${keyCounter++}-${i}`} className="mb-2 leading-relaxed text-base">
-              {trimmedLine}
-            </p>
-          );
-        }
-      });
-    }
+    pushText(text.slice(lastIndex));
 
-    // If no special content was found, use plain text with paragraphs
-    if (parts.length === 0) {
-      return text.split('\n').map((line, i) => (
-        line.trim() && (
-          <p key={i} className="mb-2 leading-relaxed text-base">
-            {line.trim()}
-          </p>
-        )
-      ));
-    }
+    return { inline, media };
+  }, [event.content]);
 
-    return parts;
-  }, [event.content]); // Optimized dependency to avoid re-render on event object change
-
-  return <div className={cn("prose prose-sm max-w-none", className)}>{content}</div>;
+  return (
+    <div className={cn('space-y-3', className)}>
+      {inline.length > 0 && (
+        <div className="whitespace-pre-wrap break-words leading-relaxed">
+          {inline}
+        </div>
+      )}
+      {media.length > 0 && <MediaGrid media={media} />}
+    </div>
+  );
 }
 
-// Helper component to display user mentions
+function MediaGrid({ media }: { media: Media[] }) {
+  return (
+    <div
+      className={cn(
+        'grid gap-2',
+        media.length > 1 ? 'grid-cols-2' : 'grid-cols-1'
+      )}
+    >
+      {media.map((item, index) => (
+        <MediaItem
+          key={`${item.url}-${index}`}
+          item={item}
+          // A lone image keeps its aspect ratio; grids stay on a tidy square
+          fill={media.length > 1}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MediaItem({ item, fill }: { item: Media; fill: boolean }) {
+  const [failed, setFailed] = useState(false);
+
+  if (item.type === 'image') {
+    if (failed) {
+      return (
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center rounded-lg border border-dashed p-4 text-xs text-muted-foreground hover:bg-accent/60"
+        >
+          Image failed to load — open original
+        </a>
+      );
+    }
+
+    return (
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block overflow-hidden rounded-lg border bg-muted"
+      >
+        <img
+          src={item.url}
+          alt=""
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className={cn(
+            'w-full transition-transform duration-300 hover:scale-[1.02]',
+            fill ? 'aspect-square object-cover' : 'max-h-[32rem] object-contain'
+          )}
+        />
+      </a>
+    );
+  }
+
+  if (item.type === 'video') {
+    return (
+      <video
+        controls
+        preload="metadata"
+        // Letterboxing stays black in both themes, as video players conventionally do
+        className="w-full rounded-lg border bg-black"
+      >
+        <source src={item.url} />
+        Your browser does not support the video tag.
+      </video>
+    );
+  }
+
+  const src =
+    item.type === 'youtube'
+      ? `https://www.youtube-nocookie.com/embed/${item.id}`
+      : `https://player.vimeo.com/video/${item.id}`;
+
+  return (
+    <iframe
+      src={src}
+      title={item.type === 'youtube' ? 'YouTube video' : 'Vimeo video'}
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowFullScreen
+      loading="lazy"
+      className="aspect-video w-full rounded-lg border"
+    />
+  );
+}
+
+/** Inline `@name` link for a mentioned pubkey. */
 function NostrMention({ pubkey }: { pubkey: string }) {
   const author = useAuthor(pubkey);
   const npub = nip19.npubEncode(pubkey);
@@ -205,8 +249,8 @@ function NostrMention({ pubkey }: { pubkey: string }) {
     <Link
       to={`/${npub}`}
       className={cn(
-        "font-medium hover:underline transition-colors duration-200",
-        hasRealName ? "text-blue-600 hover:text-blue-800" : "text-gray-500 hover:text-gray-700"
+        'font-medium underline-offset-2 hover:underline',
+        hasRealName ? 'text-primary' : 'text-muted-foreground'
       )}
       title={`View @${displayName}'s profile`}
     >

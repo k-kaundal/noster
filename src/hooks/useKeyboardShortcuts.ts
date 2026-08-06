@@ -1,34 +1,78 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { nip19 } from 'nostr-tools';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface UseKeyboardShortcutsProps {
   onSearch?: () => void;
+  onHelp?: () => void;
 }
 
-export function useKeyboardShortcuts({ onSearch }: UseKeyboardShortcutsProps = {}) {
+/** Window for the two-key "g …" sequences, in milliseconds. */
+const CHORD_TIMEOUT = 1000;
+
+export function useKeyboardShortcuts({
+  onSearch,
+  onHelp,
+}: UseKeyboardShortcutsProps = {}) {
   const navigate = useNavigate();
+  const { user } = useCurrentUser();
+  const pendingChord = useRef<{ key: string; at: number } | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Ignore if user is typing in an input field
+      // Ignore while typing, and let the browser keep its own modifier combos
+      const target = event.target as HTMLElement | null;
       if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement ||
-        event.target instanceof HTMLSelectElement ||
-        (event.target as HTMLElement)?.contentEditable === 'true'
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable
       ) {
         return;
       }
 
-      // Cmd/Ctrl + K for search
-      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         onSearch?.();
         return;
       }
 
-      // Single key shortcuts
-      switch (event.key) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const key = event.key.toLowerCase();
+
+      // "g" prefixed sequences, e.g. g then p for profile
+      const chord = pendingChord.current;
+      if (chord && Date.now() - chord.at < CHORD_TIMEOUT) {
+        pendingChord.current = null;
+        if (chord.key === 'g') {
+          event.preventDefault();
+          switch (key) {
+            case 'h':
+              navigate('/');
+              return;
+            case 'e':
+              navigate('/explore');
+              return;
+            case 't':
+              navigate('/trending');
+              return;
+            case 'p':
+              if (user) navigate(`/${nip19.npubEncode(user.pubkey)}`);
+              return;
+            default:
+              return;
+          }
+        }
+      }
+
+      if (key === 'g') {
+        pendingChord.current = { key: 'g', at: Date.now() };
+        return;
+      }
+
+      switch (key) {
         case '/':
           event.preventDefault();
           onSearch?.();
@@ -46,13 +90,13 @@ export function useKeyboardShortcuts({ onSearch }: UseKeyboardShortcutsProps = {
           navigate('/compose');
           break;
         case '?':
-          // Show help dialog (could be implemented later)
-          // console.log('Keyboard shortcuts: h=home, t=trending, e=explore, c=compose, /=search');
+          event.preventDefault();
+          onHelp?.();
           break;
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [navigate, onSearch]);
+  }, [navigate, onSearch, onHelp, user]);
 }

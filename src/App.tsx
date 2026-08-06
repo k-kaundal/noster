@@ -32,7 +32,7 @@ const queryClient = new QueryClient({
 });
 
 const defaultConfig: AppConfig = {
-  theme: "light",
+  theme: "system",
   relayUrl: "wss://relay.damus.io",
 };
 
@@ -70,7 +70,7 @@ export function App() {
           <NostrLoginProvider storageKey='nostr:login'>
             <NostrProvider>
               <NWCProvider>
-                <TooltipProvider>
+                <TooltipProvider delayDuration={250}>
                   <Toaster />
                   <Sonner />
                   <Suspense>

@@ -192,20 +192,20 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
         </DialogHeader>
         <div className='px-6 pt-2 pb-4 space-y-4 overflow-y-auto flex-1'>
           {/* Prominent Sign Up Section */}
-          <div className='relative p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/50 dark:to-indigo-950/50 border border-blue-200 dark:border-blue-800 overflow-hidden'>
+          <div className='relative p-4 rounded-2xl bg-primary/5 border border-primary/20 overflow-hidden'>
             <div className='relative z-10 text-center space-y-3'>
               <div className='flex justify-center items-center gap-2 mb-2'>
-                <Sparkles className='w-5 h-5 text-blue-600' />
-                <span className='font-semibold text-blue-800 dark:text-blue-200'>
+                <Sparkles className='w-5 h-5 text-primary' />
+                <span className='font-semibold text-foreground'>
                   New to Nostr?
                 </span>
               </div>
-              <p className='text-sm text-blue-700 dark:text-blue-300'>
+              <p className='text-sm text-muted-foreground'>
                 Create a new account to get started. It's free and open.
               </p>
               <Button
                 onClick={handleSignupClick}
-                className='w-full rounded-full py-3 text-base font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transform transition-all duration-200 hover:scale-105 shadow-lg border-0'
+                className='w-full rounded-full py-3 text-base font-semibold bg-brand-gradient shadow-lg border-0 transition-transform duration-200 hover:scale-[1.02]'
               >
                 <UserPlus className='w-4 h-4 mr-2' />
                 <span>Sign Up</span>
@@ -216,7 +216,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
           {/* Divider */}
           <div className='relative'>
             <div className='absolute inset-0 flex items-center'>
-              <div className='w-full border-t border-gray-300 dark:border-gray-600'></div>
+              <div className='w-full border-t'></div>
             </div>
             <div className='relative flex justify-center text-sm'>
               <span className='px-3 bg-background text-muted-foreground'>
@@ -248,9 +248,9 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
                   <AlertDescription>{errors.extension}</AlertDescription>
                 </Alert>
               )}
-              <div className='text-center p-4 rounded-lg bg-gray-50 dark:bg-gray-800'>
+              <div className='text-center p-4 rounded-lg bg-muted/50'>
                 <Shield className='w-12 h-12 mx-auto mb-3 text-primary' />
-                <p className='text-sm text-gray-600 dark:text-gray-300 mb-4'>
+                <p className='text-sm text-muted-foreground mb-4'>
                   Login with one click using the browser extension
                 </p>
                 <div className="flex justify-center">
@@ -280,13 +280,13 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
                       if (errors.nsec) setErrors(prev => ({ ...prev, nsec: undefined }));
                     }}
                     className={`rounded-lg ${
-                      errors.nsec ? 'border-red-500 focus-visible:ring-red-500' : ''
+                      errors.nsec ? 'border-destructive focus-visible:ring-destructive' : ''
                     }`}
                     placeholder='nsec1...'
                     autoComplete="off"
                   />
                   {errors.nsec && (
-                    <p className="text-sm text-red-500">{errors.nsec}</p>
+                    <p className="text-sm text-destructive">{errors.nsec}</p>
                   )}
                 </div>
 
@@ -327,7 +327,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
                     {isFileLoading ? 'Reading File...' : 'Upload Your Key File'}
                   </Button>
                   {errors.file && (
-                    <p className="text-sm text-red-500 mt-2">{errors.file}</p>
+                    <p className="text-sm text-destructive mt-2">{errors.file}</p>
                   )}
                 </div>
               </div>
@@ -335,7 +335,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
 
             <TabsContent value='bunker' className='space-y-3 bg-muted'>
               <div className='space-y-2'>
-                <label htmlFor='bunkerUri' className='text-sm font-medium text-gray-700 dark:text-gray-400'>
+                <label htmlFor='bunkerUri' className='text-sm font-medium'>
                   Bunker URI
                 </label>
                 <Input
@@ -345,14 +345,14 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
                     setBunkerUri(e.target.value);
                     if (errors.bunker) setErrors(prev => ({ ...prev, bunker: undefined }));
                   }}
-                  className={`rounded-lg border-gray-300 dark:border-gray-700 focus-visible:ring-primary ${
-                    errors.bunker ? 'border-red-500' : ''
+                  className={`rounded-lg focus-visible:ring-primary ${
+                    errors.bunker ? 'border-destructive' : ''
                   }`}
                   placeholder='bunker://'
                   autoComplete="off"
                 />
                 {errors.bunker && (
-                  <p className="text-sm text-red-500">{errors.bunker}</p>
+                  <p className="text-sm text-destructive">{errors.bunker}</p>
                 )}
               </div>
 

@@ -32,11 +32,5 @@ export function useNostrPublish(): UseMutationResult<NostrEvent> {
         throw new Error("User is not logged in");
       }
     },
-    onError: (error) => {
-      // console.error("Failed to publish event:", error);
-    },
-    onSuccess: (data) => {
-      // console.log("Event published successfully:", data);
-    },
   });
 }

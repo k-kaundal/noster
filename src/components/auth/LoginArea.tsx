@@ -29,20 +29,23 @@ export function LoginArea({ className }: LoginAreaProps) {
       {currentUser ? (
         <AccountSwitcher onAddAccountClick={() => setLoginDialogOpen(true)} />
       ) : (
-        <div className="flex gap-3 justify-center">
+        <div className="flex w-full items-center justify-center gap-2">
           <Button
+            size="sm"
             onClick={() => setLoginDialogOpen(true)}
-            className='flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground w-full font-medium transition-all hover:bg-primary/90 animate-scale-in'
+            className='flex items-center gap-2 rounded-full font-medium'
           >
             <User className='w-4 h-4' />
             <span className='truncate'>Log in</span>
-          </Button><Button
+          </Button>
+          <Button
+            size="sm"
             onClick={() => setSignupDialogOpen(true)}
             variant="outline"
-            className="flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all"
+            className="hidden items-center gap-2 rounded-full font-medium sm:flex"
           >
             <UserPlus className="w-4 h-4" />
-            <span>Sign Up</span>
+            <span>Sign up</span>
           </Button>
         </div>
       )}

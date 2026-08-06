@@ -17,7 +17,6 @@ import {
 import { useState, useEffect } from "react";
 import { useAppContext } from "@/hooks/useAppContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { useFollows } from "@/hooks/useFollows";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Relay, Event, SimplePool } from "nostr-tools";
 
@@ -34,8 +33,7 @@ interface RelaySelectorProps {
 export function RelaySelector(props: RelaySelectorProps) {
   const { className } = props;
   const { config, updateConfig, presetRelays = [], syncAccountToRelays } = useAppContext();
-  const { user, metadata } = useCurrentUser();
-  const { followList } = useFollows(user?.pubkey ?? "");
+  const { user } = useCurrentUser();
   const [open, setOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [customRelays, setCustomRelays] = useState<RelayOption[]>([]);
@@ -202,10 +200,10 @@ export function RelaySelector(props: RelaySelectorProps) {
                         <Loader2 className="h-4 w-4 animate-spin" />
                       )}
                       {relayStatus[selectedRelay]?.status === 'online' && (
-                        <Check className="h-4 w-4 text-green-500" />
+                        <Check className="h-4 w-4 text-success" />
                       )}
                       {relayStatus[selectedRelay]?.status === 'offline' && (
-                        <AlertCircle className="h-4 w-4 text-red-500" />
+                        <AlertCircle className="h-4 w-4 text-destructive" />
                       )}
                     </span>
                   </TooltipTrigger>
@@ -289,10 +287,10 @@ export function RelaySelector(props: RelaySelectorProps) {
                         <Loader2 className="h-4 w-4 animate-spin" />
                       )}
                       {relayStatus[option.url]?.status === 'online' && (
-                        <Check className="h-4 w-4 text-green-500" />
+                        <Check className="h-4 w-4 text-success" />
                       )}
                       {relayStatus[option.url]?.status === 'offline' && (
-                        <AlertCircle className="h-4 w-4 text-red-500" />
+                        <AlertCircle className="h-4 w-4 text-destructive" />
                       )}
                     </div>
                   </CommandItem>
@@ -336,16 +334,16 @@ export function RelaySelector(props: RelaySelectorProps) {
                             handleRemoveCustomRelay(option.url);
                           }}
                         >
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                         {relayStatus[option.url]?.status === 'checking' && (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         )}
                         {relayStatus[option.url]?.status === 'online' && (
-                          <Check className="h-4 w-4 text-green-500" />
+                          <Check className="h-4 w-4 text-success" />
                         )}
                         {relayStatus[option.url]?.status === 'offline' && (
-                          <AlertCircle className="h-4 w-4 text-red-500" />
+                          <AlertCircle className="h-4 w-4 text-destructive" />
                         )}
                       </div>
                     </CommandItem>

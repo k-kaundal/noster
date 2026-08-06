@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, forwardRef } from 'react';
+import { useState, useEffect, useRef, useCallback, forwardRef } from 'react';
 import { Zap, Copy, Check, ExternalLink, Sparkle, Sparkles, Star, Rocket, ArrowLeft, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -38,6 +38,9 @@ interface ZapDialogProps {
   target: Event;
   children?: React.ReactNode;
   className?: string;
+  /** Controls the dialog externally; omit to use the built-in trigger. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const presetAmounts = [
@@ -128,7 +131,7 @@ const ZapContent = forwardRef<HTMLDivElement, ZapContentProps>(({
                 className="shrink-0"
               >
                 {copied ? (
-                  <Check className="h-4 w-4 text-green-600" />
+                  <Check className="h-4 w-4 text-success" />
                 ) : (
                   <Copy className="h-4 w-4" />
                 )}
@@ -235,13 +238,34 @@ const ZapContent = forwardRef<HTMLDivElement, ZapContentProps>(({
 ZapContent.displayName = 'ZapContent';
 
 
-export function ZapDialog({ target, children, className }: ZapDialogProps) {
-  const [open, setOpen] = useState(false);
+export function ZapDialog({
+  target,
+  children,
+  className,
+  open: controlledOpen,
+  onOpenChange,
+}: ZapDialogProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (!isControlled) setUncontrolledOpen(next);
+      onOpenChange?.(next);
+    },
+    [isControlled, onOpenChange]
+  );
+
   const { user } = useCurrentUser();
   const { data: author } = useAuthor(target.pubkey);
   const { toast } = useToast();
   const { webln, activeNWC, hasWebLN, detectWebLN } = useWallet();
-  const { zap, isZapping, invoice, setInvoice } = useZaps(target, webln, activeNWC, () => setOpen(false));
+  const { zap, isZapping, invoice, resetInvoice } = useZaps(
+    target,
+    webln,
+    activeNWC,
+    () => setOpen(false)
+  );
   const [amount, setAmount] = useState<number | string>(100);
   const [comment, setComment] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -321,17 +345,17 @@ export function ZapDialog({ target, children, className }: ZapDialogProps) {
   useEffect(() => {
     if (open) {
       setAmount(100);
-      setInvoice(null);
+      resetInvoice();
       setCopied(false);
       setQrCodeUrl('');
     } else {
       // Clean up state when dialog closes
       setAmount(100);
-      setInvoice(null);
+      resetInvoice();
       setCopied(false);
       setQrCodeUrl('');
     }
-  }, [open, setInvoice]);
+  }, [open, resetInvoice]);
 
   const handleZap = () => {
     const finalAmount = typeof amount === 'string' ? parseInt(amount, 10) : amount;
@@ -367,7 +391,7 @@ export function ZapDialog({ target, children, className }: ZapDialogProps) {
         onOpenChange={(newOpen) => {
           // Reset invoice when closing
           if (!newOpen) {
-            setInvoice(null);
+            resetInvoice();
             setQrCodeUrl('');
           }
           setOpen(newOpen);
@@ -379,11 +403,13 @@ export function ZapDialog({ target, children, className }: ZapDialogProps) {
         shouldScaleBackground={false}
         fadeFromIndex={0}
       >
-        <DrawerTrigger asChild>
-          <div className={`cursor-pointer ${className || ''}`}>
-            {children}
-          </div>
-        </DrawerTrigger>
+        {children && (
+          <DrawerTrigger asChild>
+            <div className={`cursor-pointer ${className || ''}`}>
+              {children}
+            </div>
+          </DrawerTrigger>
+        )}
         <DrawerContent
           key={invoice ? 'payment' : 'form'}
           className={cn(
@@ -399,7 +425,7 @@ export function ZapDialog({ target, children, className }: ZapDialogProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  setInvoice(null);
+                  resetInvoice();
                   setQrCodeUrl('');
                 }}
                 className="absolute left-4 top-4 flex items-center gap-2"
@@ -441,11 +467,13 @@ export function ZapDialog({ target, children, className }: ZapDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <div className={`cursor-pointer ${className || ''}`}>
-          {children}
-        </div>
-      </DialogTrigger>
+      {children && (
+        <DialogTrigger asChild>
+          <div className={`cursor-pointer ${className || ''}`}>
+            {children}
+          </div>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-[425px] max-h-[95vh] overflow-hidden" data-testid="zap-modal">
         <DialogHeader>
           <DialogTitle className="text-lg break-words">
