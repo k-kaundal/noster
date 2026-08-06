@@ -16,9 +16,13 @@ export function MobileNav({ onSearch }: MobileNavProps) {
   const location = useLocation();
   const { user } = useCurrentUser();
 
-  // Compose lives in the floating action button on mobile, so it is dropped here.
+  // Compose lives in the floating action button, and secondary destinations
+  // live in the settings sheet, so the bar keeps a comfortable tap target size.
   const items = getNavItems(user?.pubkey).filter(
-    (item) => item.href !== '/compose' && (!item.requiresAuth || user)
+    (item) =>
+      item.href !== '/compose' &&
+      !item.secondary &&
+      (!item.requiresAuth || user)
   );
 
   return (

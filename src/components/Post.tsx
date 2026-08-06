@@ -7,6 +7,7 @@ import { useReposts } from '@/hooks/useReposts';
 import { useReplies } from '@/hooks/useReplies';
 import { useEvent } from '@/hooks/useEvent';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useBookmarks } from '@/hooks/useBookmarks';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { Card } from '@/components/ui/card';
@@ -28,8 +29,17 @@ import { NoteContent } from '@/components/NoteContent';
 import { ReplyDialog } from '@/components/ReplyDialog';
 import { RepliesSection } from '@/components/RepliesSection';
 import { ZapDialog } from '@/components/ZapDialog';
+import { QuotedNote } from '@/components/QuotedNote';
+import { ContentWarning } from '@/components/ContentWarning';
+import { QuoteDialog } from '@/components/QuoteDialog';
+import {
+  getContentWarning,
+  getInlineQuoteId,
+  getQuotedEventId,
+} from '@/lib/note';
 import {
   BadgeCheck,
+  Bookmark,
   Copy,
   ExternalLink,
   Heart,
@@ -37,6 +47,7 @@ import {
   Loader2,
   MessageCircle,
   MoreHorizontal,
+  Quote,
   Repeat2,
   Share2,
   Zap,
@@ -85,11 +96,13 @@ export function Post({
 
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [zapOpen, setZapOpen] = useState(false);
+  const [quoteOpen, setQuoteOpen] = useState(false);
   const [repliesOpen, setRepliesOpen] = useState(false);
 
   const { isLiked, likeCount, like, isLiking } = useReactions(event.id);
   const { isReposted, repostCount, repost, isReposting } = useReposts(event.id);
   const { replyCount } = useReplies(event.id);
+  const { isBookmarked, toggle: toggleBookmark, isToggling } = useBookmarks();
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
@@ -113,6 +126,10 @@ export function Post({
     !embeddedRepost && repostTargetId ? repostTargetId : ''
   );
   const repostedEvent = embeddedRepost ?? fetchedRepost ?? null;
+
+  const contentWarning = getContentWarning(event);
+  // A `q` tag is authoritative; otherwise fall back to an inline nostr: URI
+  const quotedId = getQuotedEventId(event) ?? getInlineQuoteId(event.content);
 
   const postUrl = `${window.location.origin}/${noteId}`;
 
@@ -271,6 +288,22 @@ export function Post({
                 Copy author npub
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={isToggling}
+                onClick={() => {
+                  if (!user) return requireLogin('bookmark');
+                  toggleBookmark(event);
+                }}
+              >
+                <Bookmark
+                  className={cn(
+                    'mr-2 h-4 w-4',
+                    isBookmarked(event.id) && 'fill-current text-primary'
+                  )}
+                />
+                {isBookmarked(event.id) ? 'Remove bookmark' : 'Bookmark'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
                 <a
                   href={`https://njump.me/${noteId}`}
@@ -306,8 +339,16 @@ export function Post({
                 The reposted note could not be loaded.
               </p>
             )
+          ) : contentWarning ? (
+            <ContentWarning reason={contentWarning.reason}>
+              <NoteContent event={event} />
+            </ContentWarning>
           ) : (
             <NoteContent event={event} />
+          )}
+
+          {quotedId && !isRepost && (
+            <QuotedNote eventId={quotedId} className="mt-3" />
           )}
         </div>
 
@@ -353,6 +394,15 @@ export function Post({
               onClick={() => {
                 if (!user) return requireLogin('zap');
                 setZapOpen(true);
+              }}
+            />
+            <ActionButton
+              icon={Quote}
+              label="Quote"
+              tone="repost"
+              onClick={() => {
+                if (!user) return requireLogin('quote');
+                setQuoteOpen(true);
               }}
             />
             <ActionButton
@@ -413,6 +463,11 @@ export function Post({
         replyingTo={event}
       />
       <ZapDialog target={event} open={zapOpen} onOpenChange={setZapOpen} />
+      <QuoteDialog
+        open={quoteOpen}
+        onOpenChange={setQuoteOpen}
+        quoting={event}
+      />
     </>
   );
 }

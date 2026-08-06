@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, Image, Loader2, PenSquare, Send, X } from 'lucide-react';
+import { AlertTriangle, Eye, Image, Loader2, PenSquare, Send, Server, X } from 'lucide-react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useUploadFile } from '@/hooks/useUploadFile';
@@ -14,6 +14,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { LoginArea } from '@/components/auth/LoginArea';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { useRelays } from '@/hooks/useRelays';
+import { relayDisplayName } from '@/lib/relay';
 import { NoteContent } from '@/components/NoteContent';
 import { cn } from '@/lib/utils';
 
@@ -48,6 +54,8 @@ export function Compose() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [warningEnabled, setWarningEnabled] = useState(false);
+  const [warningReason, setWarningReason] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -56,6 +64,7 @@ export function Compose() {
   const author = useAuthor(user?.pubkey || '');
   const { mutateAsync: createEvent } = useNostrPublish();
   const { mutateAsync: uploadFile, isPending: isUploading } = useUploadFile();
+  const { writeUrls } = useRelays();
 
   const metadata = author.data?.metadata;
   const displayName =
@@ -150,17 +159,25 @@ export function Compose() {
           `m ${getImageMimeType(url)}`,
         ]),
         ...hashtags.map((tag) => ['t', tag]),
+        // NIP-36: readers approve before the note is shown
+        ...(warningEnabled
+          ? [['content-warning', warningReason.trim()]]
+          : []),
       ];
 
       await createEvent({ kind: 1, content: postContent, tags });
 
       toast({
         title: 'Post published',
-        description: 'Your note is on its way to the relay.',
+        description: `Sent to ${writeUrls.length} ${
+          writeUrls.length === 1 ? 'relay' : 'relays'
+        }.`,
       });
 
       setContent('');
       setUploadedImages([]);
+      setWarningEnabled(false);
+      setWarningReason('');
       navigate('/');
     } catch (error) {
       console.error('Post creation error:', error);
@@ -312,6 +329,47 @@ export function Compose() {
                 </p>
               )}
             </div>
+          </div>
+
+          {/* NIP-36 content warning */}
+          <div className="space-y-2 rounded-lg border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <Label
+                htmlFor="content-warning"
+                className="flex cursor-pointer items-center gap-2 text-sm font-normal"
+              >
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                Mark as sensitive
+              </Label>
+              <Switch
+                id="content-warning"
+                checked={warningEnabled}
+                onCheckedChange={setWarningEnabled}
+              />
+            </div>
+
+            {warningEnabled && (
+              <Input
+                value={warningReason}
+                onChange={(e) => setWarningReason(e.target.value)}
+                placeholder="Reason (optional) — shown before the note is revealed"
+                className="text-sm"
+              />
+            )}
+          </div>
+
+          {/* Where this note will land */}
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <Server className="h-3.5 w-3.5" />
+            Publishing to
+            {writeUrls.slice(0, 3).map((url) => (
+              <Badge key={url} variant="secondary" className="font-normal">
+                {relayDisplayName(url)}
+              </Badge>
+            ))}
+            {writeUrls.length > 3 && (
+              <span>+{writeUrls.length - 3} more</span>
+            )}
           </div>
 
           <Separator />

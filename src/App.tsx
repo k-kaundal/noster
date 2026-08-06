@@ -34,6 +34,13 @@ const queryClient = new QueryClient({
 const defaultConfig: AppConfig = {
   theme: "system",
   relayUrl: "wss://relay.damus.io",
+  // Reads fan out across all of these; writes go to the ones marked write
+  relays: [
+    { url: "wss://relay.damus.io", read: true, write: true },
+    { url: "wss://relay.primal.net", read: true, write: true },
+    { url: "wss://relay.nostr.band", read: true, write: false },
+    { url: "wss://nos.lol", read: true, write: true },
+  ],
 };
 
 const presetRelays = [
