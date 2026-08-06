@@ -58,6 +58,9 @@ export function useKeyboardShortcuts({
             case 't':
               navigate('/trending');
               return;
+            case 'r':
+              navigate('/relays');
+              return;
             case 'p':
               if (user) navigate(`/${nip19.npubEncode(user.pubkey)}`);
               return;
@@ -85,6 +88,9 @@ export function useKeyboardShortcuts({
           break;
         case 'e':
           navigate('/explore');
+          break;
+        case 'r':
+          navigate('/relays');
           break;
         case 'c':
           navigate('/compose');

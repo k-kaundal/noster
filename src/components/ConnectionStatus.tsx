@@ -1,97 +1,66 @@
-import { useState, useEffect } from 'react';
-import { useAppContext } from '@/hooks/useAppContext';
+import { Link } from 'react-router-dom';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useRelays } from '@/hooks/useRelays';
+import { useRelayHealth } from '@/hooks/useRelayHealth';
+import { relayDisplayName } from '@/lib/relay';
 import { cn } from '@/lib/utils';
 
-type Status = 'connected' | 'connecting' | 'disconnected';
-
-const STATUS_COPY: Record<Status, { label: string; dot: string; ring: string }> = {
-  connected: {
-    label: 'Connected',
-    dot: 'bg-success',
-    ring: 'bg-success/40',
-  },
-  connecting: {
-    label: 'Connecting…',
-    dot: 'bg-warning',
-    ring: 'bg-warning/40',
-  },
-  disconnected: {
-    label: 'Disconnected — retrying',
-    dot: 'bg-destructive',
-    ring: 'bg-destructive/40',
-  },
-};
-
 /**
- * Compact relay connection indicator. Renders as a status dot with the relay
- * URL in a tooltip, so it stays out of the way until something goes wrong.
+ * Aggregate relay health for the header. Reads as a single dot but reports the
+ * whole pool, because a feed now draws from every enabled relay.
  */
 export function ConnectionStatus({ className }: { className?: string }) {
-  const { config } = useAppContext();
-  const [status, setStatus] = useState<Status>('connecting');
+  const { relays } = useRelays();
+  const urls = relays.map((relay) => relay.url);
+  const { health } = useRelayHealth(urls);
 
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let cancelled = false;
+  const online = urls.filter((url) => health[url]?.status === 'online');
+  const checking = urls.filter(
+    (url) => !health[url] || health[url]?.status === 'checking'
+  );
 
-    const connect = () => {
-      if (cancelled) return;
-      try {
-        setStatus('connecting');
-        ws = new WebSocket(config.relayUrl);
+  const state =
+    online.length > 0
+      ? 'connected'
+      : checking.length > 0
+        ? 'connecting'
+        : 'disconnected';
 
-        ws.onopen = () => {
-          if (!cancelled) setStatus('connected');
-        };
-
-        ws.onclose = () => {
-          if (cancelled) return;
-          setStatus('disconnected');
-          timeoutId = setTimeout(connect, 5000);
-        };
-
-        ws.onerror = () => {
-          if (!cancelled) setStatus('disconnected');
-        };
-      } catch {
-        if (cancelled) return;
-        setStatus('disconnected');
-        timeoutId = setTimeout(connect, 5000);
-      }
-    };
-
-    connect();
-
-    return () => {
-      cancelled = true;
-      ws?.close();
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [config.relayUrl]);
-
-  const { label, dot, ring } = STATUS_COPY[status];
-  const relayHost = config.relayUrl.replace(/^wss?:\/\//, '').replace(/\/$/, '');
+  const { dot, ring, label } = {
+    connected: {
+      dot: 'bg-success',
+      ring: 'bg-success/40',
+      label: `${online.length} of ${urls.length} relays connected`,
+    },
+    connecting: {
+      dot: 'bg-warning',
+      ring: 'bg-warning/40',
+      label: 'Connecting to relays…',
+    },
+    disconnected: {
+      dot: 'bg-destructive',
+      ring: 'bg-destructive/40',
+      label: 'No relays reachable',
+    },
+  }[state];
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div
+        <Link
+          to="/relays"
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-md',
+            'flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-accent',
             className
           )}
-          role="status"
-          aria-live="polite"
-          aria-label={`Relay ${relayHost}: ${label}`}
+          aria-label={label}
         >
           <span className="relative flex h-2.5 w-2.5">
-            {status !== 'connected' && (
+            {state !== 'connected' && (
               <span
                 className={cn(
                   'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
@@ -101,11 +70,18 @@ export function ConnectionStatus({ className }: { className?: string }) {
             )}
             <span className={cn('relative inline-flex h-2.5 w-2.5 rounded-full', dot)} />
           </span>
-        </div>
+        </Link>
       </TooltipTrigger>
-      <TooltipContent side="bottom">
+
+      <TooltipContent side="bottom" className="max-w-64">
         <p className="font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground">{relayHost}</p>
+        {online.length > 0 && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {online.slice(0, 4).map((url) => relayDisplayName(url)).join(', ')}
+            {online.length > 4 ? `, +${online.length - 4} more` : ''}
+          </p>
+        )}
+        <p className="mt-1 text-xs text-muted-foreground">Click to manage relays</p>
       </TooltipContent>
     </Tooltip>
   );

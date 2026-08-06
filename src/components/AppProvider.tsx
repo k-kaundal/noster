@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useCallback } from 'react';
 import { z } from 'zod';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
-import { AppContext, type AppConfig, type AppContextType, type Theme } from '@/contexts/AppContext';
+import { AppConfigSchema, AppContext, type AppConfig, type AppContextType, type Theme } from '@/contexts/AppContext';
 import { SimplePool, Event, EventTemplate, Filter } from 'nostr-tools';
 import { NostrMetadata, NostrSigner } from '@nostrify/nostrify';
 
@@ -14,11 +14,6 @@ const ProfileSchema = z.object({
 });
 
 const ContactsSchema = z.array(z.string().regex(/^[0-9a-f]{64}$/, 'Invalid pubkey'));
-
-const AppConfigSchema: z.ZodType<AppConfig, z.ZodTypeDef, unknown> = z.object({
-  theme: z.enum(['dark', 'light', 'system']),
-  relayUrl: z.string().url(),
-});
 
 interface AppProviderProps {
   children: ReactNode;

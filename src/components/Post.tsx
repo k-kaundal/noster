@@ -28,6 +28,14 @@ import { NoteContent } from '@/components/NoteContent';
 import { ReplyDialog } from '@/components/ReplyDialog';
 import { RepliesSection } from '@/components/RepliesSection';
 import { ZapDialog } from '@/components/ZapDialog';
+import { QuotedNote } from '@/components/QuotedNote';
+import { ContentWarning } from '@/components/ContentWarning';
+import { QuoteDialog } from '@/components/QuoteDialog';
+import {
+  getContentWarning,
+  getInlineQuoteId,
+  getQuotedEventId,
+} from '@/lib/note';
 import {
   BadgeCheck,
   Copy,
@@ -37,6 +45,7 @@ import {
   Loader2,
   MessageCircle,
   MoreHorizontal,
+  Quote,
   Repeat2,
   Share2,
   Zap,
@@ -85,6 +94,7 @@ export function Post({
 
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [zapOpen, setZapOpen] = useState(false);
+  const [quoteOpen, setQuoteOpen] = useState(false);
   const [repliesOpen, setRepliesOpen] = useState(false);
 
   const { isLiked, likeCount, like, isLiking } = useReactions(event.id);
@@ -113,6 +123,10 @@ export function Post({
     !embeddedRepost && repostTargetId ? repostTargetId : ''
   );
   const repostedEvent = embeddedRepost ?? fetchedRepost ?? null;
+
+  const contentWarning = getContentWarning(event);
+  // A `q` tag is authoritative; otherwise fall back to an inline nostr: URI
+  const quotedId = getQuotedEventId(event) ?? getInlineQuoteId(event.content);
 
   const postUrl = `${window.location.origin}/${noteId}`;
 
@@ -306,8 +320,16 @@ export function Post({
                 The reposted note could not be loaded.
               </p>
             )
+          ) : contentWarning ? (
+            <ContentWarning reason={contentWarning.reason}>
+              <NoteContent event={event} />
+            </ContentWarning>
           ) : (
             <NoteContent event={event} />
+          )}
+
+          {quotedId && !isRepost && (
+            <QuotedNote eventId={quotedId} className="mt-3" />
           )}
         </div>
 
@@ -353,6 +375,15 @@ export function Post({
               onClick={() => {
                 if (!user) return requireLogin('zap');
                 setZapOpen(true);
+              }}
+            />
+            <ActionButton
+              icon={Quote}
+              label="Quote"
+              tone="repost"
+              onClick={() => {
+                if (!user) return requireLogin('quote');
+                setQuoteOpen(true);
               }}
             />
             <ActionButton
@@ -413,6 +444,11 @@ export function Post({
         replyingTo={event}
       />
       <ZapDialog target={event} open={zapOpen} onOpenChange={setZapOpen} />
+      <QuoteDialog
+        open={quoteOpen}
+        onOpenChange={setQuoteOpen}
+        quoting={event}
+      />
     </>
   );
 }

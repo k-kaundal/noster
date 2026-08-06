@@ -1,4 +1,4 @@
-import { Compass, Flame, Home, PenSquare, User } from 'lucide-react';
+import { Compass, Flame, Home, PenSquare, Server, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
 
@@ -31,6 +31,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
           } satisfies NavItem,
         ]
       : []),
+    { href: '/relays', icon: Server, label: 'Relays', shortcut: 'R' },
     { href: '/compose', icon: PenSquare, label: 'Compose', shortcut: 'C', requiresAuth: true },
   ];
 }
