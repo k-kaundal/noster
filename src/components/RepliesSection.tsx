@@ -11,7 +11,7 @@ import { useEvent } from '@/hooks/useEvent';
 import { genUserName } from '@/lib/genUserName';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { NoteContent } from '@/components/NoteContent';
+import { NoteBody } from '@/components/notes/NoteBody';
 import { QuickReply } from '@/components/QuickReply';
 import { cn } from '@/lib/utils';
 
@@ -82,7 +82,7 @@ function ReplyItem({ reply, level = 0 }: { reply: NostrEvent; level?: number }) 
             </Link>
           </div>
 
-          <NoteContent event={reply} className="text-sm" />
+          <NoteBody event={reply} className="text-sm" />
 
           {nestedReplyCount > 0 &&
             (isMaxDepth ? (

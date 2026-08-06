@@ -25,7 +25,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { NoteContent } from '@/components/NoteContent';
+import { NoteBody } from '@/components/notes/NoteBody';
 import { ReplyDialog } from '@/components/ReplyDialog';
 import { RepliesSection } from '@/components/RepliesSection';
 import { ZapDialog } from '@/components/ZapDialog';
@@ -341,10 +341,10 @@ export function Post({
             )
           ) : contentWarning ? (
             <ContentWarning reason={contentWarning.reason}>
-              <NoteContent event={event} />
+              <NoteBody event={event} />
             </ContentWarning>
           ) : (
-            <NoteContent event={event} />
+            <NoteBody event={event} />
           )}
 
           {quotedId && !isRepost && (
