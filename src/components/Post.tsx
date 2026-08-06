@@ -519,7 +519,7 @@ function ActionButton({
           aria-label={label}
           aria-pressed={active}
           className={cn(
-            'group flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+            'press group flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40',
             TONE_CLASSES[tone],
             active && ACTIVE_CLASSES[tone]
           )}

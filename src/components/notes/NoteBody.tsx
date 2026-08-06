@@ -1,13 +1,14 @@
 import { Link } from 'react-router-dom';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { nip19 } from 'nostr-tools';
-import { FileQuestion, FileText, Film, Clock } from 'lucide-react';
+import { FileQuestion, FileText, Film, Clock, Ban } from 'lucide-react';
 import { NoteContent } from '@/components/NoteContent';
 import { StructuredPayload } from '@/components/notes/StructuredPayload';
 import { Badge } from '@/components/ui/badge';
 import {
   getAltText,
   getNoteRenderKind,
+  isRenderableEvent,
   kindLabel,
   parseJsonContent,
 } from '@/lib/eventKinds';
@@ -27,6 +28,11 @@ interface NoteBodyProps {
  */
 export function NoteBody({ event, className }: NoteBodyProps) {
   const renderKind = getNoteRenderKind(event);
+
+  // An empty body would otherwise render as a blank card with no explanation
+  if (!isRenderableEvent(event)) {
+    return <EmptyNote className={className} />;
+  }
 
   switch (renderKind) {
     case 'text':
@@ -202,5 +208,19 @@ function UnknownKind({
         </p>
       )}
     </div>
+  );
+}
+
+function EmptyNote({ className }: { className?: string }) {
+  return (
+    <p
+      className={cn(
+        'flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground',
+        className
+      )}
+    >
+      <Ban className="h-3.5 w-3.5 shrink-0" />
+      This note has no content.
+    </p>
   );
 }

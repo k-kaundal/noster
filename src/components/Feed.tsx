@@ -191,9 +191,17 @@ export function Feed() {
         />
       ) : (
         <>
-          <div className="space-y-4">
-            {posts.map((post) => (
-              <Post key={post.id} event={post} />
+          <div className="stagger-in space-y-4">
+            {posts.map((post, index) => (
+              <div
+                key={post.id}
+                // Capped so late items in a long list still appear promptly
+                style={
+                  { '--stagger-index': Math.min(index, 8) } as React.CSSProperties
+                }
+              >
+                <Post event={post} />
+              </div>
             ))}
           </div>
 

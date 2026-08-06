@@ -25,8 +25,16 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      staleTime: 60000, // 1 minute
-      gcTime: Infinity,
+      // Navigating back to a page should paint from cache, not re-query the
+      // relay; the data is only refetched once it is actually stale.
+      refetchOnMount: false,
+      refetchOnReconnect: true,
+      staleTime: 2 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
+      // Relays are flaky enough that one retry helps, but more just delays
+      // the empty state the reader needs to see.
+      retry: 1,
+      retryDelay: (attempt) => Math.min(500 * 2 ** attempt, 3000),
     },
   },
 });

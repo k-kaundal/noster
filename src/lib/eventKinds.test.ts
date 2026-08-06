@@ -5,6 +5,7 @@ import {
   getAltText,
   getNoteRenderKind,
   humanizeKey,
+  isRenderableEvent,
   kindLabel,
   parseJsonContent,
 } from './eventKinds';
@@ -177,5 +178,40 @@ describe('humanizeKey', () => {
   it('leaves acronyms uppercase', () => {
     expect(humanizeKey('deviceID')).toBe('Device ID');
     expect(humanizeKey('apiURL')).toBe('Api URL');
+  });
+});
+
+describe('isRenderableEvent', () => {
+  it('accepts notes with body text', () => {
+    expect(isRenderableEvent(makeEvent({ content: 'hello' }))).toBe(true);
+  });
+
+  it('rejects notes that are entirely empty', () => {
+    expect(isRenderableEvent(makeEvent({ content: '' }))).toBe(false);
+    expect(isRenderableEvent(makeEvent({ content: '   \n  ' }))).toBe(false);
+  });
+
+  it('accepts media posts whose payload lives in tags, not content', () => {
+    // Kind 20 picture posts routinely have an empty body
+    const picture = makeEvent({
+      kind: 20,
+      content: '',
+      tags: [['imeta', 'url https://example.com/a.jpg']],
+    });
+    expect(isRenderableEvent(picture)).toBe(true);
+  });
+
+  it('accepts an empty event carrying NIP-31 alt text', () => {
+    const event = makeEvent({
+      kind: 31337,
+      content: '',
+      tags: [['alt', 'A live stream']],
+    });
+    expect(isRenderableEvent(event)).toBe(true);
+  });
+
+  it('accepts empty reposts, which reference their target by tag', () => {
+    const repost = makeEvent({ kind: 6, content: '', tags: [['e', 'abc']] });
+    expect(isRenderableEvent(repost)).toBe(true);
   });
 });

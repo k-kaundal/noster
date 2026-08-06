@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 /** Placeholder matching the shape of a rendered `Post` card. */
 export function PostSkeleton() {
   return (
-    <Card className="p-4 shadow-card">
+    <Card className="shimmer p-4 shadow-card">
       <div className="flex gap-3">
         <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
         <div className="flex-1 space-y-3">

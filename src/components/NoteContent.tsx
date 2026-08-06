@@ -48,6 +48,33 @@ export function NoteContent({ event, className }: NoteContentProps) {
     const text = event.content.trim();
     const inline: React.ReactNode[] = [];
     const media: Media[] = [];
+    const seenMedia = new Set<string>();
+
+    const pushMedia = (item: Media) => {
+      if (seenMedia.has(item.url)) return;
+      seenMedia.add(item.url);
+      media.push(item);
+    };
+
+    // Picture and video posts carry their media in imeta tags rather than in
+    // the body, so a note with tags but no text is not actually empty.
+    for (const tag of event.tags) {
+      if (tag[0] !== 'imeta') continue;
+      const urlField = tag.find((part) => part.startsWith('url '));
+      if (!urlField) continue;
+
+      const url = urlField.slice(4).trim();
+      const mimeField = tag.find((part) => part.startsWith('m '));
+      const mime = mimeField?.slice(2).trim();
+
+      if (mime?.startsWith('audio/')) continue;
+      if (mime?.startsWith('video/')) {
+        pushMedia({ type: 'video', url });
+        continue;
+      }
+      const classified = classifyUrl(url);
+      pushMedia(classified ?? { type: 'image', url });
+    }
 
     let lastIndex = 0;
     let key = 0;
@@ -69,7 +96,7 @@ export function NoteContent({ event, className }: NoteContentProps) {
       if (url) {
         const asMedia = classifyUrl(url);
         if (asMedia) {
-          media.push(asMedia);
+          pushMedia(asMedia);
           continue;
         }
         inline.push(
@@ -135,7 +162,7 @@ export function NoteContent({ event, className }: NoteContentProps) {
     pushText(text.slice(lastIndex));
 
     return { inline, media };
-  }, [event.content]);
+  }, [event.content, event.tags]);
 
   return (
     <div className={cn('space-y-3', className)}>

@@ -213,6 +213,40 @@
     @apply -translate-y-0.5 shadow-lg;
   }
 
+  /*
+   * Cards fade up as they arrive. The index is capped by the caller so a long
+   * list never makes the reader wait on an animation queue.
+   */
+  .stagger-in > * {
+    animation: slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--stagger-index, 0) * 40ms);
+  }
+
+  /* Buttons that commit an action get a tactile press */
+  .press {
+    @apply transition-transform duration-100 active:scale-[0.97];
+  }
+
+  /* Skeletons sweep instead of sitting still, which reads as progress */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--foreground) / 0.06),
+      transparent
+    );
+    animation: shimmer 1.8s infinite;
+  }
+
   /* Fades the bottom of a clipped block so truncation reads as intentional */
   .mask-fade-bottom {
     mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
