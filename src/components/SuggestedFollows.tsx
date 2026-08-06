@@ -183,8 +183,8 @@ export function SuggestedFollows() {
 
         {suggestions.length > 0 && (
           <div className="p-3 border-t">
-            <Button variant="ghost" size="sm" className="w-full text-blue-600">
-              Show more
+            <Button asChild variant="ghost" size="sm" className="w-full text-primary">
+              <Link to="/explore">Show more</Link>
             </Button>
           </div>
         )}

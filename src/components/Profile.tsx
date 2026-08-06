@@ -376,6 +376,7 @@ function ShareProfileDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Kept white in both themes: QR scanners need a light quiet zone */}
           <div className="flex justify-center rounded-lg bg-white p-4">
             <QRCodeSVG value={`nostr:${npub}`} size={200} />
           </div>

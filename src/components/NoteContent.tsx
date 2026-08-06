@@ -212,6 +212,7 @@ function MediaItem({ item, fill }: { item: Media; fill: boolean }) {
       <video
         controls
         preload="metadata"
+        // Letterboxing stays black in both themes, as video players conventionally do
         className="w-full rounded-lg border bg-black"
       >
         <source src={item.url} />

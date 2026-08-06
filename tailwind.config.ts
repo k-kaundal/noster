@@ -131,6 +131,10 @@ export default {
 				},
 				shimmer: {
 					'100%': { transform: 'translateX(100%)' }
+				},
+				'spin-slow': {
+					from: { transform: 'rotate(0deg)' },
+					to: { transform: 'rotate(360deg)' }
 				}
 			},
 			animation: {
@@ -141,7 +145,8 @@ export default {
 				'slide-down': 'slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
 				'slide-right': 'slide-right 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
 				'scale-in': 'scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both',
-				shimmer: 'shimmer 1.8s infinite'
+				shimmer: 'shimmer 1.8s infinite',
+				'spin-slow': 'spin-slow 8s linear infinite'
 			}
 		}
 	},

@@ -13,7 +13,7 @@ interface LogoProps {
 export function Logo({ className, markOnly = false }: LogoProps) {
   return (
     <span className={cn('flex items-center gap-2', className)}>
-      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-white shadow-sm">
+      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-primary-foreground shadow-sm">
         <svg
           viewBox="0 0 24 24"
           className="h-5 w-5"
