@@ -12,6 +12,8 @@ const SHORTCUTS: { keys: string[]; description: string }[] = [
   { keys: ['H'], description: 'Go home' },
   { keys: ['E'], description: 'Go to explore' },
   { keys: ['T'], description: 'Go to trending' },
+  { keys: ['V'], description: 'Watch reels' },
+  { keys: ['B'], description: 'Open bookmarks' },
   { keys: ['R'], description: 'Manage relays' },
   { keys: ['C'], description: 'Compose a note' },
   { keys: ['G', 'P'], description: 'Go to your profile' },

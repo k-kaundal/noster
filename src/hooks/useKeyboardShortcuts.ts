@@ -61,6 +61,12 @@ export function useKeyboardShortcuts({
             case 'r':
               navigate('/relays');
               return;
+            case 'v':
+              navigate('/reels');
+              return;
+            case 'b':
+              navigate('/bookmarks');
+              return;
             case 'p':
               if (user) navigate(`/${nip19.npubEncode(user.pubkey)}`);
               return;
@@ -91,6 +97,12 @@ export function useKeyboardShortcuts({
           break;
         case 'r':
           navigate('/relays');
+          break;
+        case 'v':
+          navigate('/reels');
+          break;
+        case 'b':
+          navigate('/bookmarks');
           break;
         case 'c':
           navigate('/compose');

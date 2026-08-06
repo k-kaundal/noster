@@ -7,6 +7,7 @@ import { useReposts } from '@/hooks/useReposts';
 import { useReplies } from '@/hooks/useReplies';
 import { useEvent } from '@/hooks/useEvent';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useBookmarks } from '@/hooks/useBookmarks';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { Card } from '@/components/ui/card';
@@ -38,6 +39,7 @@ import {
 } from '@/lib/note';
 import {
   BadgeCheck,
+  Bookmark,
   Copy,
   ExternalLink,
   Heart,
@@ -100,6 +102,7 @@ export function Post({
   const { isLiked, likeCount, like, isLiking } = useReactions(event.id);
   const { isReposted, repostCount, repost, isReposting } = useReposts(event.id);
   const { replyCount } = useReplies(event.id);
+  const { isBookmarked, toggle: toggleBookmark, isToggling } = useBookmarks();
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
@@ -283,6 +286,22 @@ export function Post({
               <DropdownMenuItem onClick={() => copy(npub, 'Public key')}>
                 <Copy className="mr-2 h-4 w-4" />
                 Copy author npub
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={isToggling}
+                onClick={() => {
+                  if (!user) return requireLogin('bookmark');
+                  toggleBookmark(event);
+                }}
+              >
+                <Bookmark
+                  className={cn(
+                    'mr-2 h-4 w-4',
+                    isBookmarked(event.id) && 'fill-current text-primary'
+                  )}
+                />
+                {isBookmarked(event.id) ? 'Remove bookmark' : 'Bookmark'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>

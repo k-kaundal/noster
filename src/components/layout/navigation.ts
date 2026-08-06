@@ -1,4 +1,4 @@
-import { Compass, Flame, Home, PenSquare, Server, User } from 'lucide-react';
+import { Bookmark, Compass, Film, Flame, Home, PenSquare, Server, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
 
@@ -10,6 +10,12 @@ export interface NavItem {
   shortcut?: string;
   /** Only reachable while logged in. */
   requiresAuth?: boolean;
+  /**
+   * Kept out of the mobile tab bar, which only has room for a few
+   * destinations. These stay reachable from the desktop rail and the
+   * mobile settings sheet.
+   */
+  secondary?: boolean;
 }
 
 /**
@@ -19,8 +25,9 @@ export interface NavItem {
 export function getNavItems(pubkey?: string): NavItem[] {
   return [
     { href: '/', icon: Home, label: 'Home', shortcut: 'H' },
+    { href: '/reels', icon: Film, label: 'Reels', shortcut: 'V' },
     { href: '/explore', icon: Compass, label: 'Explore', shortcut: 'E' },
-    { href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T' },
+    { href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
     ...(pubkey
       ? [
           {
@@ -31,7 +38,15 @@ export function getNavItems(pubkey?: string): NavItem[] {
           } satisfies NavItem,
         ]
       : []),
-    { href: '/relays', icon: Server, label: 'Relays', shortcut: 'R' },
+    {
+      href: '/bookmarks',
+      icon: Bookmark,
+      label: 'Bookmarks',
+      shortcut: 'B',
+      requiresAuth: true,
+      secondary: true,
+    },
+    { href: '/relays', icon: Server, label: 'Relays', shortcut: 'R', secondary: true },
     { href: '/compose', icon: PenSquare, label: 'Compose', shortcut: 'C', requiresAuth: true },
   ];
 }

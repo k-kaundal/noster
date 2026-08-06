@@ -11,6 +11,8 @@ const TrendingPage = lazy(() => import("./pages/TrendingPage"));
 const ExplorePage = lazy(() => import("./pages/ExplorePage"));
 const HashtagPage = lazy(() => import("./pages/HashtagPage"));
 const RelaysPage = lazy(() => import("./pages/RelaysPage"));
+const ReelsPage = lazy(() => import("./pages/ReelsPage"));
+const BookmarksPage = lazy(() => import("./pages/BookmarksPage"));
 const NIP19Page = lazy(() =>
   import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
 );
@@ -44,6 +46,10 @@ export function AppRouter() {
           <Route path="/t/:tag" element={<HashtagPage />} />
           {/* Relay management */}
           <Route path="/relays" element={<RelaysPage />} />
+          {/* NIP-71 short video feed */}
+          <Route path="/reels" element={<ReelsPage />} />
+          {/* NIP-51 saved notes */}
+          <Route path="/bookmarks" element={<BookmarksPage />} />
           {/* Follow pages */}
           <Route path="/:nip19/following" element={<FollowingPage />} />
           <Route path="/:nip19/followers" element={<FollowersPage />} />

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUp, Loader2, MessageSquare, RefreshCw, Users } from 'lucide-react';
+import { ArrowUp, Film, Loader2, MessageSquare, RefreshCw, Users } from 'lucide-react';
 import { useFeed, type FeedScope } from '@/hooks/useFeed';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { Post } from '@/components/Post';
@@ -115,6 +115,25 @@ export function Feed() {
           </Button>
         </div>
       )}
+
+      {/* Entry point to the vertical video feed */}
+      <Link
+        to="/reels"
+        className="group flex items-center gap-3 rounded-xl border bg-card p-3 shadow-card transition-colors hover:border-primary/40 hover:bg-accent/40"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-primary-foreground">
+          <Film className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">Reels</span>
+          <span className="block truncate text-xs text-muted-foreground">
+            Short vertical videos from across Nostr
+          </span>
+        </span>
+        <span className="shrink-0 text-xs font-medium text-primary group-hover:underline">
+          Watch
+        </span>
+      </Link>
 
       {/* Discovery widgets are inline below xl, where the right rail is hidden */}
       <div className="grid gap-4 sm:grid-cols-2 xl:hidden">
