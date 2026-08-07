@@ -1,0 +1,232 @@
+import { describe, it, expect } from 'vitest';
+import type { NostrEvent } from '@nostrify/nostrify';
+import {
+  buildNotifications,
+  filterNotifications,
+  normalizeReaction,
+  toNotification,
+} from './notifications';
+import { formatSats, parseZapReceipt } from './zap';
+
+const ME = 'a'.repeat(64);
+const THEM = 'b'.repeat(64);
+/** The recipient's LNURL server, which signs zap receipts. */
+const ZAPPER_SERVICE = 'c'.repeat(64);
+const NOTE = 'd'.repeat(64);
+
+function event(overrides: Partial<NostrEvent> = {}): NostrEvent {
+  return {
+    id: '1'.repeat(64),
+    pubkey: THEM,
+    created_at: 1_700_000_000,
+    kind: 1,
+    tags: [],
+    content: '',
+    sig: 'f'.repeat(128),
+    ...overrides,
+  };
+}
+
+function zapReceipt({
+  sender = THEM,
+  amountMillisats = 21_000,
+  comment = '',
+  targetId = NOTE,
+}: {
+  sender?: string;
+  amountMillisats?: number;
+  comment?: string;
+  targetId?: string | null;
+} = {}): NostrEvent {
+  const request = {
+    kind: 9734,
+    pubkey: sender,
+    content: comment,
+    tags: [
+      ['p', ME],
+      ...(targetId ? [['e', targetId]] : []),
+      ['amount', String(amountMillisats)],
+    ],
+  };
+
+  return event({
+    kind: 9735,
+    // Signed by the payment processor, not the person who paid
+    pubkey: ZAPPER_SERVICE,
+    tags: [
+      ['p', ME],
+      ...(targetId ? [['e', targetId]] : []),
+      ['description', JSON.stringify(request)],
+    ],
+  });
+}
+
+describe('parseZapReceipt', () => {
+  it('credits the sender rather than the receipt signer', () => {
+    const parsed = parseZapReceipt(zapReceipt());
+
+    expect(parsed.senderPubkey).toBe(THEM);
+    expect(parsed.senderPubkey).not.toBe(ZAPPER_SERVICE);
+  });
+
+  it('converts the request amount from millisats to sats', () => {
+    expect(parseZapReceipt(zapReceipt({ amountMillisats: 21_000 })).amountSats)
+      .toBe(21);
+  });
+
+  it('reads the zapper message and target', () => {
+    const parsed = parseZapReceipt(zapReceipt({ comment: '  nice post  ' }));
+
+    expect(parsed.comment).toBe('nice post');
+    expect(parsed.targetEventId).toBe(NOTE);
+    expect(parsed.recipientPubkey).toBe(ME);
+  });
+
+  it('falls back to the uppercase P tag when the request is unreadable', () => {
+    const receipt = event({
+      kind: 9735,
+      pubkey: ZAPPER_SERVICE,
+      tags: [
+        ['p', ME],
+        ['P', THEM],
+        ['description', 'not json'],
+      ],
+    });
+
+    expect(parseZapReceipt(receipt).senderPubkey).toBe(THEM);
+  });
+
+  it('reports no amount rather than guessing when none is present', () => {
+    const receipt = event({ kind: 9735, pubkey: ZAPPER_SERVICE, tags: [['p', ME]] });
+    expect(parseZapReceipt(receipt).amountSats).toBeNull();
+  });
+});
+
+describe('formatSats', () => {
+  it('abbreviates large amounts and leaves small ones alone', () => {
+    expect(formatSats(21)).toBe('21');
+    expect(formatSats(999)).toBe('999');
+    expect(formatSats(1000)).toBe('1k');
+    expect(formatSats(1200)).toBe('1.2k');
+    expect(formatSats(21_000)).toBe('21k');
+    expect(formatSats(2_100_000)).toBe('2.1M');
+  });
+});
+
+describe('normalizeReaction', () => {
+  it('shows a heart for the two ways NIP-25 spells "like"', () => {
+    expect(normalizeReaction('+')).toBe('❤️');
+    expect(normalizeReaction('')).toBe('❤️');
+  });
+
+  it('passes custom emoji through', () => {
+    expect(normalizeReaction('🔥')).toBe('🔥');
+  });
+});
+
+describe('toNotification', () => {
+  it('classifies a bare mention', () => {
+    const result = toNotification(
+      event({ content: 'hey @you', tags: [['p', ME]] }),
+      ME
+    );
+
+    expect(result?.type).toBe('mention');
+    expect(result?.targetEventId).toBeNull();
+  });
+
+  it('classifies a note that answers one of yours as a reply', () => {
+    const result = toNotification(
+      event({ tags: [['e', NOTE], ['p', ME]], content: 'agreed' }),
+      ME
+    );
+
+    expect(result?.type).toBe('reply');
+    expect(result?.targetEventId).toBe(NOTE);
+  });
+
+  it('prefers the marked reply tag over tag order', () => {
+    const result = toNotification(
+      event({
+        tags: [
+          ['e', '9'.repeat(64), '', 'root'],
+          ['e', NOTE, '', 'reply'],
+          ['p', ME],
+        ],
+      }),
+      ME
+    );
+
+    expect(result?.targetEventId).toBe(NOTE);
+  });
+
+  it('classifies reactions and both repost kinds', () => {
+    expect(toNotification(event({ kind: 7, content: '+' }), ME)?.type).toBe(
+      'reaction'
+    );
+    expect(toNotification(event({ kind: 6 }), ME)?.type).toBe('repost');
+    expect(toNotification(event({ kind: 16 }), ME)?.type).toBe('repost');
+  });
+
+  it('normalises the reaction content for display', () => {
+    expect(toNotification(event({ kind: 7, content: '+' }), ME)?.content).toBe(
+      '❤️'
+    );
+  });
+
+  it('attributes a zap to its sender with the amount attached', () => {
+    const result = toNotification(zapReceipt({ amountMillisats: 5000 }), ME);
+
+    expect(result?.type).toBe('zap');
+    expect(result?.pubkey).toBe(THEM);
+    expect(result?.amountSats).toBe(5);
+  });
+
+  it('drops your own activity', () => {
+    expect(toNotification(event({ pubkey: ME, kind: 7 }), ME)).toBeNull();
+    expect(toNotification(zapReceipt({ sender: ME }), ME)).toBeNull();
+  });
+
+  it('drops a zap receipt with no identifiable sender', () => {
+    const receipt = event({ kind: 9735, pubkey: ZAPPER_SERVICE, tags: [['p', ME]] });
+    expect(toNotification(receipt, ME)).toBeNull();
+  });
+});
+
+describe('buildNotifications', () => {
+  it('sorts newest first and collapses events relays sent twice', () => {
+    const older = event({ id: '1'.repeat(64), kind: 7, created_at: 100 });
+    const newer = event({ id: '2'.repeat(64), kind: 6, created_at: 200 });
+
+    const result = buildNotifications([older, newer, older], ME);
+
+    expect(result.map((n) => n.event.id)).toEqual([newer.id, older.id]);
+  });
+});
+
+describe('filterNotifications', () => {
+  const notifications = buildNotifications(
+    [
+      event({ id: '1'.repeat(64), kind: 7, created_at: 400 }),
+      event({ id: '2'.repeat(64), kind: 6, created_at: 300 }),
+      event({ id: '3'.repeat(64), created_at: 200, content: 'hi', tags: [['p', ME]] }),
+      event({ id: '4'.repeat(64), created_at: 100, tags: [['e', NOTE], ['p', ME]] }),
+    ],
+    ME
+  );
+
+  it('returns everything for "all"', () => {
+    expect(filterNotifications(notifications, 'all')).toHaveLength(4);
+  });
+
+  it('groups mentions and replies under one tab', () => {
+    expect(filterNotifications(notifications, 'mentions').map((n) => n.type))
+      .toEqual(['mention', 'reply']);
+  });
+
+  it('narrows to a single type', () => {
+    expect(filterNotifications(notifications, 'reactions')).toHaveLength(1);
+    expect(filterNotifications(notifications, 'reposts')).toHaveLength(1);
+    expect(filterNotifications(notifications, 'zaps')).toHaveLength(0);
+  });
+});

@@ -1,4 +1,5 @@
 import {
+  Bell,
   Bookmark,
   Compass,
   Film,
@@ -44,6 +45,14 @@ export function getNavItems(pubkey?: string): NavItem[] {
       label: 'Messages',
       shortcut: 'M',
       requiresAuth: true,
+    },
+    {
+      href: '/notifications',
+      icon: Bell,
+      label: 'Notifications',
+      shortcut: 'N',
+      requiresAuth: true,
+      secondary: true,
     },
     { href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
     ...(pubkey

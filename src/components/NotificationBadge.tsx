@@ -1,86 +1,35 @@
-import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { useNostr } from '@nostrify/react';
-import type { NostrEvent } from '@nostrify/nostrify';
-import { formatDistanceToNow } from 'date-fns';
-import { nip19 } from 'nostr-tools';
-import { AtSign, Bell, Heart, Repeat2, Zap } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { NotificationRow } from '@/components/notifications/NotificationRow';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useAuthor } from '@/hooks/useAuthor';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
-import { genUserName } from '@/lib/genUserName';
-import { cn } from '@/lib/utils';
-
-const KIND_META = {
-  1: { icon: AtSign, label: 'mentioned you', tone: 'text-reply' },
-  6: { icon: Repeat2, label: 'reposted your note', tone: 'text-repost' },
-  7: { icon: Heart, label: 'reacted to your note', tone: 'text-like' },
-  9735: { icon: Zap, label: 'zapped you', tone: 'text-zap' },
-} as const;
-
-type NotificationKind = keyof typeof KIND_META;
-
-function useNotifications(pubkey?: string) {
-  const { nostr } = useNostr();
-
-  return useQuery({
-    queryKey: ['notifications', pubkey],
-    queryFn: async (c) => {
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(4000)]);
-
-      const events = await nostr.query(
-        [
-          {
-            kinds: [1, 6, 7, 9735],
-            '#p': [pubkey as string],
-            since: Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60,
-            limit: 50,
-          },
-        ],
-        { signal }
-      );
-
-      return events
-        .filter((event) => event.pubkey !== pubkey)
-        .sort((a, b) => b.created_at - a.created_at);
-    },
-    enabled: !!pubkey,
-    refetchInterval: 5 * 60 * 1000,
-  });
-}
+import {
+  countUnread,
+  useNotifications,
+  useNotificationsSeen,
+} from '@/hooks/useNotifications';
 
 /** Bell button with an unread count and a preview list of recent activity. */
 export function NotificationBadge() {
   const { user } = useCurrentUser();
-  const { data: events, isLoading } = useNotifications(user?.pubkey);
-  const [lastSeen, setLastSeen] = useLocalStorage<number>(
-    'nostr:notifications-seen',
-    0
-  );
+  const { notifications, isLoading } = useNotifications();
+  const { lastSeen, markSeen } = useNotificationsSeen();
 
-  const unreadCount = useMemo(
-    () => (events ?? []).filter((event) => event.created_at > lastSeen).length,
-    [events, lastSeen]
-  );
-
-  const markSeen = (open: boolean) => {
-    if (open && events?.length) {
-      setLastSeen(events[0].created_at);
-    }
-  };
+  const unreadCount = countUnread(notifications, lastSeen);
 
   return (
-    <Popover onOpenChange={markSeen}>
+    <Popover
+      onOpenChange={(open) => {
+        if (open && notifications.length) markSeen(notifications[0].createdAt);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
@@ -127,82 +76,33 @@ export function NotificationBadge() {
               </div>
             ))}
           </div>
-        ) : !events?.length ? (
+        ) : !notifications.length ? (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
             Nothing yet. Mentions, reposts and zaps will show up here.
           </p>
         ) : (
-          <ScrollArea className="max-h-96">
-            <ul className="divide-y">
-              {events.slice(0, 20).map((event) => (
-                <NotificationRow
-                  key={event.id}
-                  event={event}
-                  unread={event.created_at > lastSeen}
-                />
-              ))}
-            </ul>
-          </ScrollArea>
+          <>
+            <ScrollArea className="max-h-96">
+              <ul className="divide-y">
+                {notifications.slice(0, 20).map((notification) => (
+                  <NotificationRow
+                    key={notification.event.id}
+                    notification={notification}
+                    unread={notification.createdAt > lastSeen}
+                    compact
+                  />
+                ))}
+              </ul>
+            </ScrollArea>
+
+            <div className="border-t p-2">
+              <Button asChild variant="ghost" size="sm" className="w-full">
+                <Link to="/notifications">See all notifications</Link>
+              </Button>
+            </div>
+          </>
         )}
       </PopoverContent>
     </Popover>
-  );
-}
-
-function NotificationRow({
-  event,
-  unread,
-}: {
-  event: NostrEvent;
-  unread: boolean;
-}) {
-  const author = useAuthor(event.pubkey);
-  const metadata = author.data?.metadata;
-  const displayName =
-    metadata?.display_name || metadata?.name || genUserName(event.pubkey);
-
-  const meta = KIND_META[event.kind as NotificationKind] ?? KIND_META[1];
-  const Icon = meta.icon;
-
-  // Reactions and zaps point at the note they target; mentions link to themselves.
-  const targetId =
-    event.kind === 1
-      ? event.id
-      : event.tags.find(([name]) => name === 'e')?.[1] ?? event.id;
-
-  return (
-    <li className={cn(unread && 'bg-primary/5')}>
-      <Link
-        to={`/${nip19.noteEncode(targetId)}`}
-        className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-accent/60"
-      >
-        <div className="relative">
-          <Avatar className="h-8 w-8">
-            <AvatarImage src={metadata?.picture} alt="" />
-            <AvatarFallback className="text-[10px]">
-              {displayName.slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <Icon
-            className={cn(
-              'absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-background p-0.5',
-              meta.tone
-            )}
-          />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <p className="text-sm leading-snug">
-            <span className="font-medium">{displayName}</span>{' '}
-            <span className="text-muted-foreground">{meta.label}</span>
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {formatDistanceToNow(new Date(event.created_at * 1000), {
-              addSuffix: true,
-            })}
-          </p>
-        </div>
-      </Link>
-    </li>
   );
 }
