@@ -11,6 +11,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NostrLoginProvider } from '@nostrify/react/login';
 import { AppProvider } from '@/components/AppProvider';
+import { ImageLightboxProvider } from '@/components/ImageLightbox';
 import { NWCProvider } from '@/contexts/NWCContext';
 import { AppConfig } from '@/contexts/AppContext';
 import AppRouter from './AppRouter';
@@ -87,11 +88,13 @@ export function App() {
             <NostrProvider>
               <NWCProvider>
                 <TooltipProvider delayDuration={250}>
-                  <Toaster />
-                  <Sonner />
-                  <Suspense>
-                    <AppRouter />
-                  </Suspense>
+                  <ImageLightboxProvider>
+                    <Toaster />
+                    <Sonner />
+                    <Suspense>
+                      <AppRouter />
+                    </Suspense>
+                  </ImageLightboxProvider>
                 </TooltipProvider>
               </NWCProvider>
             </NostrProvider>

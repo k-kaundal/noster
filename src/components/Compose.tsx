@@ -22,6 +22,9 @@ import { genUserName } from '@/lib/genUserName';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { MentionAutocomplete } from '@/components/MentionAutocomplete';
+import { extractMentionPubkeys } from '@/lib/mention';
+import { nip19 } from 'nostr-tools';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { LoginArea } from '@/components/auth/LoginArea';
@@ -72,6 +75,8 @@ export function Compose() {
   const [pollChoices, setPollChoices] = useState<string[]>(['', '']);
   const [multipleChoice, setMultipleChoice] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The mention picker needs the live element to read the caret position
+  const [textarea, setTextarea] = useState<HTMLTextAreaElement | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -171,12 +176,16 @@ export function Compose() {
         postContent += uploadedImages.join('\n');
       }
 
+      // Mentions only notify the person if they are also tagged
+      const mentioned = extractMentionPubkeys(postContent, nip19.decode);
+
       const tags = [
         ...uploadedImages.map((url) => [
           'imeta',
           `url ${url}`,
           `m ${getImageMimeType(url)}`,
         ]),
+        ...mentioned.map((pubkey) => ['p', pubkey]),
         ...hashtags.map((tag) => ['t', tag]),
         // NIP-36: readers approve before the note is shown
         ...(warningEnabled
@@ -195,6 +204,7 @@ export function Compose() {
               type: multipleChoice ? 'multiplechoice' : 'singlechoice',
               relays: writeUrls.slice(0, 4),
             }),
+            ...mentioned.map((pubkey) => ['p', pubkey]),
             ...hashtags.map((tag) => ['t', tag]),
             ...(warningEnabled ? [['content-warning', warningReason.trim()]] : []),
           ],
@@ -286,7 +296,9 @@ export function Compose() {
                   )}
                 </div>
               ) : (
+                <div className="relative">
                 <Textarea
+                  ref={setTextarea}
                   placeholder="What's happening?"
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
@@ -320,6 +332,21 @@ export function Compose() {
                   )}
                   autoFocus
                 />
+
+                {/* Typing "@" offers the people you follow */}
+                <MentionAutocomplete
+                  value={content}
+                  textarea={textarea}
+                  onSelect={(next, caret) => {
+                    setContent(next);
+                    // Restoring the caret has to wait for the value to land
+                    requestAnimationFrame(() => {
+                      textarea?.focus();
+                      textarea?.setSelectionRange(caret, caret);
+                    });
+                  }}
+                />
+                </div>
               )}
 
               {uploadedImages.length > 0 && (

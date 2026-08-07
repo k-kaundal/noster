@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { type NostrEvent, type NostrMetadata, NSchema as n } from '@nostrify/nostrify';
 import { useNostr } from '@nostrify/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { createBatchLoader, type BatchLoader } from '@/lib/batchLoader';
 
 export interface AuthorData {
@@ -53,6 +53,36 @@ function getLoader(nostr: Relay): BatchLoader<string, AuthorData> {
 
   loaders.set(nostr as object, loader);
   return loader;
+}
+
+/**
+ * Metadata for many authors at once, sharing the cache and the batcher with
+ * `useAuthor` — so a list of 300 follows still costs one relay query, and
+ * anything the feed already loaded is reused rather than refetched.
+ */
+export function useAuthors(pubkeys: string[], enabled = true) {
+  const { nostr } = useNostr();
+  const loader = useMemo(() => getLoader(nostr), [nostr]);
+
+  const results = useQueries({
+    queries: pubkeys.map((pubkey) => ({
+      queryKey: ['author', pubkey],
+      queryFn: () => loader.load(pubkey),
+      enabled,
+      staleTime: 5 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
+      retry: 1,
+    })),
+  });
+
+  return useMemo(
+    () =>
+      pubkeys.map((pubkey, index) => ({
+        pubkey,
+        metadata: results[index]?.data?.metadata,
+      })),
+    [pubkeys, results]
+  );
 }
 
 export function useAuthor(pubkey: string | undefined) {

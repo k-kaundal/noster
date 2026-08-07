@@ -3,6 +3,8 @@ import { type NostrEvent } from '@nostrify/nostrify';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import { useAuthor } from '@/hooks/useAuthor';
+import { useLightbox } from '@/hooks/useLightbox';
+import { UserHoverCard } from '@/components/UserHoverCard';
 import { genUserName } from '@/lib/genUserName';
 import { cn } from '@/lib/utils';
 
@@ -177,6 +179,11 @@ export function NoteContent({ event, className }: NoteContentProps) {
 }
 
 function MediaGrid({ media }: { media: Media[] }) {
+  // The lightbox steps through a note's images, so it needs them all up front
+  const images = media
+    .filter((item) => item.type === 'image')
+    .map((item) => item.url);
+
   return (
     <div
       className={cn(
@@ -188,6 +195,7 @@ function MediaGrid({ media }: { media: Media[] }) {
         <MediaItem
           key={`${item.url}-${index}`}
           item={item}
+          images={images}
           // A lone image keeps its aspect ratio; grids stay on a tidy square
           fill={media.length > 1}
         />
@@ -196,8 +204,17 @@ function MediaGrid({ media }: { media: Media[] }) {
   );
 }
 
-function MediaItem({ item, fill }: { item: Media; fill: boolean }) {
+function MediaItem({
+  item,
+  fill,
+  images,
+}: {
+  item: Media;
+  fill: boolean;
+  images: string[];
+}) {
   const [failed, setFailed] = useState(false);
+  const { open } = useLightbox();
 
   if (item.type === 'image') {
     if (failed) {
@@ -214,11 +231,11 @@ function MediaItem({ item, fill }: { item: Media; fill: boolean }) {
     }
 
     return (
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block overflow-hidden rounded-lg border bg-muted"
+      <button
+        type="button"
+        onClick={() => open(images, images.indexOf(item.url))}
+        aria-label="View image"
+        className="block w-full cursor-zoom-in overflow-hidden rounded-lg border bg-muted"
       >
         <img
           src={item.url}
@@ -230,7 +247,7 @@ function MediaItem({ item, fill }: { item: Media; fill: boolean }) {
             fill ? 'aspect-square object-cover' : 'max-h-[32rem] object-contain'
           )}
         />
-      </a>
+      </button>
     );
   }
 
@@ -273,15 +290,17 @@ function NostrMention({ pubkey }: { pubkey: string }) {
   const displayName = author.data?.metadata?.name ?? genUserName(pubkey);
 
   return (
-    <Link
-      to={`/${npub}`}
-      className={cn(
-        'font-medium underline-offset-2 hover:underline',
-        hasRealName ? 'text-primary' : 'text-muted-foreground'
-      )}
-      title={`View @${displayName}'s profile`}
-    >
-      @{displayName}
-    </Link>
+    <UserHoverCard pubkey={pubkey}>
+      <Link
+        to={`/${npub}`}
+        className={cn(
+          'font-medium underline-offset-2 hover:underline',
+          hasRealName ? 'text-primary' : 'text-muted-foreground'
+        )}
+        title={`View @${displayName}'s profile`}
+      >
+        @{displayName}
+      </Link>
+    </UserHoverCard>
   );
 }
