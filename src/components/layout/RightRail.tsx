@@ -10,7 +10,7 @@ export function RightRail({ className }: { className?: string }) {
   const { data, isLoading } = useTrending();
 
   return (
-    <div className={cn('space-y-4', className)}>
+    <div className={cn('space-y-6', className)}>
       <SuggestedFollows />
       <TrendingHashtags hashtags={data?.topHashtags ?? []} isLoading={isLoading} />
       <TrendingPeople mentions={data?.topMentions ?? []} isLoading={isLoading} />

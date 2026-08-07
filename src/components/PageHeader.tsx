@@ -23,9 +23,7 @@ export function PageHeader({
       <div className="min-w-0 space-y-1.5">
         <h1 className="flex items-center gap-2.5 text-title">
           {Icon && (
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
-              <Icon className="h-[18px] w-[18px]" />
-            </span>
+            <Icon className="h-5 w-5 shrink-0 text-muted-foreground" />
           )}
           <span className="truncate">{title}</span>
         </h1>

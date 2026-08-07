@@ -127,7 +127,7 @@ export function MentionAutocomplete({
     <ul
       role="listbox"
       aria-label="Mention suggestions"
-      className="absolute inset-x-0 top-full z-40 mt-1 max-h-64 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg scrollbar-thin"
+      className="absolute inset-x-0 top-full z-40 mt-1 max-h-64 overflow-y-auto rounded-lg border bg-popover p-1 shadow-float scrollbar-thin"
     >
       {matches.map((candidate, index) => (
         <li key={candidate.pubkey}>

@@ -1,5 +1,6 @@
 import type { NostrEvent } from '@nostrify/nostrify';
 import { parseZapReceipt, ZAP_RECEIPT_KIND } from '@/lib/zap';
+import { reactionEmoji } from '@/lib/reactions';
 
 export type NotificationType =
   | 'mention'
@@ -86,17 +87,9 @@ export function toNotification(
     pubkey: event.pubkey,
     createdAt: event.created_at,
     targetEventId: target,
-    content: event.kind === 7 ? normalizeReaction(event.content) : event.content,
+    content: event.kind === 7 ? reactionEmoji(event) : event.content,
     amountSats: null,
   };
-}
-
-/** NIP-25 leaves "+" and "" meaning "like"; show a heart for both. */
-export function normalizeReaction(content: string): string {
-  const value = content.trim();
-  if (!value || value === '+') return '❤️';
-  if (value === '-') return '👎';
-  return value;
 }
 
 /** Builds the notification list, newest first, with duplicates removed. */

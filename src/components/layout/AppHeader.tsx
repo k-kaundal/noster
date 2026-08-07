@@ -30,7 +30,7 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-xl backdrop-saturate-150">
+    <header className="sticky top-0 z-50 w-full border-b bg-background">
       <div className="container flex h-14 items-center gap-3">
         <Link
           to="/"
@@ -45,7 +45,7 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
         <button
           type="button"
           onClick={onSearch}
-          className="ml-auto hidden h-9 w-full max-w-xs items-center gap-2 rounded-full border border-border/70 bg-muted/40 px-3.5 text-sm text-muted-foreground transition-all duration-200 ease-quart hover:border-border hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring md:flex lg:ml-4 lg:mr-auto"
+          className="ml-auto hidden h-9 w-full max-w-xs items-center gap-2 rounded-lg border bg-background px-3 text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted/50 md:flex lg:ml-4 lg:mr-auto"
         >
           <Search className="h-4 w-4 shrink-0" />
           <span className="flex-1 text-left">Search Nostr…</span>

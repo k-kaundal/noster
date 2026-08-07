@@ -38,7 +38,7 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
 
       <AppHeader onSearch={() => setSearchOpen(true)} />
 
-      <div className="container flex gap-6 pb-24 pt-4 lg:gap-8 lg:pb-12 lg:pt-6">
+      <div className="container flex gap-8 pb-24 pt-6 lg:gap-12 lg:pb-16 lg:pt-8">
         <aside className="hidden w-52 shrink-0 lg:block">
           <div className="sticky top-[calc(var(--header-height)+1.5rem)]">
             <SideNav />

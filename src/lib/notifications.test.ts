@@ -3,7 +3,6 @@ import type { NostrEvent } from '@nostrify/nostrify';
 import {
   buildNotifications,
   filterNotifications,
-  normalizeReaction,
   toNotification,
 } from './notifications';
 import { formatSats, parseZapReceipt } from './zap';
@@ -110,17 +109,6 @@ describe('formatSats', () => {
     expect(formatSats(1200)).toBe('1.2k');
     expect(formatSats(21_000)).toBe('21k');
     expect(formatSats(2_100_000)).toBe('2.1M');
-  });
-});
-
-describe('normalizeReaction', () => {
-  it('shows a heart for the two ways NIP-25 spells "like"', () => {
-    expect(normalizeReaction('+')).toBe('❤️');
-    expect(normalizeReaction('')).toBe('❤️');
-  });
-
-  it('passes custom emoji through', () => {
-    expect(normalizeReaction('🔥')).toBe('🔥');
   });
 });
 

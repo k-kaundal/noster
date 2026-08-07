@@ -243,7 +243,7 @@ function MediaItem({
           loading="lazy"
           onError={() => setFailed(true)}
           className={cn(
-            'w-full transition-transform duration-300 hover:scale-[1.02]',
+            'w-full transition-opacity duration-200 hover:opacity-95',
             fill ? 'aspect-square object-cover' : 'max-h-[32rem] object-contain'
           )}
         />

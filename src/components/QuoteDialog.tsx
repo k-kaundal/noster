@@ -137,7 +137,7 @@ export function QuoteDialog({ open, onOpenChange, quoting }: QuoteDialogProps) {
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="bg-brand-gradient"
+              className=""
             >
               {isSubmitting ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

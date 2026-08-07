@@ -573,7 +573,7 @@ export function Compose() {
               <Button
                 type="submit"
                 disabled={isSubmitting || !canSubmit}
-                className="bg-brand-gradient px-6"
+                className="px-6"
               >
                 {isSubmitting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

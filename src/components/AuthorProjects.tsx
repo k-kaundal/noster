@@ -28,7 +28,7 @@ export function AuthorProjects({ className }: { className?: string }) {
                     request to a third party on every page render */}
                 <span
                   aria-hidden
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-[11px] font-semibold text-primary-foreground"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-[11px] font-semibold text-muted-foreground"
                 >
                   {project.name.slice(0, 2).toUpperCase()}
                 </span>

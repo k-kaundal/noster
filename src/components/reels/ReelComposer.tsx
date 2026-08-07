@@ -352,7 +352,7 @@ export function ReelComposer({ open, onOpenChange }: ReelComposerProps) {
               <Button
                 onClick={handlePublish}
                 disabled={!file || busy}
-                className="bg-brand-gradient"
+                className=""
               >
                 {busy ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
