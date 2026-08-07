@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { Logo } from '@/components/Logo';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { AccentPicker } from '@/components/AccentPicker';
 import { RelaySelector } from '@/components/RelaySelector';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { NotificationBadge } from '@/components/NotificationBadge';
@@ -66,6 +67,7 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
 
           <div className="hidden items-center gap-0.5 md:flex">
             <ConnectionStatus />
+            <AccentPicker />
             <ThemeToggle />
           </div>
 
@@ -104,7 +106,10 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Appearance
                   </p>
-                  <ThemeToggle />
+                  <div className="flex items-center gap-1">
+                    <AccentPicker />
+                    <ThemeToggle />
+                  </div>
                 </div>
               </div>
             </SheetContent>

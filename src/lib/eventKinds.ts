@@ -8,6 +8,7 @@ export type NoteRenderKind =
   | 'video'
   | 'picture'
   | 'structured'
+  | 'poll'
   | 'unknown';
 
 /** Human-readable labels for the kinds this client is likely to encounter. */
@@ -24,6 +25,7 @@ const KIND_LABELS: Record<number, string> = {
   21: 'Video',
   22: 'Short video',
   1063: 'File metadata',
+  1068: 'Poll',
   1111: 'Comment',
   1984: 'Report',
   9734: 'Zap request',
@@ -79,6 +81,7 @@ const REPOST_KINDS = new Set([6, 16]);
 const ARTICLE_KINDS = new Set([30023, 30024]);
 const VIDEO_KINDS = new Set([21, 22, 34235, 34236]);
 const PICTURE_KINDS = new Set([20]);
+const POLL_KINDS = new Set([1068]);
 
 /**
  * Chooses a renderer for an event. Structured JSON wins over the plain-text
@@ -90,6 +93,7 @@ export function getNoteRenderKind(event: NostrEvent): NoteRenderKind {
   if (ARTICLE_KINDS.has(event.kind)) return 'article';
   if (VIDEO_KINDS.has(event.kind)) return 'video';
   if (PICTURE_KINDS.has(event.kind)) return 'picture';
+  if (POLL_KINDS.has(event.kind)) return 'poll';
 
   if (parseJsonContent(event.content)) return 'structured';
   if (TEXT_KINDS.has(event.kind)) return 'text';
@@ -149,6 +153,11 @@ export function isRenderableEvent(event: NostrEvent): boolean {
 
   // Media-bearing kinds keep their payload in tags, not in content
   return event.tags.some(
-    ([name]) => name === 'imeta' || name === 'url' || name === 'e' || name === 'title'
+    ([name]) =>
+      name === 'imeta' ||
+      name === 'url' ||
+      name === 'e' ||
+      name === 'title' ||
+      name === 'option'
   );
 }

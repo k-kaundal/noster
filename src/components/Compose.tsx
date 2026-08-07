@@ -1,6 +1,17 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Eye, Image, Loader2, PenSquare, Send, Server, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  BarChart3,
+  Eye,
+  Image,
+  Loader2,
+  PenSquare,
+  Plus,
+  Send,
+  Server,
+  X,
+} from 'lucide-react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useUploadFile } from '@/hooks/useUploadFile';
@@ -20,6 +31,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useRelays } from '@/hooks/useRelays';
 import { relayDisplayName } from '@/lib/relay';
+import { POLL_KIND, buildPollTags } from '@/lib/poll';
 import { NoteContent } from '@/components/NoteContent';
 import { cn } from '@/lib/utils';
 
@@ -56,6 +68,9 @@ export function Compose() {
   const [isDragging, setIsDragging] = useState(false);
   const [warningEnabled, setWarningEnabled] = useState(false);
   const [warningReason, setWarningReason] = useState('');
+  const [pollEnabled, setPollEnabled] = useState(false);
+  const [pollChoices, setPollChoices] = useState<string[]>(['', '']);
+  const [multipleChoice, setMultipleChoice] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -71,7 +86,11 @@ export function Compose() {
     metadata?.display_name || metadata?.name || genUserName(user?.pubkey || '');
 
   const hashtags = extractHashtags(content);
-  const canSubmit = !!content.trim() || uploadedImages.length > 0;
+  const filledChoices = pollChoices.map((choice) => choice.trim()).filter(Boolean);
+  // A poll needs a question and at least two answers to be votable
+  const pollReady = !pollEnabled || (!!content.trim() && filledChoices.length >= 2);
+  const canSubmit =
+    (!!content.trim() || uploadedImages.length > 0) && pollReady;
 
   const uploadImage = async (file: File) => {
     if (uploadedImages.length >= MAX_IMAGES) {
@@ -165,7 +184,24 @@ export function Compose() {
           : []),
       ];
 
-      await createEvent({ kind: 1, content: postContent, tags });
+      if (pollEnabled) {
+        // Polls carry their options in tags and their question in content
+        await createEvent({
+          kind: POLL_KIND,
+          content: content.trim(),
+          tags: [
+            ...buildPollTags({
+              choices: filledChoices,
+              type: multipleChoice ? 'multiplechoice' : 'singlechoice',
+              relays: writeUrls.slice(0, 4),
+            }),
+            ...hashtags.map((tag) => ['t', tag]),
+            ...(warningEnabled ? [['content-warning', warningReason.trim()]] : []),
+          ],
+        });
+      } else {
+        await createEvent({ kind: 1, content: postContent, tags });
+      }
 
       toast({
         title: 'Post published',
@@ -178,6 +214,8 @@ export function Compose() {
       setUploadedImages([]);
       setWarningEnabled(false);
       setWarningReason('');
+      setPollEnabled(false);
+      setPollChoices(['', '']);
       navigate('/');
     } catch (error) {
       console.error('Post creation error:', error);
@@ -329,6 +367,93 @@ export function Compose() {
                 </p>
               )}
             </div>
+          </div>
+
+          {/* NIP-88 poll */}
+          <div className="space-y-2 rounded-lg border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <Label
+                htmlFor="poll-toggle"
+                className="flex cursor-pointer items-center gap-2 text-sm font-normal"
+              >
+                <BarChart3 className="h-4 w-4 text-primary" />
+                Add a poll
+              </Label>
+              <Switch
+                id="poll-toggle"
+                checked={pollEnabled}
+                onCheckedChange={setPollEnabled}
+              />
+            </div>
+
+            {pollEnabled && (
+              <div className="space-y-2 pt-1">
+                {pollChoices.map((choice, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <Input
+                      value={choice}
+                      onChange={(e) =>
+                        setPollChoices((current) =>
+                          current.map((value, i) =>
+                            i === index ? e.target.value : value
+                          )
+                        )
+                      }
+                      placeholder={`Option ${index + 1}`}
+                      aria-label={`Poll option ${index + 1}`}
+                      className="text-sm"
+                    />
+                    {pollChoices.length > 2 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0"
+                        aria-label={`Remove option ${index + 1}`}
+                        onClick={() =>
+                          setPollChoices((current) =>
+                            current.filter((_, i) => i !== index)
+                          )
+                        }
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={pollChoices.length >= 6}
+                    onClick={() => setPollChoices((current) => [...current, ''])}
+                  >
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    Add option
+                  </Button>
+
+                  <Label
+                    htmlFor="poll-multi"
+                    className="flex cursor-pointer items-center gap-2 text-xs font-normal text-muted-foreground"
+                  >
+                    <Switch
+                      id="poll-multi"
+                      checked={multipleChoice}
+                      onCheckedChange={setMultipleChoice}
+                    />
+                    Allow multiple answers
+                  </Label>
+                </div>
+
+                {!pollReady && (
+                  <p className="text-xs text-muted-foreground">
+                    A poll needs a question above and at least two options.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* NIP-36 content warning */}
