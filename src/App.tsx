@@ -41,6 +41,7 @@ const queryClient = new QueryClient({
 
 const defaultConfig: AppConfig = {
   theme: "system",
+  accent: "violet",
   relayUrl: "wss://relay.damus.io",
   // Reads fan out across all of these; writes go to the ones marked write
   relays: [

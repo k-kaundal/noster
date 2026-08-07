@@ -4,6 +4,8 @@ import { nip19 } from 'nostr-tools';
 import { FileQuestion, FileText, Film, Clock, Ban } from 'lucide-react';
 import { NoteContent } from '@/components/NoteContent';
 import { StructuredPayload } from '@/components/notes/StructuredPayload';
+import { PollContent } from '@/components/notes/PollContent';
+import { parsePoll } from '@/lib/poll';
 import { Badge } from '@/components/ui/badge';
 import {
   getAltText,
@@ -46,6 +48,16 @@ export function NoteBody({ event, className }: NoteBodyProps) {
           className={className}
         />
       );
+
+    case 'poll': {
+      const poll = parsePoll(event);
+      // A poll with fewer than two options falls back to the unknown card
+      return poll ? (
+        <PollContent event={event} poll={poll} className={className} />
+      ) : (
+        <UnknownKind event={event} className={className} />
+      );
+    }
 
     case 'article':
       return <ArticlePreview event={event} className={className} />;

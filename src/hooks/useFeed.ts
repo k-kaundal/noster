@@ -39,7 +39,8 @@ export function useFeed(scope: FeedScope = 'global') {
       const events = await nostr.query(
         [
           {
-            kinds: [1, 6, 16],
+            // 1068 is NIP-88 polls, which belong in the timeline like notes
+            kinds: [1, 6, 16, 1068],
             limit: PAGE_SIZE,
             ...(pageParam ? { until: pageParam } : {}),
             // Relays index authors, so following feeds filter server-side

@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useCallback } from 'react';
 import { z } from 'zod';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { AppConfigSchema, AppContext, type AppConfig, type AppContextType, type Theme } from '@/contexts/AppContext';
+import { applyTokens, deriveTokens, getAccentPreset } from '@/lib/theme';
 import { SimplePool, Event, EventTemplate, Filter } from 'nostr-tools';
 import { NostrMetadata, NostrSigner } from '@nostrify/nostrify';
 
@@ -222,6 +223,7 @@ export function AppProvider(props: AppProviderProps) {
   };
 
   useApplyTheme(config.theme);
+  useApplyAccent(config.theme, config.accent);
 
   return (
     <AppContext.Provider value={appContextValue}>
@@ -254,4 +256,31 @@ function useApplyTheme(theme: Theme) {
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
+}
+/**
+ * Paints the selected accent palette onto the document as CSS custom
+ * properties. The stylesheet keeps its own defaults, so a failure here leaves
+ * the app styled rather than unstyled.
+ */
+function useApplyAccent(theme: Theme, accent: string) {
+  useEffect(() => {
+    const root = window.document.documentElement;
+
+    const paint = () => {
+      const dark = theme === 'system'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : theme === 'dark';
+
+      const preset = getAccentPreset(accent);
+      applyTokens(root, deriveTokens(dark ? preset.dark : preset.light));
+    };
+
+    paint();
+
+    // Following the system means repainting when the OS setting flips
+    if (theme !== 'system') return;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', paint);
+    return () => mediaQuery.removeEventListener('change', paint);
+  }, [theme, accent]);
 }

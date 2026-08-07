@@ -13,6 +13,7 @@ const HashtagPage = lazy(() => import("./pages/HashtagPage"));
 const RelaysPage = lazy(() => import("./pages/RelaysPage"));
 const ReelsPage = lazy(() => import("./pages/ReelsPage"));
 const BookmarksPage = lazy(() => import("./pages/BookmarksPage"));
+const ChatPage = lazy(() => import("./pages/ChatPage"));
 const NIP19Page = lazy(() =>
   import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
 );
@@ -50,6 +51,9 @@ export function AppRouter() {
           <Route path="/reels" element={<ReelsPage />} />
           {/* NIP-51 saved notes */}
           <Route path="/bookmarks" element={<BookmarksPage />} />
+          {/* NIP-17 private messages */}
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/chat/:npub" element={<ChatPage />} />
           {/* Follow pages */}
           <Route path="/:nip19/following" element={<FollowingPage />} />
           <Route path="/:nip19/followers" element={<FollowersPage />} />

@@ -1,4 +1,14 @@
-import { Bookmark, Compass, Film, Flame, Home, PenSquare, Server, User } from 'lucide-react';
+import {
+  Bookmark,
+  Compass,
+  Film,
+  Flame,
+  Home,
+  MessagesSquare,
+  PenSquare,
+  Server,
+  User,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
 
@@ -27,6 +37,13 @@ export function getNavItems(pubkey?: string): NavItem[] {
     { href: '/', icon: Home, label: 'Home', shortcut: 'H' },
     { href: '/reels', icon: Film, label: 'Reels', shortcut: 'V' },
     { href: '/explore', icon: Compass, label: 'Explore', shortcut: 'E' },
+    {
+      href: '/chat',
+      icon: MessagesSquare,
+      label: 'Messages',
+      shortcut: 'M',
+      requiresAuth: true,
+    },
     { href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
     ...(pubkey
       ? [
