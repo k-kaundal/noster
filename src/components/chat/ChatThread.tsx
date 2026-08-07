@@ -149,7 +149,7 @@ export function ChatThread({ peerPubkey }: ChatThreadProps) {
             onClick={handleSend}
             disabled={!draft.trim() || isPending}
             size="icon"
-            className="h-[42px] w-[42px] shrink-0 bg-brand-gradient"
+            className="h-[42px] w-[42px] shrink-0"
             aria-label="Send message"
           >
             {isPending ? (
@@ -190,7 +190,7 @@ function MessageBubble({
           className={cn(
             'max-w-[80%] rounded-2xl px-3 py-2 text-sm',
             isOwn
-              ? 'rounded-br-md bg-brand-gradient text-primary-foreground'
+              ? 'rounded-br-md bg-primary text-primary-foreground'
               : 'rounded-bl-md bg-muted'
           )}
         >

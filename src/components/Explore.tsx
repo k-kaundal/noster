@@ -155,7 +155,7 @@ function PersonRow({ pubkey }: { pubkey: string }) {
   return (
     <div className="flex items-center gap-3 p-4">
       <Link to={`/${npub}`} className="shrink-0">
-        <Avatar className="h-10 w-10 transition-transform hover:scale-105">
+        <Avatar className="h-10 w-10">
           <AvatarImage src={metadata?.picture} alt="" />
           <AvatarFallback className="text-xs">
             {displayName.slice(0, 2).toUpperCase()}

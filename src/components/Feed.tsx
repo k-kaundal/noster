@@ -80,7 +80,7 @@ export function Feed() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <Tabs
           value={scope}
@@ -117,7 +117,7 @@ export function Feed() {
           <Button
             size="sm"
             onClick={showNewPosts}
-            className="animate-slide-down rounded-full bg-brand-gradient shadow-lg"
+            className="animate-slide-down rounded-full shadow-float"
           >
             <ArrowUp className="mr-1.5 h-3.5 w-3.5" />
             {newCount} new {newCount === 1 ? 'post' : 'posts'}
@@ -128,9 +128,9 @@ export function Feed() {
       {/* Entry point to the vertical video feed */}
       <Link
         to="/reels"
-        className="group flex items-center gap-3 rounded-xl border bg-card p-3 shadow-card transition-colors hover:border-primary/40 hover:bg-accent/40"
+        className="group flex items-center gap-3 rounded-xl border bg-card p-3.5 transition-colors hover:bg-muted/40"
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-primary-foreground">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
           <Film className="h-5 w-5" />
         </span>
         <span className="min-w-0 flex-1">
@@ -145,7 +145,7 @@ export function Feed() {
       </Link>
 
       {/* Discovery widgets are inline below xl, where the right rail is hidden */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:hidden">
+      <div className="grid gap-3 sm:grid-cols-2 xl:hidden">
         <TrendingHashtags
           hashtags={trending?.topHashtags ?? []}
           isLoading={isTrendingLoading}
@@ -192,7 +192,7 @@ export function Feed() {
           showRelaySelector
           action={
             user ? (
-              <Button asChild className="bg-brand-gradient">
+              <Button asChild>
                 <Link to="/compose">Write the first note</Link>
               </Button>
             ) : undefined
@@ -200,7 +200,7 @@ export function Feed() {
         />
       ) : (
         <>
-          <div className="stagger-in space-y-4">
+          <div className="stagger-in space-y-3">
             {posts.map((post, index) => (
               <div
                 key={post.id}

@@ -190,18 +190,17 @@ export function deriveTokens(core: CoreColors): ThemeTokens {
     zap: dark ? '38 92% 58%' : '38 92% 48%',
 
     /*
-     * Elevation. Shadows carry the accent hue rather than neutral grey — a
-     * grey shadow on a tinted surface reads as dirt, a tinted one as light.
-     * Dark surfaces need a deeper, stronger shadow to separate at all, and a
-     * far fainter top highlight, since a bright edge on dark reads as a seam.
+     * Elevation. Resting surfaces separate with a hairline border rather than
+     * a shadow, so light mode needs no shadow at all. A hairline is faint on
+     * dark, so dark keeps a trace of one. What shadow there is carries the
+     * accent hue — a neutral grey shadow on a tinted surface reads as dirt.
      */
     'shadow-color': formatHsl({
       h: primaryHsl.h,
       s: dark ? 60 : 40,
       l: dark ? 2 : 20,
     }),
-    'shadow-strength': dark ? '2.2' : '1',
-    'edge-highlight': dark ? '0 0% 100% / 0.07' : '0 0% 100% / 0.6',
+    'shadow-strength': dark ? '1.4' : '0',
   };
 }
 

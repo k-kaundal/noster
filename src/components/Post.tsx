@@ -226,12 +226,12 @@ export function Post({
   };
 
   const body = (
-    <article className={cn('flex gap-3 p-4', embedded && 'p-3')}>
+    <article className={cn('flex gap-3 p-5', embedded && 'gap-2.5 p-3.5')}>
       <UserHoverCard pubkey={event.pubkey}>
         <Link to={`/${npub}`} className="shrink-0" tabIndex={-1} aria-hidden="true">
           <Avatar
             className={cn(
-              'transition-transform hover:scale-105',
+              'transition-opacity hover:opacity-90',
               embedded ? 'h-8 w-8' : 'h-10 w-10'
             )}
           >
@@ -503,7 +503,7 @@ export function Post({
       <Card
         className={cn(
           // Off-screen rows skip layout and paint in a long feed
-          'content-auto overflow-hidden hover-lift hover:border-border/80',
+          'content-auto overflow-hidden hover-lift',
           className
         )}
       >

@@ -135,7 +135,7 @@ export function Profile({ pubkey }: ProfileProps) {
     <div className="space-y-5">
       <Card className="overflow-hidden">
         <div className="relative">
-          <div className="h-32 bg-brand-gradient sm:h-44">
+          <div className="h-32 bg-muted sm:h-44">
             {metadata?.banner && (
               <img
                 src={metadata.banner}
@@ -357,7 +357,7 @@ function PostGroup({
         showRelaySelector={!showCompose}
         action={
           showCompose ? (
-            <Button asChild className="bg-brand-gradient">
+            <Button asChild>
               <Link to="/compose">Write your first note</Link>
             </Button>
           ) : undefined

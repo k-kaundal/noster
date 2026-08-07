@@ -21,7 +21,7 @@ export function BackToTop() {
       aria-label="Back to top"
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
       className={cn(
-        'fixed bottom-20 left-4 z-40 h-10 w-10 rounded-full border shadow-lg transition-all duration-200 lg:bottom-6',
+        'fixed bottom-20 left-4 z-40 h-10 w-10 rounded-full border shadow-float transition-all duration-200 lg:bottom-6',
         visible
           ? 'translate-y-0 opacity-100'
           : 'pointer-events-none translate-y-2 opacity-0'

@@ -41,7 +41,7 @@ const NotFound = () => {
         </div>
 
         <div className="flex flex-wrap justify-center gap-2">
-          <Button asChild className="bg-brand-gradient">
+          <Button asChild>
             <Link to="/">
               <Home className="mr-2 h-4 w-4" />
               Back home

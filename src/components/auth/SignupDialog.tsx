@@ -366,7 +366,7 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
                 </p>
 
                 <Button
-                  className='w-full rounded-full py-6 text-lg font-semibold bg-brand-gradient shadow-lg transition-transform duration-200 hover:scale-[1.02]'
+                  className='w-full py-6 text-lg font-semibold'
                   onClick={() => setStep('generate')}
                 >
                   <LogIn className='w-5 h-5 mr-2' />
@@ -439,7 +439,7 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
 
               {!isLoading && (
                 <Button
-                  className='w-full rounded-full py-6 text-lg font-semibold bg-brand-gradient shadow-lg transition-transform duration-200 hover:scale-[1.02]'
+                  className='w-full py-6 text-lg font-semibold'
                   onClick={generateKey}
                   disabled={isLoading}
                 >
@@ -465,7 +465,7 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
 
                 <div className='relative z-10 flex justify-center items-center mb-3'>
                   <div className='relative'>
-                    <div className='w-16 h-16 bg-primary/15 rounded-full flex items-center justify-center shadow-lg animate-pulse'>
+                    <div className='w-16 h-16 bg-muted rounded-full flex items-center justify-center animate-pulse'>
                       <Key className='w-8 h-8 text-primary' />
                     </div>
                     <div className='absolute -top-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center animate-bounce'>
@@ -594,10 +594,10 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
 
                 {/* Continue button */}
                 <Button
-                  className={`w-full rounded-full py-4 text-base font-semibold transform transition-all duration-200 shadow-lg ${
+                  className={`w-full py-4 text-base font-semibold transition-colors duration-150 ${
                     keySecured !== 'none'
-                      ? 'bg-brand-gradient hover:scale-[1.02]'
-                      : 'bg-brand-gradient opacity-50 cursor-not-allowed'
+                      ? ''
+                      : 'opacity-50 cursor-not-allowed'
                   }`}
                   onClick={finishKeySetup}
                   disabled={keySecured === 'none'}
@@ -634,7 +634,7 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
 
                 <div className='relative z-10 flex justify-center items-center mb-3'>
                   <div className='relative'>
-                    <div className='w-16 h-16 bg-primary/15 rounded-full flex items-center justify-center shadow-lg'>
+                    <div className='w-16 h-16 bg-muted rounded-full flex items-center justify-center'>
                       <User className='w-8 h-8 text-primary' />
                     </div>
                     <div className='absolute -top-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center animate-bounce'>
@@ -739,7 +739,7 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
               {/* Action buttons */}
               <div className='space-y-3'>
                 <Button
-                  className='w-full rounded-full py-4 text-base font-semibold bg-brand-gradient shadow-lg transition-transform duration-200 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
+                  className='w-full py-4 text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed'
                   onClick={() => finishSignup(false)}
                   disabled={isPublishing || isUploading}
                 >

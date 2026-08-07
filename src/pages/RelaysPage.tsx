@@ -242,7 +242,7 @@ export function RelaysPage() {
                   <Button
                     onClick={() => publish(relays)}
                     disabled={isPublishing}
-                    className="bg-brand-gradient"
+                    className=""
                   >
                     {isPublishing ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -75,7 +75,7 @@ export function ReelsPage() {
   const composeButton = user ? (
     <Button
       onClick={() => setComposerOpen(true)}
-      className="bg-brand-gradient"
+      className=""
       size="sm"
     >
       <Plus className="mr-1.5 h-4 w-4" />

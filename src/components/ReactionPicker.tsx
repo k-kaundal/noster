@@ -124,7 +124,7 @@ function EmojiButton({
       onClick={() => onSelect(emoji)}
       aria-label={`React with ${emoji}`}
       className={cn(
-        'flex items-center justify-center rounded-md transition-transform duration-150 ease-spring hover:scale-125 hover:bg-accent',
+        'flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-muted',
         large ? 'h-9 w-9 text-xl' : 'h-8 w-8 text-base'
       )}
     >

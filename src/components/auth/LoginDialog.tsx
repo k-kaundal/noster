@@ -205,7 +205,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
               </p>
               <Button
                 onClick={handleSignupClick}
-                className='w-full rounded-full py-3 text-base font-semibold bg-brand-gradient shadow-lg border-0 transition-transform duration-200 hover:scale-[1.02]'
+                className='w-full py-3 text-base font-semibold'
               >
                 <UserPlus className='w-4 h-4 mr-2' />
                 <span>Sign Up</span>

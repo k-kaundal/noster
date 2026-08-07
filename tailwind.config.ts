@@ -104,11 +104,11 @@ export default {
 				quart: 'var(--ease-out-quart)',
 			},
 			boxShadow: {
-				/* Brand-tinted and theme-aware, unlike Tailwind's neutral defaults */
-				card: 'inset 0 1px 0 0 hsl(var(--edge-highlight)), 0 1px 2px -1px hsl(var(--shadow-color) / calc(0.06 * var(--shadow-strength))), 0 4px 12px -4px hsl(var(--shadow-color) / calc(0.08 * var(--shadow-strength)))',
-				'card-hover': 'inset 0 1px 0 0 hsl(var(--edge-highlight)), 0 2px 6px -2px hsl(var(--shadow-color) / calc(0.1 * var(--shadow-strength))), 0 16px 32px -12px hsl(var(--shadow-color) / calc(0.16 * var(--shadow-strength)))',
-				float: 'inset 0 1px 0 0 hsl(var(--edge-highlight)), 0 8px 24px -6px hsl(var(--shadow-color) / calc(0.14 * var(--shadow-strength))), 0 24px 48px -16px hsl(var(--shadow-color) / calc(0.18 * var(--shadow-strength)))',
-				glow: '0 0 0 1px hsl(var(--primary) / 0.2), 0 8px 32px -8px hsl(var(--primary) / 0.35)',
+				/* Resting surfaces separate with a border; these are for things
+				   that genuinely float above the page. */
+				card: '0 1px 2px -1px hsl(var(--shadow-color) / calc(0.1 * var(--shadow-strength)))',
+				'card-hover': '0 1px 3px -1px hsl(var(--shadow-color) / calc(0.14 * var(--shadow-strength)))',
+				float: '0 2px 4px -2px hsl(var(--shadow-color) / 0.08), 0 12px 28px -8px hsl(var(--shadow-color) / 0.12)',
 			},
 			keyframes: {
 				'accordion-down': {

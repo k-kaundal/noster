@@ -27,7 +27,7 @@ export function MobileNav({ onSearch }: MobileNavProps) {
 
   return (
     <nav
-      className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/75 backdrop-blur-xl backdrop-saturate-150 lg:hidden"
+      className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t bg-background lg:hidden"
       aria-label="Primary"
     >
       <div className="flex items-stretch justify-around">
@@ -41,18 +41,13 @@ export function MobileNav({ onSearch }: MobileNavProps) {
               aria-label={item.label}
               className={cn(
                 'relative flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-2 text-[10px] font-medium transition-colors',
-                active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
               )}
             >
               {active && (
-                <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-brand-gradient" />
+                <span className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-foreground" />
               )}
-              <item.icon
-                className={cn(
-                  'h-5 w-5 transition-transform duration-300 ease-spring',
-                  active && 'scale-110'
-                )}
-              />
+              <item.icon className="h-5 w-5" />
               <span className="truncate">{item.label}</span>
             </Link>
           );

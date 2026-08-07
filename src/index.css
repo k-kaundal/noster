@@ -41,19 +41,15 @@
     --input: 220 13% 91%;
     --ring: 262.1 83.3% 57.8%;
 
-    --radius: 1rem;
+    --radius: 0.75rem;
 
     /*
-     * Shadows are tinted with the brand hue rather than pure black. Neutral
-     * grey shadows read as dirt on a coloured surface; a tinted one reads as
-     * light falling through the page.
+     * Separation comes from a hairline border, not a shadow. Shadows are kept
+     * for things that genuinely float — menus, dialogs, the compose button —
+     * and stay out of the way of everything that merely sits on the page.
      */
     --shadow-color: 262 40% 20%;
-    --shadow-strength: 1;
-
-    /* A hairline highlight along the top edge, which is what makes a surface
-       look lit from above rather than merely outlined. */
-    --edge-highlight: 0 0% 100% / 0.6;
+    --shadow-strength: 0;
 
     /* Motion. One spring for entrances, one snap for state changes, so
        everything in the app accelerates the same way. */
@@ -143,11 +139,10 @@
     --sidebar-border: 240 5% 17%;
     --sidebar-ring: 263.4 70% 60%;
 
-    /* Dark surfaces need a stronger, deeper shadow to separate at all, and a
-       much fainter top highlight — a bright edge on dark reads as a seam. */
+    /* A hairline border alone is faint on dark, so floating surfaces there
+       keep a little shadow where light-mode ones need none. */
     --shadow-color: 262 60% 2%;
-    --shadow-strength: 2.2;
-    --edge-highlight: 0 0% 100% / 0.07;
+    --shadow-strength: 1.4;
   }
 }
 
@@ -171,29 +166,6 @@
     text-wrap: pretty;
   }
 
-  /*
-   * Ambient light behind the page: two very faint brand-tinted pools, fixed so
-   * they don't travel with the scroll. They give the flat surface colour some
-   * depth without ever competing with content for attention.
-   */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background:
-      radial-gradient(
-        60rem 40rem at 15% -10%,
-        hsl(var(--brand-from) / 0.07),
-        transparent 60%
-      ),
-      radial-gradient(
-        50rem 35rem at 95% 5%,
-        hsl(var(--brand-to) / 0.06),
-        transparent 60%
-      );
-  }
 
   /* Keyboard users get a clear ring; pointer users don't see one on click */
   :focus-visible {
@@ -263,54 +235,34 @@
   }
 
   /*
-   * A lit surface: hairline highlight along the top edge, tinted shadow below.
-   * This pairing is what separates a card from the page without a heavy
-   * border, and it survives both themes because both halves are tokenised.
+   * Resting surfaces carry no shadow at all — the border does the separating.
+   * In dark mode a hairline is faint enough that a trace of shadow helps, so
+   * the strength token carries it rather than a second rule.
    */
   .elevated {
-    box-shadow:
-      inset 0 1px 0 0 hsl(var(--edge-highlight)),
-      0 1px 2px -1px hsl(var(--shadow-color) / calc(0.06 * var(--shadow-strength))),
-      0 4px 12px -4px hsl(var(--shadow-color) / calc(0.08 * var(--shadow-strength)));
+    box-shadow: 0 1px 2px -1px
+      hsl(var(--shadow-color) / calc(0.1 * var(--shadow-strength)));
   }
 
+  /* For things that genuinely float: menus, dialogs, the compose button */
   .elevated-lg {
     box-shadow:
-      inset 0 1px 0 0 hsl(var(--edge-highlight)),
-      0 2px 4px -2px hsl(var(--shadow-color) / calc(0.08 * var(--shadow-strength))),
-      0 12px 32px -8px hsl(var(--shadow-color) / calc(0.12 * var(--shadow-strength)));
-  }
-
-  .hover-lift {
-    transition:
-      transform 0.25s var(--ease-out-quart),
-      box-shadow 0.25s var(--ease-out-quart),
-      border-color 0.25s var(--ease-out-quart);
-  }
-
-  .hover-lift:hover {
-    transform: translateY(-2px);
-    box-shadow:
-      inset 0 1px 0 0 hsl(var(--edge-highlight)),
-      0 2px 6px -2px hsl(var(--shadow-color) / calc(0.1 * var(--shadow-strength))),
-      0 16px 32px -12px hsl(var(--shadow-color) / calc(0.16 * var(--shadow-strength)));
+      0 2px 4px -2px hsl(var(--shadow-color) / 0.08),
+      0 12px 28px -8px hsl(var(--shadow-color) / 0.12);
   }
 
   /*
-   * A thin brand-tinted rim, used on the elements that should read as the
-   * primary surface of a screen. Sits inside the radius, unlike a border.
+   * Rows respond by warming their border and background, not by lifting. A
+   * card that jumps under the cursor is noise in a list you are scanning.
    */
-  .ring-brand {
-    box-shadow:
-      0 0 0 1px hsl(var(--primary) / 0.18),
-      0 0 24px -6px hsl(var(--primary) / 0.25);
+  .hover-lift {
+    transition:
+      background-color 0.15s var(--ease-out-quart),
+      border-color 0.15s var(--ease-out-quart);
   }
 
-  /* Frosted panel, for anything that floats over scrolling content */
-  .glass {
-    background-color: hsl(var(--card) / 0.72);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
+  .hover-lift:hover {
+    border-color: hsl(var(--foreground) / 0.14);
   }
 
   /*
@@ -346,17 +298,26 @@
    * the way down.
    */
   .text-display {
-    font-size: clamp(1.75rem, 1.25rem + 2.2vw, 2.75rem);
-    line-height: 1.08;
-    letter-spacing: -0.03em;
-    font-weight: 700;
+    font-size: clamp(1.625rem, 1.25rem + 1.6vw, 2.25rem);
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+    font-weight: 650;
   }
 
   .text-title {
-    font-size: clamp(1.25rem, 1.05rem + 0.9vw, 1.75rem);
-    line-height: 1.2;
+    font-size: clamp(1.125rem, 1.02rem + 0.5vw, 1.375rem);
+    line-height: 1.25;
     letter-spacing: -0.02em;
-    font-weight: 650;
+    font-weight: 600;
+  }
+
+  /* Small all-caps label, for section headings in a quiet layout */
+  .text-eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
   }
 
   /* Numerals that don't jitter as counters tick up */

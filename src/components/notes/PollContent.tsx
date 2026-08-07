@@ -118,7 +118,7 @@ export function PollContent({ event, poll, className }: PollContentProps) {
             size="sm"
             onClick={submit}
             disabled={!selected.length || isVoting}
-            className="bg-brand-gradient"
+            className="bg-primary"
           >
             {isVoting && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
             Vote
