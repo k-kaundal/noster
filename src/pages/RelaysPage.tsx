@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSeoMeta } from '@unhead/react';
+import { useSeo } from '@/hooks/useSeo';
 import {
   CloudDownload,
   Loader2,
@@ -24,10 +24,11 @@ import { useToast } from '@/hooks/useToast';
 import { isValidRelayUrl, relayDisplayName } from '@/lib/relay';
 
 export function RelaysPage() {
-  useSeoMeta({
-    title: 'Relays - NostrFeed',
+  useSeo({
+    title: 'Relay settings',
     description:
-      'Manage the Nostr relays this client reads from and publishes to, including NIP-65 relay list metadata.',
+      'Manage the Nostr relays this client reads from and publishes to, with live health checks, NIP-11 details and NIP-65 relay list publishing.',
+    path: '/relays',
   });
 
   const {

@@ -1,21 +1,25 @@
 {
-  "name": "NostrFeed - Decentralized Social Network",
+  "name": "NostrFeed — Decentralized Social Network",
   "short_name": "NostrFeed",
-  "description": "A modern Nostr client for decentralized social networking",
+  "description": "A fast, open Nostr client. Read and publish notes, watch short videos, zap creators over Lightning, and control exactly which relays you use.",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#8b5cf6",
+  "orientation": "portrait-primary",
+  "background_color": "#09090f",
+  "theme_color": "#7c3aed",
+  "categories": ["social", "news"],
   "icons": [
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    { "src": "/favicon-32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Compose a note", "url": "/compose" },
+    { "name": "Reels", "url": "/reels" },
+    { "name": "Explore", "url": "/explore" }
   ]
 }

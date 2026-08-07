@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+# Individual notes and profiles are addressed by NIP-19 identifiers. They are
+# fetched from relays at runtime, so crawling them yields no indexable content.
+Disallow: /npub1
+Disallow: /note1
+Disallow: /nevent1
+Disallow: /nprofile1
+Disallow: /naddr1
+
+Sitemap: https://nostrfeed.com/sitemap.xml

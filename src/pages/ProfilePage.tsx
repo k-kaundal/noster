@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useSeoMeta } from '@unhead/react';
+import { useSeo } from '@/hooks/useSeo';
 import { Layout } from '@/components/Layout';
 import { Profile } from '@/components/Profile';
 import NotFound from '@/pages/NotFound';
@@ -8,9 +8,10 @@ import { nip19 } from 'nostr-tools';
 const ProfilePage = () => {
   const { npub } = useParams<{ npub: string }>();
 
-  useSeoMeta({
-    title: 'Profile - NostrFeed',
-    description: 'View user profile on the decentralized social network.',
+  useSeo({
+    title: 'Profile',
+    description:
+      'View a profile on the decentralized Nostr network.',
   });
 
   // Decode npub to get pubkey

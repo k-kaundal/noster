@@ -7,29 +7,35 @@ interface LogoProps {
 }
 
 /**
- * NostrFeed mark: three relay nodes joined by edges, drawn with `currentColor`
- * so it inherits the surrounding text color in both themes.
+ * The NostrFeed mark: a capital N built from relay nodes and the edges between
+ * them. The letterform survives at favicon size while the nodes read as a
+ * network once there is room for them.
+ *
+ * The geometry here is the single source of truth — `scripts/generate-icons.mjs`
+ * reproduces it for the favicon, PWA icons and social card.
  */
 export function Logo({ className, markOnly = false }: LogoProps) {
   return (
     <span className={cn('flex items-center gap-2', className)}>
-      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-primary-foreground shadow-sm">
-        <svg
-          viewBox="0 0 24 24"
-          className="h-5 w-5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.75}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M6.5 8.5 12 5.5l5.5 3M6.5 8.5v7l5.5 3 5.5-3v-7" opacity={0.55} />
-          <circle cx="12" cy="5.5" r="2" fill="currentColor" stroke="none" />
-          <circle cx="6.5" cy="15.5" r="2" fill="currentColor" stroke="none" />
-          <circle cx="17.5" cy="15.5" r="2" fill="currentColor" stroke="none" />
+      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[0.55rem] bg-brand-gradient text-primary-foreground shadow-sm">
+        <svg viewBox="0 0 24 24" className="h-full w-full" aria-hidden="true">
+          <path
+            d="M7.2 17.28V6.72l9.6 10.56V6.72"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <g fill="currentColor">
+            <circle cx="7.2" cy="6.72" r="2.1" />
+            <circle cx="7.2" cy="17.28" r="2.1" />
+            <circle cx="16.8" cy="6.72" r="2.1" />
+            <circle cx="16.8" cy="17.28" r="2.1" />
+          </g>
         </svg>
       </span>
+
       {!markOnly && (
         <span className="text-lg font-bold tracking-tight text-brand-gradient">
           NostrFeed

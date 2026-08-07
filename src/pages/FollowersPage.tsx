@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { useSeoMeta } from '@unhead/react';
+import { useSeo } from '@/hooks/useSeo';
 import { Layout } from '@/components/Layout';
 import { FollowList } from '@/components/FollowList';
 import NotFound from './NotFound';
@@ -8,9 +8,11 @@ import NotFound from './NotFound';
 export function FollowersPage() {
   const { nip19: identifier } = useParams<{ nip19: string }>();
 
-  useSeoMeta({
-    title: 'Followers - NostrFeed',
-    description: 'View who follows this user on the decentralized social network.',
+  useSeo({
+    title: 'Followers',
+    description:
+      'People who follow this account on the Nostr network.',
+    noindex: true,
   });
 
   if (!identifier) {

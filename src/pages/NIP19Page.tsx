@@ -1,6 +1,6 @@
 import { nip19 } from 'nostr-tools';
 import { useParams } from 'react-router-dom';
-import { useSeoMeta } from '@unhead/react';
+import { useSeo } from '@/hooks/useSeo';
 import { Layout } from '@/components/Layout';
 import { Profile } from '@/components/Profile';
 import { PostPage } from '@/components/PostPage';
@@ -9,9 +9,10 @@ import NotFound from './NotFound';
 export function NIP19Page() {
   const { nip19: identifier } = useParams<{ nip19: string }>();
 
-  useSeoMeta({
+  useSeo({
     title: 'NostrFeed',
-    description: 'View content on the decentralized social network.',
+    description:
+      'View a note, profile or article on the decentralized Nostr network.',
   });
 
   if (!identifier) {

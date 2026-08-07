@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useSeoMeta } from '@unhead/react';
+import { useSeo } from '@/hooks/useSeo';
 import { Film, Loader2, Plus } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { EmptyState } from '@/components/EmptyState';
@@ -12,10 +12,11 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 
 export function ReelsPage() {
-  useSeoMeta({
-    title: 'Reels - NostrFeed',
+  useSeo({
+    title: 'Reels — Short videos on Nostr',
     description:
       'Short vertical videos published to Nostr as NIP-71 events. Watch, react, zap and post your own.',
+    path: '/reels',
   });
 
   const { reels, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =

@@ -1,4 +1,4 @@
-import { useSeoMeta } from "@unhead/react";
+import { useSeo } from '@/hooks/useSeo';
 import { useLocation, Link } from "react-router-dom";
 import { useEffect } from "react";
 import { Compass, Home, Search } from 'lucide-react';
@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button';
 const NotFound = () => {
   const location = useLocation();
 
-  useSeoMeta({
-    title: "404 - Page Not Found",
-    description: "The page you are looking for could not be found. Return to the home page to continue browsing.",
+  useSeo({
+    title: 'Page not found',
+    description:
+      'The page you are looking for could not be found. Return to the home page to keep browsing Nostr.',
+    noindex: true,
   });
 
   useEffect(() => {
