@@ -14,6 +14,7 @@ const RelaysPage = lazy(() => import("./pages/RelaysPage"));
 const ReelsPage = lazy(() => import("./pages/ReelsPage"));
 const BookmarksPage = lazy(() => import("./pages/BookmarksPage"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const NIP19Page = lazy(() =>
   import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
 );
@@ -54,6 +55,8 @@ export function AppRouter() {
           {/* NIP-17 private messages */}
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/chat/:npub" element={<ChatPage />} />
+          {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
+          <Route path="/settings" element={<SettingsPage />} />
           {/* Follow pages */}
           <Route path="/:nip19/following" element={<FollowingPage />} />
           <Route path="/:nip19/followers" element={<FollowersPage />} />

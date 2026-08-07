@@ -70,6 +70,9 @@ export function useKeyboardShortcuts({
             case 'm':
               navigate('/chat');
               return;
+            case 's':
+              navigate('/settings');
+              return;
             case 'p':
               if (user) navigate(`/${nip19.npubEncode(user.pubkey)}`);
               return;
@@ -112,6 +115,9 @@ export function useKeyboardShortcuts({
           break;
         case 'c':
           navigate('/compose');
+          break;
+        case ',':
+          navigate('/settings');
           break;
         case '?':
           event.preventDefault();
