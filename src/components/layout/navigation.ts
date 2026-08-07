@@ -1,4 +1,5 @@
 import {
+  Bell,
   Bookmark,
   Compass,
   Film,
@@ -7,6 +8,7 @@ import {
   MessagesSquare,
   PenSquare,
   Server,
+  Settings,
   User,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -44,6 +46,14 @@ export function getNavItems(pubkey?: string): NavItem[] {
       shortcut: 'M',
       requiresAuth: true,
     },
+    {
+      href: '/notifications',
+      icon: Bell,
+      label: 'Notifications',
+      shortcut: 'N',
+      requiresAuth: true,
+      secondary: true,
+    },
     { href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
     ...(pubkey
       ? [
@@ -64,6 +74,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
       secondary: true,
     },
     { href: '/relays', icon: Server, label: 'Relays', shortcut: 'R', secondary: true },
+    { href: '/settings', icon: Settings, label: 'Settings', shortcut: ',', secondary: true },
     { href: '/compose', icon: PenSquare, label: 'Compose', shortcut: 'C', requiresAuth: true },
   ];
 }

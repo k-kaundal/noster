@@ -8,6 +8,7 @@ import { useReplies } from '@/hooks/useReplies';
 import { useEvent } from '@/hooks/useEvent';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useBookmarks } from '@/hooks/useBookmarks';
+import { useMuteList } from '@/hooks/useMuteList';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { Card } from '@/components/ui/card';
@@ -41,6 +42,7 @@ import {
   BadgeCheck,
   Bookmark,
   Copy,
+  VolumeX,
   ExternalLink,
   Heart,
   Link2,
@@ -103,6 +105,7 @@ export function Post({
   const { isReposted, repostCount, repost, isReposting } = useReposts(event.id);
   const { replyCount } = useReplies(event.id);
   const { isBookmarked, toggle: toggleBookmark, isToggling } = useBookmarks();
+  const { isUserMuted, muteUser, unmuteUser } = useMuteList();
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
@@ -303,6 +306,22 @@ export function Post({
                 />
                 {isBookmarked(event.id) ? 'Remove bookmark' : 'Bookmark'}
               </DropdownMenuItem>
+              {/* Muting your own notes would just hide your timeline */}
+              {user && user.pubkey !== event.pubkey && (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() =>
+                    isUserMuted(event.pubkey)
+                      ? unmuteUser(event.pubkey)
+                      : muteUser(event.pubkey)
+                  }
+                >
+                  <VolumeX className="mr-2 h-4 w-4" />
+                  {isUserMuted(event.pubkey)
+                    ? `Unmute ${displayName}`
+                    : `Mute ${displayName}`}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
                 <a

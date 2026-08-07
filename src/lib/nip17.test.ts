@@ -8,7 +8,9 @@ import {
   SEAL_KIND,
   conversationKey,
   createDirectMessage,
+  rumorToMessage,
   unwrapDirectMessage,
+  unwrapMany,
   type ChatMessage,
 } from './nip17';
 
@@ -62,7 +64,7 @@ const eve = { key: eveKey, pubkey: getPublicKey(eveKey), signer: makeSigner(eveK
 
 describe('createDirectMessage', () => {
   it('produces a wrap for the recipient and one for the sender', async () => {
-    const wraps = await createDirectMessage(
+    const { wraps } = await createDirectMessage(
       alice.signer,
       alice.pubkey,
       [bob.pubkey],
@@ -80,7 +82,7 @@ describe('createDirectMessage', () => {
   });
 
   it('signs each wrap with a throwaway key, not the sender key', async () => {
-    const wraps = await createDirectMessage(
+    const { wraps } = await createDirectMessage(
       alice.signer,
       alice.pubkey,
       [bob.pubkey],
@@ -99,7 +101,7 @@ describe('createDirectMessage', () => {
   });
 
   it('leaks neither the plaintext nor the recipient on the outside', async () => {
-    const [wrap] = await createDirectMessage(
+    const { wraps: [wrap] } = await createDirectMessage(
       alice.signer,
       alice.pubkey,
       [bob.pubkey],
@@ -113,7 +115,7 @@ describe('createDirectMessage', () => {
   });
 
   it('backdates the wrap so timestamps cannot be correlated', async () => {
-    const wraps = await createDirectMessage(
+    const { wraps } = await createDirectMessage(
       alice.signer,
       alice.pubkey,
       [bob.pubkey],
@@ -144,7 +146,7 @@ describe('unwrapDirectMessage', () => {
   }
 
   it('round-trips a message from sender to recipient', async () => {
-    const wraps = await createDirectMessage(
+    const { wraps } = await createDirectMessage(
       alice.signer,
       alice.pubkey,
       [bob.pubkey],
@@ -163,7 +165,7 @@ describe('unwrapDirectMessage', () => {
   });
 
   it('lets the sender read their own copy back', async () => {
-    const wraps = await createDirectMessage(
+    const { wraps } = await createDirectMessage(
       alice.signer,
       alice.pubkey,
       [bob.pubkey],
@@ -180,7 +182,7 @@ describe('unwrapDirectMessage', () => {
   });
 
   it('returns null for a wrap addressed to someone else', async () => {
-    const wraps = await createDirectMessage(
+    const { wraps } = await createDirectMessage(
       alice.signer,
       alice.pubkey,
       [bob.pubkey],
@@ -286,5 +288,99 @@ describe('conversationKey', () => {
       recipients: [alice.pubkey],
     };
     expect(conversationKey(selfNote, alice.pubkey)).toBe(alice.pubkey);
+  });
+});
+
+describe('rumorToMessage', () => {
+  it('produces the same id the relay will echo back, so it dedupes', async () => {
+    const { rumor, wraps } = await createDirectMessage(
+      alice.signer,
+      alice.pubkey,
+      [bob.pubkey],
+      'optimistic'
+    );
+
+    const optimistic = rumorToMessage(rumor);
+    // The self-copy is last; it is what the sender reads back
+    const confirmed = await unwrapDirectMessage(alice.signer, wraps[1]);
+
+    expect(optimistic.id).toBe(confirmed?.id);
+    expect(optimistic.content).toBe('optimistic');
+    expect(optimistic.recipients).toEqual([bob.pubkey]);
+  });
+});
+
+describe('unwrapMany', () => {
+  it('decrypts each wrap only once across calls', async () => {
+    const { wraps } = await createDirectMessage(
+      alice.signer,
+      alice.pubkey,
+      [bob.pubkey],
+      'cached'
+    );
+
+    let decryptCount = 0;
+    const counting: NostrSigner = {
+      ...bob.signer,
+      nip44: {
+        encrypt: (peer, plaintext) => bob.signer.nip44!.encrypt(peer, plaintext),
+        decrypt: (peer, ciphertext) => {
+          decryptCount++;
+          return bob.signer.nip44!.decrypt(peer, ciphertext);
+        },
+      },
+    };
+
+    const cache = new Map<string, ChatMessage | null>();
+
+    const first = await unwrapMany(counting, [wraps[0]], cache);
+    const after = decryptCount;
+    const second = await unwrapMany(counting, [wraps[0]], cache);
+
+    expect(first[0].content).toBe('cached');
+    expect(second[0].content).toBe('cached');
+    // Refetching the inbox must not re-decrypt what it already read
+    expect(decryptCount).toBe(after);
+  });
+
+  it('skips wraps addressed to someone else without failing the batch', async () => {
+    const { wraps: forBob } = await createDirectMessage(
+      alice.signer,
+      alice.pubkey,
+      [bob.pubkey],
+      'for bob'
+    );
+    const { wraps: forEve } = await createDirectMessage(
+      alice.signer,
+      alice.pubkey,
+      [eve.pubkey],
+      'for eve'
+    );
+
+    const messages = await unwrapMany(
+      bob.signer,
+      [forEve[0], forBob[0]],
+      new Map()
+    );
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('for bob');
+  });
+
+  it('preserves the order of the wraps it was given', async () => {
+    const sent = await Promise.all(
+      ['one', 'two', 'three'].map((content) =>
+        createDirectMessage(alice.signer, alice.pubkey, [bob.pubkey], content)
+      )
+    );
+    const wraps = sent.map((result) => result.wraps[0]);
+
+    const messages = await unwrapMany(bob.signer, wraps, new Map(), 2);
+
+    expect(messages.map((message) => message.content)).toEqual([
+      'one',
+      'two',
+      'three',
+    ]);
   });
 });

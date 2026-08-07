@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUp, Film, Loader2, MessageSquare, RefreshCw, Users } from 'lucide-react';
 import { useFeed, type FeedScope } from '@/hooks/useFeed';
@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrendingHashtags, TrendingPeople } from '@/components/TrendingCards';
 import { useTrending } from '@/hooks/useTrending';
+import { useMuteList } from '@/hooks/useMuteList';
+import { filterMuted } from '@/lib/mute';
 import { cn } from '@/lib/utils';
 
 export function Feed() {
@@ -17,7 +19,7 @@ export function Feed() {
   const [scope, setScope] = useState<FeedScope>('global');
 
   const {
-    posts,
+    posts: rawPosts,
     isLoading,
     isError,
     refetch,
@@ -29,6 +31,13 @@ export function Feed() {
   } = useFeed(scope);
 
   const { data: trending, isLoading: isTrendingLoading } = useTrending();
+  const { list: muteList } = useMuteList();
+
+  // Muted authors, words and hashtags never reach the timeline
+  const posts = useMemo(
+    () => (rawPosts ? filterMuted(rawPosts, muteList) : rawPosts),
+    [rawPosts, muteList]
+  );
 
   // Track the newest note the reader has actually seen, so the "new posts"
   // pill only counts notes that arrived after they arrived on the page.

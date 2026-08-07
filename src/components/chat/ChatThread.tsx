@@ -6,6 +6,7 @@ import { BadgeCheck, Loader2, Send, ShieldCheck } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import {
+  useChatReadState,
   useChatThread,
   useDmRelays,
   useSendDirectMessage,
@@ -42,6 +43,14 @@ export function ChatThread({ peerPubkey }: ChatThreadProps) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length]);
+
+  // Having the thread open is what "read" means
+  const { markRead } = useChatReadState();
+  const newest = messages[messages.length - 1]?.createdAt;
+
+  useEffect(() => {
+    if (newest) markRead(peerPubkey, newest);
+  }, [peerPubkey, newest, markRead]);
 
   const handleSend = async () => {
     const content = draft.trim();

@@ -107,6 +107,10 @@ async function sealAndWrap(
  * Produces every gift wrap needed to send a message: one per recipient, plus
  * one addressed to the sender so their own history is readable on other
  * devices. Without the self-copy, sent messages vanish after a reload.
+ *
+ * The rumor comes back alongside the wraps so the sender can show the message
+ * immediately. Its id is the one the relay will eventually echo back, so the
+ * optimistic copy is replaced rather than duplicated.
  */
 export async function createDirectMessage(
   signer: NostrSigner,
@@ -114,17 +118,36 @@ export async function createDirectMessage(
   recipients: string[],
   content: string,
   options: { subject?: string; replyTo?: string; relayHint?: string } = {}
-): Promise<NostrEvent[]> {
+): Promise<{ rumor: Rumor; wraps: NostrEvent[] }> {
   const audience = [...new Set(recipients)].filter(Boolean);
   if (!audience.length) throw new Error('A message needs at least one recipient');
 
   const rumor = buildRumor(senderPubkey, audience, content, options);
 
-  return Promise.all(
+  const wraps = await Promise.all(
     [...audience, senderPubkey].map((pubkey) =>
       sealAndWrap(signer, senderPubkey, rumor, pubkey)
     )
   );
+
+  return { rumor, wraps };
+}
+
+/** The local view of a rumor, before any relay has confirmed it. */
+export function rumorToMessage(rumor: Rumor): ChatMessage {
+  return {
+    id: rumor.id,
+    pubkey: rumor.pubkey,
+    createdAt: rumor.created_at,
+    content: rumor.content,
+    recipients: rumor.tags
+      .filter(([name]) => name === 'p')
+      .map(([, pubkey]) => pubkey)
+      .filter(Boolean),
+    subject: rumor.tags.find(([name]) => name === 'subject')?.[1],
+    replyTo: rumor.tags.find(([name]) => name === 'e')?.[1],
+    wrapId: '',
+  };
 }
 
 /**
@@ -167,6 +190,47 @@ export async function unwrapDirectMessage(
     // Wraps addressed to someone else are expected and not worth reporting
     return null;
   }
+}
+
+/**
+ * Decrypts many wraps, reusing results across calls.
+ *
+ * Two things make the naive version unusable. Decryption is not free, and the
+ * inbox is refetched on a timer, so re-decrypting the whole history every time
+ * burns the main thread for no new information. Worse, with a NIP-07 extension
+ * or a bunker every decrypt is an IPC round-trip, and firing hundreds at once
+ * makes some signers queue for seconds or fail outright — which looks exactly
+ * like messages not arriving.
+ *
+ * So: cache by wrap id, and only ever have `concurrency` decrypts in flight.
+ */
+export async function unwrapMany(
+  signer: NostrSigner,
+  wraps: NostrEvent[],
+  cache: Map<string, ChatMessage | null>,
+  concurrency = 8
+): Promise<ChatMessage[]> {
+  const pending = wraps.filter((wrap) => !cache.has(wrap.id));
+
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, pending.length) },
+    async () => {
+      while (cursor < pending.length) {
+        const wrap = pending[cursor++];
+        cache.set(wrap.id, await unwrapDirectMessage(signer, wrap));
+      }
+    }
+  );
+
+  await Promise.all(workers);
+
+  const messages: ChatMessage[] = [];
+  for (const wrap of wraps) {
+    const message = cache.get(wrap.id);
+    if (message) messages.push(message);
+  }
+  return messages;
 }
 
 /**
