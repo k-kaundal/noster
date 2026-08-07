@@ -1,89 +1,94 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNostr } from '@nostrify/react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { NostrEvent } from '@nostrify/nostrify';
 
 import { useCurrentUser } from './useCurrentUser';
 import { useNostrPublish } from './useNostrPublish';
 import { useToast } from './useToast';
+import { useNoteStats, type NoteStats } from './useNoteStats';
 
 export function useReposts(eventId: string) {
-  const { nostr } = useNostr();
   const { user } = useCurrentUser();
   const { mutateAsync: createEvent } = useNostrPublish();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Query reposts for this event
-  const repostsQuery = useQuery({
-    queryKey: ['reposts', eventId],
-    queryFn: async (c) => {
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(1500)]);
-      const events = await nostr.query([{
-        kinds: [6, 16], // Repost and Generic Repost events
-        '#e': [eventId],
-        limit: 500,
-      }], { signal });
-      
-      return events;
-    },
-    enabled: !!eventId,
-  });
+  const { reposts, isLoading } = useNoteStats(eventId);
 
-  // Check if current user has reposted this event
-  const userRepost = repostsQuery.data?.find(
-    (repost) => repost.pubkey === user?.pubkey
-  );
-
+  const userRepost = reposts.find((repost) => repost.pubkey === user?.pubkey);
   const isReposted = !!userRepost;
-  const repostCount = repostsQuery.data?.length || 0;
 
-  // Repost/unrepost mutation
   const repostMutation = useMutation({
     mutationFn: async ({ targetEvent }: { targetEvent: NostrEvent }) => {
-      if (!user) {
-        throw new Error('User not logged in');
-      }
+      if (!user) throw new Error('User not logged in');
 
       if (isReposted && userRepost) {
-        // Unrepost: delete the repost event
         await createEvent({
-          kind: 5, // Event deletion request
+          kind: 5,
           content: 'Unreposted',
-          tags: [
-            ['e', userRepost.id],
-          ],
+          tags: [['e', userRepost.id]],
         });
-      } else {
-        // Repost: create a repost event
-        const repostKind = targetEvent.kind === 1 ? 6 : 16; // Use kind 6 for text notes, kind 16 for other events
-        
-        const tags = [
-          ['e', eventId, '', targetEvent.pubkey],
-          ['p', targetEvent.pubkey],
-        ];
-
-        // Add k tag for generic reposts (kind 16)
-        if (repostKind === 16) {
-          tags.push(['k', targetEvent.kind.toString()]);
-        }
-
-        await createEvent({
-          kind: repostKind,
-          content: repostKind === 6 ? JSON.stringify(targetEvent) : '', // Include original event for kind 6, empty for kind 16
-          tags,
-        });
+        return;
       }
-    },
-    onSuccess: () => {
-      // Invalidate reposts query to refetch
-      queryClient.invalidateQueries({ queryKey: ['reposts', eventId] });
-      
-      toast({
-        title: isReposted ? 'Unreposted' : 'Reposted',
-        description: isReposted ? 'Removed your repost' : 'Added your repost',
+
+      // Kind 6 is for text notes; anything else reposts as the generic kind 16
+      const repostKind = targetEvent.kind === 1 ? 6 : 16;
+      const tags = [
+        ['e', eventId, '', targetEvent.pubkey],
+        ['p', targetEvent.pubkey],
+      ];
+      if (repostKind === 16) {
+        tags.push(['k', targetEvent.kind.toString()]);
+      }
+
+      await createEvent({
+        kind: repostKind,
+        content: repostKind === 6 ? JSON.stringify(targetEvent) : '',
+        tags,
       });
     },
-    onError: (error) => {
+    /** Reflect the repost immediately rather than after the relay replies. */
+    onMutate: async () => {
+      if (!user) return;
+
+      const key = ['note-stats', eventId];
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<NoteStats>(key);
+
+      queryClient.setQueryData<NoteStats>(key, (current) => {
+        const stats = current ?? {
+          replies: [],
+          reposts: [],
+          reactions: [],
+          zaps: [],
+        };
+
+        if (isReposted) {
+          return {
+            ...stats,
+            reposts: stats.reposts.filter(
+              (repost) => repost.id !== userRepost?.id
+            ),
+          };
+        }
+
+        const optimistic: NostrEvent = {
+          id: `optimistic-repost-${eventId}`,
+          pubkey: user.pubkey,
+          kind: 6,
+          content: '',
+          tags: [['e', eventId]],
+          created_at: Math.floor(Date.now() / 1000),
+          sig: '',
+        };
+        return { ...stats, reposts: [...stats.reposts, optimistic] };
+      });
+
+      return { previous };
+    },
+    onError: (error, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['note-stats', eventId], context.previous);
+      }
       console.error('Repost/unrepost error:', error);
       toast({
         title: 'Error',
@@ -91,13 +96,16 @@ export function useReposts(eventId: string) {
         variant: 'destructive',
       });
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['note-stats', eventId] });
+    },
   });
 
   return {
-    reposts: repostsQuery.data || [],
+    reposts,
     isReposted,
-    repostCount,
-    isLoading: repostsQuery.isLoading,
+    repostCount: reposts.length,
+    isLoading,
     repost: repostMutation.mutateAsync,
     isReposting: repostMutation.isPending,
   };

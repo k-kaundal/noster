@@ -20,6 +20,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useFollows } from '@/hooks/useFollows';
 import { useFollowers } from '@/hooks/useFollowers';
 import { useToast } from '@/hooks/useToast';
+import { useSeo } from '@/hooks/useSeo';
 import { genUserName } from '@/lib/genUserName';
 import { Post } from '@/components/Post';
 import { NoteContent } from '@/components/NoteContent';
@@ -102,6 +103,17 @@ export function Profile({ pubkey }: ProfileProps) {
       });
     }
   };
+
+  // Social previews use the profile's own name, bio and avatar
+  useSeo({
+    title: displayName,
+    description:
+      metadata?.about?.slice(0, 200) ||
+      `${displayName} on Nostr — notes, replies and media.`,
+    image: metadata?.picture,
+    path: `/${npub}`,
+    type: 'profile',
+  });
 
   if (error) {
     return (

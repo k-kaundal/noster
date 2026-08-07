@@ -1,11 +1,13 @@
-import { useSeoMeta } from '@unhead/react';
+import { useSeo } from '@/hooks/useSeo';
 import { Layout } from '@/components/Layout';
 import { Explore } from '@/components/Explore';
 
 const ExplorePage = () => {
-  useSeoMeta({
-    title: 'Explore - NostrFeed',
-    description: 'Explore diverse content, discover new people, and find interesting posts on the Nostr network.',
+  useSeo({
+    title: 'Explore Nostr',
+    description:
+      'Discover notes, media and people from across the Nostr network, updated as your relays deliver them.',
+    path: '/explore',
   });
 
   return (

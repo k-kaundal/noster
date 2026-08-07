@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useSeoMeta } from '@unhead/react';
+import { useSeo } from '@/hooks/useSeo';
 import { Hash, Loader2 } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { Post } from '@/components/Post';
@@ -14,9 +14,10 @@ export function HashtagPage() {
   const { tag } = useParams<{ tag: string }>();
   const normalized = (tag ?? '').toLowerCase();
 
-  useSeoMeta({
-    title: `#${normalized} - NostrFeed`,
-    description: `Notes tagged #${normalized} on the Nostr network.`,
+  useSeo({
+    title: `#${normalized}`,
+    description: `Notes tagged #${normalized} on the Nostr network, gathered from your relays.`,
+    path: `/t/${normalized}`,
   });
 
   const { posts, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =

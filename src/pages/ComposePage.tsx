@@ -1,11 +1,14 @@
-import { useSeoMeta } from '@unhead/react';
+import { useSeo } from '@/hooks/useSeo';
 import { Layout } from '@/components/Layout';
 import { Compose } from '@/components/Compose';
 
 const ComposePage = () => {
-  useSeoMeta({
-    title: 'Compose - NostrFeed',
-    description: 'Create a new post on the decentralized social network.',
+  useSeo({
+    title: 'Compose a note',
+    description:
+      'Write and publish a note to the Nostr network.',
+    path: '/compose',
+    noindex: true,
   });
 
   return (

@@ -1,4 +1,4 @@
-import { useSeoMeta } from '@unhead/react';
+import { useSeo } from '@/hooks/useSeo';
 import { Link } from 'react-router-dom';
 import { Bookmark } from 'lucide-react';
 import { Layout } from '@/components/Layout';
@@ -12,9 +12,12 @@ import { useBookmarkedEvents } from '@/hooks/useBookmarks';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 export function BookmarksPage() {
-  useSeoMeta({
-    title: 'Bookmarks - NostrFeed',
-    description: 'Notes you saved, stored as a NIP-51 bookmarks list on Nostr.',
+  useSeo({
+    title: 'Bookmarks',
+    description:
+      'Notes you saved, stored as a NIP-51 bookmarks list on your Nostr account.',
+    path: '/bookmarks',
+    noindex: true,
   });
 
   const { user } = useCurrentUser();

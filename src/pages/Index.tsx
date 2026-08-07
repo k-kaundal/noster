@@ -1,12 +1,15 @@
-import { useSeoMeta } from '@unhead/react';
+import { useSeo, useSiteStructuredData } from '@/hooks/useSeo';
 import { Layout } from '@/components/Layout';
 import { Feed } from '@/components/Feed';
 
 const Index = () => {
-  useSeoMeta({
-    title: 'NostrFeed - Decentralized Social Network',
-    description: 'A modern Nostr client for decentralized social networking. Connect, share, and discover content on the open protocol.',
+  useSeo({
+    title: 'NostrFeed — Decentralized Social Network on Nostr',
+    description:
+      'A fast, open Nostr client. Read and publish notes, watch short videos, zap creators over Lightning, and control exactly which relays you use.',
+    path: '/',
   });
+  useSiteStructuredData();
 
   return (
     <Layout>

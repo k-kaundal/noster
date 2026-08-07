@@ -137,3 +137,18 @@ export function humanizeKey(key: string): string {
   const [first, ...rest] = words;
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(' ');
 }
+
+/**
+ * True when an event carries nothing this client could show: no body text, no
+ * media, and no NIP-31 fallback. Such notes render as an empty card, so the
+ * feed filters them out rather than leaving holes in the timeline.
+ */
+export function isRenderableEvent(event: NostrEvent): boolean {
+  if (event.content.trim()) return true;
+  if (getAltText(event)) return true;
+
+  // Media-bearing kinds keep their payload in tags, not in content
+  return event.tags.some(
+    ([name]) => name === 'imeta' || name === 'url' || name === 'e' || name === 'title'
+  );
+}

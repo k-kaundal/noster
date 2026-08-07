@@ -1,6 +1,7 @@
 import { useNostr } from '@nostrify/react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import type { NostrEvent } from '@nostrify/nostrify';
+import { isRenderableEvent } from '@/lib/eventKinds';
 
 import { useCurrentUser } from './useCurrentUser';
 import { useFollows } from './useFollows';
@@ -50,6 +51,8 @@ export function useFeed(scope: FeedScope = 'global') {
 
       return events
         .filter(isPlausible)
+        // Empty notes would render as blank cards, so they never enter the feed
+        .filter(isRenderableEvent)
         .sort((a, b) => b.created_at - a.created_at);
     },
     getNextPageParam: (lastPage) => {
