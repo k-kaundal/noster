@@ -105,11 +105,25 @@ function ConversationRow({
             </span>
           </div>
 
-          <p className="truncate text-xs text-muted-foreground">
+          <p
+            className={cn(
+              'truncate text-xs',
+              conversation.unread
+                ? 'font-medium text-foreground'
+                : 'text-muted-foreground'
+            )}
+          >
             {fromMe && <span className="text-foreground/70">You: </span>}
             {conversation.lastMessage.content}
           </p>
         </div>
+
+        {conversation.unread && (
+          <span
+            className="h-2 w-2 shrink-0 rounded-full bg-primary"
+            aria-label="Unread"
+          />
+        )}
       </Link>
     </li>
   );

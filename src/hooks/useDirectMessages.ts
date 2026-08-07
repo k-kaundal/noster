@@ -1,16 +1,38 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useRelays } from '@/hooks/useRelays';
 import { useToast } from '@/hooks/useToast';
 import {
   conversationKey,
   createDirectMessage,
-  unwrapDirectMessage,
+  rumorToMessage,
+  unwrapMany,
   DM_RELAY_LIST_KIND,
   GIFT_WRAP_KIND,
   type ChatMessage,
 } from '@/lib/nip17';
+
+/**
+ * Decrypted wraps, per account.
+ *
+ * Module scope rather than a ref: the page and the open thread both call
+ * `useDirectMessages`, and a per-instance cache would go cold whenever the one
+ * that happened to fetch unmounted, re-decrypting the whole inbox.
+ */
+const decryptCaches = new Map<string, Map<string, ChatMessage | null>>();
+
+function decryptCacheFor(pubkey: string | undefined) {
+  const key = pubkey ?? '';
+  let cache = decryptCaches.get(key);
+  if (!cache) {
+    cache = new Map();
+    decryptCaches.set(key, cache);
+  }
+  return cache;
+}
 
 export interface Conversation {
   /** Sorted, comma-joined pubkeys of everyone except the current user. */
@@ -30,41 +52,82 @@ export interface Conversation {
 export function useDirectMessages() {
   const { nostr } = useNostr();
   const { user } = useCurrentUser();
+  const { relays: configuredRelays } = useRelays();
+  const { data: ownDmRelays } = useDmRelays(user?.pubkey);
+
+  // Survives refetches and remounts, so only new wraps are ever decrypted
+  const decrypted = decryptCacheFor(user?.pubkey);
+
+  /**
+   * Senders following NIP-17 publish gift wraps *only* to the relays the
+   * recipient nominated in their kind 10050 list. Reading from the app's
+   * configured relays alone means messages sent correctly are never seen, so
+   * the inbox is the union of both sets.
+   */
+  const inboxRelays = useMemo(() => {
+    const configured = configuredRelays
+      .filter((relay) => relay.read)
+      .map((relay) => relay.url);
+    return [...new Set([...(ownDmRelays ?? []), ...configured])];
+  }, [ownDmRelays, configuredRelays]);
 
   const query = useQuery({
-    queryKey: ['direct-messages', user?.pubkey],
+    queryKey: ['direct-messages', user?.pubkey, inboxRelays.join(',')],
     queryFn: async (c) => {
       if (!user) return [] as ChatMessage[];
 
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(8000)]);
-      const wraps = await nostr.query(
-        [{ kinds: [GIFT_WRAP_KIND], '#p': [user.pubkey], limit: 500 }],
-        { signal }
-      );
+      const filters = [
+        { kinds: [GIFT_WRAP_KIND], '#p': [user.pubkey], limit: 500 },
+      ];
 
-      const messages = await Promise.all(
-        wraps.map((wrap) => unwrapDirectMessage(user.signer, wrap))
-      );
+      const wraps = inboxRelays.length
+        ? await nostr.group(inboxRelays).query(filters, { signal })
+        : await nostr.query(filters, { signal });
+
+      const messages = await unwrapMany(user.signer, wraps, decrypted);
 
       // The sender receives a copy of their own message, so ids can repeat
       const byId = new Map<string, ChatMessage>();
       for (const message of messages) {
-        if (message) byId.set(message.id, message);
+        byId.set(message.id, message);
       }
 
       return [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
     },
     enabled: !!user,
-    // Decrypting hundreds of wraps is expensive, so results are held a while
-    staleTime: 60 * 1000,
-    refetchInterval: 30 * 1000,
+    // Cached decryption makes refetching cheap, so the inbox can stay fresh
+    staleTime: 15 * 1000,
+    refetchInterval: 15 * 1000,
   });
 
+  // Just-sent messages, until the relay echo replaces them
+  const { data: pending } = useQuery<ChatMessage[]>({
+    queryKey: pendingKey(user?.pubkey),
+    queryFn: () => [],
+    enabled: !!user,
+    staleTime: Infinity,
+  });
+
+  const messages = useMemo<ChatMessage[]>(() => {
+    const confirmed = query.data ?? [];
+    if (!pending?.length) return confirmed;
+
+    const known = new Set(confirmed.map((message) => message.id));
+    const stillPending = pending.filter((message) => !known.has(message.id));
+
+    return [...stillPending, ...confirmed].sort(
+      (a, b) => b.createdAt - a.createdAt
+    );
+  }, [query.data, pending]);
+
+  const { readAt } = useChatReadState();
+
   const conversations = useMemo<Conversation[]>(() => {
-    if (!user || !query.data) return [];
+    if (!user) return [];
 
     const grouped = new Map<string, ChatMessage[]>();
-    for (const message of query.data) {
+    for (const message of messages) {
       const key = conversationKey(message, user.pubkey);
       const bucket = grouped.get(key);
       if (bucket) bucket.push(message);
@@ -72,26 +135,61 @@ export function useDirectMessages() {
     }
 
     return [...grouped.entries()]
-      .map(([key, messages]) => {
-        const ordered = messages.sort((a, b) => a.createdAt - b.createdAt);
+      .map(([key, entries]) => {
+        const ordered = entries.sort((a, b) => a.createdAt - b.createdAt);
+        const lastMessage = ordered[ordered.length - 1];
+
         return {
           key,
           participants: key.split(',').filter(Boolean),
           messages: ordered,
-          lastMessage: ordered[ordered.length - 1],
-          unread: false,
+          lastMessage,
+          // Your own message is never unread, however recently it arrived
+          unread:
+            lastMessage.pubkey !== user.pubkey &&
+            lastMessage.createdAt > (readAt[key] ?? 0),
         };
       })
       .sort((a, b) => b.lastMessage.createdAt - a.lastMessage.createdAt);
-  }, [query.data, user]);
+  }, [messages, user, readAt]);
 
   return {
     conversations,
-    messages: query.data ?? [],
+    messages,
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
   };
+}
+
+/**
+ * Per-conversation read markers. Local rather than published, since which
+ * threads you have opened is device state and nobody else's business.
+ */
+export function useChatReadState() {
+  const [readAt, setReadAt] = useLocalStorage<Record<string, number>>(
+    'nostr:chat-read-at',
+    {}
+  );
+
+  const markRead = useCallback(
+    (key: string, timestamp: number) => {
+      setReadAt((current) =>
+        (current[key] ?? 0) >= timestamp
+          ? current
+          : { ...current, [key]: timestamp }
+      );
+    },
+    [setReadAt]
+  );
+
+  return { readAt, markRead };
+}
+
+/** Number of conversations with something new in them. */
+export function useUnreadChatCount(): number {
+  const { conversations } = useDirectMessages();
+  return conversations.filter((conversation) => conversation.unread).length;
 }
 
 /** Messages exchanged with one peer, oldest first. */
@@ -139,12 +237,36 @@ export function useDmRelays(pubkey: string | undefined) {
   });
 }
 
+/**
+ * Messages sent from this device that no relay has echoed back yet.
+ *
+ * Held in its own cache entry so refetching the inbox can't wipe them, and
+ * merged into the thread by id — once the real copy arrives it takes over
+ * without the bubble ever flickering or doubling.
+ */
+function pendingKey(pubkey: string | undefined) {
+  return ['direct-messages-pending', pubkey];
+}
+
 /** Sends a NIP-17 private message to one or more recipients. */
 export function useSendDirectMessage() {
   const { nostr } = useNostr();
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const appendMessage = (message: ChatMessage) => {
+    queryClient.setQueryData<ChatMessage[]>(pendingKey(user?.pubkey), (current) => [
+      ...(current ?? []),
+      message,
+    ]);
+  };
+
+  const removeMessage = (id: string) => {
+    queryClient.setQueryData<ChatMessage[]>(pendingKey(user?.pubkey), (current) =>
+      (current ?? []).filter((message) => message.id !== id)
+    );
+  };
 
   return useMutation({
     mutationFn: async ({
@@ -161,13 +283,17 @@ export function useSendDirectMessage() {
       if (!user) throw new Error('You must be logged in to send a message');
       if (!content.trim()) throw new Error('Message is empty');
 
-      const wraps = await createDirectMessage(
+      const { rumor, wraps } = await createDirectMessage(
         user.signer,
         user.pubkey,
         recipients,
         content.trim(),
         { replyTo, subject }
       );
+
+      // Show it straight away. Waiting for a relay to accept the wrap and echo
+      // it back leaves the composer looking like it swallowed the message.
+      appendMessage(rumorToMessage(rumor));
 
       /**
        * NIP-17 requires each wrap to go to the relays its recipient nominated
@@ -215,6 +341,8 @@ export function useSendDirectMessage() {
 
       // The recipient's copy is the one that matters; the self-copy is history
       if (results.slice(0, audience.length).every((r) => r.status === 'rejected')) {
+        // Nothing was delivered, so the optimistic bubble would be a lie
+        removeMessage(rumor.id);
         throw new Error('No relay accepted the message');
       }
     },
