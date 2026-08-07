@@ -275,7 +275,7 @@ export function ZapDialog({
 
   useEffect(() => {
     if (target) {
-      setComment('Zapped with MKStack!');
+      setComment('Zapped with NostrFeed!');
     }
   }, [target]);
 

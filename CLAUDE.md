@@ -105,9 +105,17 @@ The AI assistant's behavior and knowledge is defined by the CONTEXT.md file, whi
 1. Edit CONTEXT.md directly
 2. The changes take effect in the next session
 
-## "Vibed with MKStack"
+## Attribution
 
-When building the site for the first time, include "Vibed with MKStack" somewhere in the UI, linked to this URL: https://soapbox.pub/mkstack
+This is kkworld's project. Credit the author, not the starter template — do
+not add "Vibed with MKStack" or any other MKStack attribution to the UI.
+
+Attribution links live in `src/components/layout/SiteFooter.tsx`, which also
+holds the author's other projects promoted in `AuthorProjects`:
+
+- Author: [@kkworld](https://x.com/kkworld)
+- [SecureEnv](https://secureenv.in)
+- [ForgeLearn](https://forgelearn.dev)
 
 ## Nostr Protocol Integration
 

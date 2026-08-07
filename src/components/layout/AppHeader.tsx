@@ -18,6 +18,8 @@ import { RelaySelector } from '@/components/RelaySelector';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { NotificationBadge } from '@/components/NotificationBadge';
 import { SideNav } from '@/components/layout/SideNav';
+import { SiteFooter } from '@/components/layout/SiteFooter';
+import { AuthorProjects } from '@/components/AuthorProjects';
 
 interface AppHeaderProps {
   onSearch: () => void;
@@ -111,6 +113,12 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
                     <ThemeToggle />
                   </div>
                 </div>
+
+                <Separator />
+
+                {/* The discovery rail is desktop-only, so these live here too */}
+                <AuthorProjects />
+                <SiteFooter />
               </div>
             </SheetContent>
           </Sheet>
