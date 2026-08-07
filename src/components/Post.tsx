@@ -460,7 +460,8 @@ export function Post({
     <>
       <Card
         className={cn(
-          'overflow-hidden shadow-card transition-shadow duration-200 hover:shadow-card-hover',
+          // Off-screen rows skip layout and paint in a long feed
+          'content-auto overflow-hidden hover-lift hover:border-border/80',
           className
         )}
       >

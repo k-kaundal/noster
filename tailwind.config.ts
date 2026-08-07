@@ -91,14 +91,24 @@ export default {
 				}
 			},
 			borderRadius: {
+				'3xl': 'calc(var(--radius) + 12px)',
+				'2xl': 'calc(var(--radius) + 8px)',
 				xl: 'calc(var(--radius) + 4px)',
 				lg: 'var(--radius)',
 				md: 'calc(var(--radius) - 4px)',
 				sm: 'calc(var(--radius) - 8px)'
 			},
+			transitionTimingFunction: {
+				spring: 'var(--ease-spring)',
+				snap: 'var(--ease-snap)',
+				quart: 'var(--ease-out-quart)',
+			},
 			boxShadow: {
-				card: '0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.06)',
-				'card-hover': '0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 6px -2px rgb(0 0 0 / 0.06)',
+				/* Brand-tinted and theme-aware, unlike Tailwind's neutral defaults */
+				card: 'inset 0 1px 0 0 hsl(var(--edge-highlight)), 0 1px 2px -1px hsl(var(--shadow-color) / calc(0.06 * var(--shadow-strength))), 0 4px 12px -4px hsl(var(--shadow-color) / calc(0.08 * var(--shadow-strength)))',
+				'card-hover': 'inset 0 1px 0 0 hsl(var(--edge-highlight)), 0 2px 6px -2px hsl(var(--shadow-color) / calc(0.1 * var(--shadow-strength))), 0 16px 32px -12px hsl(var(--shadow-color) / calc(0.16 * var(--shadow-strength)))',
+				float: 'inset 0 1px 0 0 hsl(var(--edge-highlight)), 0 8px 24px -6px hsl(var(--shadow-color) / calc(0.14 * var(--shadow-strength))), 0 24px 48px -16px hsl(var(--shadow-color) / calc(0.18 * var(--shadow-strength)))',
+				glow: '0 0 0 1px hsl(var(--primary) / 0.2), 0 8px 32px -8px hsl(var(--primary) / 0.35)',
 			},
 			keyframes: {
 				'accordion-down': {
@@ -135,18 +145,24 @@ export default {
 				'spin-slow': {
 					from: { transform: 'rotate(0deg)' },
 					to: { transform: 'rotate(360deg)' }
+				},
+				/* A slow pulse for live indicators, gentler than `animate-pulse` */
+				breathe: {
+					'0%, 100%': { opacity: '1', transform: 'scale(1)' },
+					'50%': { opacity: '0.7', transform: 'scale(0.92)' }
 				}
 			},
 			animation: {
-				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out',
+				'accordion-down': 'accordion-down 0.2s var(--ease-snap)',
+				'accordion-up': 'accordion-up 0.2s var(--ease-snap)',
 				'fade-in': 'fade-in 0.3s ease-out both',
-				'slide-up': 'slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both',
-				'slide-down': 'slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
-				'slide-right': 'slide-right 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
-				'scale-in': 'scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both',
+				'slide-up': 'slide-up 0.45s var(--ease-spring) both',
+				'slide-down': 'slide-down 0.35s var(--ease-spring) both',
+				'slide-right': 'slide-right 0.35s var(--ease-spring) both',
+				'scale-in': 'scale-in 0.28s var(--ease-spring) both',
 				shimmer: 'shimmer 1.8s infinite',
-				'spin-slow': 'spin-slow 8s linear infinite'
+				'spin-slow': 'spin-slow 8s linear infinite',
+				breathe: 'breathe 4s ease-in-out infinite'
 			}
 		}
 	},

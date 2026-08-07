@@ -1,4 +1,5 @@
 import { ReactNode, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { SideNav } from '@/components/layout/SideNav';
 import { RightRail } from '@/components/layout/RightRail';
@@ -17,6 +18,7 @@ interface LayoutProps {
 }
 
 export function Layout({ children, fullWidth = false }: LayoutProps) {
+  const { pathname } = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
@@ -45,8 +47,10 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
 
         <main
           id="main-content"
+          // Keyed on the route so each navigation replays the entrance
+          key={pathname}
           className={cn(
-            'min-w-0 flex-1',
+            'min-w-0 flex-1 animate-slide-up',
             !fullWidth && 'mx-auto w-full max-w-2xl'
           )}
         >
