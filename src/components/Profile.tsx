@@ -10,6 +10,7 @@ import {
   Link as LinkIcon,
   MapPin,
   PenSquare,
+  MessagesSquare,
   QrCode,
   UserRound,
   Zap,
@@ -172,7 +173,17 @@ export function Profile({ pubkey }: ProfileProps) {
                 </DialogContent>
               </Dialog>
             ) : (
-              <FollowButton pubkey={pubkey} size="default" variant="default" />
+              <>
+                {user && (
+                  <Button asChild variant="outline" size="sm">
+                    <Link to={`/chat/${npub}`}>
+                      <MessagesSquare className="mr-2 h-4 w-4" />
+                      Message
+                    </Link>
+                  </Button>
+                )}
+                <FollowButton pubkey={pubkey} size="default" variant="default" />
+              </>
             )}
 
             <ShareProfileDialog
