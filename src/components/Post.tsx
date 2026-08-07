@@ -9,6 +9,7 @@ import { useEvent } from '@/hooks/useEvent';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useBookmarks } from '@/hooks/useBookmarks';
 import { useMuteList } from '@/hooks/useMuteList';
+import { useDeleteEvent } from '@/hooks/useDeleteEvent';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { Card } from '@/components/ui/card';
@@ -34,6 +35,18 @@ import { ZapDialog } from '@/components/ZapDialog';
 import { QuotedNote } from '@/components/QuotedNote';
 import { ContentWarning } from '@/components/ContentWarning';
 import { QuoteDialog } from '@/components/QuoteDialog';
+import { ReportDialog } from '@/components/ReportDialog';
+import { ReactionChips, ReactionPicker } from '@/components/ReactionPicker';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   getContentWarning,
   getInlineQuoteId,
@@ -43,6 +56,8 @@ import {
   BadgeCheck,
   Bookmark,
   Copy,
+  Flag,
+  Trash2,
   VolumeX,
   ExternalLink,
   Heart,
@@ -101,8 +116,11 @@ export function Post({
   const [zapOpen, setZapOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [repliesOpen, setRepliesOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const { isLiked, likeCount, like, isLiking } = useReactions(event.id);
+  const { isLiked, likeCount, like, isLiking, groups } = useReactions(event.id);
+  const { deleteEvents, isDeleting } = useDeleteEvent();
   const { isReposted, repostCount, repost, isReposting } = useReposts(event.id);
   const { replyCount } = useReplies(event.id);
   const { isBookmarked, toggle: toggleBookmark, isToggling } = useBookmarks();
@@ -312,7 +330,7 @@ export function Post({
                 {isBookmarked(event.id) ? 'Remove bookmark' : 'Bookmark'}
               </DropdownMenuItem>
               {/* Muting your own notes would just hide your timeline */}
-              {user && user.pubkey !== event.pubkey && (
+              {user && !isOwnPost && (
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
                   onClick={() =>
@@ -325,6 +343,24 @@ export function Post({
                   {isUserMuted(event.pubkey)
                     ? `Unmute ${displayName}`
                     : `Mute ${displayName}`}
+                </DropdownMenuItem>
+              )}
+              {user && !isOwnPost && (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setReportOpen(true)}
+                >
+                  <Flag className="mr-2 h-4 w-4" />
+                  Report
+                </DropdownMenuItem>
+              )}
+              {isOwnPost && (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete post
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
@@ -429,6 +465,7 @@ export function Post({
                 setQuoteOpen(true);
               }}
             />
+            <ReactionPicker event={event} />
             <ActionButton
               icon={Share2}
               label="Share"
@@ -436,6 +473,11 @@ export function Post({
               onClick={handleShare}
             />
           </div>
+        )}
+
+        {/* Emoji left by others, beyond the plain like counted above */}
+        {!embedded && (
+          <ReactionChips event={event} groups={groups} className="mt-2" />
         )}
 
         {!embedded && showReplies && replyCount > 0 && (
@@ -493,6 +535,38 @@ export function Post({
         onOpenChange={setQuoteOpen}
         quoting={event}
       />
+
+      <ReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        pubkey={event.pubkey}
+        displayName={displayName}
+        event={event}
+      />
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this post?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This asks relays to drop it. Most honour the request, but a
+              deletion cannot be enforced — anyone who already has a copy, and
+              any relay that never receives the request, keeps it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeleting}
+              onClick={() => deleteEvents({ events: [event] })}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Request deletion
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

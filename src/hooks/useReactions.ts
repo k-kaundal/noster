@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { NostrEvent } from '@nostrify/nostrify';
 
@@ -5,11 +6,12 @@ import { useCurrentUser } from './useCurrentUser';
 import { useNostrPublish } from './useNostrPublish';
 import { useToast } from './useToast';
 import { useNoteStats, type NoteStats } from './useNoteStats';
-
-/** A reaction counts as a "like" when it is `+` or, by convention, empty. */
-function isLike(event: NostrEvent): boolean {
-  return event.content === '+' || event.content === '';
-}
+import {
+  DELETION_KIND,
+  REACTION_KIND,
+  groupReactions,
+  isLike,
+} from '@/lib/reactions';
 
 export function useReactions(eventId: string) {
   const { user } = useCurrentUser();
@@ -26,19 +28,31 @@ export function useReactions(eventId: string) {
   const isLiked = !!userReaction;
   const likeCount = reactions.filter(isLike).length;
 
+  // One entry per distinct emoji, for the reaction chips under a note
+  const groups = useMemo(
+    () => groupReactions(reactions, user?.pubkey),
+    [reactions, user?.pubkey]
+  );
+
+  /** Any reaction the user has left, of whatever emoji. */
+  const ownReactions = useMemo(
+    () => reactions.filter((reaction) => reaction.pubkey === user?.pubkey),
+    [reactions, user?.pubkey]
+  );
+
   const likeMutation = useMutation({
     mutationFn: async ({ targetEvent }: { targetEvent: NostrEvent }) => {
       if (!user) throw new Error('User not logged in');
 
       if (isLiked && userReaction) {
         await createEvent({
-          kind: 5,
+          kind: DELETION_KIND,
           content: 'Unliked',
           tags: [['e', userReaction.id]],
         });
       } else {
         await createEvent({
-          kind: 7,
+          kind: REACTION_KIND,
           content: '+',
           tags: [
             ['e', eventId, '', 'root'],
@@ -105,12 +119,71 @@ export function useReactions(eventId: string) {
     },
   });
 
+  /**
+   * Reacts with an arbitrary emoji, or withdraws that reaction if it is
+   * already yours. Custom emoji carry a NIP-30 tag naming the image, without
+   * which other clients render the bare `:shortcode:` text.
+   */
+  const reactMutation = useMutation({
+    mutationFn: async ({
+      targetEvent,
+      emoji,
+      shortcode,
+      url,
+    }: {
+      targetEvent: NostrEvent;
+      emoji: string;
+      shortcode?: string;
+      url?: string;
+    }) => {
+      if (!user) throw new Error('User not logged in');
+
+      const content = shortcode ? `:${shortcode}:` : emoji;
+      const existing = ownReactions.find(
+        (reaction) => reaction.content.trim() === content
+      );
+
+      if (existing) {
+        await createEvent({
+          kind: DELETION_KIND,
+          content: 'Reaction withdrawn',
+          tags: [['e', existing.id]],
+        });
+        return;
+      }
+
+      await createEvent({
+        kind: REACTION_KIND,
+        content,
+        tags: [
+          ['e', eventId, '', 'root'],
+          ['p', targetEvent.pubkey],
+          ['k', targetEvent.kind.toString()],
+          ...(shortcode && url ? [['emoji', shortcode, url]] : []),
+        ],
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Reaction failed',
+        description: error.message || 'Unknown error',
+        variant: 'destructive',
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['note-stats', eventId] });
+    },
+  });
+
   return {
     reactions,
+    groups,
     isLiked,
     likeCount,
     isLoading,
     like: likeMutation.mutateAsync,
     isLiking: likeMutation.isPending,
+    react: reactMutation.mutateAsync,
+    isReacting: reactMutation.isPending,
   };
 }
