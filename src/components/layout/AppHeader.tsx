@@ -18,6 +18,8 @@ import { RelaySelector } from '@/components/RelaySelector';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { NotificationBadge } from '@/components/NotificationBadge';
 import { SideNav } from '@/components/layout/SideNav';
+import { SiteFooter } from '@/components/layout/SiteFooter';
+import { AuthorProjects } from '@/components/AuthorProjects';
 
 interface AppHeaderProps {
   onSearch: () => void;
@@ -28,7 +30,7 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
+    <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-xl backdrop-saturate-150">
       <div className="container flex h-14 items-center gap-3">
         <Link
           to="/"
@@ -43,7 +45,7 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
         <button
           type="button"
           onClick={onSearch}
-          className="ml-auto hidden h-9 w-full max-w-xs items-center gap-2 rounded-lg border bg-muted/50 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted md:flex lg:ml-4 lg:mr-auto"
+          className="ml-auto hidden h-9 w-full max-w-xs items-center gap-2 rounded-full border border-border/70 bg-muted/40 px-3.5 text-sm text-muted-foreground transition-all duration-200 ease-quart hover:border-border hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring md:flex lg:ml-4 lg:mr-auto"
         >
           <Search className="h-4 w-4 shrink-0" />
           <span className="flex-1 text-left">Search Nostr…</span>
@@ -111,6 +113,12 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
                     <ThemeToggle />
                   </div>
                 </div>
+
+                <Separator />
+
+                {/* The discovery rail is desktop-only, so these live here too */}
+                <AuthorProjects />
+                <SiteFooter />
               </div>
             </SheetContent>
           </Sheet>

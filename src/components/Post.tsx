@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { UserHoverCard } from '@/components/UserHoverCard';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -208,30 +209,34 @@ export function Post({
 
   const body = (
     <article className={cn('flex gap-3 p-4', embedded && 'p-3')}>
-      <Link to={`/${npub}`} className="shrink-0" tabIndex={-1} aria-hidden="true">
-        <Avatar
-          className={cn(
-            'transition-transform hover:scale-105',
-            embedded ? 'h-8 w-8' : 'h-10 w-10'
-          )}
-        >
-          <AvatarImage src={metadata?.picture} alt="" />
-          <AvatarFallback className="text-xs">
-            {displayName.slice(0, 2).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
-      </Link>
+      <UserHoverCard pubkey={event.pubkey}>
+        <Link to={`/${npub}`} className="shrink-0" tabIndex={-1} aria-hidden="true">
+          <Avatar
+            className={cn(
+              'transition-transform hover:scale-105',
+              embedded ? 'h-8 w-8' : 'h-10 w-10'
+            )}
+          >
+            <AvatarImage src={metadata?.picture} alt="" />
+            <AvatarFallback className="text-xs">
+              {displayName.slice(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+        </Link>
+      </UserHoverCard>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1 text-sm">
             <div className="flex flex-wrap items-center gap-x-1.5">
-              <Link
-                to={`/${npub}`}
-                className="truncate font-semibold hover:underline"
-              >
-                {displayName}
-              </Link>
+              <UserHoverCard pubkey={event.pubkey}>
+                <Link
+                  to={`/${npub}`}
+                  className="truncate font-semibold hover:underline"
+                >
+                  {displayName}
+                </Link>
+              </UserHoverCard>
               {metadata?.nip05 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -455,7 +460,8 @@ export function Post({
     <>
       <Card
         className={cn(
-          'overflow-hidden shadow-card transition-shadow duration-200 hover:shadow-card-hover',
+          // Off-screen rows skip layout and paint in a long feed
+          'content-auto overflow-hidden hover-lift hover:border-border/80',
           className
         )}
       >

@@ -27,7 +27,7 @@ export function MobileNav({ onSearch }: MobileNavProps) {
 
   return (
     <nav
-      className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:hidden"
+      className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/75 backdrop-blur-xl backdrop-saturate-150 lg:hidden"
       aria-label="Primary"
     >
       <div className="flex items-stretch justify-around">
@@ -47,7 +47,12 @@ export function MobileNav({ onSearch }: MobileNavProps) {
               {active && (
                 <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-brand-gradient" />
               )}
-              <item.icon className="h-5 w-5" />
+              <item.icon
+                className={cn(
+                  'h-5 w-5 transition-transform duration-300 ease-spring',
+                  active && 'scale-110'
+                )}
+              />
               <span className="truncate">{item.label}</span>
             </Link>
           );

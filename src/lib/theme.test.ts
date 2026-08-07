@@ -167,3 +167,51 @@ describe('getAccentPreset', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe('elevation tokens', () => {
+  it('are produced for every preset', () => {
+    for (const preset of ACCENT_PRESETS) {
+      for (const mode of ['light', 'dark'] as const) {
+        const tokens = deriveTokens(preset[mode]);
+        for (const name of ['shadow-color', 'shadow-strength', 'edge-highlight']) {
+          expect(tokens[name], `${preset.id} ${mode}: ${name}`).toBeTruthy();
+        }
+      }
+    }
+  });
+
+  it('tints the shadow with the accent hue rather than neutral grey', () => {
+    for (const preset of ACCENT_PRESETS) {
+      const tokens = deriveTokens(preset.dark);
+      const shadow = parseHsl(tokens['shadow-color']);
+      const accent = parseHsl(preset.dark.primary);
+
+      expect(shadow.h, preset.id).toBe(accent.h);
+      expect(shadow.s, preset.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('shadows harder on dark surfaces, where a faint one would not separate', () => {
+    const dark = deriveTokens(ACCENT_PRESETS[0].dark);
+    const light = deriveTokens(ACCENT_PRESETS[0].light);
+
+    expect(Number(dark['shadow-strength'])).toBeGreaterThan(
+      Number(light['shadow-strength'])
+    );
+    // A shadow only reads on dark if it is darker than the surface it falls on
+    expect(parseHsl(dark['shadow-color']).l).toBeLessThan(
+      parseHsl(dark.background).l
+    );
+  });
+
+  it('keeps the top highlight subtle on dark, where a bright edge reads as a seam', () => {
+    const darkAlpha = Number(
+      deriveTokens(ACCENT_PRESETS[0].dark)['edge-highlight'].split('/')[1]
+    );
+    const lightAlpha = Number(
+      deriveTokens(ACCENT_PRESETS[0].light)['edge-highlight'].split('/')[1]
+    );
+
+    expect(darkAlpha).toBeLessThan(lightAlpha);
+  });
+});

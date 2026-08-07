@@ -188,6 +188,20 @@ export function deriveTokens(core: CoreColors): ThemeTokens {
     repost: dark ? '142 69% 50%' : '142 71% 41%',
     reply: withSaturation(primary, 0.9),
     zap: dark ? '38 92% 58%' : '38 92% 48%',
+
+    /*
+     * Elevation. Shadows carry the accent hue rather than neutral grey — a
+     * grey shadow on a tinted surface reads as dirt, a tinted one as light.
+     * Dark surfaces need a deeper, stronger shadow to separate at all, and a
+     * far fainter top highlight, since a bright edge on dark reads as a seam.
+     */
+    'shadow-color': formatHsl({
+      h: primaryHsl.h,
+      s: dark ? 60 : 40,
+      l: dark ? 2 : 20,
+    }),
+    'shadow-strength': dark ? '2.2' : '1',
+    'edge-highlight': dark ? '0 0% 100% / 0.07' : '0 0% 100% / 0.6',
   };
 }
 
