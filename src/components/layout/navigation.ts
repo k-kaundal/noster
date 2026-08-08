@@ -8,9 +8,11 @@ import {
   MessagesSquare,
   PenSquare,
   Server,
+  PenLine,
   Settings,
   Sparkles,
   User,
+  Users,
   Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -57,6 +59,21 @@ export function getNavItems(pubkey?: string): NavItem[] {
       secondary: true,
     },
     { href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
+    {
+      href: '/communities',
+      icon: Users,
+      label: 'Communities',
+      shortcut: 'G',
+      secondary: true,
+    },
+    {
+      href: '/write',
+      icon: PenLine,
+      label: 'Write',
+      shortcut: 'W',
+      requiresAuth: true,
+      secondary: true,
+    },
     ...(pubkey
       ? [
           {

@@ -17,10 +17,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, Upload } from 'lucide-react';
+import { Loader2, Upload, Zap } from 'lucide-react';
 import { NSchema as n, type NostrMetadata } from '@nostrify/nostrify';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUploadFile } from '@/hooks/useUploadFile';
+import { useLightningAddress } from '@/hooks/useLightningAddress';
 
 
 interface EditProfileFormProps {
@@ -40,11 +41,13 @@ export const EditProfileForm: React.FC<EditProfileFormProps> = ({ onSuccess }) =
     resolver: zodResolver(n.metadata()),
     defaultValues: {
       name: '',
+      display_name: '',
       about: '',
       picture: '',
       banner: '',
       website: '',
       nip05: '',
+      lud16: '',
       bot: false,
     },
   });
@@ -54,11 +57,13 @@ export const EditProfileForm: React.FC<EditProfileFormProps> = ({ onSuccess }) =
     if (metadata) {
       form.reset({
         name: metadata.name || '',
+        display_name: metadata.display_name || '',
         about: metadata.about || '',
         picture: metadata.picture || '',
         banner: metadata.banner || '',
         website: metadata.website || '',
         nip05: metadata.nip05 || '',
+        lud16: metadata.lud16 || '',
         bot: metadata.bot || false,
       });
     }
@@ -71,10 +76,9 @@ export const EditProfileForm: React.FC<EditProfileFormProps> = ({ onSuccess }) =
       const [[_, url]] = await uploadFile(file);
       form.setValue(field, url);
       toast({
-        title: 'Success',
-        description: `${field === 'picture' ? 'Profile picture' : 'Banner'} uploaded successfully`,
+        title: 'Uploaded',
+        description: `Your ${field === 'picture' ? 'profile picture' : 'banner'} is ready — save to publish it.`,
       });
-      onSuccess?.();
     } catch (error) {
       console.error(`Failed to upload ${field}:`, error);
       toast({
@@ -117,9 +121,14 @@ export const EditProfileForm: React.FC<EditProfileFormProps> = ({ onSuccess }) =
       queryClient.invalidateQueries({ queryKey: ['author', user.pubkey] });
 
       toast({
-        title: 'Success',
-        description: 'Your profile has been updated',
+        title: 'Profile updated',
+        description: 'Your changes are on the relays you write to.',
       });
+
+      // Only now is there anything to close a dialog over. Firing this after
+      // an image upload meant picking a photo dismissed the form before the
+      // profile was ever saved.
+      onSuccess?.();
     } catch (error) {
       console.error('Failed to update profile:', error);
       toast({
@@ -138,12 +147,30 @@ export const EditProfileForm: React.FC<EditProfileFormProps> = ({ onSuccess }) =
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Name</FormLabel>
+              <FormLabel>Username</FormLabel>
               <FormControl>
-                <Input placeholder="Your name" {...field} />
+                <Input placeholder="satoshi" {...field} value={field.value ?? ''} />
               </FormControl>
               <FormDescription>
-                This is your display name that will be displayed to others.
+                The short handle others see as @you.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="display_name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Display name</FormLabel>
+              <FormControl>
+                <Input placeholder="Satoshi Nakamoto" {...field} value={field.value ?? ''} />
+              </FormControl>
+              <FormDescription>
+                Shown in place of your username where there is room for it.
+                Leave it blank to be known by your username alone.
               </FormDescription>
               <FormMessage />
             </FormItem>
@@ -238,6 +265,19 @@ export const EditProfileForm: React.FC<EditProfileFormProps> = ({ onSuccess }) =
             )}
           />
         </div>
+
+        <FormField
+          control={form.control}
+          name="lud16"
+          render={({ field }) => (
+            <LightningAddressField field={{
+              value: field.value ?? '',
+              onChange: field.onChange,
+              name: field.name,
+              onBlur: field.onBlur,
+            }} />
+          )}
+        />
 
         <FormField
           control={form.control}
@@ -348,6 +388,60 @@ const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
       </div>
       <FormDescription>
         {description}
+      </FormDescription>
+      <FormMessage />
+    </FormItem>
+  );
+};
+
+/**
+ * Where zaps go.
+ *
+ * Offered with a shortcut to the address this app issues, because the common
+ * case is someone who has just claimed `name@nostrfeed.com` and has no idea it
+ * does nothing until it reaches their profile. A profile without this field is
+ * a profile nobody can zap.
+ */
+const LightningAddressField: React.FC<{
+  field: {
+    value: string;
+    onChange: (value: string) => void;
+    name: string;
+    onBlur: () => void;
+  };
+}> = ({ field }) => {
+  const { address } = useLightningAddress();
+  const alreadySet = !!address && field.value === address;
+
+  return (
+    <FormItem>
+      <FormLabel>Lightning address</FormLabel>
+      <FormControl>
+        <Input
+          placeholder="you@example.com"
+          name={field.name}
+          value={field.value}
+          onChange={(event) => field.onChange(event.target.value)}
+          onBlur={field.onBlur}
+        />
+      </FormControl>
+
+      {address && !alreadySet && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-1"
+          onClick={() => field.onChange(address)}
+        >
+          <Zap className="mr-2 h-3.5 w-3.5" />
+          Use {address}
+        </Button>
+      )}
+
+      <FormDescription>
+        Zaps from any Nostr client are sent here. Without it, the zap button on
+        your posts does nothing.
       </FormDescription>
       <FormMessage />
     </FormItem>
