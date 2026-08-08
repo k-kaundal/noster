@@ -12,6 +12,8 @@ Copy `.env.example` to `.env` and fill it in. `.env` is gitignored.
 | `VITE_LNBITS_URL` | Instance base URL. Defaults to `https://ln.nostrfeed.com`. |
 | `VITE_LNBITS_WALLET_ID` | Optional house wallet id. |
 | `VITE_LNBITS_INVOICE_KEY` | Invoice/read key for that wallet. Receive-only. |
+| `VITE_NIP5_DOMAIN_ID` | Domain id in the `nostrnip5` extension. Blank hides verified names. |
+| `VITE_NIP5_DOMAIN` | Domain those names read as. Defaults to the lightning address domain. |
 
 ### Why there is no admin key variable
 
@@ -115,14 +117,19 @@ all normalised by `describeError`:
 Statuses with a specific meaning: `401` not authorised, `402` insufficient
 balance, `520` the Lightning node rejected the payment.
 
+## Names
+
+Two extensions issue `name@domain`, and they are not the same product:
+
+- **`lnurlp`** gives every user a free permanent lightning address that
+  receives zaps — [lightning-addresses.md](./lightning-addresses.md).
+- **`nostrnip5`** sells NIP-05 verified names by the year, with an expiry, and
+  that is what shows the ✓ — [verified-names.md](./verified-names.md).
+
 ## Not yet used
 
 Available on the instance and worth building on later:
 
-- **`/lnurlp`** — mint each user a lightning address on our domain, with
-  `zaps: true` for NIP-57. This would let people receive zaps at
-  `name@nostrfeed.com` without running anything themselves.
-- **`/nostrnip5`** — sell or grant NIP-05 identifiers on our domain.
 - **`/api/v1/ws/{item_id}`** — websocket for live payment updates, which would
   replace the current 30-second balance poll.
 

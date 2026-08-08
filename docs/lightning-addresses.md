@@ -3,6 +3,11 @@
 Every NostrFeed user can claim `name@domain` and be zapped from any Nostr
 client. It is an LNbits `lnurlp` pay link pointing at their own wallet.
 
+This is **not** the same as a NIP-05 verified name, which is written
+identically, sold by the year, and is what puts a ✓ next to someone — see
+[verified-names.md](./verified-names.md). This one is free, permanent, and only
+moves money.
+
 ## How it fits together
 
 ```
