@@ -1,0 +1,114 @@
+import { useCallback } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useToast } from '@/hooks/useToast';
+import {
+  LNBITS_URL,
+  LnbitsError,
+  lnbitsRequest,
+  loginWithNostr,
+  type LnbitsUser,
+} from '@/lib/lnbits';
+
+/**
+ * The NostrFeed wallet account, authenticated with the user's Nostr key.
+ *
+ * LNbits accepts a NIP-98 signed event at `/api/v1/auth/nostr`, so there is no
+ * password to manage and no API key to paste — the same key that signs notes
+ * proves ownership of the wallet.
+ */
+export function useLnbitsAuth() {
+  const { user } = useCurrentUser();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  /**
+   * Session token, keyed by pubkey.
+   *
+   * Keyed because this app supports switching Nostr accounts, and a token
+   * belongs to exactly one of them — a shared slot would hand the previous
+   * account's wallet to whoever logged in next.
+   */
+  const [tokens, setTokens] = useLocalStorage<Record<string, string>>(
+    'lnbits:tokens',
+    {}
+  );
+
+  const token = user ? tokens[user.pubkey] : undefined;
+
+  const account = useQuery<LnbitsUser | null>({
+    queryKey: ['lnbits-account', user?.pubkey, token ?? ''],
+    queryFn: async ({ signal }) => {
+      try {
+        return await lnbitsRequest<LnbitsUser>('/api/v1/auth', {
+          token,
+          signal,
+        });
+      } catch (error) {
+        // Not being signed in is the normal state, not a failure to report
+        if (error instanceof LnbitsError && error.status === 401) return null;
+        throw error;
+      }
+    },
+    enabled: !!user,
+    staleTime: 60 * 1000,
+    retry: false,
+  });
+
+  const login = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error('Log in with Nostr first');
+      return loginWithNostr(user.signer);
+    },
+    onSuccess: (issued) => {
+      if (issued && user) {
+        setTokens((current) => ({ ...current, [user.pubkey]: issued }));
+      }
+      queryClient.invalidateQueries({ queryKey: ['lnbits-account'] });
+      toast({
+        title: 'Wallet connected',
+        description: 'Your NostrFeed wallet is ready.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Could not connect your wallet',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const logout = useCallback(async () => {
+    try {
+      await lnbitsRequest('/api/v1/auth/logout', { method: 'POST', token });
+    } catch {
+      // A failed logout still means forgetting the token locally
+    }
+
+    if (user) {
+      setTokens((current) => {
+        const next = { ...current };
+        delete next[user.pubkey];
+        return next;
+      });
+    }
+
+    queryClient.removeQueries({ queryKey: ['lnbits-account'] });
+    queryClient.removeQueries({ queryKey: ['lnbits-wallets'] });
+  }, [token, user, setTokens, queryClient]);
+
+  return {
+    /** The LNbits account, or null when not connected. */
+    account: account.data ?? null,
+    isLoading: account.isLoading,
+    isConnected: !!account.data,
+    error: account.error as Error | null,
+    token,
+    connect: login.mutateAsync,
+    isConnecting: login.isPending,
+    logout,
+    instanceUrl: LNBITS_URL,
+  };
+}
