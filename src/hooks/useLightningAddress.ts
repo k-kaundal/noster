@@ -57,6 +57,19 @@ export function useLightningAddress() {
     mutationFn: async (username: string) => {
       if (!wallet) throw new Error('Connect your wallet first');
 
+      /**
+       * An account that already has this address keeps it.
+       *
+       * People arrive here more than once — a second device, a reconnect, a
+       * reload mid-flow. Creating another pay link each time would leave the
+       * wallet with duplicates competing for the same name, and LNbits would
+       * reject the second one anyway.
+       */
+      const existing = links.data?.find(
+        (entry) => entry.username?.toLowerCase() === username.toLowerCase()
+      );
+      if (existing) return existing;
+
       const created = await lnbitsRequest<PayLink>('/lnurlp/api/v1/links', {
         method: 'POST',
         apiKey: wallet.adminkey,
@@ -103,6 +116,16 @@ export function useLightningAddress() {
     mutationFn: async () => {
       if (!address) throw new Error('No address to publish');
       if (!user) throw new Error('Log in first');
+
+      /**
+       * Kind 0 replaces, it does not merge. Publishing before the existing
+       * profile has arrived would replace a name, picture and bio with a
+       * document containing only a lightning address — the profile would be
+       * erased by the act of adding one field to it.
+       */
+      if (author.isLoading || !author.isFetched) {
+        throw new Error('Still reading your profile — try again in a moment.');
+      }
 
       await createEvent({
         kind: 0,

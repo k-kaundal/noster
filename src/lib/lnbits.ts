@@ -270,6 +270,44 @@ export async function loginWithNostr(
   return readAccessToken(parsed);
 }
 
+/**
+ * Logs in with a username and password.
+ *
+ * The second way into the same account. Someone who set a password — or who
+ * already had an LNbits account before finding this app — can reach their
+ * wallet on a device where their Nostr signer isn't installed.
+ */
+export async function loginWithPassword(
+  username: string,
+  password: string
+): Promise<string | undefined> {
+  const body = await lnbitsRequest<unknown>('/api/v1/auth', {
+    method: 'POST',
+    body: { username, password },
+  });
+
+  return readAccessToken(body);
+}
+
+/**
+ * Whether a failure means "nobody is signed in" rather than something broken.
+ *
+ * LNbits answers an unauthenticated `/api/v1/auth` with a 400 and
+ * "Missing user ID or access token", not the 401 the status would suggest.
+ * Treating that as an error surfaces raw API text to someone whose only crime
+ * was opening the app in a browser they hadn't used before.
+ */
+export function isMissingSession(error: unknown): boolean {
+  if (!(error instanceof LnbitsError)) return false;
+
+  if (error.status === 401 || error.status === 403) return true;
+
+  return (
+    error.status === 400 &&
+    /missing user id|access token|not authenticated/i.test(error.message)
+  );
+}
+
 /** Reads an access token out of a login response, whatever shape it takes. */
 export function readAccessToken(body: unknown): string | undefined {
   if (!body || typeof body !== 'object') return undefined;
