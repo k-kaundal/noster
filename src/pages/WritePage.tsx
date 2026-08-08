@@ -1,18 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, FileText, ImagePlus, Loader2, Pencil, Send, X } from 'lucide-react';
+import {
+  BadgeCheck,
+  Eye,
+  FileText,
+  ImagePlus,
+  Loader2,
+  Pencil,
+  Send,
+  X,
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Markdown } from '@/components/articles/Markdown';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useIdentity } from '@/hooks/useIdentity';
 import { useArticle } from '@/hooks/useArticles';
 import { usePublishArticle } from '@/hooks/usePublishArticle';
 import { useUploadFile } from '@/hooks/useUploadFile';
@@ -52,19 +64,72 @@ export function WritePage() {
           description="Long-form, in Markdown. Published as NIP-23, so any Nostr reader can open it."
         />
 
-        {user ? (
-          <Editor />
-        ) : (
+        {!user ? (
           <EmptyState
             icon={FileText}
             title="Log in to write"
             description="Articles are signed with your Nostr key, so they follow you to any client."
             action={<LoginArea className="mx-auto max-w-60" />}
           />
+        ) : (
+          <WriterGate />
         )}
       </div>
     </Layout>
   );
+}
+
+/**
+ * Who gets to publish an article here.
+ *
+ * Long-form is reserved for people holding a verified name — the paid,
+ * expiring NIP-05 identity, not the free lightning address. Articles carry
+ * more weight than notes and stay addressable forever, and a name someone paid
+ * for is the cheapest honest signal that there is a person behind one.
+ *
+ * The gate only applies where names are actually for sale. On a deployment
+ * with no `nostrnip5` domain configured, nobody could ever pass it, so
+ * everyone writes — a feature nobody can reach is worse than an ungated one.
+ */
+function WriterGate() {
+  const identity = useIdentity();
+
+  const forSale = identity.nip5.isConfigured && !identity.nip5.isUnavailable;
+
+  if (forSale && identity.isLoading) {
+    return (
+      <Card>
+        <CardContent className="space-y-3 pt-6">
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-4 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (forSale && identity.status.tier !== 'verified') {
+    return (
+      <EmptyState
+        icon={BadgeCheck}
+        title="Articles need a verified name"
+        description={
+          identity.nip5.address
+            ? "Your name is reserved but not live yet — it starts working once the invoice settles."
+            : `Reserve a name on ${identity.nip5.domain} and long-form publishing opens up. Notes, replies and everything else stay free.`
+        }
+        action={
+          <Button asChild>
+            <Link to="/wallet">
+              <BadgeCheck className="mr-2 h-4 w-4" />
+              {identity.nip5.address ? 'Finish setting it up' : 'Get a verified name'}
+            </Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  return <Editor />;
 }
 
 function Editor() {

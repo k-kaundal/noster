@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAppContext } from '@/hooks/useAppContext';
 import { usePremium } from '@/hooks/usePremium';
-import { usePayAnyWallet, type PayMethod } from '@/hooks/usePayAnyWallet';
+import { usePayAnyWallet, type PayOption } from '@/hooks/usePayAnyWallet';
 import { useFiatSubscription } from '@/hooks/useFiatSubscription';
 import { FIAT_PROVIDER_LABELS } from '@/lib/fiat';
 import { useToast } from '@/hooks/useToast';
@@ -167,7 +167,8 @@ function PlanCard({
   onPrepare: (amountSats: number) => Promise<PreparedPayment>;
   onPaid: (paymentHash: string) => void;
 }) {
-  const { options, preferred, pay, isPaying, balanceSats } = usePayAnyWallet();
+  const { options, pay, isPaying, balanceSats } = usePayAnyWallet();
+  const [payingId, setPayingId] = useState<string | null>(null);
   const { toast } = useToast();
 
   // A link with a range lets the payer choose; a fixed price does not
@@ -177,22 +178,32 @@ function PlanCard({
 
   const chosen = Number(amount) || terms?.minSats || 0;
 
-  const start = async (method: PayMethod) => {
-    const prepared = await onPrepare(chosen);
+  const start = async (option: PayOption) => {
+    setPayingId(option.id);
 
-    if (method === 'manual') {
-      // Nothing to await — the person pays it wherever they like
-      setInvoice(prepared.bolt11);
-      return;
+    try {
+      const prepared = await onPrepare(chosen);
+
+      if (option.method === 'manual') {
+        // Nothing to await — the person pays it wherever they like
+        setInvoice(prepared.bolt11);
+        return;
+      }
+
+      await pay({
+        bolt11: prepared.bolt11,
+        optionId: option.id,
+        amountSats: chosen,
+      });
+      onPaid(prepared.bolt11.slice(0, 64));
+
+      toast({
+        title: 'Payment sent',
+        description: 'The relay grants access once it sees it.',
+      });
+    } finally {
+      setPayingId(null);
     }
-
-    await pay({ bolt11: prepared.bolt11, method, amountSats: chosen });
-    onPaid(prepared.bolt11.slice(0, 64));
-
-    toast({
-      title: 'Payment sent',
-      description: 'The relay grants access once it sees it.',
-    });
   };
 
   return (
@@ -250,13 +261,15 @@ function PlanCard({
           {/* Every wallet the person actually has, rather than only ours */}
           {options.map((option, index) => (
             <Button
-              key={option.method}
+              key={option.id}
               variant={index === 0 ? 'default' : 'outline'}
               className="w-full"
               disabled={!terms || isPreparing || isPaying}
-              onClick={() => start(option.method)}
+              onClick={() => start(option)}
             >
-              {(isPreparing || isPaying) && option.method === preferred ? (
+              {/* The spinner belongs on the button that was pressed, not on
+                  whichever one happened to be listed first */}
+              {(isPreparing || isPaying) && payingId === option.id ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : option.method === 'manual' ? (
                 <Copy className="mr-2 h-4 w-4" />

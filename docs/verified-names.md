@@ -19,6 +19,49 @@ The ✓ other clients render comes from `nip05`, not from `lud16`. Before this,
 the app claimed a pay link username and published it as `lud16` — which is why
 nobody's name was ever verified, however many addresses were issued.
 
+## One name, two tiers
+
+The wallet page used to show these as two unrelated cards. They are one thing
+at two tiers, and `src/lib/identity.ts` models it:
+
+| Tier | What they have | What it does |
+| --- | --- | --- |
+| `none` | nothing | the claim form, pre-filled |
+| `free` | a lightning address | receives zaps, never expires, no ✓ |
+| `verified` | a NIP-05 name they paid for | the identity, plus zaps at the same name |
+
+Someone with no name at all is offered one derived from their profile name, or
+from their key when they have no profile — `genUserName`, so it is stable. A
+suggestion that changes between two looks at the same page reads as a bug.
+
+Buying a name does not silently move the money. A wallet accumulates one pay
+link per name ever claimed, so `pickPrimaryLink` prefers the link matching the
+verified name and the card offers to issue one at the new name when they
+differ — the old link keeps working, because payments already in flight to it
+should not bounce.
+
+Both profile fields are written in **one** kind 0 event (`withIdentity`).
+Publishing them separately means two signatures, two relay round trips, and a
+window where the profile claims a name it cannot be paid at.
+
+A name whose invoice has not settled is deliberately not treated as an
+identity. Publishing it would advertise a `nip05` that fails to verify, which
+shows as a broken checkmark on every note.
+
+## Articles need one
+
+Long-form publishing (`/write`) is gated on the `verified` tier. Articles carry
+more weight than notes and stay addressable forever, and a name someone paid
+for is the cheapest honest signal that there is a person behind one.
+
+The gate only applies where names are actually for sale — with no
+`VITE_NIP5_DOMAIN_ID` configured, nobody could ever pass it, so everyone
+writes. A feature nobody can reach is worse than an ungated one.
+
+Note that this gates on a name reserved **here**, not on any `nip05` in a
+profile. Someone verified at their own domain is turned away. That is what
+"paid users" means, but it is a real trade — say so if you want it widened.
+
 ## The yearly price is the server's, not ours
 
 `nostrnip5` prices a name by character count, by rank, by promo code, and it can

@@ -25,7 +25,23 @@ const MIN_PASSWORD = 8;
  */
 export function AccountCard() {
   const { user } = useCurrentUser();
-  const { account, hasPassword, notificationEmail } = useLnbitsAccount();
+  const {
+    account,
+    hasPassword,
+    notificationEmail,
+    notificationTelegram,
+    notificationNostr,
+  } = useLnbitsAccount();
+
+  // Named rather than counted: "2 channels" tells nobody whether the one they
+  // care about is on
+  const notificationSummary = [
+    notificationEmail && 'Email',
+    notificationTelegram && 'Telegram',
+    notificationNostr && 'Nostr DM',
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   if (!account) return null;
 
@@ -50,7 +66,7 @@ export function AccountCard() {
           />
           <Row
             label="Payment notices"
-            value={notificationEmail || 'Not set'}
+            value={notificationSummary || 'Not set'}
           />
         </div>
 
@@ -73,7 +89,7 @@ export function AccountCard() {
             <AccordionTrigger className="text-sm">
               <span className="flex items-center gap-2">
                 <Mail className="h-4 w-4" />
-                Name and email
+                Name and notifications
               </span>
             </AccordionTrigger>
             <AccordionContent>
@@ -143,19 +159,40 @@ function MismatchNotice({
   );
 }
 
+/**
+ * Where the wallet tells you money arrived.
+ *
+ * Three channels, all of them the server's to deliver: an email, a Telegram
+ * chat, or a Nostr DM to a NIP-05 identifier. Worth filling in because a
+ * custodial balance that grows while nobody is looking is a zap nobody thanked
+ * anyone for.
+ */
 function ProfileForm() {
-  const { account, notificationEmail, updateProfile, isUpdating } =
-    useLnbitsAccount();
+  const {
+    account,
+    notificationEmail,
+    notificationTelegram,
+    notificationNostr,
+    updateProfile,
+    isUpdating,
+  } = useLnbitsAccount();
 
   const [username, setUsername] = useState(account?.username ?? '');
   const [email, setEmail] = useState(notificationEmail);
+  const [telegram, setTelegram] = useState(notificationTelegram);
+  const [nostrIdentifier, setNostrIdentifier] = useState(notificationNostr);
 
   return (
     <form
       className="space-y-3 pt-1"
       onSubmit={(event) => {
         event.preventDefault();
-        void updateProfile({ username: username.trim(), email: email.trim() });
+        void updateProfile({
+          username: username.trim(),
+          email: email.trim(),
+          telegram: telegram.trim(),
+          nostrIdentifier: nostrIdentifier.trim(),
+        });
       }}
     >
       <Field
@@ -175,6 +212,24 @@ function ProfileForm() {
         value={email}
         onChange={setEmail}
         placeholder="you@example.com"
+      />
+
+      <Field
+        id="account-telegram"
+        label="Telegram chat id"
+        hint="Message @userinfobot on Telegram to find yours."
+        value={telegram}
+        onChange={setTelegram}
+        placeholder="123456789"
+      />
+
+      <Field
+        id="account-nostr-notify"
+        label="Nostr address for notices"
+        hint="A NIP-05 identifier. The wallet sends the notice as a DM."
+        value={nostrIdentifier}
+        onChange={setNostrIdentifier}
+        placeholder="you@nostrfeed.com"
       />
 
       <Button type="submit" size="sm" disabled={isUpdating || !username.trim()}>

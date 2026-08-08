@@ -24,10 +24,16 @@ export function useLnbitsAccount() {
     mutationFn: async ({
       username,
       email,
+      telegram,
+      nostrIdentifier,
     }: {
       username: string;
       /** Where payment notices go. Not the account's login email. */
       email?: string;
+      /** Telegram chat to message on a payment. */
+      telegram?: string;
+      /** A NIP-05 identifier to send the notice to as a Nostr DM. */
+      nostrIdentifier?: string;
     }) => {
       if (!account) throw new Error('Connect your wallet first');
 
@@ -42,6 +48,8 @@ export function useLnbitsAccount() {
             notifications: {
               ...account.extra?.notifications,
               email_address: email || undefined,
+              telegram_chat_id: telegram || undefined,
+              nostr_identifier: nostrIdentifier || undefined,
             },
           },
         },
@@ -137,6 +145,15 @@ export function useLnbitsAccount() {
     account,
     hasPassword: !!account?.has_password,
     notificationEmail: account?.extra?.notifications?.email_address ?? '',
+    /**
+     * Where else a payment notice can land.
+     *
+     * LNbits will message a Telegram chat or send a Nostr DM to a NIP-05
+     * identifier when money arrives. Both are per-account settings on the
+     * server; this app only fills them in.
+     */
+    notificationTelegram: account?.extra?.notifications?.telegram_chat_id ?? '',
+    notificationNostr: account?.extra?.notifications?.nostr_identifier ?? '',
     updateProfile: updateProfile.mutateAsync,
     isUpdating: updateProfile.isPending,
     setPassword: setPassword.mutateAsync,

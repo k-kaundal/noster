@@ -6,6 +6,7 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import { LnbitsError, lnbitsRequest } from '@/lib/lnbits';
 import { buildPayLinkBody, formatAddress } from '@/lib/lightningAddress';
+import { pickPrimaryLink } from '@/lib/identity';
 
 /** A pay link as returned by the lnurlp extension. */
 export interface PayLink {
@@ -27,7 +28,7 @@ export interface PayLink {
  * user's own session — it is their wallet, so there is no shared secret here
  * and nothing is written to storage.
  */
-export function useLightningAddress() {
+export function useLightningAddress(preferredUsername?: string) {
   const { user } = useCurrentUser();
   const { wallet } = useLnbitsWallet();
   const { mutateAsync: createEvent } = useNostrPublish();
@@ -49,8 +50,12 @@ export function useLightningAddress() {
     retry: false,
   });
 
-  // A wallet can hold many pay links; the address is the one with a username
-  const link = links.data?.find((entry) => entry.username) ?? null;
+  /**
+   * A wallet accumulates one pay link per name ever claimed, so "the first one
+   * with a username" would let an abandoned name outrank the one just bought.
+   * The verified name wins when there is a link for it.
+   */
+  const link = pickPrimaryLink(links.data ?? [], preferredUsername);
   const address = link?.username ? formatAddress(link.username) : null;
 
   const claim = useMutation({
