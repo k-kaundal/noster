@@ -28,3 +28,9 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Local environment. Never commit real keys — anything VITE_-prefixed is
+# inlined into the built bundle and served to every visitor.
+.env
+.env.*
+!.env.example

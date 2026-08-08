@@ -4,6 +4,7 @@ import { NostrContext } from '@nostrify/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/hooks/useAppContext';
 import { readRelays, writeRelays } from '@/lib/relay';
+import { withPrimaryFirst } from '@/lib/relayRouting';
 
 interface NostrProviderProps {
   children: React.ReactNode;
@@ -49,18 +50,19 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
        * rather than whatever a single relay happens to hold.
        */
       reqRouter(filters) {
-        const urls = readRelays(relays.current);
-        const targets = (urls.length ? urls : [relayUrl.current]).slice(
-          0,
-          MAX_READ_RELAYS
-        );
+        const targets = withPrimaryFirst(
+          readRelays(relays.current),
+          relayUrl.current
+        ).slice(0, MAX_READ_RELAYS);
+
         return new Map(targets.map((url) => [url, filters]));
       },
       /** Publish to the relays the user marked as write targets. */
       eventRouter(_event: NostrEvent) {
-        const urls = writeRelays(relays.current);
-        const targets = urls.length ? urls : [relayUrl.current];
-        return [...new Set(targets)].slice(0, MAX_WRITE_RELAYS);
+        return withPrimaryFirst(
+          writeRelays(relays.current),
+          relayUrl.current
+        ).slice(0, MAX_WRITE_RELAYS);
       },
     });
   }

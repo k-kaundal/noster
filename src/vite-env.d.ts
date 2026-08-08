@@ -1,1 +1,21 @@
 /// <reference types="vite/client" />
+
+/**
+ * Build-time configuration.
+ *
+ * Every one of these is inlined into the bundle by Vite and served to every
+ * visitor, so all of them are public by definition. Nothing that can move
+ * money belongs here.
+ */
+interface ImportMetaEnv {
+  /** Base URL of the LNbits instance. */
+  readonly VITE_LNBITS_URL?: string;
+  /** Optional house wallet, used only to receive. */
+  readonly VITE_LNBITS_WALLET_ID?: string;
+  /** Invoice/read key for the house wallet. Cannot spend. */
+  readonly VITE_LNBITS_INVOICE_KEY?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}

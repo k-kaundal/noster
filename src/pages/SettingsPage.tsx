@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { AccentPicker } from '@/components/AccentPicker';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LoginArea } from '@/components/auth/LoginArea';
+import { LnbitsWalletCard } from '@/components/wallet/LnbitsWalletCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,6 +65,9 @@ export function SettingsPage() {
             <TabsTrigger value="messages" className="flex-1 sm:flex-none">
               Messages
             </TabsTrigger>
+            <TabsTrigger value="wallet" className="flex-1 sm:flex-none">
+              Wallet
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="appearance">
@@ -78,6 +82,9 @@ export function SettingsPage() {
             ) : (
               <SignedOutNotice what="message relays" />
             )}
+          </TabsContent>
+          <TabsContent value="wallet">
+            {user ? <LnbitsWalletCard /> : <SignedOutNotice what="wallet" />}
           </TabsContent>
         </Tabs>
       </div>

@@ -43,9 +43,12 @@ const queryClient = new QueryClient({
 const defaultConfig: AppConfig = {
   theme: "system",
   accent: "violet",
-  relayUrl: "wss://relay.damus.io",
+  // Our own relay is the primary: it is always queried first and never
+  // truncated away by the per-request relay cap.
+  relayUrl: "wss://relay.nostrfeed.com",
   // Reads fan out across all of these; writes go to the ones marked write
   relays: [
+    { url: "wss://relay.nostrfeed.com", read: true, write: true },
     { url: "wss://relay.damus.io", read: true, write: true },
     { url: "wss://relay.primal.net", read: true, write: true },
     { url: "wss://relay.nostr.band", read: true, write: false },
@@ -54,10 +57,10 @@ const defaultConfig: AppConfig = {
 };
 
 const presetRelays = [
+  { url: 'wss://relay.nostrfeed.com', name: 'NostrFeed', active: true },
   { url: 'wss://relay.damus.io', name: 'Damus' },
   { url: 'wss://relay.primal.net', name: 'Primal' },
   { url: 'wss://relay.nostr.band', name: 'Nostr.Band' },
-  { url: 'wss://relay.nostrfeed.com', name: 'NostrFeed', active: true },
   { url: 'wss://nos.lol', name: 'nos.lol' },
   { url: 'wss://relay.snort.social', name: 'Snort' },
   { url: 'wss://ditto.pub/relay', name: 'Ditto' },
