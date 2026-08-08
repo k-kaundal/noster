@@ -8,7 +8,27 @@ import { nip98 } from 'nostr-tools';
  * enormous — most of it is extensions we don't touch — and typing all of it
  * would be a maintenance liability with no payoff.
  */
-export const LNBITS_URL = 'https://ln.nostrfeed.com';
+export const LNBITS_URL =
+  import.meta.env.VITE_LNBITS_URL?.replace(/\/+$/, '') ||
+  'https://ln.nostrfeed.com';
+
+/**
+ * An optional shared wallet the app can issue invoices against.
+ *
+ * Receive-only, and deliberately so. Vite inlines every VITE_ variable into
+ * the bundle, so anything configured here is readable by every visitor — an
+ * invoice key only lets them pay us and see the balance, whereas an admin key
+ * would let them empty the wallet. Spending always goes through the signed-in
+ * user's own wallet, authorised per user by NIP-98.
+ */
+export const HOUSE_WALLET = {
+  id: import.meta.env.VITE_LNBITS_WALLET_ID || '',
+  invoiceKey: import.meta.env.VITE_LNBITS_INVOICE_KEY || '',
+} as const;
+
+export function hasHouseWallet(): boolean {
+  return !!HOUSE_WALLET.invoiceKey;
+}
 
 /** Wallet as returned by `/api/v1/wallets`. */
 export interface LnbitsWallet {
@@ -233,6 +253,43 @@ export function readAccessToken(body: unknown): string | undefined {
     if (typeof value === 'string' && value) return value;
   }
   return undefined;
+}
+
+/**
+ * Reads a wallet balance in millisats out of whatever shape came back.
+ *
+ * LNbits' own API panel documents `GET /api/v1/wallet` as returning
+ * `{id, name, balance}` while the v1.5.6 OpenAPI models it as `balance_msat`.
+ * Both are millisats; only the field name differs by endpoint and version, so
+ * reading just one would silently show a zero balance on the other.
+ */
+export function readBalanceMsat(body: unknown): number {
+  if (!body || typeof body !== 'object') return 0;
+
+  const record = body as Record<string, unknown>;
+  for (const key of ['balance_msat', 'balance']) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+/**
+ * The bolt11 string, whichever field carries it.
+ *
+ * `POST /api/v1/payments` is documented as returning `payment_request`, while
+ * the OpenAPI `Payment` model names it `bolt11` and marks `payment_request` as
+ * a non-persisted alias. Which one is populated depends on the endpoint.
+ */
+export function readBolt11(body: unknown): string {
+  if (!body || typeof body !== 'object') return '';
+
+  const record = body as Record<string, unknown>;
+  for (const key of ['bolt11', 'payment_request']) {
+    const value = record[key];
+    if (typeof value === 'string' && value) return value;
+  }
+  return '';
 }
 
 /** Millisatoshis to whole satoshis, rounded down as balances always are. */

@@ -1,7 +1,42 @@
 # LNbits integration
 
-NostrFeed's wallet is backed by our own LNbits instance at
-**https://ln.nostrfeed.com**, pinned against **LNbits v1.5.6**.
+NostrFeed's wallet is backed by our own LNbits instance, pinned against
+**LNbits v1.5.6**.
+
+## Configuration
+
+Copy `.env.example` to `.env` and fill it in. `.env` is gitignored.
+
+| Variable | Purpose |
+| --- | --- |
+| `VITE_LNBITS_URL` | Instance base URL. Defaults to `https://ln.nostrfeed.com`. |
+| `VITE_LNBITS_WALLET_ID` | Optional house wallet id. |
+| `VITE_LNBITS_INVOICE_KEY` | Invoice/read key for that wallet. Receive-only. |
+
+### Why there is no admin key variable
+
+**Vite inlines every `VITE_`-prefixed variable into the built JavaScript.**
+There is no such thing as a secret build-time variable in a static site — the
+value ends up in a file served to every visitor, viewable in devtools.
+
+An LNbits **admin key can spend the wallet**. Putting one in `.env` would
+publish it, and anyone who opened the site could empty that wallet. So the app
+holds no admin key at all.
+
+The **invoice key** is published too, but it can only create invoices and read
+the balance. The consequences are that anyone can generate an invoice that pays
+us, and anyone can see the house wallet's balance. That is an acceptable trade
+for a wallet whose whole purpose is receiving; it would not be acceptable for a
+wallet holding funds you care about keeping private.
+
+Spending is done with the **signed-in user's own wallet**, authorised per user
+through NIP-98 (below). Each user's admin key is fetched into memory from their
+own session and never persisted, so no key is shared between users and none is
+ever written to disk.
+
+If the house wallet ever needs to *send*, that requires a server to hold the
+admin key — a small proxy the SPA calls. It cannot be done from the browser
+safely, whatever the deployment looks like.
 
 The full OpenAPI spec is large and mostly extensions we don't use. This
 documents only the surface `src/lib/lnbits.ts` depends on, so the client can be

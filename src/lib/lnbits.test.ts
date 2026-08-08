@@ -3,6 +3,8 @@ import {
   describeError,
   msatToSat,
   readAccessToken,
+  readBalanceMsat,
+  readBolt11,
   satToMsat,
 } from './lnbits';
 
@@ -102,5 +104,47 @@ describe('sat and msat conversion', () => {
     // Math.floor on a negative would inflate the magnitude, so callers take
     // the absolute value first — this documents the raw behaviour they rely on
     expect(msatToSat(Math.abs(-21_000))).toBe(21);
+  });
+});
+
+describe('readBalanceMsat', () => {
+  it('reads the field name the OpenAPI model uses', () => {
+    expect(readBalanceMsat({ balance_msat: 21_000 })).toBe(21_000);
+  });
+
+  it('reads the field name the API panel documents', () => {
+    // GET /api/v1/wallet is documented as {id, name, balance}
+    expect(readBalanceMsat({ id: 'w', name: 'x', balance: 21_000 })).toBe(21_000);
+  });
+
+  it('prefers balance_msat when a response carries both', () => {
+    expect(readBalanceMsat({ balance_msat: 1, balance: 2 })).toBe(1);
+  });
+
+  it('reports zero rather than NaN for a malformed body', () => {
+    expect(readBalanceMsat({ balance: 'lots' })).toBe(0);
+    expect(readBalanceMsat(null)).toBe(0);
+    expect(readBalanceMsat(undefined)).toBe(0);
+  });
+
+  it('keeps a zero balance distinguishable from a missing one', () => {
+    expect(readBalanceMsat({ balance_msat: 0 })).toBe(0);
+  });
+});
+
+describe('readBolt11', () => {
+  it('reads the OpenAPI field', () => {
+    expect(readBolt11({ bolt11: 'lnbc1...' })).toBe('lnbc1...');
+  });
+
+  it('reads the payment_request alias the invoice endpoint returns', () => {
+    expect(readBolt11({ payment_hash: 'h', payment_request: 'lnbc1...' })).toBe(
+      'lnbc1...'
+    );
+  });
+
+  it('returns an empty string rather than undefined when neither is set', () => {
+    expect(readBolt11({ payment_hash: 'h' })).toBe('');
+    expect(readBolt11(null)).toBe('');
   });
 });
