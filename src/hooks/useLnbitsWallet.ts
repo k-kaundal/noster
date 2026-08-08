@@ -184,6 +184,36 @@ export function useLnbitsWallet() {
   };
 }
 
+/**
+ * Watches an invoice until it is paid.
+ *
+ * Polled rather than pushed: the wallet has no socket here, and an invoice on
+ * screen with no idea whether it landed is the one thing that makes people
+ * pay twice. Polling stops as soon as it settles.
+ */
+export function useInvoiceStatus(paymentHash: string | undefined) {
+  const { wallet } = useLnbitsWallet();
+
+  const query = useQuery<boolean>({
+    queryKey: ['lnbits-invoice', paymentHash ?? ''],
+    queryFn: async ({ signal }) => {
+      const body = await lnbitsRequest<Record<string, unknown>>(
+        `/api/v1/payments/${paymentHash}`,
+        { apiKey: wallet!.inkey, signal }
+      );
+
+      // LNbits has reported this as `paid` and as `status: "success"`
+      return body.paid === true || body.status === 'success';
+    },
+    enabled: !!paymentHash && !!wallet,
+    refetchInterval: (query) => (query.state.data ? false : 3000),
+    staleTime: 0,
+    retry: false,
+  });
+
+  return { isPaid: query.data === true };
+}
+
 /** Recent payments for the active wallet. */
 export function useLnbitsPayments(limit = 20) {
   const { wallet } = useLnbitsWallet();

@@ -30,19 +30,36 @@ export function parseLinkId(value: string): string {
   return match ? match[1] : trimmed;
 }
 
+/**
+ * The pay links NostrFeed sells access through, when none are configured.
+ *
+ * Not secrets: a pay link id is the public half of a payment page, printed in
+ * the URL people are asked to open. Keeping them here means a deployment that
+ * forgot the env vars still sells access, rather than showing an empty page
+ * with a message only the operator understands.
+ */
+const DEFAULT_LINKS: Record<PlanId, string> = {
+  monthly: 'QxKstJ',
+  lifetime: '6yJz7H',
+};
+
 export const PREMIUM_PLANS: PremiumPlan[] = [
   {
     id: 'monthly',
     name: 'Monthly access',
     summary: 'Write to the NostrFeed relay for a month.',
-    linkId: parseLinkId(import.meta.env.VITE_PREMIUM_MONTHLY_LINK || ''),
+    linkId:
+      parseLinkId(import.meta.env.VITE_PREMIUM_MONTHLY_LINK || '') ||
+      DEFAULT_LINKS.monthly,
     recurring: true,
   },
   {
     id: 'lifetime',
     name: 'Lifetime write access',
     summary: 'Write to the NostrFeed relay permanently. Paid once.',
-    linkId: parseLinkId(import.meta.env.VITE_PREMIUM_LIFETIME_LINK || ''),
+    linkId:
+      parseLinkId(import.meta.env.VITE_PREMIUM_LIFETIME_LINK || '') ||
+      DEFAULT_LINKS.lifetime,
     recurring: false,
   },
 ];
