@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   describeError,
+  isMissingSession,
+  LnbitsError,
   msatToSat,
   readAccessToken,
   readBalanceMsat,
@@ -146,5 +148,39 @@ describe('readBolt11', () => {
   it('returns an empty string rather than undefined when neither is set', () => {
     expect(readBolt11({ payment_hash: 'h' })).toBe('');
     expect(readBolt11(null)).toBe('');
+  });
+});
+
+describe('isMissingSession', () => {
+  it('treats a 401 as simply not being signed in', () => {
+    expect(isMissingSession(new LnbitsError('Not authorised', 401))).toBe(true);
+  });
+
+  it('treats a 403 the same way', () => {
+    expect(isMissingSession(new LnbitsError('Forbidden', 403))).toBe(true);
+  });
+
+  it("recognises LNbits' 400 for a request with no credentials", () => {
+    // What /api/v1/auth actually answers on a browser that has never
+    // connected. Reported as an error, it puts raw API text on screen.
+    expect(
+      isMissingSession(
+        new LnbitsError('Missing user ID or access token.', 400)
+      )
+    ).toBe(true);
+  });
+
+  it('does not swallow an unrelated 400', () => {
+    expect(isMissingSession(new LnbitsError('Invalid wallet id', 400))).toBe(
+      false
+    );
+  });
+
+  it('does not swallow a server fault', () => {
+    expect(isMissingSession(new LnbitsError('Internal error', 500))).toBe(false);
+  });
+
+  it('ignores errors that did not come from LNbits', () => {
+    expect(isMissingSession(new Error('Failed to fetch'))).toBe(false);
   });
 });

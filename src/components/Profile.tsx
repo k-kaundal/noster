@@ -29,6 +29,12 @@ import { EmptyState } from '@/components/EmptyState';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { FollowButton } from '@/components/FollowButton';
 import { EditProfileForm } from '@/components/EditProfileForm';
+import {
+  ArticleCard,
+  ArticleCardSkeleton,
+  NoArticles,
+} from '@/components/articles/ArticleCard';
+import { useArticles } from '@/hooks/useArticles';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -287,6 +293,9 @@ export function Profile({ pubkey }: ProfileProps) {
           <TabsTrigger value="replies" className="flex-1 sm:flex-none">
             Replies
           </TabsTrigger>
+          <TabsTrigger value="articles" className="flex-1 sm:flex-none">
+            Articles
+          </TabsTrigger>
           <TabsTrigger value="media" className="flex-1 sm:flex-none">
             Media
           </TabsTrigger>
@@ -304,6 +313,10 @@ export function Profile({ pubkey }: ProfileProps) {
 
         <TabsContent value="replies" className="space-y-4">
           <PostGroup posts={replies} emptyTitle="No replies found" />
+        </TabsContent>
+
+        <TabsContent value="articles" className="space-y-4">
+          <ProfileArticles pubkey={pubkey} />
         </TabsContent>
 
         <TabsContent value="media" className="space-y-4">
@@ -472,6 +485,38 @@ function ProfileSkeleton() {
         </CardContent>
       </Card>
       <PostSkeletonList count={3} />
+    </div>
+  );
+}
+
+/**
+ * An author's long-form articles.
+ *
+ * Its own tab rather than mixed into the notes feed: an article is a
+ * different reading commitment from a note, and a list of them is how someone
+ * decides whether this author is worth following for writing.
+ */
+function ProfileArticles({ pubkey }: { pubkey: string }) {
+  const { articles, isLoading } = useArticles({ author: pubkey });
+
+  if (isLoading) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2">
+        <ArticleCardSkeleton />
+        <ArticleCardSkeleton />
+      </div>
+    );
+  }
+
+  if (!articles.length) {
+    return <NoArticles message="No articles yet." />;
+  }
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      {articles.map((article) => (
+        <ArticleCard key={article.slug} article={article} />
+      ))}
     </div>
   );
 }

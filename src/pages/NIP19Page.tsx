@@ -4,6 +4,7 @@ import { useSeo } from '@/hooks/useSeo';
 import { Layout } from '@/components/Layout';
 import { Profile } from '@/components/Profile';
 import { PostPage } from '@/components/PostPage';
+import { AddressableView } from '@/components/AddressableView';
 import NotFound from './NotFound';
 
 export function NIP19Page() {
@@ -58,13 +59,13 @@ export function NIP19Page() {
       );
 
     case 'naddr':
-      // AI agent should implement addressable event view here
       return (
         <Layout>
-          <div className="text-center py-12">
-            <h2 className="text-xl font-semibold mb-2">Addressable Event View</h2>
-            <p className="text-muted-foreground">Addressable event view coming soon...</p>
-          </div>
+          <AddressableView
+            kind={data.kind}
+            pubkey={data.pubkey}
+            identifier={data.identifier}
+          />
         </Layout>
       );
 

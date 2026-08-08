@@ -1,5 +1,6 @@
 import { useState, forwardRef } from 'react';
-import { Wallet, Plus, Trash2, Zap, Globe, WalletMinimal, CheckCircle, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Wallet, Plus, Trash2, Zap, Globe, Loader2, WalletMinimal, CheckCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -24,6 +25,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
+import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useNWC } from '@/hooks/useNWCContext';
 import { useWallet } from '@/hooks/useWallet';
 import { useToast } from '@/hooks/useToast';
@@ -66,6 +70,59 @@ const AddWalletContent = forwardRef<HTMLDivElement, {
 ));
 AddWalletContent.displayName = 'AddWalletContent';
 
+/**
+ * The wallet this app provides, which was missing from this dialog entirely.
+ *
+ * It sat at the top of the list of things someone can pay with, and the only
+ * options offered here were a browser extension and a remote connection —
+ * both of which require going and finding a wallet elsewhere first.
+ */
+function NostrFeedRow({ onNavigate }: { onNavigate: () => void }) {
+  const { user } = useCurrentUser();
+  const { isConnected, isLoading, connect, isConnecting } = useLnbitsAuth();
+  const { balanceSats } = useLnbitsWallet();
+
+  if (!user) return null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <Zap className="h-4 w-4 shrink-0 text-zap" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium">NostrFeed wallet</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {isConnected
+              ? `${balanceSats.toLocaleString()} sats · built in`
+              : 'Built in — no extension needed'}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        {isConnected ? (
+          <>
+            <CheckCircle className="h-4 w-4 text-success" />
+            <Button asChild size="sm" variant="ghost" onClick={onNavigate}>
+              <Link to="/wallet">Open</Link>
+            </Button>
+          </>
+        ) : (
+          <Button
+            size="sm"
+            disabled={isLoading || isConnecting}
+            onClick={() => connect()}
+          >
+            {isConnecting && (
+              <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+            )}
+            Set up
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Extracted WalletContent to prevent re-renders
 const WalletContent = forwardRef<HTMLDivElement, {
   hasWebLN: boolean;
@@ -77,6 +134,7 @@ const WalletContent = forwardRef<HTMLDivElement, {
   handleSetActive: (cs: string) => void;
   handleRemoveConnection: (cs: string) => void;
   setAddDialogOpen: (open: boolean) => void;
+  onNavigate: () => void;
 }>(({
   hasWebLN,
   isDetecting,
@@ -86,13 +144,15 @@ const WalletContent = forwardRef<HTMLDivElement, {
   activeConnection,
   handleSetActive,
   handleRemoveConnection,
-  setAddDialogOpen
+  setAddDialogOpen,
+  onNavigate
 }, ref) => (
   <div className="space-y-6 px-4 pb-4" ref={ref}>
     {/* Current Status */}
     <div className="space-y-3">
       <h3 className="font-medium">Current Status</h3>
       <div className="grid gap-3">
+        <NostrFeedRow onNavigate={onNavigate} />
         {/* WebLN */}
         <div className="flex items-center justify-between p-3 border rounded-lg">
           <div className="flex items-center gap-3">
@@ -194,9 +254,11 @@ const WalletContent = forwardRef<HTMLDivElement, {
     {!hasWebLN && connections.length === 0 && (
       <>
         <Separator />
-        <div className="text-center py-4 space-y-2">
+        <div className="space-y-2 py-4 text-center">
           <p className="text-sm text-muted-foreground">
-            Install a WebLN extension or connect a NWC wallet for zaps.
+            You don't need any of this to zap — the NostrFeed wallet above
+            works on its own. Connect an outside wallet only if you'd rather
+            pay from that one.
           </p>
         </div>
       </>
@@ -272,6 +334,7 @@ export function WalletModal({ children, className }: WalletModalProps) {
     handleSetActive,
     handleRemoveConnection,
     setAddDialogOpen,
+    onNavigate: () => setOpen(false),
   };
 
   const addWalletDialog = (
@@ -327,7 +390,7 @@ export function WalletModal({ children, className }: WalletModalProps) {
                 Lightning Wallet
               </DrawerTitle>
               <DrawerDescription>
-                Connect your lightning wallet to send zaps instantly.
+                Zap with the built-in NostrFeed wallet, or connect your own.
               </DrawerDescription>
             </DrawerHeader>
             <div className="overflow-y-auto">
@@ -383,7 +446,7 @@ export function WalletModal({ children, className }: WalletModalProps) {
               Lightning Wallet
             </DialogTitle>
             <DialogDescription>
-              Connect your lightning wallet to send zaps instantly.
+              Zap with the built-in NostrFeed wallet, or connect your own.
             </DialogDescription>
           </DialogHeader>
           <WalletContent {...walletContentProps} />

@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountCard } from '@/components/wallet/AccountCard';
 import { LightningAddressCard } from '@/components/wallet/LightningAddressCard';
+import { PasswordSignIn } from '@/components/wallet/PasswordSignIn';
 import { ReceiveDialog } from '@/components/wallet/ReceiveDialog';
 import { SendDialog } from '@/components/wallet/SendDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -137,6 +138,10 @@ function CreateWalletCard() {
             {connectError}
           </p>
         )}
+
+        <div className="mx-auto mt-5 max-w-sm">
+          <PasswordSignIn />
+        </div>
       </div>
 
       <CardContent className="space-y-3 border-t pt-5">

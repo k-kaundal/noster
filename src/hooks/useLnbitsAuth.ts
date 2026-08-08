@@ -6,8 +6,10 @@ import { useToast } from '@/hooks/useToast';
 import {
   LNBITS_URL,
   LnbitsError,
+  isMissingSession,
   lnbitsRequest,
   loginWithNostr,
+  loginWithPassword,
   type LnbitsUser,
 } from '@/lib/lnbits';
 
@@ -67,8 +69,9 @@ export function useLnbitsAuth() {
           signal,
         });
       } catch (error) {
-        // Not being signed in is the normal state, not a failure to report
-        if (error instanceof LnbitsError && error.status === 401) return null;
+        // Having no session is the normal state on a device you haven't
+        // connected yet, not a failure worth showing anyone
+        if (isMissingSession(error)) return null;
         throw error;
       }
     },
@@ -77,37 +80,52 @@ export function useLnbitsAuth() {
     retry: false,
   });
 
-  const login = useMutation({
-    mutationFn: async () => {
-      if (!user) throw new Error('Log in with Nostr first');
+  /**
+   * Everything that has to happen after a token is issued, whichever way it
+   * was obtained.
+   *
+   * A brand new account has no wallet, and an account without one is useless —
+   * no balance to show, nothing to receive into. Provisioning it here means
+   * signing in is the only step a person ever takes.
+   *
+   * An account that already exists is left alone. It may have wallets, a
+   * lightning address and a balance from before this app ever saw it, and none
+   * of that is ours to reorganise.
+   */
+  const finishSignIn = useCallback(async (issued: string | undefined) => {
+    const existing = await lnbitsRequest<LnbitsUser>('/api/v1/auth', {
+      token: issued,
+    });
 
-      const issued = await loginWithNostr(user.signer);
-
-      /**
-       * A brand new account has no wallet, and an account without one is
-       * useless — no balance to show, nothing to receive into. Provisioning it
-       * here means signing in is the only step a person ever takes.
-       */
-      const account = await lnbitsRequest<LnbitsUser>('/api/v1/auth', {
+    if (!existing.wallets?.length) {
+      await lnbitsRequest('/api/v1/wallet', {
+        method: 'POST',
         token: issued,
+        body: { name: 'NostrFeed', wallet_type: 'lightning' },
       });
+    }
 
-      if (!account.wallets?.length) {
-        await lnbitsRequest('/api/v1/wallet', {
-          method: 'POST',
-          token: issued,
-          body: { name: 'NostrFeed', wallet_type: 'lightning' },
-        });
-      }
+    return issued;
+  }, []);
 
-      return issued;
-    },
-    onSuccess: (issued) => {
+  const storeToken = useCallback(
+    (issued: string | undefined) => {
       if (issued && user) {
         setTokens((current) => ({ ...current, [user.pubkey]: issued }));
       }
       queryClient.invalidateQueries({ queryKey: ['lnbits-account'] });
       queryClient.invalidateQueries({ queryKey: ['lnbits-wallets'] });
+    },
+    [user, setTokens, queryClient]
+  );
+
+  const login = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error('Log in with Nostr first');
+      return finishSignIn(await loginWithNostr(user.signer));
+    },
+    onSuccess: (issued) => {
+      storeToken(issued);
       toast({
         title: 'Wallet connected',
         description: 'Your NostrFeed wallet is ready.',
@@ -117,6 +135,41 @@ export function useLnbitsAuth() {
       toast({
         title: 'Could not connect your wallet',
         description: describeLoginFailure(error),
+        variant: 'destructive',
+      });
+    },
+  });
+
+  /**
+   * The same wallet, reached with a username and password.
+   *
+   * Needed on any device where the Nostr signer isn't installed, and for
+   * people who already had an LNbits account before they found this app. The
+   * account it opens may be bound to a different Nostr key than the one signed
+   * in here; the wallet page says so and offers to relink rather than doing it
+   * silently.
+   */
+  const loginWithCredentials = useMutation({
+    mutationFn: async ({
+      username,
+      password,
+    }: {
+      username: string;
+      password: string;
+    }) => {
+      const issued = await loginWithPassword(username, password);
+      return finishSignIn(issued);
+    },
+    onSuccess: (issued) => {
+      storeToken(issued);
+      toast({ title: 'Signed in', description: 'Your wallet is ready.' });
+    },
+    onError: (error: Error) => {
+      const wrong = error instanceof LnbitsError && error.status === 401;
+
+      toast({
+        title: wrong ? 'Wrong username or password' : 'Could not sign in',
+        description: wrong ? 'Check them and try again.' : error.message,
         variant: 'destructive',
       });
     },
@@ -150,6 +203,9 @@ export function useLnbitsAuth() {
     token,
     connect: login.mutateAsync,
     isConnecting: login.isPending,
+    /** Sign in to the same wallet with a username and password. */
+    connectWithPassword: loginWithCredentials.mutateAsync,
+    isConnectingWithPassword: loginWithCredentials.isPending,
     /** Why the last sign-in attempt failed, phrased for a person. */
     connectError: login.error
       ? describeLoginFailure(login.error as Error)
