@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountCard } from '@/components/wallet/AccountCard';
 import { LightningAddressCard } from '@/components/wallet/LightningAddressCard';
+import { Nip5Card } from '@/components/wallet/Nip5Card';
 import { PasswordSignIn } from '@/components/wallet/PasswordSignIn';
 import { ReceiveDialog } from '@/components/wallet/ReceiveDialog';
 import { SendDialog } from '@/components/wallet/SendDialog';
@@ -257,6 +258,8 @@ function ConnectedWallet() {
       </Card>
 
       <LightningAddressCard />
+
+      <Nip5Card />
 
       <ActivityCard />
 
