@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { formatDistanceToNowStrict } from 'date-fns';
+import { timeAgo as formatAge } from '@/lib/time';
 import { BadgeCheck, ChevronRight, Heart, MessageCircle } from 'lucide-react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -247,7 +247,7 @@ function timeAgo(event: NostrEvent): string {
     return 'unknown';
   }
   try {
-    return formatDistanceToNowStrict(new Date(timestamp));
+    return formatAge(timestamp);
   } catch {
     return 'unknown';
   }

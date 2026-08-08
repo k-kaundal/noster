@@ -60,6 +60,19 @@ function getLoader(nostr: Relay): BatchLoader<string, AuthorData> {
  * `useAuthor` — so a list of 300 follows still costs one relay query, and
  * anything the feed already loaded is reused rather than refetched.
  */
+/**
+ * How long a profile stays trusted.
+ *
+ * Someone changes their name or avatar a handful of times a year, and a feed
+ * of thirty notes asks about thirty of them. Half an hour keeps names and
+ * avatars on screen through a session without a relay round trip, and the
+ * restored cache means they are there before the first one even opens.
+ */
+const PROFILE_STALE_TIME = 30 * 60 * 1000;
+
+/** Kept for a day, so moving around the app never redraws a grey circle. */
+const PROFILE_GC_TIME = 24 * 60 * 60 * 1000;
+
 export function useAuthors(pubkeys: string[], enabled = true) {
   const { nostr } = useNostr();
   const loader = useMemo(() => getLoader(nostr), [nostr]);
@@ -69,8 +82,8 @@ export function useAuthors(pubkeys: string[], enabled = true) {
       queryKey: ['author', pubkey],
       queryFn: () => loader.load(pubkey),
       enabled,
-      staleTime: 5 * 60 * 1000,
-      gcTime: 30 * 60 * 1000,
+      staleTime: PROFILE_STALE_TIME,
+      gcTime: PROFILE_GC_TIME,
       retry: 1,
     })),
   });
@@ -95,9 +108,8 @@ export function useAuthor(pubkey: string | undefined) {
       if (!pubkey) return {};
       return loader.load(pubkey);
     },
-    // Profiles change rarely, so keep them warm across navigations
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
+    staleTime: PROFILE_STALE_TIME,
+    gcTime: PROFILE_GC_TIME,
     retry: 1,
   });
 }

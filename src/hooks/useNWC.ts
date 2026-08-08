@@ -1,7 +1,24 @@
 import { useState, useCallback } from 'react';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useToast } from '@/hooks/useToast';
-import { LN } from '@getalby/sdk';
+import type { LN } from '@getalby/sdk';
+
+/**
+ * The Alby SDK, fetched the first time a wallet is actually used.
+ *
+ * `NWCProvider` mounts at the app root, so a static import here put the whole
+ * SDK — the single largest dependency in the tree — into the chunk the browser
+ * has to parse before it can paint anything. Almost nobody has a remote wallet
+ * connected, and nobody at all needs it to read a feed.
+ *
+ * Cached in a module-level promise so the second payment doesn't wait again.
+ */
+let sdk: Promise<typeof import('@getalby/sdk')> | undefined;
+
+function loadSdk() {
+  sdk ??= import('@getalby/sdk');
+  return sdk;
+}
 
 export interface NWCConnection {
   connectionString: string;
@@ -62,14 +79,9 @@ export function useNWCInternal() {
 
     try {
       let timeoutId: NodeJS.Timeout | undefined;
-      const testPromise = new Promise((resolve, reject) => {
-        try {
-          const client = new LN(parsed.connectionString);
-          resolve(client);
-        } catch (error) {
-          reject(error);
-        }
-      });
+      const testPromise = loadSdk().then(
+        ({ LN }) => new LN(parsed.connectionString)
+      );
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error('Connection test timeout')), 10000);
       });
@@ -167,6 +179,7 @@ export function useNWCInternal() {
 
     let client: LN;
     try {
+      const { LN } = await loadSdk();
       client = new LN(connection.connectionString);
     } catch (error) {
       console.error('Failed to create NWC client:', error);

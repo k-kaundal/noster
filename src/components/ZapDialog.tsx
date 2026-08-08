@@ -1,7 +1,17 @@
-import { useState, useEffect, useRef, useCallback, forwardRef } from 'react';
-import { Zap, Copy, Check, ExternalLink, Sparkle, Sparkles, Star, Rocket, ArrowLeft, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ArrowLeft,
+  Check,
+  Copy,
+  ExternalLink,
+  Loader2,
+  Rocket,
+  Sparkle,
+  Sparkles,
+  Star,
+  Zap,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -17,22 +27,20 @@ import {
   DrawerHeader,
   DrawerTitle,
   DrawerTrigger,
-  DrawerClose,
 } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { QrCode } from '@/components/wallet/QrCode';
 import { useAuthor } from '@/hooks/useAuthor';
-import { useToast } from '@/hooks/useToast';
-import { useZaps } from '@/hooks/useZaps';
-import { useWallet } from '@/hooks/useWallet';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { usePayAnyWallet, type PayOption } from '@/hooks/usePayAnyWallet';
+import { useToast } from '@/hooks/useToast';
+import { useZaps, type ZapInvoice } from '@/hooks/useZaps';
+import { genUserName } from '@/lib/genUserName';
+import { formatSats } from '@/lib/zap';
 import type { Event } from 'nostr-tools';
-import QRCode from 'qrcode';
 
 interface ZapDialogProps {
   target: Event;
@@ -43,201 +51,22 @@ interface ZapDialogProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-const presetAmounts = [
-  { amount: 1, icon: Sparkle },
-  { amount: 50, icon: Sparkles },
-  { amount: 100, icon: Zap },
-  { amount: 250, icon: Star },
-  { amount: 1000, icon: Rocket },
+const PRESETS = [
+  { amount: 21, icon: Sparkle },
+  { amount: 100, icon: Sparkles },
+  { amount: 500, icon: Zap },
+  { amount: 1000, icon: Star },
+  { amount: 5000, icon: Rocket },
 ];
 
-interface ZapContentProps {
-  invoice: string | null;
-  amount: number | string;
-  comment: string;
-  isZapping: boolean;
-  qrCodeUrl: string;
-  copied: boolean;
-  hasWebLN: boolean;
-  handleZap: () => void;
-  handleCopy: () => void;
-  openInWallet: () => void;
-  setAmount: (amount: number | string) => void;
-  setComment: (comment: string) => void;
-  inputRef: React.RefObject<HTMLInputElement>;
-  zap: (amount: number, comment: string) => void;
-}
-
-// Moved ZapContent outside of ZapDialog to prevent re-renders causing focus loss
-const ZapContent = forwardRef<HTMLDivElement, ZapContentProps>(({
-  invoice,
-  amount,
-  comment,
-  isZapping,
-  qrCodeUrl,
-  copied,
-  hasWebLN,
-  handleZap,
-  handleCopy,
-  openInWallet,
-  setAmount,
-  setComment,
-  inputRef,
-  zap,
-}, ref) => (
-  <div ref={ref}>
-    {invoice ? (
-      <div className="flex flex-col h-full min-h-0">
-        {/* Payment amount display */}
-        <div className="text-center pt-4">
-          <div className="text-2xl font-bold">{amount} sats</div>
-        </div>
-
-        <Separator className="my-4" />
-
-        <div className="flex flex-col justify-center min-h-0 flex-1 px-2">
-          {/* QR Code */}
-          <div className="flex justify-center">
-            <Card className="p-3 [@media(max-height:680px)]:max-w-[65vw] max-w-[95vw] mx-auto">
-              <CardContent className="p-0 flex justify-center">
-                {qrCodeUrl ? (
-                  <img
-                    src={qrCodeUrl}
-                    alt="Lightning Invoice QR Code"
-                    className="w-full h-auto aspect-square max-w-full object-contain"
-                  />
-                ) : (
-                  <div className="w-full aspect-square bg-muted animate-pulse rounded" />
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Invoice input */}
-          <div className="space-y-2 mt-4">
-            <Label htmlFor="invoice">Lightning Invoice</Label>
-            <div className="flex gap-2 min-w-0">
-              <Input
-                id="invoice"
-                value={invoice}
-                readOnly
-                className="font-mono text-xs min-w-0 flex-1 overflow-hidden text-ellipsis"
-                onClick={(e) => e.currentTarget.select()}
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleCopy}
-                className="shrink-0"
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-success" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
-
-          {/* Payment buttons */}
-          <div className="space-y-3 mt-4">
-            {hasWebLN && (
-              <Button
-                onClick={() => {
-                  const finalAmount = typeof amount === 'string' ? parseInt(amount, 10) : amount;
-                  zap(finalAmount, comment);
-                }}
-                disabled={isZapping}
-                className="w-full"
-                size="lg"
-              >
-                <Zap className="h-4 w-4 mr-2" />
-                {isZapping ? "Processing..." : "Pay with WebLN"}
-              </Button>
-            )}
-
-            <Button
-              variant="outline"
-              onClick={openInWallet}
-              className="w-full"
-              size="lg"
-            >
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Open in Lightning Wallet
-            </Button>
-
-            <div className="text-xs sm:text-[.65rem] text-muted-foreground text-center">
-              Scan the QR code or copy the invoice to pay with any Lightning wallet.
-            </div>
-          </div>
-        </div>
-      </div>
-    ) : (
-      <>
-        <div className="grid gap-3 px-4 py-4 w-full overflow-hidden">
-          <ToggleGroup
-            type="single"
-            value={String(amount)}
-            onValueChange={(value) => {
-              if (value) {
-                setAmount(parseInt(value, 10));
-              }
-            }}
-            className="grid grid-cols-5 gap-1 w-full"
-          >
-            {presetAmounts.map(({ amount: presetAmount, icon: Icon }) => (
-              <ToggleGroupItem
-                key={presetAmount}
-                value={String(presetAmount)}
-                className="flex flex-col h-auto min-w-0 text-xs px-1 py-2"
-              >
-                <Icon className="h-4 w-4 mb-1" />
-                <span className="truncate">{presetAmount}</span>
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          <div className="flex items-center gap-2">
-            <div className="h-px flex-1 bg-muted" />
-            <span className="text-xs text-muted-foreground">OR</span>
-            <div className="h-px flex-1 bg-muted" />
-          </div>
-          <Input
-            ref={inputRef}
-            id="custom-amount"
-            type="number"
-            placeholder="Custom amount"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full text-sm"
-          />
-          <Textarea
-            id="custom-comment"
-            placeholder="Add a comment (optional)"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            className="w-full resize-none text-sm"
-            rows={2}
-          />
-        </div>
-        <div className="px-4 pb-4">
-          <Button onClick={handleZap} className="w-full" disabled={isZapping} size="default">
-            {isZapping ? (
-              'Creating invoice...'
-            ) : (
-              <>
-                <Zap className="h-4 w-4 mr-2" />
-                Zap {amount} sats
-              </>
-            )}
-          </Button>
-        </div>
-      </>
-    )}
-  </div>
-));
-ZapContent.displayName = 'ZapContent';
-
-
+/**
+ * Sending a zap.
+ *
+ * Two steps, deliberately: pick an amount, then pick what pays for it. The
+ * second step used to not exist — the flow went straight to a browser
+ * extension and failed for everyone without one, including people holding a
+ * balance in the wallet this app had just given them.
+ */
 export function ZapDialog({
   target,
   children,
@@ -248,6 +77,7 @@ export function ZapDialog({
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : uncontrolledOpen;
+
   const setOpen = useCallback(
     (next: boolean) => {
       if (!isControlled) setUncontrolledOpen(next);
@@ -258,207 +88,35 @@ export function ZapDialog({
 
   const { user } = useCurrentUser();
   const { data: author } = useAuthor(target.pubkey);
-  const { toast } = useToast();
-  const { webln, activeNWC, hasWebLN, detectWebLN } = useWallet();
-  const { zap, isZapping, invoice, resetInvoice } = useZaps(
-    target,
-    webln,
-    activeNWC,
-    () => setOpen(false)
-  );
-  const [amount, setAmount] = useState<number | string>(100);
-  const [comment, setComment] = useState<string>('');
-  const [copied, setCopied] = useState(false);
-  const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
-  const inputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
 
-  useEffect(() => {
-    if (target) {
-      setComment('Zapped with NostrFeed!');
-    }
-  }, [target]);
+  const recipient =
+    author?.metadata?.display_name ||
+    author?.metadata?.name ||
+    genUserName(target.pubkey);
 
-  // Detect WebLN when dialog opens
-  useEffect(() => {
-    if (open && !hasWebLN) {
-      detectWebLN();
-    }
-  }, [open, hasWebLN, detectWebLN]);
+  // Nothing to offer when there is nobody to pay, or when it is your own note
+  const zappable = !!author?.metadata?.lud16 || !!author?.metadata?.lud06;
+  if (!user || user.pubkey === target.pubkey || !zappable) return null;
 
-  // Generate QR code
-  useEffect(() => {
-    let isCancelled = false;
-
-    const generateQR = async () => {
-      if (!invoice) {
-        setQrCodeUrl('');
-        return;
-      }
-
-      try {
-        const url = await QRCode.toDataURL(invoice.toUpperCase(), {
-          width: 512,
-          margin: 2,
-          color: {
-            dark: '#000000',
-            light: '#FFFFFF',
-          },
-        });
-
-        if (!isCancelled) {
-          setQrCodeUrl(url);
-        }
-      } catch (err) {
-        if (!isCancelled) {
-          console.error('Failed to generate QR code:', err);
-        }
-      }
-    };
-
-    generateQR();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [invoice]);
-
-  const handleCopy = async () => {
-    if (invoice) {
-      await navigator.clipboard.writeText(invoice);
-      setCopied(true);
-      toast({
-        title: 'Invoice copied',
-        description: 'Lightning invoice copied to clipboard',
-      });
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const openInWallet = () => {
-    if (invoice) {
-      const lightningUrl = `lightning:${invoice}`;
-      window.open(lightningUrl, '_blank');
-    }
-  };
-
-  useEffect(() => {
-    if (open) {
-      setAmount(100);
-      resetInvoice();
-      setCopied(false);
-      setQrCodeUrl('');
-    } else {
-      // Clean up state when dialog closes
-      setAmount(100);
-      resetInvoice();
-      setCopied(false);
-      setQrCodeUrl('');
-    }
-  }, [open, resetInvoice]);
-
-  const handleZap = () => {
-    const finalAmount = typeof amount === 'string' ? parseInt(amount, 10) : amount;
-    zap(finalAmount, comment);
-  };
-
-  const contentProps = {
-    invoice,
-    amount,
-    comment,
-    isZapping,
-    qrCodeUrl,
-    copied,
-    hasWebLN,
-    handleZap,
-    handleCopy,
-    openInWallet,
-    setAmount,
-    setComment,
-    inputRef,
-    zap,
-  };
-
-  if (!user || user.pubkey === target.pubkey || !author?.metadata?.lud06 && !author?.metadata?.lud16) {
-    return null;
-  }
+  const title = `Zap ${recipient}`;
+  const description = 'A zap is a real Bitcoin payment, signed by you.';
 
   if (isMobile) {
-    // Use drawer for entire mobile flow, make it full-screen when showing invoice
     return (
-      <Drawer
-        open={open}
-        onOpenChange={(newOpen) => {
-          // Reset invoice when closing
-          if (!newOpen) {
-            resetInvoice();
-            setQrCodeUrl('');
-          }
-          setOpen(newOpen);
-        }}
-        dismissible={true} // Always allow dismissal via drag
-        snapPoints={invoice ? [0.5, 0.75, 0.98] : [0.98]}
-        activeSnapPoint={invoice ? 0.98 : 0.98}
-        modal={true}
-        shouldScaleBackground={false}
-        fadeFromIndex={0}
-      >
+      <Drawer open={open} onOpenChange={setOpen}>
         {children && (
           <DrawerTrigger asChild>
-            <div className={`cursor-pointer ${className || ''}`}>
-              {children}
-            </div>
+            <div className={className}>{children}</div>
           </DrawerTrigger>
         )}
-        <DrawerContent
-          key={invoice ? 'payment' : 'form'}
-          className={cn(
-            "transition-all duration-300",
-            invoice ? "h-full max-h-screen" : "max-h-[98vh]"
-          )}
-          data-testid="zap-modal"
-        >
-          <DrawerHeader className="text-center relative">
-            {/* Back button when showing invoice */}
-            {invoice && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  resetInvoice();
-                  setQrCodeUrl('');
-                }}
-                className="absolute left-4 top-4 flex items-center gap-2"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            )}
-
-            {/* Close button */}
-            <DrawerClose asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-4 top-4"
-              >
-                <X className="h-4 w-4" />
-                <span className="sr-only">Close</span>
-              </Button>
-            </DrawerClose>
-
-            <DrawerTitle className="text-lg break-words pt-2">
-              {invoice ? 'Lightning Payment' : 'Send a Zap'}
-            </DrawerTitle>
-            <DrawerDescription className="text-sm break-words text-center">
-              {invoice ? (
-                'Pay with Bitcoin Lightning Network'
-              ) : (
-                'Zaps are small Bitcoin payments that support the creator of this item. If you enjoyed this, consider sending a zap!'
-              )}
-            </DrawerDescription>
+        <DrawerContent className="max-h-[92vh]">
+          <DrawerHeader className="text-left">
+            <DrawerTitle>{title}</DrawerTitle>
+            <DrawerDescription>{description}</DrawerDescription>
           </DrawerHeader>
-          <div className="flex-1 overflow-y-auto px-4 pb-4">
-            <ZapContent {...contentProps} />
+          <div className="overflow-y-auto px-4 pb-6">
+            <ZapFlow target={target} open={open} onDone={() => setOpen(false)} />
           </div>
         </DrawerContent>
       </Drawer>
@@ -469,30 +127,282 @@ export function ZapDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       {children && (
         <DialogTrigger asChild>
-          <div className={`cursor-pointer ${className || ''}`}>
-            {children}
-          </div>
+          <div className={className}>{children}</div>
         </DialogTrigger>
       )}
-      <DialogContent className="sm:max-w-[425px] max-h-[95vh] overflow-hidden" data-testid="zap-modal">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-lg break-words">
-            {invoice ? 'Lightning Payment' : 'Send a Zap'}
-          </DialogTitle>
-          <DialogDescription className="text-sm text-center break-words">
-            {invoice ? (
-              'Pay with Bitcoin Lightning Network'
-            ) : (
-              <>
-                Zaps are small Bitcoin payments that support the creator of this item. If you enjoyed this, consider sending a zap!
-              </>
-            )}
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <div className="overflow-y-auto">
-          <ZapContent {...contentProps} />
-        </div>
+        <ZapFlow target={target} open={open} onDone={() => setOpen(false)} />
       </DialogContent>
     </Dialog>
   );
 }
+
+function ZapFlow({
+  target,
+  open,
+  onDone,
+}: {
+  target: Event;
+  open: boolean;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const { requestInvoice, confirmPaid, isZapping, resetInvoice } = useZaps(
+    target,
+    onDone
+  );
+
+  const [amount, setAmount] = useState<number | string>(100);
+  const [comment, setComment] = useState('');
+  const [prepared, setPrepared] = useState<ZapInvoice | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // A fresh dialog should not open on the last zap's invoice
+  useEffect(() => {
+    if (!open) {
+      setPrepared(null);
+      setAmount(100);
+      setComment('');
+      resetInvoice();
+    }
+  }, [open, resetInvoice]);
+
+  const sats = typeof amount === 'string' ? parseInt(amount, 10) : amount;
+  const valid = Number.isFinite(sats) && sats > 0;
+
+  const start = async () => {
+    if (!valid) return;
+    setPrepared(await requestInvoice(sats, comment));
+  };
+
+  if (prepared) {
+    return (
+      <PayStep
+        invoice={prepared}
+        recipientNote={comment}
+        onBack={() => {
+          setPrepared(null);
+          resetInvoice();
+        }}
+        onPaid={() => {
+          confirmPaid();
+          toast({
+            title: 'Zap sent',
+            description: prepared.publishesReceipt
+              ? `${formatSats(prepared.amountSats)} sats on their way.`
+              : `${formatSats(prepared.amountSats)} sats sent. Their server doesn't publish zap receipts, so it won't show on the note.`,
+          });
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ToggleGroup
+        type="single"
+        value={String(amount)}
+        onValueChange={(value) => value && setAmount(parseInt(value, 10))}
+        className="grid grid-cols-5 gap-1"
+      >
+        {PRESETS.map(({ amount: preset, icon: Icon }) => (
+          <ToggleGroupItem
+            key={preset}
+            value={String(preset)}
+            className="flex h-auto min-w-0 flex-col px-1 py-2 text-xs"
+          >
+            <Icon className="mb-1 h-4 w-4" />
+            <span className="truncate">{formatSats(preset)}</span>
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+
+      <Input
+        ref={inputRef}
+        type="number"
+        inputMode="numeric"
+        min={1}
+        placeholder="Custom amount in sats"
+        value={amount}
+        onChange={(event) => setAmount(event.target.value)}
+      />
+
+      <Textarea
+        placeholder="Say something (optional)"
+        value={comment}
+        onChange={(event) => setComment(event.target.value)}
+        className="resize-none"
+        rows={2}
+      />
+
+      <Button onClick={start} disabled={!valid || isZapping} className="w-full">
+        {isZapping ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Zap className="mr-2 h-4 w-4" />
+        )}
+        {isZapping
+          ? 'Asking their wallet…'
+          : `Zap ${valid ? formatSats(sats) : 0} sats`}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * The invoice, and every wallet that could pay it.
+ *
+ * Listed rather than chosen for them: someone with a custodial balance, a NWC
+ * wallet and an extension has a reason for each, and guessing wrong spends
+ * from the wrong pocket.
+ */
+function PayStep({
+  invoice,
+  onBack,
+  onPaid,
+}: {
+  invoice: ZapInvoice;
+  recipientNote: string;
+  onBack: () => void;
+  onPaid: () => void;
+}) {
+  const { toast } = useToast();
+  const { options, preferredFor, pay, isPaying, balanceSats } =
+    usePayAnyWallet();
+
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const preferred = preferredFor(invoice.amountSats);
+
+  const run = async (option: PayOption) => {
+    if (option.method === 'manual') return;
+
+    setPayingId(option.id);
+    try {
+      await pay({
+        bolt11: invoice.bolt11,
+        optionId: option.id,
+        amountSats: invoice.amountSats,
+      });
+      onPaid();
+    } catch (error) {
+      toast({
+        title: 'Payment failed',
+        description: (error as Error).message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPayingId(null);
+    }
+  };
+
+  const wallets = options.filter((option) => option.method !== 'manual');
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          Back
+        </Button>
+        <span className="ml-auto text-sm font-medium tabular">
+          {formatSats(invoice.amountSats)} sats
+        </span>
+      </div>
+
+      <QrCode
+        value={invoice.bolt11.toUpperCase()}
+        label="Lightning invoice QR code"
+        size={200}
+      />
+
+      {wallets.length > 0 ? (
+        <div className="space-y-2">
+          {wallets.map((option) => {
+            const short =
+              option.method === 'nostrfeed' &&
+              balanceSats < invoice.amountSats;
+
+            return (
+              <Button
+                key={option.id}
+                variant={option.id === preferred.id ? 'default' : 'outline'}
+                className="h-auto w-full justify-start py-2.5"
+                disabled={isPaying || short}
+                onClick={() => run(option)}
+              >
+                {payingId === option.id ? (
+                  <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+                ) : (
+                  <Zap className="mr-2 h-4 w-4 shrink-0" />
+                )}
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block truncate text-sm font-medium">
+                    {option.label}
+                  </span>
+                  {(short || option.detail) && (
+                    <span className="block truncate text-xs opacity-70">
+                      {short ? 'Not enough sats' : option.detail}
+                    </span>
+                  )}
+                </span>
+              </Button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-dashed p-3 text-center text-sm text-muted-foreground">
+          No wallet connected here. Scan the code, or copy the invoice and pay
+          it anywhere.
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <Input
+          value={invoice.bolt11}
+          readOnly
+          onClick={(event) => event.currentTarget.select()}
+          className="min-w-0 flex-1 font-mono text-xs"
+        />
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={async () => {
+            await navigator.clipboard.writeText(invoice.bolt11);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+          aria-label="Copy invoice"
+        >
+          {copied ? (
+            <Check className="h-4 w-4 text-success" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => window.open(`lightning:${invoice.bolt11}`, '_blank')}
+          aria-label="Open in a lightning wallet"
+        >
+          <ExternalLink className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {!invoice.publishesReceipt && (
+        <p className="text-xs text-muted-foreground">
+          Their server doesn't publish zap receipts, so this will reach them but
+          won't appear on the note.
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default ZapDialog;

@@ -1,6 +1,5 @@
 import { ZapDialog } from '@/components/ZapDialog';
 import { useZaps } from '@/hooks/useZaps';
-import { useWallet } from '@/hooks/useWallet';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuthor } from '@/hooks/useAuthor';
 import { Zap } from 'lucide-react';
@@ -21,13 +20,10 @@ export function ZapButton({
 }: ZapButtonProps) {
   const { user } = useCurrentUser();
   const { data: author } = useAuthor(target?.pubkey || '');
-  const { webln, activeNWC } = useWallet();
 
   // Only fetch data if not provided externally
   const { totalSats: fetchedTotalSats, isLoading } = useZaps(
-    externalZapData ? [] : target ?? [], // Empty array prevents fetching if external data provided
-    webln,
-    activeNWC
+    externalZapData ? [] : (target ?? []) // Empty array prevents fetching if external data provided
   );
 
   // Don't show zap button if user is not logged in, is the author, or author has no lightning address

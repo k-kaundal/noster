@@ -14,6 +14,7 @@ import { AppProvider } from '@/components/AppProvider';
 import { ImageLightboxProvider } from '@/components/ImageLightbox';
 import { NWCProvider } from '@/contexts/NWCContext';
 import { AppConfig } from '@/contexts/AppContext';
+import { persistQueryCache, restoreQueryCache } from '@/lib/queryPersistence';
 import AppRouter from './AppRouter';
 
 const head = createHead({
@@ -39,6 +40,17 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Paint from the last visit, then refresh.
+ *
+ * Restored before the first render so the feed and the names in it are already
+ * there when React mounts, rather than several relay round trips later. The
+ * data is still refetched — this only changes what the reader looks at while
+ * that happens.
+ */
+restoreQueryCache(queryClient);
+persistQueryCache(queryClient);
 
 const defaultConfig: AppConfig = {
   theme: "system",

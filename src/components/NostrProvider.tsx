@@ -35,7 +35,19 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
     .map((relay) => `${relay.url}:${relay.read ? 'r' : ''}${relay.write ? 'w' : ''}`)
     .join(',');
 
+  /**
+   * The relay set at the time the cache was filled.
+   *
+   * Compared rather than reacted to, because this effect also runs on mount —
+   * and on mount there is nothing stale to clear, only the cache restored from
+   * the last visit, which resetting would throw away before it could be shown.
+   */
+  const cachedRelayKey = useRef(relayKey);
+
   useEffect(() => {
+    if (cachedRelayKey.current === relayKey) return;
+
+    cachedRelayKey.current = relayKey;
     queryClient.resetQueries();
   }, [relayKey, queryClient]);
 

@@ -158,9 +158,24 @@ export function Feed() {
         />
       </div>
 
+      {/* A failed refresh on top of notes we already have is a banner, not an
+          empty state — throwing away a readable feed because the newest
+          request timed out is the worse of the two outcomes */}
+      {isError && !!posts?.length && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2">
+          <p className="text-sm">
+            Couldn't reach the relay. Showing what you had.
+          </p>
+          <Button variant="ghost" size="sm" onClick={handleRefresh}>
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+            Retry
+          </Button>
+        </div>
+      )}
+
       {isLoading ? (
         <PostSkeletonList />
-      ) : isError ? (
+      ) : isError && !posts?.length ? (
         <EmptyState
           icon={MessageSquare}
           title="Couldn't load the feed"

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { formatDistanceToNow } from 'date-fns';
+import { timeAgo } from '@/lib/time';
 import { BadgeCheck } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -98,10 +98,7 @@ function ConversationRow({
               <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
             )}
             <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
-              {formatDistanceToNow(
-                new Date(conversation.lastMessage.createdAt * 1000),
-                { addSuffix: false }
-              )}
+              {timeAgo(conversation.lastMessage.createdAt * 1000)}
             </span>
           </div>
 

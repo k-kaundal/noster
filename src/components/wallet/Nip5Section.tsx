@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
   BadgeCheck,
-  Check,
   Clock,
   Copy,
   Loader2,
@@ -10,7 +9,6 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -42,60 +40,47 @@ import {
 } from '@/lib/nip5';
 
 /**
- * Buying and managing a verified name.
+ * The verified half of someone's name: buying it, and keeping it alive.
  *
- * Sits next to the lightning address card and deliberately says how it differs:
- * people arrive expecting `name@domain` to be one thing, and it is two — a free
- * permanent address that receives money, and a name bought by the year that
- * puts a ✓ next to their posts.
+ * A section rather than a card, because it sits inside the identity card next
+ * to the free address it upgrades. People arrive expecting `name@domain` to be
+ * one thing and it is two — this is the half that costs money, expires, and
+ * puts a checkmark next to their posts.
  *
  * Renders nothing when the operator hasn't set the extension up. An empty
- * section is better than one advertising a name we cannot sell.
+ * space is better than an offer we cannot fulfil.
  */
-export function Nip5Card() {
+export function Nip5Section() {
   const nip5 = useNip5();
 
   if (!nip5.isConfigured || nip5.isUnavailable) return null;
 
   if (nip5.isLoading) {
     return (
-      <Card>
-        <CardContent className="space-y-3 pt-6">
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-9 w-full" />
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-9 w-full" />
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <BadgeCheck className="h-4 w-4" />
-          Verified name
-        </CardTitle>
-      </CardHeader>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <BadgeCheck className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold">Verified name</h3>
+      </div>
 
-      <CardContent className="space-y-4">
-        {nip5.address ? <OwnedName /> : <BuyName />}
-      </CardContent>
-    </Card>
+      {nip5.address ? <OwnedName /> : <BuyName />}
+    </div>
   );
 }
 
 function OwnedName() {
-  const {
-    address,
-    identifier,
-    isOnProfile,
-    profileIdentifier,
-    matchesCurrentKey,
-    publishToProfile,
-    isPublishing,
-    attachLightning,
-    isAttaching,
-  } = useNip5();
+  // Publishing to the profile is deliberately not here: the identity card
+  // above owns it, and writes the name and the lightning address in one event
+  const { address, identifier, matchesCurrentKey, attachLightning, isAttaching } =
+    useNip5();
   const { toast } = useToast();
 
   if (!address || !identifier) return null;
@@ -124,29 +109,6 @@ function OwnedName() {
           This name verifies a different Nostr key than the one you're signed in
           with, so it won't put a ✓ on your posts here.
         </p>
-      )}
-
-      {isOnProfile ? (
-        <p className="flex items-center gap-1.5 text-sm text-success">
-          <Check className="h-4 w-4" />
-          Published to your profile — clients show the ✓ next to your name.
-        </p>
-      ) : (
-        <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/10 p-3">
-          <p className="text-sm">
-            {profileIdentifier
-              ? `Your profile still says ${profileIdentifier}.`
-              : "Your profile doesn't claim this name yet, so nobody sees the ✓."}
-          </p>
-          <Button
-            size="sm"
-            onClick={() => void publishToProfile().catch(() => {})}
-            disabled={isPublishing}
-          >
-            {isPublishing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Publish to my profile
-          </Button>
-        </div>
       )}
 
       {!zappable && (

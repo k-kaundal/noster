@@ -1,0 +1,149 @@
+/**
+ * One name, two things it can be.
+ *
+ * `alice@nostrfeed.com` is written the same way whether it is a free pay link
+ * or a verified name bought by the year, and the wallet page showed them as two
+ * unrelated cards — a lightning address, and separately a name to reserve. That
+ * is not how anyone thinks about it. What people want is *their name*, and for
+ * money and identity to both arrive at it.
+ *
+ * So the two are modelled here as tiers of one thing:
+ *
+ * - **free** — a lightning address only. Receives zaps, never expires, and
+ *   puts no checkmark anywhere. Suggested from their profile name, or from
+ *   their key when they have no profile yet.
+ * - **verified** — a NIP-05 name they paid for. It becomes the identity, and
+ *   the lightning address is re-issued at the same name so one string does
+ *   both jobs.
+ *
+ * Nothing here talks to a server. It decides what state someone is in and what
+ * is left to do about it, which is the part worth testing.
+ */
+
+export type IdentityTier = 'none' | 'free' | 'verified';
+
+/** Which profile field is behind, if either. */
+export type ProfileField = 'nip05' | 'lud16';
+
+export interface IdentitySnapshot {
+  /** The NIP-05 identifier they own, e.g. `alice@nostrfeed.com`. */
+  verifiedName?: string | null;
+  /** Whether that name is live — a bought name is inactive until it is paid. */
+  verifiedActive?: boolean;
+  /** The LUD-16 address zaps land at. */
+  lightningAddress?: string | null;
+  /** What the published profile currently says. */
+  profileNip05?: string;
+  profileLud16?: string;
+}
+
+export interface IdentityStatus {
+  tier: IdentityTier;
+  /** The single line to show as "this is you". */
+  primary: string | null;
+  /** Fields that exist here but the profile does not yet advertise. */
+  unpublished: ProfileField[];
+  /**
+   * Whether the verified name and the lightning address are different names.
+   *
+   * Legal, and occasionally deliberate, but usually it means someone claimed a
+   * free address first and bought a nicer name later — in which case zaps are
+   * still going to the old one.
+   */
+  mismatched: boolean;
+}
+
+/** The part before the `@`. */
+export function localPartOf(address: string | null | undefined): string | null {
+  if (!address) return null;
+
+  const at = address.indexOf('@');
+  return at > 0 ? address.slice(0, at) : null;
+}
+
+/** Where someone stands, and what is left to do. */
+export function describeIdentity(snapshot: IdentitySnapshot): IdentityStatus {
+  // A name whose invoice has not settled is not an identity yet; treating it
+  // as one would publish a nip05 that fails to verify
+  const verified =
+    snapshot.verifiedName && snapshot.verifiedActive !== false
+      ? snapshot.verifiedName
+      : null;
+
+  const address = snapshot.lightningAddress ?? null;
+
+  const unpublished: ProfileField[] = [];
+  if (verified && snapshot.profileNip05 !== verified) unpublished.push('nip05');
+  if (address && snapshot.profileLud16 !== address) unpublished.push('lud16');
+
+  const tier: IdentityTier = verified ? 'verified' : address ? 'free' : 'none';
+
+  return {
+    tier,
+    primary: verified ?? address,
+    unpublished,
+    mismatched:
+      !!verified &&
+      !!address &&
+      localPartOf(verified) !== localPartOf(address),
+  };
+}
+
+/**
+ * The kind 0 content to publish, merged onto whatever is already there.
+ *
+ * Kind 0 replaces rather than merges, so this takes the existing metadata and
+ * returns a whole document. Both fields go in one event: publishing them
+ * separately means two signatures, two relay round trips, and a window where
+ * the profile claims a name it cannot be paid at.
+ */
+export function withIdentity(
+  metadata: Record<string, unknown>,
+  identity: { nip05?: string | null; lud16?: string | null }
+): Record<string, unknown> {
+  const next = { ...metadata };
+
+  if (identity.nip05) next.nip05 = identity.nip05;
+  if (identity.lud16) next.lud16 = identity.lud16;
+
+  return next;
+}
+
+/**
+ * A username to offer someone who has not picked one.
+ *
+ * Their profile name if they have one, since that is what people already know
+ * them by. Otherwise a name derived from their key — which `genUserName`
+ * produces and which is stable, unlike anything random, so the suggestion does
+ * not change between two looks at the same page.
+ */
+export function suggestIdentityName(
+  profileName: string | undefined,
+  fallbackName: string
+): string {
+  return profileName?.trim() || fallbackName.trim();
+}
+
+/**
+ * The pay link that is the person's address.
+ *
+ * A wallet accumulates pay links — one per name ever claimed — and picking the
+ * first with a username means an old name outranks the one they just bought.
+ * The verified name wins when there is a link for it.
+ */
+export function pickPrimaryLink<T extends { username?: string }>(
+  links: T[],
+  preferredUsername?: string | null
+): T | null {
+  if (!links.length) return null;
+
+  if (preferredUsername) {
+    const preferred = links.find(
+      (link) =>
+        link.username?.toLowerCase() === preferredUsername.toLowerCase()
+    );
+    if (preferred) return preferred;
+  }
+
+  return links.find((link) => !!link.username) ?? null;
+}

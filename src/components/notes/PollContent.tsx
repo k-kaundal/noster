@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { NostrEvent } from '@nostrify/nostrify';
-import { formatDistanceToNow } from 'date-fns';
+import { relativeTime } from '@/lib/time';
 import { BarChart3, Check, Loader2 } from 'lucide-react';
 import { usePoll } from '@/hooks/usePoll';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -140,9 +140,7 @@ export function PollContent({ event, poll, className }: PollContentProps) {
           <span>
             {closed
               ? 'Closed'
-              : `Ends ${formatDistanceToNow(new Date(poll.endsAt * 1000), {
-                  addSuffix: true,
-                })}`}
+              : `Ends ${relativeTime(poll.endsAt * 1000)}`}
           </span>
         )}
       </div>

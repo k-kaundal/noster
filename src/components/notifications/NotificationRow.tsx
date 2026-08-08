@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { formatDistanceToNow } from 'date-fns';
+import { relativeTime } from '@/lib/time';
 import { AtSign, MessageCircle, Repeat2, Zap } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -98,9 +98,7 @@ export function NotificationRow({
           )}
 
           <p className="mt-1 text-xs text-muted-foreground">
-            {formatDistanceToNow(new Date(notification.createdAt * 1000), {
-              addSuffix: true,
-            })}
+            {relativeTime(notification.createdAt * 1000)}
           </p>
         </div>
       </Link>

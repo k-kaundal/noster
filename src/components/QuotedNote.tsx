@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { formatDistanceToNow } from 'date-fns';
+import { timeAgo as formatAge } from '@/lib/time';
 import { BadgeCheck, Quote } from 'lucide-react';
 import { useEvent } from '@/hooks/useEvent';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -70,7 +70,7 @@ function QuotedNoteCard({
     const timestamp = event.created_at * 1000;
     if (!timestamp || timestamp <= 0) return '';
     try {
-      return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
+      return formatAge(timestamp);
     } catch {
       return '';
     }

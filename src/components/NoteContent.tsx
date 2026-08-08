@@ -214,6 +214,7 @@ function MediaItem({
   images: string[];
 }) {
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const { open } = useLightbox();
 
   if (item.type === 'image') {
@@ -235,15 +236,25 @@ function MediaItem({
         type="button"
         onClick={() => open(images, images.indexOf(item.url))}
         aria-label="View image"
-        className="block w-full cursor-zoom-in overflow-hidden rounded-lg border bg-muted"
+        className={cn(
+          'block w-full cursor-zoom-in overflow-hidden rounded-lg border bg-muted',
+          // A note's own images arrive with no dimensions, so the card grows
+          // when each one lands and shoves the rest of the feed down the page.
+          // Holding a minimum height until then keeps the scroll position
+          // where the reader put it.
+          !loaded && !fill && 'min-h-48 animate-pulse'
+        )}
       >
         <img
           src={item.url}
           alt=""
           loading="lazy"
+          decoding="async"
+          onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
           className={cn(
-            'w-full transition-opacity duration-200 hover:opacity-95',
+            'w-full transition-opacity duration-300 hover:opacity-95',
+            loaded ? 'opacity-100' : 'opacity-0',
             fill ? 'aspect-square object-cover' : 'max-h-[32rem] object-contain'
           )}
         />

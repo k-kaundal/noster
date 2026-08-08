@@ -1,14 +1,23 @@
 // NOTE: This file is stable and usually should not be modified.
 // It is important that all functionality in this file is preserved, and should only be modified if explicitly requested.
 
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { User, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
-import LoginDialog from './LoginDialog';
-import SignupDialog from './SignupDialog';
 import { useLoggedInAccounts } from '@/hooks/useLoggedInAccounts';
 import { AccountSwitcher } from './AccountSwitcher';
+import { useIdlePrefetch, useOnceOpened } from '@/hooks/useDeferredDialog';
 import { cn } from '@/lib/utils';
+
+/**
+ * Both dialogs sit in the header on every page and open on a click. Deferred
+ * so signing in costs nothing until someone signs in, and prefetched on idle
+ * so the click still opens instantly.
+ */
+const loadLogin = () => import('./LoginDialog');
+const loadSignup = () => import('./SignupDialog');
+const LoginDialog = lazy(loadLogin);
+const SignupDialog = lazy(loadSignup);
 
 export interface LoginAreaProps {
   className?: string;
@@ -18,6 +27,11 @@ export function LoginArea({ className }: LoginAreaProps) {
   const { currentUser } = useLoggedInAccounts();
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [signupDialogOpen, setSignupDialogOpen] = useState(false);
+  const loginMounted = useOnceOpened(loginDialogOpen);
+  const signupMounted = useOnceOpened(signupDialogOpen);
+
+  useIdlePrefetch(loadLogin);
+  useIdlePrefetch(loadSignup);
 
   const handleLogin = () => {
     setLoginDialogOpen(false);
@@ -50,17 +64,23 @@ export function LoginArea({ className }: LoginAreaProps) {
         </div>
       )}
 
-      <LoginDialog
-        isOpen={loginDialogOpen}
-        onClose={() => setLoginDialogOpen(false)}
-        onLogin={handleLogin}
-        onSignup={() => setSignupDialogOpen(true)}
-      />
+      <Suspense fallback={null}>
+        {loginMounted && (
+          <LoginDialog
+            isOpen={loginDialogOpen}
+            onClose={() => setLoginDialogOpen(false)}
+            onLogin={handleLogin}
+            onSignup={() => setSignupDialogOpen(true)}
+          />
+        )}
 
-      <SignupDialog
-        isOpen={signupDialogOpen}
-        onClose={() => setSignupDialogOpen(false)}
-      />
+        {signupMounted && (
+          <SignupDialog
+            isOpen={signupDialogOpen}
+            onClose={() => setSignupDialogOpen(false)}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

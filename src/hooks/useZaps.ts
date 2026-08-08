@@ -3,32 +3,47 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useAppContext } from '@/hooks/useAppContext';
 import { useToast } from '@/hooks/useToast';
-import { useNWC } from '@/hooks/useNWCContext';
-import type { NWCConnection } from '@/hooks/useNWC';
 import { nip57 } from 'nostr-tools';
 import type { Event } from 'nostr-tools';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent } from '@nostrify/nostrify';
-import { LightningAddress } from '@getalby/lightning-tools'; // Import LightningAddress
-import { WebLNProvider } from 'webln/lib/provider';
+import { readRelays } from '@/lib/relay';
+import {
+  fetchInvoice,
+  fetchPayMetadata,
+  readLnurlError,
+  validateAmount,
+} from '@/lib/lnurlPay';
+import {
+  addressPointerFor,
+  buildZapRequest,
+  describeZapTarget,
+  lightningAddressUrl,
+  zapCallbackUrl,
+} from '@/lib/zapRequest';
 
-export function useZaps(
-  target: Event | Event[],
-  webln: WebLNProvider | null,
-  _nwcConnection: NWCConnection | null,
-  onZapSuccess?: () => void
-) {
+/** An invoice waiting to be paid, and what paying it will produce. */
+export interface ZapInvoice {
+  bolt11: string;
+  amountSats: number;
+  /**
+   * Whether the recipient's server publishes a NIP-57 receipt. Without one the
+   * money arrives but the zap appears nowhere, which is worth saying out loud.
+   */
+  publishesReceipt: boolean;
+}
+
+export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
   const { nostr } = useNostr();
   const { toast } = useToast();
   const { user } = useCurrentUser();
-  const { config, presetRelays } = useAppContext();
+  const { config } = useAppContext();
   const queryClient = useQueryClient();
 
   const actualTarget = Array.isArray(target) ? (target.length > 0 ? target[0] : null) : target;
 
   const author = useAuthor(actualTarget?.pubkey);
-  const { getActiveConnection } = useNWC();
   const [isZapping, setIsZapping] = useState(false);
   const [invoice, setInvoice] = useState<string | null>(null);
 
@@ -172,117 +187,145 @@ export function useZaps(
     return { zapCount: count, totalSats: sats, zaps: zapEvents };
   }, [zapEvents, actualTarget]);
 
-  const zap = async (amount: number, comment: string) => {
-    if (amount <= 0) return;
-
-    setIsZapping(true);
-    setInvoice(null);
+  /**
+   * Turns an amount into an invoice the caller can pay with any wallet.
+   *
+   * The two LNURL steps and the NIP-57 request are done here; paying is not.
+   * The library that used to do all three insisted on `window.webln`, which
+   * made a browser extension the only way to zap anything — the custodial
+   * wallet this app hands out and any connected NWC wallet were both ignored,
+   * and the failure read as "no wallet available" rather than "install Alby".
+   */
+  const requestInvoice = async (
+    amount: number,
+    comment: string
+  ): Promise<ZapInvoice | null> => {
+    if (amount <= 0) return null;
 
     if (!user) {
-      toast({ title: 'Login required', description: 'You must be logged in to send a zap.', variant: 'destructive' });
-      setIsZapping(false);
-      return;
+      toast({
+        title: 'Log in to zap',
+        description: 'A zap is signed by you, so it needs your key.',
+        variant: 'destructive',
+      });
+      return null;
     }
 
-    if (!actualTarget) {
-      toast({ title: 'Event not found', description: 'Could not find the event to zap.', variant: 'destructive' });
-      setIsZapping(false);
-      return;
+    if (!actualTarget) return null;
+
+    const metadata = author.data?.metadata;
+    if (!metadata) {
+      toast({
+        title: "Couldn't read their profile",
+        description: 'Try again in a moment.',
+        variant: 'destructive',
+      });
+      return null;
     }
+
+    const problem = describeZapTarget(metadata);
+    if (problem) {
+      toast({ title: "Can't zap this one", description: problem, variant: 'destructive' });
+      return null;
+    }
+
+    setIsZapping(true);
 
     try {
-      if (!author.data || !author.data.metadata || !author.data.event) {
-        toast({ title: 'Author not found', description: 'Could not find the author of this item.', variant: 'destructive' });
-        setIsZapping(false);
-        return;
-      }
+      /**
+       * An `lud16` resolves to a well-known URL with no network call; an
+       * `lud06` is a bech32 LNURL that has to be decoded, which nostr-tools
+       * already does. The common case stays local either way.
+       */
+      const endpoint = metadata.lud16
+        ? lightningAddressUrl(metadata.lud16)
+        : author.data?.event
+          ? await nip57.getZapEndpoint(author.data.event as Event)
+          : null;
 
-      const { lud06, lud16 } = author.data.metadata;
-      if (!lud06 && !lud16) {
-        toast({ title: 'Lightning address not found', description: 'The author does not have a lightning address configured.', variant: 'destructive' });
-        setIsZapping(false);
-        return;
-      }
+      if (!endpoint) throw new Error('Their lightning address did not resolve.');
 
-      const lnAddress = lud16 || lud06;
-      if (!lnAddress) {
-        throw new Error('No valid Lightning address found');
-      }
+      const payMetadata = await fetchPayMetadata(
+        endpoint,
+        AbortSignal.timeout(10000)
+      );
 
-      const ln = new LightningAddress(lnAddress);
-      await ln.fetch();
+      const amountMsat = amount * 1000;
+      const invalid = validateAmount(amount, payMetadata);
+      if (invalid) throw new Error(invalid);
 
       const relays = [
         ...(config.relayUrl ? [config.relayUrl] : []),
-        ...(presetRelays?.map(r => r.url) || defaultRelays),
+        ...readRelays(config.relays),
+        ...defaultRelays,
       ];
 
-      const isLongFormContent = actualTarget.kind >= 30000 && actualTarget.kind < 40000;
-      const zapParams = {
-        satoshi: amount,
-        comment,
-        relays,
-        e: isLongFormContent ? undefined : actualTarget.id,
-        a: isLongFormContent ? `${actualTarget.kind}:${actualTarget.pubkey}:${actualTarget.tags.find(t => t[0] === 'd')?.[1] || ''}` : undefined,
-      };
+      /**
+       * A server that does not advertise `allowsNostr` will take the payment
+       * and publish no receipt, so the zap is real money that shows up nowhere.
+       * Worth paying anyway — the author still gets it — but worth saying.
+       */
+      let bolt11: string;
 
-      try {
-        const response = await ln.zap(zapParams);
+      if (payMetadata.allowsNostr) {
+        const request = buildZapRequest({
+          recipientPubkey: actualTarget.pubkey,
+          amountMsat,
+          relays,
+          comment,
+          eventId: addressPointerFor(actualTarget) ? undefined : actualTarget.id,
+          addressPointer: addressPointerFor(actualTarget) ?? undefined,
+        });
 
-        if (response.preimage) {
-          // Payment successful (via WebLN/NWC)
-          setIsZapping(false);
-          setInvoice(null);
-          toast({ title: 'Zap successful!', description: `You sent ${amount} sats to the author.` });
-          queryClient.invalidateQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
-          queryClient.refetchQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
-          onZapSuccess?.();
-          return;
-        } else if (response.pr) {
-          // Invoice generated, requires manual payment
-          setInvoice(response.pr);
-          setIsZapping(false);
-          toast({
-            title: 'Invoice generated',
-            description: 'Please scan the QR code or copy the invoice to pay with a Lightning wallet.',
-            variant: 'default',
-          });
-        } else {
-          throw new Error('No preimage or invoice returned from zap request');
+        const signed = await user.signer.signEvent(request);
+
+        const response = await fetch(
+          zapCallbackUrl(payMetadata.callback, amountMsat, signed),
+          { signal: AbortSignal.timeout(15000) }
+        );
+        const body = await response.json();
+
+        const failed = readLnurlError(body);
+        if (failed) throw new Error(failed);
+
+        const returned = (body as Record<string, unknown>)?.pr;
+        if (typeof returned !== 'string' || !returned) {
+          throw new Error("Their server didn't return an invoice.");
         }
-      } catch (zapError) {
-        console.error('Zap error:', zapError);
-        if (zapError.message.includes('No wallet available')) {
-          if (zapError.pr) {
-            setInvoice(zapError.pr);
-            setIsZapping(false);
-            toast({
-              title: 'Invoice generated',
-              description: 'Please scan the QR code or copy the invoice to pay with a Lightning wallet.',
-              variant: 'default',
-            });
-          } else {
-            throw new Error('No invoice returned from zap request');
-          }
-        } else {
-          throw zapError;
-        }
+        bolt11 = returned;
+      } else {
+        bolt11 = await fetchInvoice(
+          payMetadata,
+          amountMsat,
+          comment,
+          AbortSignal.timeout(15000)
+        );
       }
-    } catch (err) {
-      console.error('Zap process error:', err, {
-        lud06: author.data?.metadata?.lud06,
-        lud16: author.data?.metadata?.lud16,
-        nwcConnected: !!getActiveConnection()?.isConnected,
-        weblnAvailable: !!webln,
-      });
+
+      setInvoice(bolt11);
+      setIsZapping(false);
+
+      return { bolt11, amountSats: amount, publishesReceipt: payMetadata.allowsNostr };
+    } catch (error) {
+      setIsZapping(false);
       toast({
-        title: 'Zap failed',
-        description: (err as Error).message || 'An error occurred while sending the zap.',
+        title: 'Could not prepare the zap',
+        description: (error as Error).message,
         variant: 'destructive',
       });
-      setIsZapping(false);
+      return null;
     }
   };
+
+  /** Called once a wallet reports the invoice paid. */
+  const confirmPaid = useCallback(() => {
+    if (!actualTarget) return;
+
+    setInvoice(null);
+    setIsZapping(false);
+    queryClient.invalidateQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
+    onZapSuccess?.();
+  }, [actualTarget, queryClient, onZapSuccess]);
 
   const resetInvoice = useCallback(() => {
     setInvoice(null);
@@ -293,7 +336,8 @@ export function useZaps(
     zapCount,
     totalSats,
     ...query,
-    zap,
+    requestInvoice,
+    confirmPaid,
     isZapping,
     invoice,
     resetInvoice,
