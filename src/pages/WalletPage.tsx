@@ -18,6 +18,7 @@ import { LoginArea } from '@/components/auth/LoginArea';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AccountCard } from '@/components/wallet/AccountCard';
 import { LightningAddressCard } from '@/components/wallet/LightningAddressCard';
 import { ReceiveDialog } from '@/components/wallet/ReceiveDialog';
 import { SendDialog } from '@/components/wallet/SendDialog';
@@ -253,6 +254,8 @@ function ConnectedWallet() {
       <LightningAddressCard />
 
       <ActivityCard />
+
+      <AccountCard />
 
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">

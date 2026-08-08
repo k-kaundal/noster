@@ -187,3 +187,64 @@ than no comment at all.
 - [ ] Relay configured to enforce paid writes
 - [ ] Relay's NIP-11 advertises `limitation.payment_required`, so `/premium`
       can tell users the truth about what the relay expects
+
+## Card and PayPal subscriptions
+
+LNbits brokers recurring fiat through its Fiat API. The plan lives with the
+provider — a PayPal billing plan, a Stripe price — and LNbits charges it on
+schedule, crediting the wallet named in the request.
+
+`POST /api/v1/fiat/{provider}/subscription` takes a wallet API key, and that
+key decides **who gets paid**. Created against the buyer's own wallet, a
+subscription tops *them* up; created against ours, it buys access. So this
+uses the house wallet from `VITE_LNBITS_WALLET_ID` and
+`VITE_LNBITS_INVOICE_KEY` — a receiving key, which is the most that can live
+in a static bundle.
+
+A card payment carries no Nostr identity, so the request sends
+`subscription_request_id` as `nostrfeed-<plan>-<npub prefix>` and repeats the
+full npub in the memo. That is what makes a PayPal subscription attributable
+to an account, the same problem the LNURL comment solves for sats.
+
+`GET /api/v1/auth` returns `fiat_providers` for the signed-in account, and the
+app hides the button for providers not in that list. LNbits can restrict a
+provider to particular users, and a button that leads to a refusal is worse
+than no button.
+
+### Server settings
+
+In the LNbits admin settings:
+
+- [ ] `paypal_enabled` true
+- [ ] `paypal_client_id` and `paypal_client_secret` from the PayPal app
+- [ ] `paypal_webhook_id` — without it LNbits cannot verify the callbacks that
+      tell it a period settled, so nothing is ever credited
+- [ ] `paypal_payment_webhook_url` pointing at
+      `https://ln.nostrfeed.com/api/v1/callback/paypal`
+- [ ] `paypal_limits.allowed_users` includes the house account, or is empty
+
+Then create the billing plans in PayPal and put their ids in
+`VITE_PREMIUM_MONTHLY_FIAT_PLAN` and `VITE_PREMIUM_LIFETIME_FIAT_PLAN`.
+
+### Cancelling
+
+`DELETE /api/v1/fiat/{provider}/subscription/{id}` is wired to the stored
+request id. If LNbits expects its own subscription id there instead, the call
+fails and the app says so and points the person at their PayPal account —
+which cancels it regardless. Worth verifying against a live subscription
+before relying on the in-app button.
+
+## Account settings
+
+The wallet page exposes the parts of `/api/v1/auth` that a person can act on:
+
+- `PATCH /api/v1/auth` — username, and `extra.notifications.email_address` for
+  payment notices. The account's login email is **not** settable here; the
+  LNbits schema for `UpdateUser` has no email field, so it is fixed at
+  registration or by the SSO provider.
+- `PUT /api/v1/auth/password` — adds or changes a password. Worth offering:
+  signing in with a Nostr key is the only way into the wallet otherwise, so a
+  lost signer is a lost balance.
+- `PUT /api/v1/auth/pubkey` — relinks the account to the Nostr key currently
+  signed in. Offered only when the two disagree, which happens after switching
+  Nostr accounts.
