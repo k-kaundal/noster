@@ -3,6 +3,7 @@ import { useNostr } from '@nostrify/react';
 import { useQuery } from '@tanstack/react-query';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { createBatchLoader, type BatchLoader } from '@/lib/batchLoader';
+import { getThreadPosition } from '@/lib/thread';
 
 export interface NoteStats {
   replies: NostrEvent[];
@@ -17,14 +18,14 @@ type Relay = ReturnType<typeof useNostr>['nostr'];
 
 const loaders = new WeakMap<object, BatchLoader<string, NoteStats>>();
 
-/** Only replies that point at this event as their direct parent (NIP-10). */
+/**
+ * Only replies that point at this event as their direct parent (NIP-10).
+ *
+ * A note in a deep thread tags the root as well as its parent, so without this
+ * the root's reply count would be the size of the entire conversation.
+ */
 function isDirectReply(event: NostrEvent, parentId: string): boolean {
-  const eTags = event.tags.filter(([name]) => name === 'e');
-  if (!eTags.length) return false;
-  // A reply marker wins outright when the author set one
-  const replyMarker = eTags.find(([, , , marker]) => marker === 'reply');
-  if (replyMarker) return replyMarker[1] === parentId;
-  return eTags[eTags.length - 1][1] === parentId;
+  return getThreadPosition(event).parentId === parentId;
 }
 
 function getLoader(nostr: Relay): BatchLoader<string, NoteStats> {

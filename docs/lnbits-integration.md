@@ -125,3 +125,65 @@ Available on the instance and worth building on later:
 - **`/nostrnip5`** — sell or grant NIP-05 identifiers on our domain.
 - **`/api/v1/ws/{item_id}`** — websocket for live payment updates, which would
   replace the current 30-second balance poll.
+
+## Paid relay access
+
+Two LNbits pay links sell write access to the NostrFeed relay, referenced by
+id in `VITE_PREMIUM_MONTHLY_LINK` and `VITE_PREMIUM_LIFETIME_LINK`.
+
+The links are configuration, not something the app creates. A pay link belongs
+to the platform's own wallet, and creating one needs that wallet's admin key —
+which cannot live in a static site. Make them once in LNbits, paste the ids.
+
+### Enforcement lives at the relay, not here
+
+This is the part worth being blunt about: **the app cannot grant access.** A
+static site has no trustworthy place to keep an entitlement flag — whatever it
+stores, the person holding the browser can change. `/premium` shows what was
+paid and when; it does not unlock anything, and it says so.
+
+The relay is the thing that accepts or rejects a write, so the relay is where
+access has to be decided. Three ways to close that loop, in descending order of
+how well they fit:
+
+1. **LNbits `nostrrelay` extension.** It has paid relays built in:
+   `RelaySpec.isPaidRelay` and `costToJoin`, a public
+   `PUT /nostrrelay/api/v1/pay` that takes `{action, relay_id, pubkey}`, and a
+   `NostrAccount` per pubkey carrying `paid_to_join` and `allowed`. The relay
+   enforces payment itself and no reconciliation is needed. If
+   `relay.nostrfeed.com` runs this extension, use it and delete most of the
+   rest of this section.
+
+2. **Pay link webhook → relay allowlist.** Set `webhook_url` on each pay link.
+   LNbits calls it on payment; the handler reads the buyer's npub from the
+   LNURL comment and writes them into the relay's allowlist. Needs a small
+   service, and needs the comment to survive — see below.
+
+3. **Reconcile by hand** from the LNbits payment list. Fine to start with,
+   does not scale.
+
+### The comment carries the buyer
+
+A pay link is shared by everyone, so a payment is otherwise anonymous — LNbits
+records that *someone* paid, not who. The app sends the buyer's npub as the
+LNURL comment, which is what makes a payment attributable to an account.
+
+**This only works if the link allows comments.** `comment_chars` defaults to
+`0` on a new pay link, and LNbits rejects a comment longer than that. A link
+created with the default accepts none, so every payment through it is
+anonymous and option 2 above cannot work. Set `comment_chars` to at least 64
+(an npub is 63 characters) on both links.
+
+The app reads each link's `comment_chars` from
+`GET /lnurlp/api/v1/links/public/{id}` and truncates to fit, sending nothing
+rather than half an npub — a truncated npub identifies nobody and is worse
+than no comment at all.
+
+### Checklist
+
+- [ ] Both pay links created, ids in `.env`
+- [ ] `comment_chars` >= 64 on both links
+- [ ] `webhook_url` set on both links, if using option 2
+- [ ] Relay configured to enforce paid writes
+- [ ] Relay's NIP-11 advertises `limitation.payment_required`, so `/premium`
+      can tell users the truth about what the relay expects

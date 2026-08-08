@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/EmptyState';
+import { LightningAddressCard } from '@/components/wallet/LightningAddressCard';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
 import {
@@ -60,6 +61,7 @@ export function LnbitsWalletCard() {
   return (
     <div className="space-y-4">
       <BalanceCard onDisconnect={logout} instanceUrl={instanceUrl} />
+      <LightningAddressCard />
       <LinkedAccountCard />
       <ReceiveCard />
       <PaymentsCard />

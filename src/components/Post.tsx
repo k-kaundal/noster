@@ -278,15 +278,7 @@ export function Post({
               </Link>
             </div>
 
-            {isReply && (
-              <Link
-                to={`/${noteId}`}
-                className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
-              >
-                <MessageCircle className="h-3 w-3" />
-                Replying to a thread
-              </Link>
-            )}
+            {isReply && <ReplyingTo event={event} noteId={noteId} />}
           </div>
 
           <DropdownMenu>
@@ -568,6 +560,36 @@ export function Post({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+/**
+ * Who a reply is answering, named rather than described.
+ *
+ * The pubkey comes from the reply's own tags, so this costs no extra request —
+ * the alternative is fetching the parent note just to learn its author, which
+ * is a round trip per reply in the feed.
+ */
+function ReplyingTo({ event, noteId }: { event: NostrEvent; noteId: string }) {
+  // NIP-10 puts the parent's author on the reply tag; the first `p` tag is the
+  // long-standing convention for the same thing
+  const parentPubkey =
+    event.tags.find(([name, , , marker]) => name === 'e' && marker === 'reply')?.[4] ||
+    event.tags.find(([name]) => name === 'p')?.[1];
+
+  const author = useAuthor(parentPubkey || '');
+  const metadata = author.data?.metadata;
+
+  return (
+    <Link
+      to={`/${noteId}`}
+      className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+    >
+      <MessageCircle className="h-3 w-3" />
+      {parentPubkey
+        ? `Replying to @${metadata?.name || genUserName(parentPubkey)}`
+        : 'Replying to a thread'}
+    </Link>
   );
 }
 

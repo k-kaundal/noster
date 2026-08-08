@@ -15,6 +15,7 @@ const ReelsPage = lazy(() => import("./pages/ReelsPage"));
 const BookmarksPage = lazy(() => import("./pages/BookmarksPage"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const PremiumPage = lazy(() => import("./pages/PremiumPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const NIP19Page = lazy(() =>
   import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
@@ -58,6 +59,8 @@ export function AppRouter() {
           <Route path="/chat/:npub" element={<ChatPage />} />
           {/* Mentions, reactions, reposts and NIP-57 zaps */}
           <Route path="/notifications" element={<NotificationsPage />} />
+          {/* Paid relay access, sold through LNbits pay links */}
+          <Route path="/premium" element={<PremiumPage />} />
           {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
           <Route path="/settings" element={<SettingsPage />} />
           {/* Follow pages */}

@@ -6,6 +6,7 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
+import { buildReplyTags } from '@/lib/thread';
 import { useToast } from '@/hooks/useToast';
 import {
   Dialog,
@@ -133,16 +134,10 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
         `m ${getImageMimeType(url)}`,
       ]);
 
-      const replyTags = [
-        ['e', replyingTo.id, '', replyingTo.pubkey],
-        ['p', replyingTo.pubkey],
-        ...imageTags,
-      ];
-
       await createEvent({
         kind: 1,
         content: replyContent,
-        tags: replyTags,
+        tags: [...buildReplyTags(replyingTo), ...imageTags],
       });
 
       toast({
@@ -150,6 +145,9 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
         description: "Your reply has been published successfully.",
       });
 
+      // The reply belongs to a thread, not just to its parent
+      queryClient.invalidateQueries({ queryKey: ['thread'] });
+      queryClient.invalidateQueries({ queryKey: ['note-stats', replyingTo.id] });
       queryClient.invalidateQueries({ queryKey: ['replies', replyingTo.id] });
 
       setContent('');
