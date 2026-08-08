@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import type { NostrEvent } from '@nostrify/nostrify';
-import { formatDistanceToNow } from 'date-fns';
+import { formatMonthYear } from '@/lib/time';
 import {
   BadgeCheck,
   Calendar,
@@ -263,8 +263,7 @@ export function Profile({ pubkey }: ProfileProps) {
             {joinedDate && (
               <span className="flex items-center gap-1.5">
                 <Calendar className="h-3.5 w-3.5" />
-                Active since{' '}
-                {formatDistanceToNow(joinedDate, { addSuffix: true })}
+                Active since {formatMonthYear(joinedDate)}
               </span>
             )}
           </div>

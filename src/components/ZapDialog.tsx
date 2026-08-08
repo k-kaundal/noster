@@ -22,7 +22,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent } from '@/components/ui/card';
+import { QrCode } from '@/components/wallet/QrCode';
 import { Separator } from '@/components/ui/separator';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -32,7 +32,6 @@ import { useZaps } from '@/hooks/useZaps';
 import { useWallet } from '@/hooks/useWallet';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import type { Event } from 'nostr-tools';
-import QRCode from 'qrcode';
 
 interface ZapDialogProps {
   target: Event;
@@ -56,7 +55,6 @@ interface ZapContentProps {
   amount: number | string;
   comment: string;
   isZapping: boolean;
-  qrCodeUrl: string;
   copied: boolean;
   hasWebLN: boolean;
   handleZap: () => void;
@@ -74,7 +72,6 @@ const ZapContent = forwardRef<HTMLDivElement, ZapContentProps>(({
   amount,
   comment,
   isZapping,
-  qrCodeUrl,
   copied,
   hasWebLN,
   handleZap,
@@ -98,19 +95,14 @@ const ZapContent = forwardRef<HTMLDivElement, ZapContentProps>(({
         <div className="flex flex-col justify-center min-h-0 flex-1 px-2">
           {/* QR Code */}
           <div className="flex justify-center">
-            <Card className="p-3 [@media(max-height:680px)]:max-w-[65vw] max-w-[95vw] mx-auto">
-              <CardContent className="p-0 flex justify-center">
-                {qrCodeUrl ? (
-                  <img
-                    src={qrCodeUrl}
-                    alt="Lightning Invoice QR Code"
-                    className="w-full h-auto aspect-square max-w-full object-contain"
-                  />
-                ) : (
-                  <div className="w-full aspect-square bg-muted animate-pulse rounded" />
-                )}
-              </CardContent>
-            </Card>
+            {/* Rendered as SVG rather than generated into a data URL: it
+                appears with the invoice instead of a beat later, and it drops
+                the largest dependency the zap flow had */}
+            <QrCode
+              value={invoice.toUpperCase()}
+              label="Lightning invoice QR code"
+              size={224}
+            />
           </div>
 
           {/* Invoice input */}
@@ -269,7 +261,6 @@ export function ZapDialog({
   const [amount, setAmount] = useState<number | string>(100);
   const [comment, setComment] = useState<string>('');
   const [copied, setCopied] = useState(false);
-  const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const inputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
 
@@ -285,43 +276,6 @@ export function ZapDialog({
       detectWebLN();
     }
   }, [open, hasWebLN, detectWebLN]);
-
-  // Generate QR code
-  useEffect(() => {
-    let isCancelled = false;
-
-    const generateQR = async () => {
-      if (!invoice) {
-        setQrCodeUrl('');
-        return;
-      }
-
-      try {
-        const url = await QRCode.toDataURL(invoice.toUpperCase(), {
-          width: 512,
-          margin: 2,
-          color: {
-            dark: '#000000',
-            light: '#FFFFFF',
-          },
-        });
-
-        if (!isCancelled) {
-          setQrCodeUrl(url);
-        }
-      } catch (err) {
-        if (!isCancelled) {
-          console.error('Failed to generate QR code:', err);
-        }
-      }
-    };
-
-    generateQR();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [invoice]);
 
   const handleCopy = async () => {
     if (invoice) {
@@ -347,13 +301,11 @@ export function ZapDialog({
       setAmount(100);
       resetInvoice();
       setCopied(false);
-      setQrCodeUrl('');
     } else {
       // Clean up state when dialog closes
       setAmount(100);
       resetInvoice();
       setCopied(false);
-      setQrCodeUrl('');
     }
   }, [open, resetInvoice]);
 
@@ -367,7 +319,6 @@ export function ZapDialog({
     amount,
     comment,
     isZapping,
-    qrCodeUrl,
     copied,
     hasWebLN,
     handleZap,
@@ -392,7 +343,6 @@ export function ZapDialog({
           // Reset invoice when closing
           if (!newOpen) {
             resetInvoice();
-            setQrCodeUrl('');
           }
           setOpen(newOpen);
         }}
@@ -426,7 +376,6 @@ export function ZapDialog({
                 size="sm"
                 onClick={() => {
                   resetInvoice();
-                  setQrCodeUrl('');
                 }}
                 className="absolute left-4 top-4 flex items-center gap-2"
               >

@@ -1,7 +1,6 @@
 import { NostrMetadata, NostrSigner } from "@nostrify/nostrify";
 import { createContext } from "react";
 
-import { z } from 'zod';
 import type { RelayEntry } from '@/lib/relay';
 import { DEFAULT_ACCENT } from '@/lib/theme';
 
@@ -30,52 +29,88 @@ export interface AppContextType {
   syncAccountToRelays: (signer: NostrSigner, profileData?: NostrMetadata, contacts?: string[]) => Promise<void>;
 }
 
-const RelayEntrySchema = z.object({
-  url: z.string().url(),
-  read: z.boolean(),
-  write: z.boolean(),
-});
-
 /** This platform's own relay, which every install should be reading from. */
 export const HOUSE_RELAY = 'wss://relay.nostrfeed.com';
 
+/** Whether a string is a URL at all. Relay URLs are `wss:`, not `https:`. */
+function isUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || !value) return false;
+
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isRelayEntry(value: unknown): value is RelayEntry {
+  if (!value || typeof value !== 'object') return false;
+
+  const entry = value as Record<string, unknown>;
+  return (
+    isUrl(entry.url) &&
+    typeof entry.read === 'boolean' &&
+    typeof entry.write === 'boolean'
+  );
+}
+
 /**
- * Configs stored before multi-relay support have no `relays` array, and those
- * stored before theming have no `accent`. Both are optional here and
- * backfilled, so an older saved config still parses.
+ * Reads a stored config, migrating older shapes forward.
  *
- * The house relay is also added to older configs that predate it. Their stored
- * list would otherwise never include it, so existing users would silently keep
- * reading from everywhere except our own relay. Removing it afterwards is
- * still their call — this only seeds it, and only once, because the result is
- * written back to storage.
+ * Hand-written rather than a schema library. This is the only validation left
+ * in the app, it runs once per load, and the library that used to do it was
+ * the largest thing in the first chunk the browser had to parse — a hundred
+ * and forty kilobytes to check five fields.
+ *
+ * Throws on anything it cannot make sense of, which `useLocalStorage` catches
+ * and answers with the defaults. A corrupt config should reset, not crash.
+ *
+ * Two migrations live here. Configs stored before multi-relay support have no
+ * `relays` array and configs stored before theming have no `accent`; both are
+ * backfilled. And the house relay is seeded into lists that predate it, since
+ * those users would otherwise read from everywhere except our own relay —
+ * seeded once only, because the result is written back, so removing it stays
+ * the user's decision.
  */
-export const AppConfigSchema: z.ZodType<AppConfig, z.ZodTypeDef, unknown> = z
-  .object({
-    theme: z.enum(['dark', 'light', 'system']),
-    accent: z.string().optional(),
-    relayUrl: z.string().url(),
-    relays: z.array(RelayEntrySchema).optional(),
-    /** Set once the house relay has been seeded, so a removal isn't undone. */
-    seededHouseRelay: z.boolean().optional(),
-  })
-  .transform((config) => {
-    const relays = config.relays?.length
-      ? config.relays
-      : [{ url: config.relayUrl, read: true, write: true }];
+export function parseAppConfig(value: unknown): AppConfig {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Stored config is not an object');
+  }
 
-    const needsHouseRelay =
-      !config.seededHouseRelay && !relays.some((r) => r.url === HOUSE_RELAY);
+  const stored = value as Record<string, unknown>;
+  const { theme } = stored;
 
-    return {
-      ...config,
-      accent: config.accent ?? DEFAULT_ACCENT,
-      seededHouseRelay: true,
-      // Seeded at the head, since the routers treat list order as priority
-      relays: needsHouseRelay
-        ? [{ url: HOUSE_RELAY, read: true, write: true }, ...relays]
-        : relays,
-    };
-  });
+  if (theme !== 'dark' && theme !== 'light' && theme !== 'system') {
+    throw new Error(`Stored config has an unknown theme: ${String(theme)}`);
+  }
+
+  if (!isUrl(stored.relayUrl)) {
+    throw new Error('Stored config has no usable relay URL');
+  }
+
+  const listed = Array.isArray(stored.relays)
+    ? stored.relays.filter(isRelayEntry)
+    : [];
+
+  const relays = listed.length
+    ? listed
+    : [{ url: stored.relayUrl, read: true, write: true }];
+
+  const needsHouseRelay =
+    stored.seededHouseRelay !== true &&
+    !relays.some((relay) => relay.url === HOUSE_RELAY);
+
+  return {
+    theme,
+    accent: typeof stored.accent === 'string' ? stored.accent : DEFAULT_ACCENT,
+    relayUrl: stored.relayUrl,
+    seededHouseRelay: true,
+    // Seeded at the head, since the routers treat list order as priority
+    relays: needsHouseRelay
+      ? [{ url: HOUSE_RELAY, read: true, write: true }, ...relays]
+      : relays,
+  };
+}
 
 export const AppContext = createContext<AppContextType | undefined>(undefined);

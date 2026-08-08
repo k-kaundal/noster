@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { formatDistanceToNowStrict } from 'date-fns';
+import { timeAgo as formatAge } from '@/lib/time';
 import { ArrowUp, BadgeCheck } from 'lucide-react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -122,7 +122,7 @@ function AncestorRow({ event }: { event: NostrEvent }) {
   const timestamp = event.created_at * 1000;
   const when =
     timestamp > 0 && timestamp < Date.now() + 86_400_000
-      ? formatDistanceToNowStrict(new Date(timestamp))
+      ? formatAge(timestamp)
       : 'unknown';
 
   return (

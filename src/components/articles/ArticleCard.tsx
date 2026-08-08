@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { formatDistanceToNowStrict } from 'date-fns';
+import { timeAgo } from '@/lib/time';
 import { BadgeCheck, Clock, FileText } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
@@ -64,7 +64,7 @@ export function ArticleCard({
             )}
             <span aria-hidden="true">·</span>
             <span className="shrink-0">
-              {formatDistanceToNowStrict(new Date(article.publishedAt * 1000))} ago
+              {timeAgo(article.publishedAt * 1000)}
             </span>
           </div>
 

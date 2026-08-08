@@ -146,6 +146,15 @@ export default {
 					from: { transform: 'rotate(0deg)' },
 					to: { transform: 'rotate(360deg)' }
 				},
+				/* Sweeps a short bar across the top while a request is in flight.
+				   Indeterminate on purpose: a relay query has no progress to
+				   report, and a fake percentage that stalls at 90 is worse than
+				   honest motion. */
+				'progress-sweep': {
+					'0%': { transform: 'translateX(-100%) scaleX(0.4)' },
+					'50%': { transform: 'translateX(0%) scaleX(0.7)' },
+					'100%': { transform: 'translateX(100%) scaleX(0.4)' }
+				},
 				/* A slow pulse for live indicators, gentler than `animate-pulse` */
 				breathe: {
 					'0%, 100%': { opacity: '1', transform: 'scale(1)' },
@@ -162,6 +171,7 @@ export default {
 				'scale-in': 'scale-in 0.28s var(--ease-spring) both',
 				shimmer: 'shimmer 1.8s infinite',
 				'spin-slow': 'spin-slow 8s linear infinite',
+				'progress-sweep': 'progress-sweep 1.4s var(--ease-snap) infinite',
 				breathe: 'breathe 4s ease-in-out infinite'
 			}
 		}

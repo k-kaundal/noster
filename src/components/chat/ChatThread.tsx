@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { format, isSameDay } from 'date-fns';
+import { formatDate, formatTime, isSameDay } from '@/lib/time';
 import { BadgeCheck, Loader2, Send, ShieldCheck } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -118,8 +118,8 @@ export function ChatThread({ peerPubkey }: ChatThreadProps) {
               showDaySeparator={
                 index === 0 ||
                 !isSameDay(
-                  new Date(message.createdAt * 1000),
-                  new Date(messages[index - 1].createdAt * 1000)
+                  message.createdAt * 1000,
+                  messages[index - 1].createdAt * 1000
                 )
               }
             />
@@ -180,7 +180,7 @@ function MessageBubble({
       {showDaySeparator && (
         <div className="py-3 text-center">
           <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">
-            {format(timestamp, 'PPP')}
+            {formatDate(timestamp)}
           </span>
         </div>
       )}
@@ -215,7 +215,7 @@ function MessageBubble({
               isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'
             )}
           >
-            {format(timestamp, 'HH:mm')}
+            {formatTime(timestamp)}
           </time>
         </div>
       </div>

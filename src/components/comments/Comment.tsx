@@ -12,7 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MessageSquare, ChevronDown, ChevronRight, MoreHorizontal } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { timeAgo as formatAge } from '@/lib/time';
 import { genUserName } from '@/lib/genUserName';
 
 interface CommentProps {
@@ -32,7 +32,7 @@ export function Comment({ root, comment, depth = 0, maxDepth = 3, limit }: Comme
   
   const metadata = author.data?.metadata;
   const displayName = metadata?.name ?? genUserName(comment.pubkey)
-  const timeAgo = formatDistanceToNow(new Date(comment.created_at * 1000), { addSuffix: true });
+  const timeAgo = formatAge(comment.created_at * 1000);
 
   // Get direct replies to this comment
   const replies = commentsData?.getDirectReplies(comment.id) || [];

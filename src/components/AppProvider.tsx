@@ -1,20 +1,64 @@
 import { ReactNode, useEffect, useCallback } from 'react';
-import { z } from 'zod';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
-import { AppConfigSchema, AppContext, type AppConfig, type AppContextType, type Theme } from '@/contexts/AppContext';
+import { parseAppConfig, AppContext, type AppConfig, type AppContextType, type Theme } from '@/contexts/AppContext';
 import { applyTokens, deriveTokens, getAccentPreset } from '@/lib/theme';
 import { SimplePool, Event, EventTemplate, Filter } from 'nostr-tools';
 import { NostrMetadata, NostrSigner } from '@nostrify/nostrify';
 
-// Validation schemas remain unchanged
-const ProfileSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  about: z.string().max(500).optional(),
-  picture: z.string().url().optional(),
-  lud16: z.string().email().optional(),
-});
+/**
+ * The profile fields this sync publishes, and the limits they have to meet.
+ *
+ * Anything else on the metadata is dropped rather than republished, which is
+ * what the schema this replaced did too — a sync writes the fields it knows
+ * about and does not carry along whatever else happened to be in the object.
+ */
+function validateProfile(profile: NostrMetadata): NostrMetadata {
+  const validated: NostrMetadata = {};
 
-const ContactsSchema = z.array(z.string().regex(/^[0-9a-f]{64}$/, 'Invalid pubkey'));
+  if (profile.name !== undefined) {
+    if (!profile.name || profile.name.length > 100) {
+      throw new Error('Name must be 1 to 100 characters');
+    }
+    validated.name = profile.name;
+  }
+
+  if (profile.about !== undefined) {
+    if (profile.about.length > 500) {
+      throw new Error('Bio must be at most 500 characters');
+    }
+    validated.about = profile.about;
+  }
+
+  if (profile.picture !== undefined) {
+    try {
+      new URL(profile.picture);
+    } catch {
+      throw new Error('Picture must be a URL');
+    }
+    validated.picture = profile.picture;
+  }
+
+  if (profile.lud16 !== undefined) {
+    // LUD-16 addresses are `name@domain`, the same shape as an email
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.lud16)) {
+      throw new Error('Lightning address must look like name@domain');
+    }
+    validated.lud16 = profile.lud16;
+  }
+
+  return validated;
+}
+
+/** Contacts are hex pubkeys; anything else would publish an unfollowable tag. */
+function validateContacts(contacts: string[]): string[] {
+  for (const pubkey of contacts) {
+    if (!/^[0-9a-f]{64}$/.test(pubkey)) {
+      throw new Error(`Invalid pubkey: ${pubkey}`);
+    }
+  }
+
+  return contacts;
+}
 
 interface AppProviderProps {
   children: ReactNode;
@@ -31,10 +75,7 @@ export function AppProvider(props: AppProviderProps) {
     defaultConfig,
     {
       serialize: JSON.stringify,
-      deserialize: (value: string) => {
-        const parsed = JSON.parse(value);
-        return AppConfigSchema.parse(parsed);
-      },
+      deserialize: (value: string) => parseAppConfig(JSON.parse(value)),
     }
   );
 
@@ -67,7 +108,7 @@ export function AppProvider(props: AppProviderProps) {
       let validatedProfile: NostrMetadata | null = null;
       if (profileData) {
         try {
-          validatedProfile = ProfileSchema.parse(profileData);
+          validatedProfile = validateProfile(profileData);
         } catch (error) {
           console.error('Invalid profile data:', error);
           throw new Error('Profile data validation failed');
@@ -78,7 +119,7 @@ export function AppProvider(props: AppProviderProps) {
       let validatedContacts: string[] = [];
       if (contacts) {
         try {
-          validatedContacts = ContactsSchema.parse(contacts);
+          validatedContacts = validateContacts(contacts);
         } catch (error) {
           console.error('Invalid contacts data:', error);
           throw new Error('Contacts validation failed');

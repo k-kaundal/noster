@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -11,6 +11,7 @@ import { useBookmarks } from '@/hooks/useBookmarks';
 import { useMuteList } from '@/hooks/useMuteList';
 import { useDeleteEvent } from '@/hooks/useDeleteEvent';
 import { useToast } from '@/hooks/useToast';
+import { useOnceOpened } from '@/hooks/useDeferredDialog';
 import { genUserName } from '@/lib/genUserName';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -29,13 +30,29 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { NoteBody } from '@/components/notes/NoteBody';
-import { ReplyDialog } from '@/components/ReplyDialog';
+
+/**
+ * The dialogs a note can open, fetched only when one is.
+ *
+ * Every note in the feed mounts all four. Loading them eagerly meant the
+ * drawer library, the QR renderer and three composers had to be parsed before
+ * the first note could appear, for screens most readers never open.
+ */
+const ReplyDialog = lazy(() =>
+  import('@/components/ReplyDialog').then((m) => ({ default: m.ReplyDialog }))
+);
+const ZapDialog = lazy(() =>
+  import('@/components/ZapDialog').then((m) => ({ default: m.ZapDialog }))
+);
+const QuoteDialog = lazy(() =>
+  import('@/components/QuoteDialog').then((m) => ({ default: m.QuoteDialog }))
+);
+const ReportDialog = lazy(() =>
+  import('@/components/ReportDialog').then((m) => ({ default: m.ReportDialog }))
+);
 import { RepliesSection } from '@/components/RepliesSection';
-import { ZapDialog } from '@/components/ZapDialog';
 import { QuotedNote } from '@/components/QuotedNote';
 import { ContentWarning } from '@/components/ContentWarning';
-import { QuoteDialog } from '@/components/QuoteDialog';
-import { ReportDialog } from '@/components/ReportDialog';
 import { ReactionChips, ReactionPicker } from '@/components/ReactionPicker';
 import {
   AlertDialog,
@@ -70,7 +87,7 @@ import {
   Share2,
   Zap,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { timeAgo as formatAge } from '@/lib/time';
 import { nip19 } from 'nostr-tools';
 import { cn } from '@/lib/utils';
 
@@ -89,7 +106,7 @@ function useTimeAgo(createdAt: number) {
     return 'unknown time';
   }
   try {
-    return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
+    return formatAge(timestamp);
   } catch {
     return 'unknown time';
   }
@@ -118,6 +135,13 @@ export function Post({
   const [repliesOpen, setRepliesOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Each stays mounted after its first open, so closing keeps the exit
+  // animation and anything half-typed
+  const replyMounted = useOnceOpened(replyDialogOpen);
+  const zapMounted = useOnceOpened(zapOpen);
+  const quoteMounted = useOnceOpened(quoteOpen);
+  const reportMounted = useOnceOpened(reportOpen);
 
   const { isLiked, likeCount, like, isLiking, groups } = useReactions(event.id);
   const { deleteEvents, isDeleting } = useDeleteEvent();
@@ -516,25 +540,34 @@ export function Post({
         )}
       </Card>
 
-      <ReplyDialog
-        open={replyDialogOpen}
-        onOpenChange={setReplyDialogOpen}
-        replyingTo={event}
-      />
-      <ZapDialog target={event} open={zapOpen} onOpenChange={setZapOpen} />
-      <QuoteDialog
-        open={quoteOpen}
-        onOpenChange={setQuoteOpen}
-        quoting={event}
-      />
-
-      <ReportDialog
-        open={reportOpen}
-        onOpenChange={setReportOpen}
-        pubkey={event.pubkey}
-        displayName={displayName}
-        event={event}
-      />
+      <Suspense fallback={null}>
+        {replyMounted && (
+          <ReplyDialog
+            open={replyDialogOpen}
+            onOpenChange={setReplyDialogOpen}
+            replyingTo={event}
+          />
+        )}
+        {zapMounted && (
+          <ZapDialog target={event} open={zapOpen} onOpenChange={setZapOpen} />
+        )}
+        {quoteMounted && (
+          <QuoteDialog
+            open={quoteOpen}
+            onOpenChange={setQuoteOpen}
+            quoting={event}
+          />
+        )}
+        {reportMounted && (
+          <ReportDialog
+            open={reportOpen}
+            onOpenChange={setReportOpen}
+            pubkey={event.pubkey}
+            displayName={displayName}
+            event={event}
+          />
+        )}
+      </Suspense>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
