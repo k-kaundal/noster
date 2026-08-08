@@ -63,6 +63,17 @@ export function payLinkLnurl(linkId: string): string {
   return `lnurlp://${host}/lnurlp/${linkId}`;
 }
 
+/**
+ * The LNURL-pay endpoint for a link, as a plain https URL.
+ *
+ * This is what a client fetches to get the pay request. Unlike the `lnurlp://`
+ * form it can be fetched directly, which is what lets the app resolve an
+ * invoice without any wallet key.
+ */
+export function payLinkHttpUrl(linkId: string): string {
+  return `${LNBITS_URL}/lnurlp/${linkId}`;
+}
+
 /** The human-facing page for a pay link, for paying from another wallet. */
 export function payLinkUrl(linkId: string): string {
   return `${LNBITS_URL}/lnurlp/link/${linkId}`;

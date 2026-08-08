@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   Check,
+  Copy,
   ExternalLink,
   Loader2,
   ShieldCheck,
@@ -19,10 +19,25 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAppContext } from '@/hooks/useAppContext';
 import { usePremium } from '@/hooks/usePremium';
+import { usePayAnyWallet, type PayMethod } from '@/hooks/usePayAnyWallet';
+import { useToast } from '@/hooks/useToast';
 import { useRelayInfo } from '@/hooks/useRelayInfo';
 import { useSeo } from '@/hooks/useSeo';
 import { HOUSE_RELAY } from '@/contexts/AppContext';
-import { isFixedPrice, payLinkUrl, type PayLinkTerms } from '@/lib/premium';
+import {
+  isFixedPrice,
+  payLinkUrl,
+  type PayLinkTerms,
+  type PremiumPlan,
+} from '@/lib/premium';
+import type { LnurlPayMetadata } from '@/lib/lnurlPay';
+
+interface PreparedPayment {
+  plan: PremiumPlan;
+  bolt11: string;
+  metadata: LnurlPayMetadata;
+  amountSats: number;
+}
 import { relayDisplayName } from '@/lib/relay';
 
 export function PremiumPage() {
@@ -34,7 +49,7 @@ export function PremiumPage() {
   });
 
   const { user } = useCurrentUser();
-  const { plans, terms, hasPurchase, buy, isBuying, canPay, balanceSats } =
+  const { plans, terms, hasPurchase, prepare, isPreparing, recordPurchase } =
     usePremium();
 
   return (
@@ -66,18 +81,16 @@ export function PremiumPage() {
             {terms.map(({ plan, data, isLoading, error }) => (
               <PlanCard
                 key={plan.id}
-                name={plan.name}
-                summary={plan.summary}
-                recurring={plan.recurring}
-                linkId={plan.linkId}
+                plan={plan}
                 terms={data}
                 isLoading={isLoading}
                 error={error}
                 purchased={hasPurchase(plan.id)}
-                canPay={canPay}
-                balanceSats={balanceSats}
-                isBuying={isBuying}
-                onBuy={(amountSats) => buy({ planId: plan.id, amountSats })}
+                isPreparing={isPreparing}
+                onPrepare={(amountSats) =>
+                  prepare({ planId: plan.id, amountSats })
+                }
+                onPaid={(hash) => recordPurchase(plan.id, hash)}
               />
             ))}
           </div>
@@ -133,52 +146,65 @@ function RelayStatusCard() {
 }
 
 function PlanCard({
-  name,
-  summary,
-  recurring,
-  linkId,
+  plan,
   terms,
   isLoading,
   error,
   purchased,
-  canPay,
-  balanceSats,
-  isBuying,
-  onBuy,
+  isPreparing,
+  onPrepare,
+  onPaid,
 }: {
-  name: string;
-  summary: string;
-  recurring: boolean;
-  linkId: string;
+  plan: PremiumPlan;
   terms?: PayLinkTerms;
   isLoading: boolean;
   error?: Error;
   purchased: boolean;
-  canPay: boolean;
-  balanceSats: number;
-  isBuying: boolean;
-  onBuy: (amountSats: number) => Promise<unknown>;
+  isPreparing: boolean;
+  onPrepare: (amountSats: number) => Promise<PreparedPayment>;
+  onPaid: (paymentHash: string) => void;
 }) {
+  const { options, preferred, pay, isPaying, balanceSats } = usePayAnyWallet();
+  const { toast } = useToast();
+
   // A link with a range lets the payer choose; a fixed price does not
   const fixed = terms ? isFixedPrice(terms) : true;
   const [amount, setAmount] = useState('');
+  const [invoice, setInvoice] = useState('');
 
   const chosen = Number(amount) || terms?.minSats || 0;
-  const affordable = chosen <= balanceSats;
+
+  const start = async (method: PayMethod) => {
+    const prepared = await onPrepare(chosen);
+
+    if (method === 'manual') {
+      // Nothing to await — the person pays it wherever they like
+      setInvoice(prepared.bolt11);
+      return;
+    }
+
+    await pay({ bolt11: prepared.bolt11, method, amountSats: chosen });
+    onPaid(prepared.bolt11.slice(0, 64));
+
+    toast({
+      title: 'Payment sent',
+      description: 'The relay grants access once it sees it.',
+    });
+  };
 
   return (
     <Card className="flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-baseline justify-between gap-2 text-base">
-          <span>{name}</span>
-          {!recurring && (
+          <span>{plan.name}</span>
+          {!plan.recurring && (
             <span className="text-eyebrow shrink-0">One payment</span>
           )}
         </CardTitle>
       </CardHeader>
 
       <CardContent className="flex flex-1 flex-col gap-3">
-        <p className="text-sm text-muted-foreground">{summary}</p>
+        <p className="text-sm text-muted-foreground">{plan.summary}</p>
 
         {isLoading ? (
           <Skeleton className="h-8 w-24" />
@@ -206,6 +232,10 @@ function PlanCard({
           />
         )}
 
+        {invoice && (
+          <ManualInvoice invoice={invoice} onDone={() => setInvoice('')} />
+        )}
+
         <div className="mt-auto space-y-2 pt-2">
           {purchased && (
             <p className="flex items-center gap-1.5 text-sm text-success">
@@ -214,50 +244,88 @@ function PlanCard({
             </p>
           )}
 
-          <Button
-            className="w-full"
-            disabled={!canPay || isBuying || !terms || !affordable}
-            onClick={() => onBuy(chosen)}
-          >
-            {isBuying ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Zap className="mr-2 h-4 w-4" />
-            )}
-            {purchased ? 'Pay again' : 'Pay from my wallet'}
-          </Button>
+          {/* Every wallet the person actually has, rather than only ours */}
+          {options.map((option, index) => (
+            <Button
+              key={option.method}
+              variant={index === 0 ? 'default' : 'outline'}
+              className="w-full"
+              disabled={!terms || isPreparing || isPaying}
+              onClick={() => start(option.method)}
+            >
+              {(isPreparing || isPaying) && option.method === preferred ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : option.method === 'manual' ? (
+                <Copy className="mr-2 h-4 w-4" />
+              ) : (
+                <Zap className="mr-2 h-4 w-4" />
+              )}
+              {option.label}
+            </Button>
+          ))}
 
-          {!canPay ? (
+          {options.some((option) => option.method === 'nostrfeed') && (
             <p className="text-xs text-muted-foreground">
-              <Link to="/settings" className="text-primary hover:underline">
-                Connect your wallet
-              </Link>{' '}
-              to pay from your balance.
+              Balance: {balanceSats.toLocaleString()} sats
             </p>
-          ) : (
-            !affordable && (
-              <p className="text-xs text-warning">
-                You have {balanceSats.toLocaleString()} sats. Add more in{' '}
-                <Link to="/settings" className="underline">
-                  settings
-                </Link>
-                .
-              </p>
-            )
           )}
 
           <a
-            href={payLinkUrl(linkId)}
+            href={payLinkUrl(plan.linkId)}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
           >
             <ExternalLink className="h-3 w-3" />
-            Pay from another wallet
+            Open the payment page
           </a>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * The invoice, for paying from somewhere this browser cannot reach.
+ *
+ * There is no completion signal here — the payment happens on another device,
+ * so the page cannot know when it lands. Saying so is better than a spinner
+ * that never resolves.
+ */
+function ManualInvoice({
+  invoice,
+  onDone,
+}: {
+  invoice: string;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <p className="break-all font-mono text-[11px] text-muted-foreground">
+        {invoice.slice(0, 80)}…
+      </p>
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={async () => {
+            await navigator.clipboard.writeText(invoice);
+            toast({ title: 'Invoice copied' });
+          }}
+        >
+          <Copy className="mr-1.5 h-3.5 w-3.5" />
+          Copy
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onDone}>
+          Done
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Pay this from any wallet. Access follows once the relay sees it.
+      </p>
+    </div>
   );
 }
 

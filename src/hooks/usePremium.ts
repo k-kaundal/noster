@@ -5,10 +5,11 @@ import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useToast } from '@/hooks/useToast';
 import { lnbitsRequest } from '@/lib/lnbits';
+import { fetchInvoice, fetchPayMetadata, validateAmount } from '@/lib/lnurlPay';
 import {
   buildPaymentComment,
   configuredPlans,
-  payLinkLnurl,
+  payLinkHttpUrl,
   type PayLinkTerms,
   type PlanId,
   type PremiumPlan,
@@ -75,7 +76,14 @@ export function usePremium() {
 
   const mine = user ? (purchases[user.pubkey] ?? []) : [];
 
-  const buy = useMutation({
+  /**
+   * Turns a plan into an invoice, using only public LNURL endpoints.
+   *
+   * Deliberately key-free so it works before anyone has a NostrFeed wallet —
+   * an invoice can then be paid from Alby, a NWC wallet, or a phone, and
+   * nobody is forced to move their money here to buy access.
+   */
+  const prepare = useMutation({
     mutationFn: async ({
       planId,
       amountSats,
@@ -83,72 +91,54 @@ export function usePremium() {
       planId: PlanId;
       amountSats: number;
     }) => {
-      if (!user) throw new Error('Log in with Nostr first');
-      if (!wallet) throw new Error('Connect your NostrFeed wallet first');
-
       const plan = plans.find((entry) => entry.id === planId);
       if (!plan) throw new Error('That plan is not available');
 
-      const index = plans.indexOf(plan);
-      const planTerms = terms[index]?.data;
+      const metadata = await fetchPayMetadata(payLinkHttpUrl(plan.linkId));
 
-      if (amountSats > balanceSats) {
-        throw new Error(
-          `Not enough sats. You have ${balanceSats}, this costs ${amountSats}.`
-        );
-      }
+      const invalid = validateAmount(amountSats, metadata);
+      if (invalid) throw new Error(invalid);
 
-      const comment = buildPaymentComment(
-        nip19.npubEncode(user.pubkey),
-        plan.name,
-        planTerms?.commentChars ?? 0
+      const comment = user
+        ? buildPaymentComment(
+            nip19.npubEncode(user.pubkey),
+            plan.name,
+            metadata.commentAllowed
+          )
+        : '';
+
+      const bolt11 = await fetchInvoice(
+        metadata,
+        amountSats * 1000,
+        comment || undefined
       );
 
-      const payment = await lnbitsRequest<Record<string, unknown>>(
-        '/api/v1/payments/lnurl',
-        {
-          method: 'POST',
-          apiKey: wallet.adminkey,
-          body: {
-            lnurl: payLinkLnurl(plan.linkId),
-            // This endpoint is in millisats, unlike /api/v1/payments
-            amount: amountSats * 1000,
-            ...(comment ? { comment } : {}),
-          },
-        }
-      );
-
-      return {
-        planId,
-        paymentHash: String(payment.payment_hash ?? ''),
-        paidAt: Math.floor(Date.now() / 1000),
-      } satisfies PurchaseRecord;
-    },
-    onSuccess: (record) => {
-      if (user) {
-        setPurchases((current) => ({
-          ...current,
-          [user.pubkey]: [...(current[user.pubkey] ?? []), record],
-        }));
-      }
-
-      queryClient.invalidateQueries({ queryKey: ['lnbits-wallets'] });
-      queryClient.invalidateQueries({ queryKey: ['lnbits-payments'] });
-
-      toast({
-        title: 'Payment sent',
-        description:
-          'The relay grants access once it sees the payment. Give it a moment.',
-      });
+      return { plan, bolt11, metadata, amountSats };
     },
     onError: (error: Error) => {
       toast({
-        title: 'Payment failed',
+        title: 'Could not prepare the payment',
         description: error.message,
         variant: 'destructive',
       });
     },
   });
+
+  /** Records a completed purchase so the UI can show what was bought. */
+  const recordPurchase = (planId: PlanId, paymentHash: string) => {
+    if (!user) return;
+
+    setPurchases((current) => ({
+      ...current,
+      [user.pubkey]: [
+        ...(current[user.pubkey] ?? []),
+        { planId, paymentHash, paidAt: Math.floor(Date.now() / 1000) },
+      ],
+    }));
+
+    queryClient.invalidateQueries({ queryKey: ['lnbits-wallets'] });
+    queryClient.invalidateQueries({ queryKey: ['lnbits-payments'] });
+  };
 
   return {
     plans,
@@ -161,9 +151,10 @@ export function usePremium() {
     purchases: mine,
     hasPurchase: (planId: PlanId) =>
       mine.some((record) => record.planId === planId),
-    buy: buy.mutateAsync,
-    isBuying: buy.isPending,
-    canPay: !!wallet,
+    prepare: prepare.mutateAsync,
+    isPreparing: prepare.isPending,
+    recordPurchase,
     balanceSats,
+    hasNostrFeedWallet: !!wallet,
   };
 }
