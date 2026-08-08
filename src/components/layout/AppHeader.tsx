@@ -17,6 +17,7 @@ import { AccentPicker } from '@/components/AccentPicker';
 import { RelaySelector } from '@/components/RelaySelector';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { NotificationBadge } from '@/components/NotificationBadge';
+import { WalletBadge } from '@/components/wallet/WalletBadge';
 import { SideNav } from '@/components/layout/SideNav';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { AuthorProjects } from '@/components/AuthorProjects';
@@ -64,6 +65,8 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
           >
             <Search className="h-[1.2rem] w-[1.2rem]" />
           </Button>
+
+          <WalletBadge className="mr-1" />
 
           <NotificationBadge />
 

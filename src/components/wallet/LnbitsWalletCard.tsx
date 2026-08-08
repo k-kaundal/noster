@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/EmptyState';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
 import {
   useLnbitsPayments,
@@ -59,8 +60,79 @@ export function LnbitsWalletCard() {
   return (
     <div className="space-y-4">
       <BalanceCard onDisconnect={logout} instanceUrl={instanceUrl} />
+      <LinkedAccountCard />
       <ReceiveCard />
       <PaymentsCard />
+    </div>
+  );
+}
+
+/**
+ * Shows which account the Nostr key resolved to.
+ *
+ * Worth surfacing because the mapping is invisible otherwise: people expect a
+ * wallet to have its own login, and seeing their pubkey listed as the account
+ * identity is what explains why there was never a password to set.
+ */
+function LinkedAccountCard() {
+  const { account } = useLnbitsAuth();
+  const { user } = useCurrentUser();
+
+  if (!account) return null;
+
+  // LNbits stores the pubkey it authenticated; a mismatch would mean the
+  // session belongs to a different Nostr account than the one signed in here.
+  const linked = account.pubkey;
+  const mismatched = !!linked && !!user && linked !== user.pubkey;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Account</CardTitle>
+      </CardHeader>
+
+      <CardContent className="space-y-2 text-sm">
+        <Row label="Signed in as" value={account.username || 'Nostr key'} />
+        <Row label="Account id" value={account.id} mono />
+        {linked && (
+          <Row
+            label="Linked key"
+            value={`${linked.slice(0, 12)}…${linked.slice(-6)}`}
+            mono
+          />
+        )}
+
+        {mismatched && (
+          <p className="rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-xs">
+            This wallet session belongs to a different Nostr key than the one
+            you're signed in with. Disconnect and reconnect to fix it.
+          </p>
+        )}
+
+        <p className="pt-1 text-xs text-muted-foreground">
+          There is no password. Your Nostr key is the account, proved by signing
+          a request each time you connect.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Row({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className={cn('truncate text-right', mono && 'font-mono text-xs')}>
+        {value}
+      </span>
     </div>
   );
 }

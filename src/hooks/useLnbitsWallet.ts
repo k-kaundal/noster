@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/useToast';
 import {
   lnbitsRequest,
   msatToSat,
+  readBolt11,
   satToMsat,
   type LnbitsPayment,
   type LnbitsWallet,
@@ -74,11 +75,25 @@ export function useLnbitsWallet() {
     }) => {
       if (!wallet) throw new Error('No wallet');
 
-      return lnbitsRequest<LnbitsPayment>('/api/v1/payments', {
-        method: 'POST',
-        apiKey: wallet.inkey,
-        body: { out: false, amount: amountSats, unit: 'sat', memo: memo ?? '' },
-      });
+      const body = await lnbitsRequest<Record<string, unknown>>(
+        '/api/v1/payments',
+        {
+          method: 'POST',
+          apiKey: wallet.inkey,
+          body: {
+            out: false,
+            amount: amountSats,
+            unit: 'sat',
+            memo: memo ?? '',
+          },
+        }
+      );
+
+      // This endpoint names the invoice `payment_request`, not `bolt11`
+      return {
+        paymentHash: String(body.payment_hash ?? ''),
+        bolt11: readBolt11(body),
+      };
     },
     onError: (error: Error) => {
       toast({

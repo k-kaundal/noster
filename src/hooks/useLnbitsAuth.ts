@@ -59,13 +59,34 @@ export function useLnbitsAuth() {
   const login = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('Log in with Nostr first');
-      return loginWithNostr(user.signer);
+
+      const issued = await loginWithNostr(user.signer);
+
+      /**
+       * A brand new account has no wallet, and an account without one is
+       * useless — no balance to show, nothing to receive into. Provisioning it
+       * here means signing in is the only step a person ever takes.
+       */
+      const account = await lnbitsRequest<LnbitsUser>('/api/v1/auth', {
+        token: issued,
+      });
+
+      if (!account.wallets?.length) {
+        await lnbitsRequest('/api/v1/wallet', {
+          method: 'POST',
+          token: issued,
+          body: { name: 'NostrFeed', wallet_type: 'lightning' },
+        });
+      }
+
+      return issued;
     },
     onSuccess: (issued) => {
       if (issued && user) {
         setTokens((current) => ({ ...current, [user.pubkey]: issued }));
       }
       queryClient.invalidateQueries({ queryKey: ['lnbits-account'] });
+      queryClient.invalidateQueries({ queryKey: ['lnbits-wallets'] });
       toast({
         title: 'Wallet connected',
         description: 'Your NostrFeed wallet is ready.',
