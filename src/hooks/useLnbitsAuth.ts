@@ -12,6 +12,27 @@ import {
 } from '@/lib/lnbits';
 
 /**
+ * Turns a failed sign-in into something someone can act on.
+ *
+ * The two ways this fails are both server-side settings, and both produce
+ * errors that read like a bug in this app. Naming the setting is the
+ * difference between "it's broken" and "switch that on".
+ */
+export function describeLoginFailure(error: Error): string {
+  if (!(error instanceof LnbitsError)) return error.message;
+
+  if (error.status === 404 || error.status === 405) {
+    return `${LNBITS_URL} doesn't accept Nostr sign-in. The instance needs "nostr-auth-nip98" in its auth_allowed_methods.`;
+  }
+
+  if (error.status === 401 || error.status === 403) {
+    return `${LNBITS_URL} rejected the signature. Check its nostr_absolute_request_urls setting matches the address this app calls, and that new accounts are allowed.`;
+  }
+
+  return error.message;
+}
+
+/**
  * The NostrFeed wallet account, authenticated with the user's Nostr key.
  *
  * LNbits accepts a NIP-98 signed event at `/api/v1/auth/nostr`, so there is no
@@ -95,7 +116,7 @@ export function useLnbitsAuth() {
     onError: (error: Error) => {
       toast({
         title: 'Could not connect your wallet',
-        description: error.message,
+        description: describeLoginFailure(error),
         variant: 'destructive',
       });
     },
@@ -129,6 +150,10 @@ export function useLnbitsAuth() {
     token,
     connect: login.mutateAsync,
     isConnecting: login.isPending,
+    /** Why the last sign-in attempt failed, phrased for a person. */
+    connectError: login.error
+      ? describeLoginFailure(login.error as Error)
+      : null,
     logout,
     instanceUrl: LNBITS_URL,
   };

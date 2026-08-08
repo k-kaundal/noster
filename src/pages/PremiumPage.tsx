@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   Check,
   Copy,
+  CreditCard,
   ExternalLink,
   Loader2,
   ShieldCheck,
@@ -20,6 +21,8 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAppContext } from '@/hooks/useAppContext';
 import { usePremium } from '@/hooks/usePremium';
 import { usePayAnyWallet, type PayMethod } from '@/hooks/usePayAnyWallet';
+import { useFiatSubscription } from '@/hooks/useFiatSubscription';
+import { FIAT_PROVIDER_LABELS } from '@/lib/fiat';
 import { useToast } from '@/hooks/useToast';
 import { useRelayInfo } from '@/hooks/useRelayInfo';
 import { useSeo } from '@/hooks/useSeo';
@@ -270,6 +273,8 @@ function PlanCard({
             </p>
           )}
 
+          <FiatOption plan={plan} />
+
           <a
             href={payLinkUrl(plan.linkId)}
             target="_blank"
@@ -282,6 +287,75 @@ function PlanCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Paying with a card or PayPal instead of sats.
+ *
+ * Only offered when there is a plan configured with the provider *and* the
+ * signed-in account is allowed to use it — LNbits limits providers per
+ * account, and a button that leads to a refusal is worse than no button.
+ */
+function FiatOption({ plan }: { plan: PremiumPlan }) {
+  const {
+    isConfigured,
+    available,
+    planFor,
+    subscriptionFor,
+    start,
+    isStarting,
+    cancel,
+    isCancelling,
+  } = useFiatSubscription();
+
+  const fiat = planFor(plan.id);
+  const existing = subscriptionFor(plan.id);
+
+  // No plan id, no house wallet, or the account cannot use this provider
+  if (!fiat || !isConfigured) return null;
+  if (available.length > 0 && !available.includes(fiat.provider)) return null;
+
+  const label = FIAT_PROVIDER_LABELS[fiat.provider];
+
+  if (existing) {
+    return (
+      <div className="space-y-1.5 rounded-lg border border-success/40 bg-success/10 p-3">
+        <p className="flex items-center gap-1.5 text-sm text-success">
+          <Check className="h-4 w-4" />
+          {label} subscription active
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Renews automatically. Started{' '}
+          {new Date(existing.startedAt * 1000).toLocaleDateString()}.
+        </p>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={isCancelling}
+          onClick={() => cancel(existing)}
+        >
+          {isCancelling && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+          Cancel subscription
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      variant="outline"
+      className="w-full"
+      disabled={isStarting}
+      onClick={() => start({ plan, fiat })}
+    >
+      {isStarting ? (
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      ) : (
+        <CreditCard className="mr-2 h-4 w-4" />
+      )}
+      Pay with {label}
+    </Button>
   );
 }
 

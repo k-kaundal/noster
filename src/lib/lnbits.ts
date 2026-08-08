@@ -44,6 +44,28 @@ export interface LnbitsWallet {
   user: string;
 }
 
+/** Where LNbits sends payment notifications for an account. */
+export interface LnbitsNotifications {
+  nostr_identifier?: string;
+  telegram_chat_id?: string;
+  email_address?: string;
+  excluded_wallets?: string[];
+  /** Notify above this amount, in sats. Zero means never. */
+  outgoing_payments_sats?: number;
+  incoming_payments_sats?: number;
+}
+
+/** The mutable half of an account, as `UserExtra` in the LNbits schema. */
+export interface LnbitsUserExtra {
+  email_verified?: boolean;
+  first_name?: string;
+  last_name?: string;
+  display_name?: string;
+  picture?: string;
+  provider?: string;
+  notifications?: LnbitsNotifications;
+}
+
 /** Authenticated account as returned by `/api/v1/auth`. */
 export interface LnbitsUser {
   id: string;
@@ -53,6 +75,11 @@ export interface LnbitsUser {
   wallets: LnbitsWallet[];
   admin: boolean;
   super_user: boolean;
+  /** Whether a password has been set, so the account has a second way in. */
+  has_password?: boolean;
+  /** Fiat providers this account may use, e.g. `["paypal"]`. */
+  fiat_providers?: string[];
+  extra?: LnbitsUserExtra;
 }
 
 /** Payment as returned by `/api/v1/payments`. */

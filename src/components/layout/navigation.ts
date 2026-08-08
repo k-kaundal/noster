@@ -11,6 +11,7 @@ import {
   Settings,
   Sparkles,
   User,
+  Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
@@ -71,6 +72,14 @@ export function getNavItems(pubkey?: string): NavItem[] {
       icon: Bookmark,
       label: 'Bookmarks',
       shortcut: 'B',
+      requiresAuth: true,
+      secondary: true,
+    },
+    {
+      href: '/wallet',
+      icon: Wallet,
+      label: 'Wallet',
+      shortcut: 'W',
       requiresAuth: true,
       secondary: true,
     },

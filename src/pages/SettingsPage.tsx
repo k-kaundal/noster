@@ -10,6 +10,7 @@ import {
   Type,
   Upload,
   VolumeX,
+  Wallet,
   X,
 } from 'lucide-react';
 import { Layout } from '@/components/Layout';
@@ -18,7 +19,6 @@ import { EmptyState } from '@/components/EmptyState';
 import { AccentPicker } from '@/components/AccentPicker';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LoginArea } from '@/components/auth/LoginArea';
-import { LnbitsWalletCard } from '@/components/wallet/LnbitsWalletCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -84,11 +84,33 @@ export function SettingsPage() {
             )}
           </TabsContent>
           <TabsContent value="wallet">
-            {user ? <LnbitsWalletCard /> : <SignedOutNotice what="wallet" />}
+            <WalletPointer />
           </TabsContent>
         </Tabs>
       </div>
     </Layout>
+  );
+}
+
+/**
+ * The wallet has its own page now.
+ *
+ * Left as a signpost rather than removed: the tab is where people learned to
+ * look for it, and a tab that quietly disappears reads as a feature that was
+ * taken away.
+ */
+function WalletPointer() {
+  return (
+    <EmptyState
+      icon={Wallet}
+      title="Your wallet has its own page"
+      description="Balance, sending, receiving and your lightning address all live there now."
+      action={
+        <Button asChild>
+          <Link to="/wallet">Open my wallet</Link>
+        </Button>
+      }
+    />
   );
 }
 
