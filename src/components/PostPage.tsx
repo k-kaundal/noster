@@ -1,11 +1,8 @@
 import { MessageCircle } from 'lucide-react';
 import { useEvent } from '@/hooks/useEvent';
-import { Post } from '@/components/Post';
-import { ThreadContext } from '@/components/ThreadContext';
-import { RepliesSection } from '@/components/RepliesSection';
+import { ThreadView } from '@/components/thread/ThreadView';
 import { PostSkeleton } from '@/components/PostSkeleton';
 import { EmptyState } from '@/components/EmptyState';
-import { Card } from '@/components/ui/card';
 import { useSeo } from '@/hooks/useSeo';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
@@ -80,18 +77,5 @@ function PostPageBody({
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <ThreadContext event={event} />
-
-      <Post event={event} showReplies={false} />
-
-      <Card className="p-4">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Replies
-        </h2>
-        <RepliesSection eventId={event.id} />
-      </Card>
-    </div>
-  );
+  return <ThreadView event={event} />;
 }
