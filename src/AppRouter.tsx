@@ -22,6 +22,7 @@ const CommunitiesPage = lazy(() => import("./pages/CommunitiesPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const IdentityVaultPage = lazy(() => import("./pages/IdentityVaultPage"));
 const CommunityTreasuryPage = lazy(() => import("./pages/CommunityTreasuryPage"));
+const BountiesPage = lazy(() => import("./pages/BountiesPage"));
 const NIP19Page = lazy(() =>
   import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
 );
@@ -76,6 +77,8 @@ export function AppRouter() {
           <Route path="/identity" element={<IdentityVaultPage />} />
           {/* Community treasury: shared wallet, members, transactions */}
           <Route path="/community-treasury" element={<CommunityTreasuryPage />} />
+          {/* Bounties: fund tasks, submit solutions, earn sats */}
+          <Route path="/bounties" element={<BountiesPage />} />
           {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
           <Route path="/settings" element={<SettingsPage />} />
           {/* Follow pages */}
