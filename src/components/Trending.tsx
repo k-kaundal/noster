@@ -123,6 +123,23 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
 function formatPostPreview(content: string): string {
   if (!content) return '(empty)';
 
+  // Check if content is a URL
+  const urlPattern = /^https?:\/\/[^\s]+$/;
+  if (urlPattern.test(content.trim())) {
+    const url = content.trim();
+    // Detect media type by extension
+    if (/\.(jpg|jpeg|png|gif|webp|avif)$/i.test(url)) {
+      return '[Image]';
+    }
+    if (/\.(mp4|webm|mov|mkv)$/i.test(url)) {
+      return '[Video]';
+    }
+    if (/\.(mp3|wav|m4a|ogg)$/i.test(url)) {
+      return '[Audio]';
+    }
+    return '[Link]';
+  }
+
   try {
     // Try to parse as JSON
     const parsed = JSON.parse(content);
@@ -146,8 +163,13 @@ function formatPostPreview(content: string): string {
 
     return '[Structured data]';
   } catch {
-    // Not JSON, return as-is but truncated
-    return content.substring(0, 100);
+    // Not JSON, truncate text content
+    const trimmed = content.trim().substring(0, 100);
+    // Check if it looks like just URLs in the text
+    if (trimmed.startsWith('http')) {
+      return '[Link]';
+    }
+    return trimmed;
   }
 }
 
