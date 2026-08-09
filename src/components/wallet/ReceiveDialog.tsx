@@ -88,70 +88,103 @@ export function ReceiveDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ArrowDownLeft className="h-4 w-4 text-success" />
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-success/10">
+              <ArrowDownLeft className="h-4 w-4 text-success" />
+            </div>
             Receive sats
           </DialogTitle>
           <DialogDescription>
             {lightningAddress
-              ? 'Share your address for any amount, or make an invoice for a specific one.'
-              : 'Make an invoice for a specific amount.'}
+              ? 'Share your address for any amount, or create an invoice for a specific one.'
+              : 'Create an invoice for a specific amount.'}
           </DialogDescription>
         </DialogHeader>
 
         {lightningAddress && !invoice && (
-          <div className="flex items-center gap-2 rounded-xl border bg-muted/40 p-3">
-            <span className="min-w-0 flex-1 truncate font-medium">
-              {lightningAddress}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => copy(lightningAddress, 'Address')}
-            >
-              <Copy className="h-3.5 w-3.5" />
-              <span className="sr-only">Copy lightning address</span>
-            </Button>
+          <div className="rounded-lg border border-success/20 bg-success/8 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Your lightning address
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 min-w-0 truncate bg-muted/50 rounded px-2 py-1.5 text-sm font-mono">
+                {lightningAddress}
+              </code>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => copy(lightningAddress, 'Address')}
+                className="hover:bg-success/10"
+              >
+                <Copy className="h-4 w-4" />
+                <span className="sr-only">Copy lightning address</span>
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Anyone can send to this address. No invoice needed.
+            </p>
           </div>
         )}
 
         {invoice ? (
-          <div className="space-y-4">
-            <QrCode value={`lightning:${invoice}`} label="Invoice QR code" />
+          <div className="space-y-5">
+            <div className="flex justify-center p-4 bg-gradient-to-br from-muted/50 to-muted/30 rounded-xl">
+              <QrCode value={`lightning:${invoice}`} label="Invoice QR code" />
+            </div>
 
             <div
               className={cn(
-                'flex items-center justify-center gap-2 rounded-lg border p-2.5 text-sm',
+                'flex items-center justify-center gap-2 rounded-lg border p-3 text-sm font-medium',
                 isPaid
-                  ? 'border-success/40 bg-success/10 text-success'
-                  : 'text-muted-foreground'
+                  ? 'border-success/30 bg-success/10 text-success'
+                  : 'border-muted bg-muted/40 text-muted-foreground'
               )}
               role="status"
             >
               {isPaid ? (
                 <>
-                  <Check className="h-4 w-4" />
-                  Paid — {sats.toLocaleString()} sats received
+                  <Check className="h-5 w-5" />
+                  <span>Received {sats.toLocaleString()} sats</span>
                 </>
               ) : (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Waiting for {sats.toLocaleString()} sats
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Waiting for {sats.toLocaleString()} sats…</span>
                 </>
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => copy(invoice, 'Invoice')}>
-                <Copy className="mr-2 h-4 w-4" />
-                Copy
-              </Button>
-              <Button variant="outline" asChild>
-                <a href={`lightning:${invoice}`}>
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Open wallet
-                </a>
-              </Button>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Invoice
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={invoice}
+                  readOnly
+                  onClick={(event) => event.currentTarget.select()}
+                  className="font-mono text-xs bg-muted/50 flex-1"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copy(invoice, 'Invoice')}
+                  className="shrink-0"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
+
+            <Button
+              variant="default"
+              className="w-full"
+              asChild
+            >
+              <a href={`lightning:${invoice}`}>
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Open in wallet
+              </a>
+            </Button>
 
             <Button
               variant="ghost"
@@ -161,19 +194,21 @@ export function ReceiveDialog({
                 setPaymentHash('');
               }}
             >
-              {isPaid ? 'Receive again' : 'Change the amount'}
+              {isPaid ? 'Receive again' : 'Change amount'}
             </Button>
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="receive-amount">Amount in sats</Label>
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="receive-amount" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Amount
+              </Label>
               <Input
                 id="receive-amount"
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
                 inputMode="numeric"
-                className="text-lg tabular-nums"
+                className="text-xl font-bold tabular-nums"
               />
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {PRESETS.map((preset) => (
@@ -183,25 +218,29 @@ export function ReceiveDialog({
                     size="sm"
                     variant={Number(amount) === preset ? 'default' : 'outline'}
                     onClick={() => setAmount(String(preset))}
+                    className="text-xs"
                   >
-                    {preset.toLocaleString()}
+                    {(preset / 1000).toLocaleString()}k
                   </Button>
                 ))}
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="receive-memo">What's it for (optional)</Label>
+            <div className="space-y-2">
+              <Label htmlFor="receive-memo" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Description (optional)
+              </Label>
               <Input
                 id="receive-memo"
                 value={memo}
                 onChange={(event) => setMemo(event.target.value)}
-                placeholder="Coffee"
+                placeholder="Coffee, donation, etc."
               />
             </div>
 
             <Button
               className="w-full"
+              size="lg"
               onClick={generate}
               disabled={!validAmount || isCreatingInvoice}
             >
