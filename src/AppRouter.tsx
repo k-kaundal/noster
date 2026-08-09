@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 // Everything past the home page loads on demand, so the first paint stays small
 const ComposePage = lazy(() => import("./pages/ComposePage"));
 const TrendingPage = lazy(() => import("./pages/TrendingPage"));
+const DiscoveryPage = lazy(() => import("./pages/DiscoveryPage"));
 const ExplorePage = lazy(() => import("./pages/ExplorePage"));
 const HashtagPage = lazy(() => import("./pages/HashtagPage"));
 const RelaysPage = lazy(() => import("./pages/RelaysPage"));
@@ -55,6 +56,7 @@ export function AppRouter() {
           <Route path="/" element={<Index />} />
           <Route path="/compose" element={<ComposePage />} />
           <Route path="/trending" element={<TrendingPage />} />
+          <Route path="/discovery" element={<DiscoveryPage />} />
           <Route path="/explore" element={<ExplorePage />} />
           {/* Hashtag feed */}
           <Route path="/t/:tag" element={<HashtagPage />} />

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowDownLeft,
@@ -327,6 +327,27 @@ function ConnectedWallet() {
 
 function ActivityCard() {
   const { data: payments, isLoading } = useLnbitsPayments();
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const sortedPayments = useMemo(() => {
+    return [...(payments || [])].sort((a, b) =>
+      (b.time || 0) - (a.time || 0)
+    );
+  }, [payments]);
+
+  const formatTime = (timestamp: number | undefined) => {
+    if (!timestamp) return 'Unknown time';
+    const date = new Date(timestamp * 1000);
+    const now = new Date();
+    const diffSeconds = (now.getTime() - date.getTime()) / 1000;
+
+    if (diffSeconds < 60) return 'Just now';
+    if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+    if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+    if (diffSeconds < 604800) return `${Math.floor(diffSeconds / 86400)}d ago`;
+
+    return date.toLocaleDateString();
+  };
 
   return (
     <Card className="overflow-hidden">
@@ -336,6 +357,11 @@ function ActivityCard() {
             <ArrowDownLeft className="h-4 w-4 text-primary" />
           </div>
           Activity
+          {payments?.length ? (
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
+              {payments.length} transaction{payments.length !== 1 ? 's' : ''}
+            </span>
+          ) : null}
         </CardTitle>
       </CardHeader>
 
@@ -343,10 +369,10 @@ function ActivityCard() {
         {isLoading ? (
           <div className="space-y-3 px-6 py-5">
             {Array.from({ length: 3 }).map((_, index) => (
-              <Skeleton key={index} className="h-12 rounded-lg" />
+              <Skeleton key={index} className="h-16 rounded-lg" />
             ))}
           </div>
-        ) : !payments?.length ? (
+        ) : !sortedPayments?.length ? (
           <div className="px-6 py-8 text-center">
             <p className="text-sm text-muted-foreground">
               Nothing yet. Zaps and transactions will appear here.
@@ -354,51 +380,90 @@ function ActivityCard() {
           </div>
         ) : (
           <ul className="divide-y border-t">
-            {payments.map((payment) => {
+            {sortedPayments.slice(0, 10).map((payment) => {
               const outgoing = payment.amount < 0;
               const sats = Math.abs(msatToSat(payment.amount));
+              const isExpanded = expanded === payment.payment_hash;
 
               return (
-                <li
-                  key={payment.payment_hash}
-                  className="flex items-center gap-3 px-6 py-3 hover:bg-muted/50 transition-colors"
-                >
-                  <span
-                    className={cn(
-                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
-                      outgoing ? 'bg-muted' : 'bg-success/10'
-                    )}
+                <li key={payment.payment_hash} className="overflow-hidden">
+                  <button
+                    onClick={() => setExpanded(isExpanded ? null : payment.payment_hash)}
+                    className="w-full flex items-center gap-3 px-6 py-3 hover:bg-muted/50 transition-colors text-left"
                   >
-                    {outgoing ? (
-                      <ArrowUpRight className="h-5 w-5 text-muted-foreground" />
-                    ) : (
-                      <ArrowDownLeft className="h-5 w-5 text-success" />
-                    )}
-                  </span>
+                    <span
+                      className={cn(
+                        'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
+                        outgoing ? 'bg-muted' : 'bg-success/10'
+                      )}
+                    >
+                      {outgoing ? (
+                        <ArrowUpRight className="h-5 w-5 text-muted-foreground" />
+                      ) : (
+                        <ArrowDownLeft className="h-5 w-5 text-success" />
+                      )}
+                    </span>
 
-                  <span className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">
-                      {payment.memo || (outgoing ? 'Sent' : 'Received')}
-                    </p>
-                    {payment.status === 'pending' && (
-                      <p className="text-xs text-muted-foreground">Pending</p>
-                    )}
-                  </span>
+                    <span className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">
+                        {payment.memo || (outgoing ? 'Sent' : 'Received')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatTime(payment.time)}
+                      </p>
+                    </span>
 
-                  <span
-                    className={cn(
-                      'tabular shrink-0 text-sm font-semibold',
-                      outgoing ? 'text-muted-foreground' : 'text-success',
-                      payment.status === 'pending' && 'opacity-60'
-                    )}
-                  >
-                    {outgoing ? '−' : '+'}
-                    {formatSats(sats)}
-                  </span>
+                    <span
+                      className={cn(
+                        'tabular shrink-0 text-sm font-semibold',
+                        outgoing ? 'text-muted-foreground' : 'text-success',
+                        payment.status === 'pending' && 'opacity-60'
+                      )}
+                    >
+                      {outgoing ? '−' : '+'}
+                      {formatSats(sats)}
+                    </span>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t bg-muted/30 px-6 py-3 text-xs space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Status</span>
+                        <span className={cn(
+                          'font-medium capitalize',
+                          payment.status === 'pending' ? 'text-yellow-600' : 'text-success'
+                        )}>
+                          {payment.status || 'completed'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Amount (msat)</span>
+                        <span className="font-mono">{Math.abs(payment.amount)}</span>
+                      </div>
+                      {payment.memo && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Note</span>
+                          <span className="font-medium truncate">{payment.memo}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Hash</span>
+                        <code className="font-mono text-[10px] truncate max-w-[200px]">
+                          {payment.payment_hash}
+                        </code>
+                      </div>
+                    </div>
+                  )}
                 </li>
               );
             })}
           </ul>
+        )}
+
+        {sortedPayments?.length > 10 && (
+          <div className="border-t px-6 py-3 text-center text-xs text-muted-foreground">
+            Showing latest 10 of {sortedPayments.length} transactions
+          </div>
         )}
       </CardContent>
     </Card>
