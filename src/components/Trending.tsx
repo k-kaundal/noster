@@ -26,6 +26,59 @@ interface TrendingProps {
   limit?: number;
 }
 
+function formatPostPreview(content: string): string {
+  if (!content) return '(empty)';
+
+  // Check if content is a URL
+  const urlPattern = /^https?:\/\/[^\s]+$/;
+  if (urlPattern.test(content.trim())) {
+    const url = content.trim();
+    // Detect media type by extension
+    if (/\.(jpg|jpeg|png|gif|webp|avif)$/i.test(url)) {
+      return '[Image]';
+    }
+    if (/\.(mp4|webm|mov|mkv)$/i.test(url)) {
+      return '[Video]';
+    }
+    if (/\.(mp3|wav|m4a|ogg)$/i.test(url)) {
+      return '[Audio]';
+    }
+    return '[Link]';
+  }
+
+  try {
+    // Try to parse as JSON
+    const parsed = JSON.parse(content);
+
+    // Handle different JSON structures
+    if (typeof parsed === 'object' && parsed !== null) {
+      // Check for common text fields
+      if (parsed.title) return parsed.title.substring(0, 100);
+      if (parsed.content) return parsed.content.substring(0, 100);
+      if (parsed.text) return parsed.text.substring(0, 100);
+      if (parsed.message) return parsed.message.substring(0, 100);
+      if (parsed.name) return parsed.name.substring(0, 100);
+
+      // Check for structured data with description
+      if (parsed.description) return parsed.description.substring(0, 100);
+      if (parsed.summary) return parsed.summary.substring(0, 100);
+
+      // Fallback: show object type if recognizable
+      if (parsed.type) return `[${parsed.type}]`;
+    }
+
+    return '[Structured data]';
+  } catch {
+    // Not JSON, truncate text content
+    const trimmed = content.trim().substring(0, 100);
+    // Check if it looks like just URLs in the text
+    if (trimmed.startsWith('http')) {
+      return '[Link]';
+    }
+    return trimmed;
+  }
+}
+
 /**
  * Trending section showing popular posts, hashtags, users, and communities
  */
@@ -118,59 +171,6 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
       </div>
     </div>
   );
-}
-
-function formatPostPreview(content: string): string {
-  if (!content) return '(empty)';
-
-  // Check if content is a URL
-  const urlPattern = /^https?:\/\/[^\s]+$/;
-  if (urlPattern.test(content.trim())) {
-    const url = content.trim();
-    // Detect media type by extension
-    if (/\.(jpg|jpeg|png|gif|webp|avif)$/i.test(url)) {
-      return '[Image]';
-    }
-    if (/\.(mp4|webm|mov|mkv)$/i.test(url)) {
-      return '[Video]';
-    }
-    if (/\.(mp3|wav|m4a|ogg)$/i.test(url)) {
-      return '[Audio]';
-    }
-    return '[Link]';
-  }
-
-  try {
-    // Try to parse as JSON
-    const parsed = JSON.parse(content);
-
-    // Handle different JSON structures
-    if (typeof parsed === 'object' && parsed !== null) {
-      // Check for common text fields
-      if (parsed.title) return parsed.title.substring(0, 100);
-      if (parsed.content) return parsed.content.substring(0, 100);
-      if (parsed.text) return parsed.text.substring(0, 100);
-      if (parsed.message) return parsed.message.substring(0, 100);
-      if (parsed.name) return parsed.name.substring(0, 100);
-
-      // Check for structured data with description
-      if (parsed.description) return parsed.description.substring(0, 100);
-      if (parsed.summary) return parsed.summary.substring(0, 100);
-
-      // Fallback: show object type if recognizable
-      if (parsed.type) return `[${parsed.type}]`;
-    }
-
-    return '[Structured data]';
-  } catch {
-    // Not JSON, truncate text content
-    const trimmed = content.trim().substring(0, 100);
-    // Check if it looks like just URLs in the text
-    if (trimmed.startsWith('http')) {
-      return '[Link]';
-    }
-    return trimmed;
-  }
 }
 
 interface TrendingCardProps {
