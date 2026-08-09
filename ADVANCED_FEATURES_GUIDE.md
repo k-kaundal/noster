@@ -6,9 +6,11 @@ A comprehensive guide to all advanced features and where to find them in NostrFe
 
 - [UI & Appearance](#ui--appearance)
 - [Wallet Features](#wallet-features)
+- [Discovery & Trending](#discovery--trending)
 - [Profile Features](#profile-features)
 - [Content & Engagement](#content--engagement)
 - [Community Features](#community-features)
+- [User Analytics](#user-analytics)
 - [Advanced Settings](#advanced-settings)
 
 ---
@@ -65,6 +67,54 @@ Choose from premium theme collections:
 2. Browse theme categories (Inspired, Premium, Corporate, Minimal, Creative, Crypto)
 3. Click any theme card to apply instantly
 4. Your preference saves automatically
+
+---
+
+## 🔍 Discovery & Trending
+
+### Discovery Page
+**Location**: Discovery page (`/discovery`)
+
+A dedicated space to find trending and popular content across the platform:
+
+#### Trending Posts
+- Shows the most engaged-with posts in your selected time range
+- Sorted by replies, reposts, and likes
+- Click to view the full post and discussion
+
+#### Trending Topics
+- Most discussed hashtags and topics
+- See what everyone is talking about
+- Click to view all posts with that hashtag
+
+#### Rising Users
+- Users gaining followers rapidly
+- Discover interesting creators
+- Click to view their profile and posts
+
+#### Active Communities
+- Communities with most recent activity
+- See where discussions are happening
+- Join communities that interest you
+
+#### Time Range Filtering
+Select how far back to look:
+- **Right now**: Last hour of activity
+- **Last 24 hours**: Daily trends
+- **Last 7 days**: Weekly trends
+- **Last 30 days**: Monthly trends
+
+**How to use**:
+1. Navigate to Discovery (`/discovery`)
+2. Browse trending content in each category
+3. Select different time ranges to see how trends change
+4. Click any item to explore further
+
+### Understanding Engagement Scores
+Each trending item displays an engagement score:
+- **Engagement Score**: Combined metric of likes, replies, reposts, and impressions
+- **Time Weighting**: Recent content weighted higher (decays over 7 days)
+- **Activity Indicator**: ⚡ shows engagement level
 
 ---
 
@@ -212,6 +262,52 @@ NIP-22 based commenting:
 
 ---
 
+## 📊 User Analytics
+
+### Personal Analytics Dashboard
+**Location**: User Profile → Analytics section
+
+Comprehensive statistics about your activity and engagement:
+
+#### Key Metrics
+- **Posts**: Total original notes you've published
+- **Replies**: Responses and discussions you've participated in
+- **Likes**: Reactions received (heart reactions)
+- **Reposts**: Times others have reposted your content
+- **Articles**: Long-form pieces published
+- **Engagement Score**: Your daily engagement rate
+
+#### Account Statistics
+- **Account Age**: Days since your first post
+- **Activity Breakdown**: Pie chart showing content distribution
+  - Posts vs. Replies vs. Articles
+  - Visual percentage breakdown
+- **Last Active**: When you last posted
+
+#### Using Analytics
+1. Visit your profile
+2. Look for the "Analytics" section
+3. View your stats and trends:
+   - Compare your content types
+   - Track engagement over time
+   - Identify your best-performing content
+
+#### Engagement Score Calculation
+Your engagement score is calculated as:
+```
+(Likes × 1 + Replies × 2 + Reposts × 3 + Posts × 0.5) / Account Age Days
+```
+
+This gives your average engagement per day, so newer accounts and highly active accounts both show accurately.
+
+### Visitor Analytics (View Others' Stats)
+When viewing someone else's profile, you can see their public analytics:
+- See how active they are
+- Understand their content mix
+- Identify influential users in your network
+
+---
+
 ## 👥 Community Features
 
 ### Community Profiles
@@ -227,6 +323,28 @@ View community:
 **Location**: User Profile → Spotlight section
 
 Users can feature communities they're part of to highlight their affiliations and values.
+
+### Community Spotlight Management
+**Location**: Community page → Spotlight settings (admin only)
+
+Community admins can feature:
+- **Rising Members**: Highlight valuable community members
+- **Featured Posts**: Showcase great discussions and content
+- **Community Announcements**: Pin important updates
+
+**How to use** (Community Admin):
+1. Navigate to your community page
+2. Access community settings
+3. Manage spotlight items:
+   - Add posts that exemplify community values
+   - Feature members who contribute significantly
+   - Organize items in display order
+4. Changes apply immediately to community page
+
+**Viewing Community Spotlight** (Members):
+- Visit any community page
+- See featured members and posts prominently displayed
+- Click items to explore more
 
 ### Community Treasury
 **Location**: Community page → Treasury section (if community has one)
@@ -280,21 +398,37 @@ Connect different wallet types:
 - Settings → Appearance (colors, light/dark mode)
 - Settings → UI (professional mode, themes)
 
+**For Discovery & Trending:**
+- Discovery page (`/discovery` or main menu)
+- Trending sections for posts, topics, users, communities
+- Time range filters (now, 24h, 7d, 30d)
+
 **For Wallet Management:**
 - Wallet page (balance, send/receive, activity)
+- Transaction details (click to expand)
 
 **For Profile Enhancement:**
 - Profile page → Spotlight section (featured items)
+- Profile page → Analytics section (stats and metrics)
 - Profile page → Edit profile (bio, links, avatar)
 
 **For Content Management:**
 - Settings → Muted (filter posts)
 - Settings → Messages (private message relays)
 
+**For Analytics:**
+- User Profile → Analytics (your stats)
+- Other profiles → Analytics (view others' stats)
+
+**For Community Management:**
+- Community pages → Spotlight (featured items)
+- Community Treasury (if enabled)
+
 **For Engagement:**
 - Comments on individual posts
-- Spotlight items on profiles
+- Spotlight items on profiles and communities
 - Follow/Unfollow buttons
+- Trending discovery
 
 ### Smart Search
 Most advanced features are accessible through:
@@ -401,10 +535,12 @@ Most advanced features are accessible through:
 
 - Wallet: `/wallet`
 - Settings: `/settings`
+- Discovery: `/discovery`
 - Profile: `/` (your profile) or `/{npub}` (other profiles)
 - Your Spotlight: Profile → Spotlight section
+- Analytics: Profile → Analytics section
 
 ---
 
 Last Updated: August 2026
-Version: 1.0
+Version: 1.1 (Added Discovery, Trending, Analytics, and Community Spotlight)
