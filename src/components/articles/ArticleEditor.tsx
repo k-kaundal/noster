@@ -32,7 +32,7 @@ export function ArticleEditor({ article, onClose, onSave }: ArticleEditorProps) 
   });
 
   const [isPublishing, setIsPublishing] = useState(false);
-  const { mutate: publishEvent } = useNostrPublish();
+  const { mutateAsync: publishEvent } = useNostrPublish();
   const { toast } = useToast();
 
   const handlePublish = useCallback(async () => {
