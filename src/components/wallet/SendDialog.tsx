@@ -89,69 +89,79 @@ export function SendDialog({ open, onOpenChange, balanceSats }: SendDialogProps)
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ArrowUpRight className="h-4 w-4" />
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-muted">
+              <ArrowUpRight className="h-4 w-4" />
+            </div>
             Send sats
           </DialogTitle>
           <DialogDescription>
-            Paste an invoice, a lightning address, or an LNURL.
+            Enter an invoice, lightning address, or LNURL to pay.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="send-to">To</Label>
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label htmlFor="send-to" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Recipient
+            </Label>
             <Textarea
               id="send-to"
               value={destination}
               onChange={(event) => setDestination(event.target.value)}
-              placeholder="satoshi@nostrfeed.com or lnbc…"
-              className="min-h-[72px] resize-none break-all font-mono text-xs"
+              placeholder="name@domain.com or lnbc… or lnurl…"
+              className="min-h-[72px] resize-none break-all font-mono text-xs bg-muted/50"
             />
             <TargetHint kind={target.kind} invoiceSats={invoiceSats} />
           </div>
 
           {needsAmount && (
-            <div className="space-y-1.5">
-              <Label htmlFor="send-amount">Amount in sats</Label>
+            <div className="space-y-2">
+              <Label htmlFor="send-amount" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Amount
+              </Label>
               <Input
                 id="send-amount"
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
                 inputMode="numeric"
-                className="text-lg tabular-nums"
+                className="text-xl font-bold tabular-nums"
               />
             </div>
           )}
 
           {(target.kind === 'address' || target.kind === 'lnurl') && (
-            <div className="space-y-1.5">
-              <Label htmlFor="send-comment">Message (optional)</Label>
+            <div className="space-y-2">
+              <Label htmlFor="send-comment" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Message (optional)
+              </Label>
               <Input
                 id="send-comment"
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
-                placeholder="Thanks!"
+                placeholder="Say thanks or add a note"
               />
             </div>
           )}
 
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <Wallet className="h-3.5 w-3.5" />
+          <div className="rounded-lg bg-muted/50 p-3 flex items-center justify-between">
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <Wallet className="h-4 w-4 text-muted-foreground" />
               Balance
             </span>
-            <span className="tabular-nums">
+            <span className="tabular-nums font-semibold">
               {balanceSats.toLocaleString()} sats
             </span>
           </div>
 
           {overBalance && (
-            <p className="text-sm text-destructive">
-              That's more than your balance. Add sats first, or send less.
-            </p>
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+              <p className="text-sm text-destructive">
+                That's more than your balance. Send less or add sats.
+              </p>
+            </div>
           )}
 
-          <Button className="w-full" onClick={send} disabled={!ready || isPaying}>
+          <Button size="lg" className="w-full" onClick={send} disabled={!ready || isPaying}>
             {isPaying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {sats > 0 ? `Send ${sats.toLocaleString()} sats` : 'Send'}
           </Button>

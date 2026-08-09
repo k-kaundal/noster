@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   BadgeCheck,
+  Check,
   Clock,
   Copy,
   Loader2,
@@ -58,8 +59,8 @@ export function Nip5Section() {
   if (nip5.isLoading) {
     return (
       <div className="space-y-3">
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-4 w-32 rounded" />
+        <Skeleton className="h-20 w-full rounded-lg" />
       </div>
     );
   }
@@ -67,7 +68,9 @@ export function Nip5Section() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <BadgeCheck className="h-4 w-4 text-muted-foreground" />
+        <div className="flex h-6 w-6 items-center justify-center rounded bg-success/10">
+          <BadgeCheck className="h-3.5 w-3.5 text-success" />
+        </div>
         <h3 className="text-sm font-semibold">Verified name</h3>
       </div>
 
@@ -88,39 +91,48 @@ function OwnedName() {
   const zappable = !!address.extra?.ln_address?.wallet;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 rounded-lg border p-3">
-        <span className="min-w-0 flex-1 truncate font-medium">{identifier}</span>
-        <ExpiryBadge address={address} />
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={async () => {
-            await navigator.clipboard.writeText(identifier);
-            toast({ title: 'Name copied' });
-          }}
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </Button>
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 rounded-xl border bg-gradient-to-br from-success/5 to-transparent p-4 transition-all hover:border-success/40">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+            Reserved
+          </p>
+          <p className="font-mono font-semibold truncate text-base">{identifier}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <ExpiryBadge address={address} />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              await navigator.clipboard.writeText(identifier);
+              toast({ title: 'Copied to clipboard' });
+            }}
+            className="hover:bg-success/10"
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {!matchesCurrentKey && (
-        <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
-          This name verifies a different Nostr key than the one you're signed in
-          with, so it won't put a ✓ on your posts here.
-        </p>
+        <div className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm backdrop-blur-sm">
+          <p className="text-warning-foreground">
+            This name verifies a different Nostr key, so it won't show a ✓ on your posts here.
+          </p>
+        </div>
       )}
 
       {!zappable && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
-          <p className="text-sm text-muted-foreground">
-            Take zaps at this name too, not only verify with it.
+        <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
+          <p className="mb-3 text-sm">
+            Add a lightning address to receive zaps at this name.
           </p>
           <Button
             size="sm"
-            variant="outline"
             onClick={() => void attachLightning(address).catch(() => {})}
             disabled={isAttaching}
+            className="w-full"
           >
             {isAttaching ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -200,29 +212,31 @@ function BuyName() {
   const options = yearOptions(DEFAULT_MAX_YEARS);
 
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        A name that verifies you on Nostr — clients show a ✓ beside it. Rented
-        by the year, unlike your lightning address, which is free and yours for
-        good.
-      </p>
+    <div className="space-y-4">
+      <div className="rounded-lg bg-gradient-to-br from-success/8 to-success/5 p-3 dark:from-success/10 dark:to-success/5">
+        <p className="text-sm text-foreground">
+          A verified name shows a <span className="inline font-mono">✓</span> on your posts. Rented by the year.
+        </p>
+      </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="nip5-name" className="text-xs">
+      <div className="space-y-3">
+        <Label htmlFor="nip5-name" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Your name
         </Label>
         <div className="flex items-center gap-2">
           <Input
             id="nip5-name"
             value={localPart}
-            onChange={(event) =>
-              setLocalPart(normalizeLocalPart(event.target.value))
-            }
+            onChange={(event) => {
+              setLocalPart(normalizeLocalPart(event.target.value));
+              if (!touched) setTouched(true);
+            }}
+            onBlur={() => setTouched(true)}
             placeholder="satoshi"
             aria-invalid={!!localPart && !!problem}
-            className="max-w-[12rem]"
+            className="max-w-[10rem] transition-all"
           />
-          <span className="truncate text-sm text-muted-foreground">
+          <span className="flex-1 truncate text-sm font-medium text-foreground">
             @{domain}
           </span>
 
@@ -231,13 +245,13 @@ function BuyName() {
               value={String(years)}
               onValueChange={(value) => setYears(Number(value))}
             >
-              <SelectTrigger className="w-28 shrink-0">
+              <SelectTrigger className="w-24 shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {options.map((option) => (
                   <SelectItem key={option} value={String(option)}>
-                    {option} {option === 1 ? 'year' : 'years'}
+                    {option}y
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -252,6 +266,7 @@ function BuyName() {
           status={search.data}
           error={search.error as Error | null}
           years={years}
+          touched={touched}
         />
       </div>
 
@@ -267,6 +282,8 @@ function BuyName() {
           }
         }}
         disabled={!available || isClaiming}
+        className="w-full"
+        size="lg"
       >
         {isClaiming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Reserve {localPart ? formatNip5(localPart, domain) : 'this name'}
@@ -282,6 +299,7 @@ function Availability({
   status,
   error,
   years,
+  touched = false,
 }: {
   localPart: string;
   problem: string;
@@ -289,15 +307,16 @@ function Availability({
   status: ReturnType<typeof useNip5Search>['data'];
   error: Error | null;
   years: number;
+  touched?: boolean;
 }) {
-  if (!localPart) return null;
-  if (problem) return <p className="text-xs text-destructive">{problem}</p>;
+  if (!localPart || !touched) return null;
+  if (problem) return <p className="text-xs text-destructive flex items-center gap-1"><span>⚠</span>{problem}</p>;
 
   if (isSearching) {
     return (
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Search className="h-3 w-3" />
-        Checking…
+        <Search className="h-3 w-3 animate-spin" />
+        Checking availability…
       </p>
     );
   }
@@ -306,11 +325,12 @@ function Availability({
   if (!status) return null;
 
   if (!status.available) {
-    return <p className="text-xs text-destructive">That one is taken.</p>;
+    return <p className="text-xs text-destructive">Already taken.</p>;
   }
 
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className="text-xs text-success flex items-center gap-1">
+      <Check className="h-3 w-3" />
       Available — {describePrice(status, years)}
       {status.price_reason ? ` (${status.price_reason})` : ''}
     </p>
@@ -332,18 +352,22 @@ function PendingPayment({
   const sats = pending.address?.extra?.price_in_sats;
 
   return (
-    <div className="space-y-3">
-      <p className="text-sm">
-        {pending.address?.local_part
-          ? `${pending.address.local_part} is held for you.`
-          : 'Your name is held for you.'}{' '}
-        It goes live once the invoice is paid.
-      </p>
+    <div className="space-y-4">
+      <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
+        <p className="font-medium text-sm">
+          {pending.address?.local_part
+            ? `${pending.address.local_part}@${pending.address?.extra?.domain || 'domain'} is yours`
+            : 'Your name is reserved'}
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Pay the invoice to make it live.
+        </p>
+      </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={onPay} disabled={isPaying}>
+      <div className="flex flex-col gap-2">
+        <Button onClick={onPay} disabled={isPaying} size="lg" className="w-full">
           {isPaying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Pay {sats ? `${sats.toLocaleString()} sats ` : ''}from my wallet
+          Pay {sats && `${sats.toLocaleString()} sats `}now
         </Button>
 
         <Button
@@ -352,20 +376,23 @@ function PendingPayment({
             await navigator.clipboard.writeText(pending.bolt11);
             toast({ title: 'Invoice copied' });
           }}
+          className="w-full"
         >
           <Copy className="mr-2 h-3.5 w-3.5" />
           Copy invoice
         </Button>
 
-        <Button variant="ghost" onClick={onCancel}>
+        <Button variant="ghost" onClick={onCancel} className="w-full">
           Back
         </Button>
       </div>
 
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        Waiting for the payment to settle…
-      </p>
+      <div className="flex items-center justify-center gap-2 rounded-lg bg-muted/50 p-3">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        <p className="text-xs text-muted-foreground">
+          Waiting for payment…
+        </p>
+      </div>
     </div>
   );
 }

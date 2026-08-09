@@ -49,23 +49,25 @@ export function AccountCard() {
   const mismatched = !!linked && !!user && linked !== user.pubkey;
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <User className="h-4 w-4" />
-          Account
+    <Card className="overflow-hidden">
+      <CardHeader className="bg-gradient-to-br from-slate-50 to-transparent dark:from-slate-950/40 pb-4">
+        <CardTitle className="flex items-center gap-3 text-base">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <User className="h-4 w-4 text-primary" />
+          </div>
+          Account settings
         </CardTitle>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        <div className="space-y-2 text-sm">
+      <CardContent className="space-y-5 pt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-lg bg-muted/40 p-4">
           <Row label="Username" value={account.username || 'Not set'} />
           <Row
             label="Sign-in"
             value={hasPassword ? 'Nostr key or password' : 'Nostr key only'}
           />
           <Row
-            label="Payment notices"
+            label="Notifications"
             value={notificationSummary || 'Not set'}
           />
         </div>
@@ -75,36 +77,38 @@ export function AccountCard() {
         )}
 
         {!hasPassword && (
-          <p className="flex gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              Your Nostr key is the only way into this wallet. Add a password
-              and you can still reach it from a device without your signer.
-            </span>
-          </p>
+          <div className="flex gap-3 rounded-lg border border-warning/30 bg-warning/8 p-4 backdrop-blur-sm">
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+            <div className="text-sm">
+              <p className="font-medium text-warning-foreground mb-1">Secure with a password</p>
+              <p className="text-xs text-muted-foreground">
+                Right now only your Nostr key opens this wallet. Add a password to sign in from any device.
+              </p>
+            </div>
+          </div>
         )}
 
         <Accordion type="single" collapsible className="border-t">
           <AccordionItem value="profile" className="border-b-0">
-            <AccordionTrigger className="text-sm">
+            <AccordionTrigger className="text-sm font-medium hover:text-primary transition-colors">
               <span className="flex items-center gap-2">
                 <Mail className="h-4 w-4" />
                 Name and notifications
               </span>
             </AccordionTrigger>
-            <AccordionContent>
+            <AccordionContent className="pt-3">
               <ProfileForm />
             </AccordionContent>
           </AccordionItem>
 
           <AccordionItem value="password" className="border-b-0">
-            <AccordionTrigger className="text-sm">
+            <AccordionTrigger className="text-sm font-medium hover:text-primary transition-colors">
               <span className="flex items-center gap-2">
                 <KeyRound className="h-4 w-4" />
                 {hasPassword ? 'Change password' : 'Add a password'}
               </span>
             </AccordionTrigger>
-            <AccordionContent>
+            <AccordionContent className="pt-3">
               <PasswordForm />
             </AccordionContent>
           </AccordionItem>
@@ -116,9 +120,9 @@ export function AccountCard() {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="truncate text-right">{value}</span>
+    <div className="space-y-1">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="font-medium">{value}</p>
     </div>
   );
 }
@@ -140,17 +144,24 @@ function MismatchNotice({
   const { linkPubkey, isLinking } = useLnbitsAccount();
 
   return (
-    <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/10 p-3">
-      <p className="text-sm">
-        This wallet is linked to{' '}
-        <span className="font-mono text-xs">{linked.slice(0, 12)}…</span>, not
-        the key you're signed in with.
-      </p>
+    <div className="space-y-3 rounded-lg border border-warning/30 bg-warning/8 p-4 backdrop-blur-sm">
+      <div>
+        <p className="text-sm font-medium text-warning-foreground mb-1">
+          This wallet is linked to a different key
+        </p>
+        <p className="text-xs text-muted-foreground">
+          <span className="font-mono text-xs">{linked.slice(0, 12)}…</span>
+        </p>
+      </div>
       <p className="text-xs text-muted-foreground">
-        Relinking moves it to the current key. The old key will no longer open
-        this wallet.
+        Link it to your current key. The old key won't be able to open it anymore.
       </p>
-      <Button size="sm" disabled={isLinking} onClick={() => linkPubkey(current)}>
+      <Button
+        size="sm"
+        disabled={isLinking}
+        onClick={() => linkPubkey(current)}
+        className="w-full"
+      >
         {isLinking && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
         <Link2 className="mr-1.5 h-3.5 w-3.5" />
         Link to this key
@@ -184,7 +195,7 @@ function ProfileForm() {
 
   return (
     <form
-      className="space-y-3 pt-1"
+      className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
         void updateProfile({
@@ -207,7 +218,7 @@ function ProfileForm() {
       <Field
         id="account-email"
         label="Email for payment notices"
-        hint="Where the wallet tells you money arrived. Not a login."
+        hint="Get a message when money arrives. Not a login."
         type="email"
         value={email}
         onChange={setEmail}
@@ -216,8 +227,8 @@ function ProfileForm() {
 
       <Field
         id="account-telegram"
-        label="Telegram chat id"
-        hint="Message @userinfobot on Telegram to find yours."
+        label="Telegram chat ID"
+        hint="Message @userinfobot to find yours."
         value={telegram}
         onChange={setTelegram}
         placeholder="123456789"
@@ -226,15 +237,15 @@ function ProfileForm() {
       <Field
         id="account-nostr-notify"
         label="Nostr address for notices"
-        hint="A NIP-05 identifier. The wallet sends the notice as a DM."
+        hint="A NIP-05 identifier. The wallet DMs the notice here."
         value={nostrIdentifier}
         onChange={setNostrIdentifier}
         placeholder="you@nostrfeed.com"
       />
 
-      <Button type="submit" size="sm" disabled={isUpdating || !username.trim()}>
-        {isUpdating && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-        Save
+      <Button type="submit" size="lg" disabled={isUpdating || !username.trim()} className="w-full">
+        {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Save changes
       </Button>
     </form>
   );
@@ -259,7 +270,7 @@ function PasswordForm() {
 
   return (
     <form
-      className="space-y-3 pt-1"
+      className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
         void setPassword({
@@ -305,23 +316,23 @@ function PasswordForm() {
 
       <Field
         id="password-repeat"
-        label="Repeat it"
+        label="Repeat password"
         type="password"
         value={repeat}
         onChange={setRepeat}
-        problem={mismatched ? "These don't match." : undefined}
+        problem={mismatched ? "Passwords don't match." : undefined}
       />
 
       {!mismatched && !tooShort && repeat && next === repeat && (
-        <p className="flex items-center gap-1.5 text-xs text-success">
+        <p className="flex items-center gap-1.5 text-xs text-success bg-success/10 p-2 rounded">
           <Check className="h-3.5 w-3.5" />
           Ready to save
         </p>
       )}
 
-      <Button type="submit" size="sm" disabled={!ready || isSettingPassword}>
+      <Button type="submit" size="lg" disabled={!ready || isSettingPassword} className="w-full">
         {isSettingPassword && (
-          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         )}
         {hasPassword ? 'Change password' : 'Add password'}
       </Button>
@@ -349,8 +360,8 @@ function Field({
   problem?: string;
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-xs">
+    <div className="space-y-2">
+      <Label htmlFor={id} className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </Label>
       <Input
@@ -361,9 +372,11 @@ function Field({
         placeholder={placeholder}
         aria-invalid={!!problem}
         autoComplete={type === 'password' ? 'new-password' : undefined}
+        className="transition-all"
       />
       {(problem || hint) && (
-        <p className={cn('text-xs', problem ? 'text-destructive' : 'text-muted-foreground')}>
+        <p className={cn('text-xs', problem ? 'text-destructive flex items-center gap-1' : 'text-muted-foreground')}>
+          {problem && <span>⚠</span>}
           {problem || hint}
         </p>
       )}

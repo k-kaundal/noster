@@ -31,27 +31,29 @@ export function IdentityCard() {
   const identity = useIdentity();
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
+    <Card className="overflow-hidden">
+      <CardHeader className="bg-gradient-to-br from-primary/5 via-transparent to-transparent pb-4">
         <CardTitle className="flex items-center gap-2 text-base">
-          <AtSign className="h-4 w-4" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <AtSign className="h-4 w-4 text-primary" />
+          </div>
           Your name
         </CardTitle>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5 pt-4">
         {identity.isLoading ? (
-          <>
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-4 w-56" />
-          </>
+          <div className="space-y-3">
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-3 w-48 rounded" />
+          </div>
         ) : identity.status.tier === 'none' ? (
           <ClaimForm />
         ) : (
           <CurrentIdentity />
         )}
 
-        <Separator />
+        <Separator className="my-4" />
 
         <Nip5Section />
       </CardContent>
@@ -76,84 +78,93 @@ function CurrentIdentity() {
   const verified = status.tier === 'verified';
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 rounded-lg border p-3">
-        <span className="min-w-0 flex-1 truncate font-medium">
-          {status.primary}
-        </span>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 rounded-xl border bg-gradient-to-br from-primary/5 to-transparent p-4 transition-all hover:border-primary/40">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+            {verified ? 'Verified identity' : 'Your address'}
+          </p>
+          <p className="text-lg font-semibold truncate">{status.primary}</p>
+        </div>
 
-        {verified ? (
-          <Badge className="shrink-0 gap-1">
-            <BadgeCheck className="h-3 w-3" />
-            Verified
-          </Badge>
-        ) : (
-          <Badge variant="secondary" className="shrink-0">
-            Free
-          </Badge>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {verified ? (
+            <Badge className="gap-1 bg-success/15 text-success hover:bg-success/20">
+              <BadgeCheck className="h-3 w-3" />
+              <span className="hidden sm:inline">Verified</span>
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="bg-blue-500/15 text-blue-600 hover:bg-blue-500/25">
+              Free
+            </Badge>
+          )}
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={async () => {
-            await navigator.clipboard.writeText(status.primary!);
-            toast({ title: 'Copied' });
-          }}
-          aria-label="Copy"
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              await navigator.clipboard.writeText(status.primary!);
+              toast({ title: 'Copied to clipboard' });
+            }}
+            aria-label="Copy"
+            className="hover:bg-primary/10"
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
-      {status.unpublished.length > 0 ? (
-        <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/10 p-3">
-          <p className="text-sm">
+      {status.unpublished.length > 0 && (
+        <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/8 p-4 backdrop-blur-sm">
+          <p className="text-sm text-warning-foreground">
             {/* Which half is behind changes what is actually broken, so it is
                 worth saying rather than "your profile is out of date" */}
             {status.unpublished.length === 2
-              ? "Your profile doesn't advertise this yet, so nobody can zap you and nobody sees the ✓."
+              ? "Your profile doesn't advertise this yet."
               : status.unpublished[0] === 'lud16'
-                ? 'Your profile points zaps somewhere else.'
-                : "Your profile doesn't claim this name, so nobody sees the ✓."}
+                ? 'Your profile zap address is out of date.'
+                : "Your profile doesn't claim this verified name."}
           </p>
           <Button
             size="sm"
             onClick={() => void publish().catch(() => {})}
             disabled={isPublishing}
+            className="w-full"
           >
             {isPublishing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Publish to my profile
+            Publish now
           </Button>
         </div>
-      ) : (
-        <p className="flex items-center gap-1.5 text-sm text-success">
-          <Check className="h-4 w-4" />
-          {verified
-            ? 'On your profile — you show as verified and zaps land here.'
-            : 'On your profile — anyone on Nostr can zap you.'}
+      )}
+
+      {status.unpublished.length === 0 && (
+        <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success">
+          <Check className="h-4 w-4 shrink-0" />
+          <span>
+            {verified
+              ? 'Live on your profile — verified with ✓ and zaps arrive here.'
+              : 'Live on your profile — anyone can zap you here.'}
+          </span>
         </p>
       )}
 
-      {/* Someone who claimed a free address before buying a name still has
-          zaps arriving at the old one */}
       {status.mismatched && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
-          <p className="min-w-0 text-sm text-muted-foreground">
-            Zaps still go to{' '}
-            <span className="font-medium text-foreground">
+        <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
+          <p className="mb-3 text-sm text-foreground">
+            Zaps go to{' '}
+            <code className="inline rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
               {lightning.address}
-            </span>
-            .
+            </code>
           </p>
           <Button
             size="sm"
             variant="outline"
             onClick={() => void alignLightningAddress().catch(() => {})}
             disabled={isAligning}
+            className="w-full"
           >
             {isAligning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Move them to {nip5.identifier}
+            Move to {nip5.identifier}
           </Button>
         </div>
       )}
@@ -176,60 +187,66 @@ function ClaimForm() {
 
   const problem = validateUsername(username);
   const showProblem = touched && !!problem;
+  const isValid = !problem && username.length > 0;
 
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Pick a name and people can zap you at it from any Nostr client, free and
-        yours for good. A verified name with the ✓ is below.
-      </p>
+    <div className="space-y-4">
+      <div className="rounded-lg bg-gradient-to-br from-blue-50 to-blue-50/50 p-4 dark:from-blue-950/30 dark:to-blue-950/10">
+        <p className="text-sm">
+          <span className="font-medium">Start receiving zaps.</span>{' '}
+          <span className="text-muted-foreground">
+            Pick a name, and anyone on Nostr can pay you. Free and yours for good.
+          </span>
+        </p>
+      </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="ln-username" className="text-xs">
+      <div className="space-y-3">
+        <Label htmlFor="ln-username" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Your address
         </Label>
         <div className="flex items-center gap-2">
           <Input
             id="ln-username"
             value={username}
-            onChange={(event) =>
-              // Typing an uppercase or spaced name shouldn't produce an
-              // address that silently differs from what was typed
-              setUsername(suggestUsername(event.target.value))
-            }
+            onChange={(event) => {
+              setUsername(suggestUsername(event.target.value));
+              if (!touched) setTouched(true);
+            }}
             onBlur={() => setTouched(true)}
             placeholder="satoshi"
             aria-invalid={showProblem}
-            className="max-w-[12rem]"
+            className="max-w-[10rem] transition-all"
           />
-          <span className="truncate text-sm text-muted-foreground">
+          <span className="flex-1 truncate text-sm font-medium text-foreground">
             @{ADDRESS_DOMAIN}
           </span>
         </div>
 
         {showProblem ? (
-          <p className="text-xs text-destructive">
+          <p className="flex items-start gap-1.5 text-xs text-destructive">
+            <span className="shrink-0 mt-0.5">⚠</span>
             {describeUsernameProblem(problem)}
           </p>
-        ) : (
-          username && (
-            <p className="text-xs text-muted-foreground">
-              You'll be {formatAddress(username)}
-            </p>
-          )
-        )}
+        ) : username ? (
+          <p className="text-xs text-success flex items-center gap-1">
+            <Check className="h-3 w-3" />
+            {formatAddress(username)} is ready
+          </p>
+        ) : null}
       </div>
 
       <Button
         onClick={() => void lightning.claim(username).catch(() => {})}
-        disabled={!!problem || lightning.isClaiming}
+        disabled={!isValid || lightning.isClaiming}
+        className="w-full"
+        size="lg"
       >
         {lightning.isClaiming ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : (
           <Wand2 className="mr-2 h-4 w-4" />
         )}
-        Claim my address
+        {lightning.isClaiming ? 'Claiming...' : 'Claim my address'}
       </Button>
     </div>
   );

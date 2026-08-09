@@ -105,60 +105,59 @@ function CreateWalletCard() {
 
   return (
     <Card className="overflow-hidden">
-      <div className="bg-gradient-to-br from-primary/12 via-primary/5 to-transparent px-6 py-8 text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15">
-          <Zap className="h-7 w-7 text-primary" />
+      <div className="bg-gradient-to-br from-primary/15 via-primary/8 to-transparent px-6 py-12 text-center">
+        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/20">
+          <Zap className="h-8 w-8 text-primary" />
         </div>
 
-        <h2 className="text-title">Set up your wallet</h2>
-        <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+        <h2 className="text-3xl font-bold tracking-tight">Set up your wallet</h2>
+        <p className="mx-auto mt-3 max-w-md text-base text-muted-foreground leading-relaxed">
           One tap creates a lightning wallet and your own
-          <span className="whitespace-nowrap"> name@address</span>, so people
-          can zap you from any Nostr client.
+          <span className="block font-medium text-foreground mt-1">name@address</span>
+          <span>so people can zap you from any Nostr client.</span>
         </p>
 
         <Button
           size="lg"
-          className="mt-6"
+          className="mt-8 w-full sm:w-auto"
           onClick={() => connect()}
           disabled={isConnecting}
         >
           {isConnecting ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           ) : (
-            <Wallet className="mr-2 h-4 w-4" />
+            <Wallet className="mr-2 h-5 w-5" />
           )}
-          Create my wallet
+          {isConnecting ? 'Connecting…' : 'Create my wallet'}
         </Button>
 
-        {/* A toast is gone before it can be read, and this is the message
-            most likely to need reading twice */}
         {connectError && (
-          <p className="mx-auto mt-4 max-w-sm rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-left text-xs text-destructive">
-            {connectError}
-          </p>
+          <div className="mx-auto mt-6 max-w-md rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-left">
+            <p className="text-sm text-destructive font-medium">Error</p>
+            <p className="text-xs text-destructive/80 mt-1">{connectError}</p>
+          </div>
         )}
 
-        <div className="mx-auto mt-5 max-w-sm">
+        <div className="mx-auto mt-8 max-w-md">
           <PasswordSignIn />
         </div>
       </div>
 
-      <CardContent className="space-y-3 border-t pt-5">
+      <CardContent className="space-y-4 border-t pt-6">
         <Detail
           icon={KeyRound}
           title="No password"
-          body="Your Nostr key is the account. You sign one request to prove it's yours; the key itself never leaves your signer."
+          body="Your Nostr key is the account. Sign once to prove it's yours — the key itself never leaves your signer."
         />
         <Detail
           icon={Zap}
-          title="Zappable straight away"
-          body="You get a lightning address you can publish to your profile, so zaps land in this wallet."
+          title="Receive zaps immediately"
+          body="Get a lightning address to publish on your profile. Zaps land in your wallet instantly."
         />
         <Detail
           icon={ShieldCheck}
-          title="Custodial — keep it small"
-          body={`Balances are held at ${hostOf(instanceUrl)}. Treat it like cash in a pocket, not a savings account.`}
+          title="Custodial—keep it small"
+          body={`Balances are held at ${hostOf(instanceUrl)}. Treat it like cash in a pocket, not savings.`}
         />
       </CardContent>
     </Card>
@@ -175,11 +174,13 @@ function Detail({
   body: string;
 }) {
   return (
-    <div className="flex gap-3">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="text-xs text-muted-foreground">{body}</p>
+    <div className="flex gap-4 rounded-lg p-3 hover:bg-muted/50 transition-colors">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+        <Icon className="h-4 w-4 text-primary" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="text-xs text-muted-foreground leading-relaxed">{body}</p>
       </div>
     </div>
   );
@@ -216,30 +217,32 @@ function ConnectedWallet() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <Card className="overflow-hidden">
-        <div className="bg-gradient-to-br from-primary/12 via-primary/5 to-transparent px-6 py-7">
-          <p className="text-eyebrow">Balance</p>
+        <div className="bg-gradient-to-br from-primary/15 via-primary/8 to-transparent px-6 py-8">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Balance</p>
 
           {isLoading ? (
-            <Skeleton className="mt-2 h-11 w-40" />
+            <Skeleton className="mt-3 h-12 w-48 rounded-lg" />
           ) : (
-            <p className="mt-1 text-display tabular">
+            <p className="mt-2 text-5xl font-bold tracking-tight tabular">
               {balanceSats.toLocaleString()}
-              <span className="ml-2 text-base font-normal text-muted-foreground">
+              <span className="ml-3 text-lg font-normal text-muted-foreground">
                 sats
               </span>
             </p>
           )}
 
           {address && (
-            <p className="mt-2 truncate text-sm text-muted-foreground">
-              {address}
-            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <code className="flex-1 truncate rounded bg-muted/50 px-2 py-1 text-xs font-mono">
+                {address}
+              </code>
+            </div>
           )}
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <Button size="lg" onClick={() => setReceiveOpen(true)}>
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <Button size="lg" onClick={() => setReceiveOpen(true)} className="w-full">
               <ArrowDownLeft className="mr-2 h-4 w-4" />
               Receive
             </Button>
@@ -248,6 +251,7 @@ function ConnectedWallet() {
               variant="outline"
               onClick={() => setSendOpen(true)}
               disabled={balanceSats <= 0}
+              className="w-full"
             >
               <ArrowUpRight className="mr-2 h-4 w-4" />
               Send
@@ -263,38 +267,47 @@ function ConnectedWallet() {
       <AccountCard />
 
       <Card>
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+        <CardContent className="space-y-4 pt-6">
           <Link
             to="/premium"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+            className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
           >
             <Sparkles className="h-4 w-4" />
-            Buy relay access with these sats
+            <span>Buy relay access with these sats</span>
+            <span className="ml-auto">→</span>
           </Link>
 
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={logout}
-            className="text-muted-foreground"
+            className="w-full"
           >
-            <LogOut className="mr-1.5 h-3.5 w-3.5" />
-            Disconnect
+            <LogOut className="mr-2 h-4 w-4" />
+            Disconnect account
           </Button>
-        </CardContent>
 
-        <CardContent className="pt-0 text-xs text-muted-foreground">
-          Held at{' '}
-          <a
-            href={instanceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline"
-          >
-            {hostOf(instanceUrl)}
-          </a>
-          {account?.username ? ` as ${account.username}` : ''}. Custodial — keep
-          only what you're willing to spend here.
+          <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+            <p className="mb-1 font-medium">Custodial wallet</p>
+            <p className="leading-relaxed">
+              Balance held at{' '}
+              <a
+                href={instanceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-primary hover:underline"
+              >
+                {hostOf(instanceUrl)}
+              </a>
+              {account?.username && (
+                <>
+                  {' '}
+                  as <span className="font-mono">{account.username}</span>
+                </>
+              )}
+              . Keep only what you plan to spend.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -316,54 +329,65 @@ function ActivityCard() {
   const { data: payments, isLoading } = useLnbitsPayments();
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Activity</CardTitle>
+    <Card className="overflow-hidden">
+      <CardHeader className="bg-gradient-to-br from-slate-50 to-transparent dark:from-slate-950/40 pb-4">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <ArrowDownLeft className="h-4 w-4 text-primary" />
+          </div>
+          Activity
+        </CardTitle>
       </CardHeader>
 
       <CardContent className="p-0">
         {isLoading ? (
-          <div className="space-y-3 px-6 pb-5">
+          <div className="space-y-3 px-6 py-5">
             {Array.from({ length: 3 }).map((_, index) => (
-              <Skeleton key={index} className="h-9" />
+              <Skeleton key={index} className="h-12 rounded-lg" />
             ))}
           </div>
         ) : !payments?.length ? (
-          <p className="px-6 pb-5 text-sm text-muted-foreground">
-            Nothing yet. Zaps you send and receive show up here.
-          </p>
+          <div className="px-6 py-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              Nothing yet. Zaps and transactions will appear here.
+            </p>
+          </div>
         ) : (
           <ul className="divide-y border-t">
             {payments.map((payment) => {
-              // LNbits signs the amount: negative is money leaving the wallet
               const outgoing = payment.amount < 0;
               const sats = Math.abs(msatToSat(payment.amount));
 
               return (
                 <li
                   key={payment.payment_hash}
-                  className="flex items-center gap-3 px-5 py-3"
+                  className="flex items-center gap-3 px-6 py-3 hover:bg-muted/50 transition-colors"
                 >
                   <span
                     className={cn(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
                       outgoing ? 'bg-muted' : 'bg-success/10'
                     )}
                   >
                     {outgoing ? (
-                      <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                      <ArrowUpRight className="h-5 w-5 text-muted-foreground" />
                     ) : (
-                      <ArrowDownLeft className="h-4 w-4 text-success" />
+                      <ArrowDownLeft className="h-5 w-5 text-success" />
                     )}
                   </span>
 
-                  <span className="min-w-0 flex-1 truncate text-sm">
-                    {payment.memo || (outgoing ? 'Sent' : 'Received')}
+                  <span className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">
+                      {payment.memo || (outgoing ? 'Sent' : 'Received')}
+                    </p>
+                    {payment.status === 'pending' && (
+                      <p className="text-xs text-muted-foreground">Pending</p>
+                    )}
                   </span>
 
                   <span
                     className={cn(
-                      'tabular shrink-0 text-sm font-medium',
+                      'tabular shrink-0 text-sm font-semibold',
                       outgoing ? 'text-muted-foreground' : 'text-success',
                       payment.status === 'pending' && 'opacity-60'
                     )}
