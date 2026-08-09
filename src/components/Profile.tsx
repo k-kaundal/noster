@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import type { NostrEvent } from '@nostrify/nostrify';
+import { Spotlight } from '@/components/Spotlight';
 import { formatMonthYear } from '@/lib/time';
 import {
   BadgeCheck,
@@ -283,6 +284,8 @@ export function Profile({ pubkey }: ProfileProps) {
           </div>
         </CardContent>
       </Card>
+
+      <Spotlight pubkey={pubkey} />
 
       <Tabs defaultValue="notes" className="space-y-4">
         <TabsList className="w-full sm:w-auto">
