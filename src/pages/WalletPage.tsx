@@ -336,8 +336,15 @@ function ActivityCard() {
   }, [payments]);
 
   const formatTime = (timestamp: number | undefined) => {
-    if (!timestamp) return 'Unknown time';
-    const date = new Date(timestamp * 1000);
+    if (!timestamp || timestamp <= 0) return 'Unknown time';
+
+    // Handle both seconds and milliseconds
+    const ms = timestamp > 10000000000 ? timestamp : timestamp * 1000;
+    const date = new Date(ms);
+
+    // Validate the date is valid
+    if (isNaN(date.getTime())) return 'Unknown time';
+
     const now = new Date();
     const diffSeconds = (now.getTime() - date.getTime()) / 1000;
 
@@ -346,7 +353,15 @@ function ActivityCard() {
     if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
     if (diffSeconds < 604800) return `${Math.floor(diffSeconds / 86400)}d ago`;
 
-    return date.toLocaleDateString();
+    try {
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+      });
+    } catch {
+      return 'Unknown time';
+    }
   };
 
   return (
