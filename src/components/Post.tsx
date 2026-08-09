@@ -429,7 +429,7 @@ export function Post({
         </div>
 
         {!embedded && (
-          <div className="-ml-3 mt-3 flex flex-wrap items-center gap-2 sm:gap-4">
+          <div className="mt-4 flex flex-wrap items-center gap-1 border-t pt-3 sm:gap-2">
             <ActionButton
               icon={MessageCircle}
               label="Reply"
@@ -519,7 +519,7 @@ export function Post({
       <Card
         className={cn(
           // Off-screen rows skip layout and paint in a long feed
-          'content-auto overflow-hidden hover-lift',
+          'content-auto overflow-hidden hover-lift border transition-all hover:shadow-sm',
           className
         )}
       >
