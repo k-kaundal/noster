@@ -25,7 +25,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -34,7 +33,6 @@ import { useMuteList } from '@/hooks/useMuteList';
 import { useDmRelayList } from '@/hooks/useDmRelayList';
 import { useRelays } from '@/hooks/useRelays';
 import { useSeo } from '@/hooks/useSeo';
-import { useProfessionalUI } from '@/hooks/useProfessionalUI';
 import { AdvancedThemeSwitcher } from '@/components/AdvancedThemeSwitcher';
 import { genUserName } from '@/lib/genUserName';
 import { relayDisplayName } from '@/lib/relay';
@@ -457,9 +455,6 @@ function MessageRelaySettings() {
 }
 
 function UISettings() {
-  const { enabled: professionalUI, setEnabled: setProfessionalUI } =
-    useProfessionalUI();
-
   return (
     <div className="space-y-4">
       <Card>
@@ -470,21 +465,6 @@ function UISettings() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium">Professional UI Mode</p>
-              <p className="text-xs text-muted-foreground">
-                Enhanced post layout with professional design and improved spacing.
-              </p>
-            </div>
-            <Switch
-              checked={professionalUI}
-              onCheckedChange={setProfessionalUI}
-            />
-          </div>
-
-          <Separator />
-
           <div className="space-y-3">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Advanced Themes
