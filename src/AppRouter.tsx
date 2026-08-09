@@ -20,6 +20,11 @@ const WalletPage = lazy(() => import("./pages/WalletPage"));
 const WritePage = lazy(() => import("./pages/WritePage"));
 const CommunitiesPage = lazy(() => import("./pages/CommunitiesPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+const IdentityVaultPage = lazy(() => import("./pages/IdentityVaultPage"));
+const CommunityTreasuryPage = lazy(() => import("./pages/CommunityTreasuryPage"));
+const BountiesPage = lazy(() => import("./pages/BountiesPage"));
+const MembershipsPage = lazy(() => import("./pages/MembershipsPage"));
+const SatsDropsPage = lazy(() => import("./pages/SatsDropsPage"));
 const NIP19Page = lazy(() =>
   import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
 );
@@ -70,6 +75,16 @@ export function AppRouter() {
           <Route path="/wallet" element={<WalletPage />} />
           {/* Paid relay access, sold through LNbits pay links */}
           <Route path="/premium" element={<PremiumPage />} />
+          {/* Nostr identity vault: signing devices, relays, apps, permissions */}
+          <Route path="/identity" element={<IdentityVaultPage />} />
+          {/* Community treasury: shared wallet, members, transactions */}
+          <Route path="/community-treasury" element={<CommunityTreasuryPage />} />
+          {/* Bounties: fund tasks, submit solutions, earn sats */}
+          <Route path="/bounties" element={<BountiesPage />} />
+          {/* Memberships: recurring revenue from subscribers */}
+          <Route path="/memberships" element={<MembershipsPage />} />
+          {/* Sats Drops: LNURL-withdraw distributions to community */}
+          <Route path="/sats-drops" element={<SatsDropsPage />} />
           {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
           <Route path="/settings" element={<SettingsPage />} />
           {/* Follow pages */}
