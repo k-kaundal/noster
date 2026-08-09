@@ -5,7 +5,6 @@ import { PageHeader } from '@/components/PageHeader';
 import { Trending } from '@/components/Trending';
 import { Button } from '@/components/ui/button';
 import { useSeo } from '@/hooks/useSeo';
-import { cn } from '@/lib/utils';
 
 type TimeRange = 'now' | '24h' | '7d' | '30d';
 

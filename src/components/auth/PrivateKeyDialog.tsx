@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Eye, EyeOff, Copy, AlertTriangle, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Copy, AlertTriangle } from 'lucide-react';
 import { useNostrLogin } from '@nostrify/react/login';
 import { nip19 } from 'nostr-tools';
 import {
@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/useToast';
-import { cn } from '@/lib/utils';
 
 interface PrivateKeyDialogProps {
   children?: React.ReactNode;
@@ -35,7 +34,10 @@ export function PrivateKeyDialog({ children }: PrivateKeyDialogProps) {
   const isNsecLogin = currentLogin.type === 'nsec';
   if (!isNsecLogin) return null;
 
-  const nsec = (currentLogin as any).data?.nsec || '';
+  // An nsec login stores the key under `data`; a signer-backed login has no key
+  // here at all, which is why the type is checked before reading it
+  const { data } = currentLogin as { data?: { nsec?: string } };
+  const nsec = data?.nsec || '';
 
   if (!nsec) return null;
 

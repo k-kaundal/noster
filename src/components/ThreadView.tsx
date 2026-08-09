@@ -3,15 +3,14 @@
  * Provides clear visual hierarchy and easy navigation through replies
  */
 
-import { useEffect, useState } from 'react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { Card } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { genUserName } from '@/lib/genUserName';
-import { MessageCircle, Reply } from 'lucide-react';
+import { Reply } from 'lucide-react';
 
 interface ThreadComment {
   id: string;
@@ -92,8 +91,6 @@ function ThreadComment({
   isLast: boolean;
   onReply: () => void;
 }) {
-  const [isExpanded, setIsExpanded] = useState(true);
-
   return (
     <div
       className={cn(

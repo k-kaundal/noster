@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Loader2, X, Plus, Shield } from 'lucide-react';
+import { nip19 } from 'nostr-tools';
 import type { Community } from '@/lib/community';
 import { buildCommunityTags, type CommunityDraft } from '@/lib/community';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
@@ -45,8 +46,6 @@ export function CommunityEditor({ community, onClose, onSave }: CommunityEditorP
     let pubkey = input;
     if (input.startsWith('npub1')) {
       try {
-        // Import nip19 from nostr-tools
-        const { nip19 } = require('nostr-tools');
         const decoded = nip19.decode(input);
 
         // nip19.decode returns { type, data }
@@ -152,7 +151,7 @@ export function CommunityEditor({ community, onClose, onSave }: CommunityEditorP
 
       onSave?.();
       onClose();
-    } catch (error) {
+    } catch {
       toast({
         title: 'Error',
         description: 'Failed to update community',

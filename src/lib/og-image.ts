@@ -157,10 +157,19 @@ export function generateOGImageSVG(config: OGImageConfig): string {
 export function generateOGMetaTags(config: OGImageConfig): Record<string, string> {
   const { title, description, type, author } = config;
 
+  // A post shared to a social card is an article, and a profile is a profile —
+  // calling everything a website loses that distinction for every scraper
+  const ogType =
+    type === 'post' || type === 'event'
+      ? 'article'
+      : type === 'profile'
+        ? 'profile'
+        : 'website';
+
   return {
     'og:title': title,
     'og:description': description || 'Decentralized social network powered by Nostr',
-    'og:type': 'website',
+    'og:type': ogType,
     'og:image': generateOGImage(config),
     'og:image:width': '1200',
     'og:image:height': '630',

@@ -111,7 +111,7 @@ describe('getMuteReason', () => {
   it('reports the author when their pubkey is muted', () => {
     expect(
       getMuteReason(note(), list({ pubkeys: ['b'.repeat(64)] }))
-    ).toBe('author');
+    ).toMatchObject({ reason: 'author' });
   });
 
   it('reports an indexed hashtag', () => {
@@ -120,7 +120,7 @@ describe('getMuteReason', () => {
         note({ tags: [['t', 'Bitcoin']] }),
         list({ hashtags: ['bitcoin'] })
       )
-    ).toBe('hashtag');
+    ).toMatchObject({ reason: 'hashtag' });
   });
 
   it('reports a hashtag written inline but never tagged', () => {
@@ -129,7 +129,7 @@ describe('getMuteReason', () => {
         note({ content: 'thoughts on #bitcoin?' }),
         list({ hashtags: ['bitcoin'] })
       )
-    ).toBe('hashtag');
+    ).toMatchObject({ reason: 'hashtag' });
   });
 
   it('reports a muted word in the content', () => {
@@ -138,7 +138,7 @@ describe('getMuteReason', () => {
         note({ content: 'huge spoilers ahead' }),
         list({ words: ['spoilers'] })
       )
-    ).toBe('word');
+    ).toMatchObject({ reason: 'word' });
   });
 
   it('reports a reply into a muted thread', () => {
@@ -147,7 +147,7 @@ describe('getMuteReason', () => {
         note({ tags: [['e', 'f'.repeat(64)]] }),
         list({ threads: ['f'.repeat(64)] })
       )
-    ).toBe('thread');
+    ).toMatchObject({ reason: 'thread' });
   });
 
   it('returns null for an event nothing matches', () => {
@@ -155,7 +155,7 @@ describe('getMuteReason', () => {
       getMuteReason(
         note({ content: 'a start to the party' }),
         list({ words: ['art'], hashtags: ['music'], pubkeys: ['d'.repeat(64)] })
-      )
+      ).reason
     ).toBeNull();
   });
 });

@@ -28,7 +28,7 @@ import { useLightningAddress } from '@/hooks/useLightningAddress';
 import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
 import { useLnbitsPayments, useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useSeo } from '@/hooks/useSeo';
-import { msatToSat } from '@/lib/lnbits';
+import { msatToSat, paymentTimeMs } from '@/lib/lnbits';
 import { formatSats } from '@/lib/zap';
 import { cn } from '@/lib/utils';
 
@@ -330,16 +330,15 @@ function ActivityCard() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const sortedPayments = useMemo(() => {
-    return [...(payments || [])].sort((a, b) =>
-      (b.time || 0) - (a.time || 0)
+    return [...(payments || [])].sort(
+      (a, b) => paymentTimeMs(b.time) - paymentTimeMs(a.time)
     );
   }, [payments]);
 
-  const formatTime = (timestamp: number | undefined) => {
-    if (!timestamp || timestamp <= 0) return 'Unknown time';
+  const formatTime = (timestamp: string | number | undefined) => {
+    const ms = paymentTimeMs(timestamp);
+    if (!ms) return 'Unknown time';
 
-    // Handle both seconds and milliseconds
-    const ms = timestamp > 10000000000 ? timestamp : timestamp * 1000;
     const date = new Date(ms);
 
     // Validate the date is valid

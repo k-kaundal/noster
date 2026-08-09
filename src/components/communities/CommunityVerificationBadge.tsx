@@ -1,4 +1,4 @@
-import { CheckCircle, Info } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 import type { Community } from '@/lib/community';
 import {
   Tooltip,
@@ -30,7 +30,7 @@ export function CommunityVerificationBadge({
 
   // Calculate verification score
   let verificationLevel: 'unverified' | 'basic' | 'verified' | 'established' = 'unverified';
-  let verificationReasons: string[] = [];
+  const verificationReasons: string[] = [];
 
   if (isEstablished) {
     verificationLevel = 'established';

@@ -3,7 +3,7 @@
  * Shows health and connection status for all configured relays
  */
 
-import { useRelayHealthMetrics, useRelayStatusForUrl } from '@/hooks/useRelayStatus';
+import { useRelayHealthMetrics } from '@/hooks/useRelayStatus';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {

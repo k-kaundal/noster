@@ -187,6 +187,9 @@ function BuyName() {
   );
   const [years, setYears] = useState(1);
   const [pending, setPending] = useState<PendingNip5 | null>(null);
+  // Availability stays hidden until the field is used, so a prefilled
+  // suggestion doesn't greet you with a validation error
+  const [touched, setTouched] = useState(false);
 
   const search = useNip5Search(localPart, years);
   const paid = useNip5Payment(pending?.paymentHash);
@@ -356,7 +359,7 @@ function PendingPayment({
       <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
         <p className="font-medium text-sm">
           {pending.address?.local_part
-            ? `${pending.address.local_part}@${pending.address?.extra?.domain || 'domain'} is yours`
+            ? `${formatNip5(pending.address.local_part)} is yours`
             : 'Your name is reserved'}
         </p>
         <p className="text-xs text-muted-foreground mt-1">
