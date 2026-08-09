@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuthor } from '@/hooks/useAuthor';
+import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
 import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
-import { LnbitsError, lnbitsRequest } from '@/lib/lnbits';
+import { LnbitsError, lnbitsRequest, withExtension } from '@/lib/lnbits';
 import { buildPayLinkBody, formatAddress } from '@/lib/lightningAddress';
 import { pickPrimaryLink } from '@/lib/identity';
 
@@ -30,6 +31,7 @@ export interface PayLink {
  */
 export function useLightningAddress(preferredUsername?: string) {
   const { user } = useCurrentUser();
+  const { token } = useLnbitsAuth();
   const { wallet } = useLnbitsWallet();
   const { mutateAsync: createEvent } = useNostrPublish();
   const { toast } = useToast();
@@ -41,10 +43,12 @@ export function useLightningAddress(preferredUsername?: string) {
   const links = useQuery<PayLink[]>({
     queryKey: ['lnurlp-links', wallet?.id ?? ''],
     queryFn: ({ signal }) =>
-      lnbitsRequest<PayLink[]>('/lnurlp/api/v1/links', {
-        apiKey: wallet!.inkey,
-        signal,
-      }),
+      withExtension('lnurlp', token, () =>
+        lnbitsRequest<PayLink[]>('/lnurlp/api/v1/links', {
+          apiKey: wallet!.inkey,
+          signal,
+        })
+      ),
     enabled: !!wallet,
     staleTime: 60 * 1000,
     retry: false,
@@ -75,15 +79,17 @@ export function useLightningAddress(preferredUsername?: string) {
       );
       if (existing) return existing;
 
-      const created = await lnbitsRequest<PayLink>('/lnurlp/api/v1/links', {
-        method: 'POST',
-        apiKey: wallet.adminkey,
-        body: buildPayLinkBody({
-          username,
-          walletId: wallet.id,
-          displayName: metadata?.display_name || metadata?.name,
-        }),
-      });
+      const created = await withExtension('lnurlp', token, () =>
+        lnbitsRequest<PayLink>('/lnurlp/api/v1/links', {
+          method: 'POST',
+          apiKey: wallet.adminkey,
+          body: buildPayLinkBody({
+            username,
+            walletId: wallet.id,
+            displayName: metadata?.display_name || metadata?.name,
+          }),
+        })
+      );
 
       return created;
     },

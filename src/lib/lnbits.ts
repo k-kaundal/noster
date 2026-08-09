@@ -237,6 +237,57 @@ export async function lnbitsRequest<T>(
 }
 
 /**
+ * Whether LNbits refused because the extension is not enabled *for this user*.
+ *
+ * Distinct from the extension being uninstalled or switched off server-wide:
+ * an extension can be installed and active, yet still disabled on an account,
+ * because a new account only gets the extensions listed in the instance's
+ * `lnbits_user_default_extensions` (empty by default).
+ */
+export function isExtensionNotEnabled(error: unknown, extId: string): boolean {
+  return (
+    error instanceof LnbitsError &&
+    new RegExp(`extension '${extId}' not enabled`, 'i').test(error.message)
+  );
+}
+
+/** Turns an extension on for the signed-in account. Needs the session token. */
+export async function enableExtension(
+  extId: string,
+  token: string | undefined
+): Promise<void> {
+  await lnbitsRequest(`/api/v1/extension/${extId}/enable`, {
+    method: 'PUT',
+    token,
+  });
+}
+
+/**
+ * Runs a request against an extension, enabling it first if the account has
+ * never used it.
+ *
+ * Enabling is done on demand rather than at login because it is only knowable
+ * here which extensions an account actually needs, and a user who never opens
+ * this feature should not have it switched on for them.
+ */
+export async function withExtension<T>(
+  extId: string,
+  token: string | undefined,
+  request: () => Promise<T>
+): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    // Without a session there is nothing to enable it against, so the original
+    // failure is the honest one to report
+    if (!token || !isExtensionNotEnabled(error, extId)) throw error;
+
+    await enableExtension(extId, token);
+    return await request();
+  }
+}
+
+/**
  * Builds the NIP-98 `Authorization` header for a request.
  *
  * The URL must be absolute and match exactly what the server sees, since
