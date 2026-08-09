@@ -169,7 +169,7 @@ export function NoteContent({ event, className }: NoteContentProps) {
   return (
     <div className={cn('space-y-3', className)}>
       {inline.length > 0 && (
-        <div className="whitespace-pre-wrap break-words leading-relaxed">
+        <div className="whitespace-pre-wrap break-words text-base leading-relaxed sm:text-base text-sm">
           {inline}
         </div>
       )}

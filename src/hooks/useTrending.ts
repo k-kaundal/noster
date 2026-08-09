@@ -74,6 +74,8 @@ export function useTrending() {
         topMentions,
       };
     },
-    refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
+    staleTime: 60 * 1000, // 1 minute - data stays fresh for 1 min
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+    refetchInterval: 120 * 1000, // Refetch every 2 minutes
   });
 }
