@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import type { NostrEvent } from '@nostrify/nostrify';
-import { Check, Loader2, Shield, Users } from 'lucide-react';
+import { Check, Loader2, Shield, Users, Edit } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import {
@@ -21,12 +21,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Post } from '@/components/Post';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { canModerate, type Community } from '@/lib/community';
+import { CommunityEditor } from './CommunityEditor';
+import { CommunityVerificationBadge } from './CommunityVerificationBadge';
 
 /** A community: what it is, who runs it, and what has been approved into it. */
 export function CommunityView({ community }: { community: Community }) {
   const { user } = useCurrentUser();
   const { approved, pending, isLoading } = useCommunityPosts(community);
   const isModerator = canModerate(community, user?.pubkey);
+  const [isEditingCommunity, setIsEditingCommunity] = useState(false);
 
   useSeo({
     title: community.name,
@@ -64,12 +67,26 @@ export function CommunityView({ community }: { community: Community }) {
               )}
             </div>
 
-            {isModerator && (
-              <Badge variant="secondary" className="shrink-0">
-                <Shield className="mr-1 h-3 w-3" />
-                You moderate this
-              </Badge>
-            )}
+            <div className="flex flex-wrap gap-2 shrink-0 items-center">
+              <CommunityVerificationBadge community={community} />
+              {isModerator && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsEditingCommunity(true)}
+                    className="gap-2"
+                  >
+                    <Edit className="h-4 w-4" />
+                    Edit
+                  </Button>
+                  <Badge variant="secondary" className="gap-1">
+                    <Shield className="h-3 w-3" />
+                    You moderate this
+                  </Badge>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
@@ -133,6 +150,13 @@ export function CommunityView({ community }: { community: Community }) {
           )}
         </TabsContent>
       </Tabs>
+
+      {isEditingCommunity && isModerator && (
+        <CommunityEditor
+          community={community}
+          onClose={() => setIsEditingCommunity(false)}
+        />
+      )}
     </div>
   );
 }
