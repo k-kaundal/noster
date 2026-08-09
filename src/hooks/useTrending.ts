@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent } from '@nostrify/nostrify';
+import { useAuthor } from '@/hooks/useAuthor';
+import { genUserName } from '@/lib/genUserName';
 
 /**
  * Trending item with engagement metrics
@@ -42,7 +44,7 @@ export function calculateEngagementScore(
 }
 
 /**
- * Hook to fetch trending posts
+ * Hook to fetch trending posts with engagement metrics
  */
 export function useTrendingPosts(hours: number = 24, limit: number = 20) {
   const { nostr } = useNostr();
@@ -50,7 +52,7 @@ export function useTrendingPosts(hours: number = 24, limit: number = 20) {
   return useQuery({
     queryKey: ['trending-posts', hours, limit],
     queryFn: async (c) => {
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(3000)]);
+      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
       const since = Math.floor((Date.now() - hours * 3600000) / 1000);
 
       try {
@@ -59,22 +61,64 @@ export function useTrendingPosts(hours: number = 24, limit: number = 20) {
           [
             {
               kinds: [1],           // Text notes
-              limit: limit * 2,     // Get extra to rank
+              limit: Math.max(100, limit * 3),     // Get more to rank properly
               since,
             },
           ],
           { signal }
         );
 
-        // Sort by engagement (simplified - in real app would aggregate reactions)
-        return events.slice(0, limit).map((event) => ({
-          id: event.id,
-          title: event.content.substring(0, 100),
-          type: 'post' as const,
-          engagementScore: 0,       // Would be calculated from reactions
-          author: event.pubkey,
-          timestamp: event.created_at,
-        }));
+        if (events.length === 0) {
+          return [];
+        }
+
+        // Fetch reactions for all posts to calculate engagement
+        const eventIds = events.map(e => e.id);
+        const reactions = await nostr.query(
+          [
+            {
+              kinds: [7],           // Reactions
+              '#e': eventIds.slice(0, 50), // Limit reaction queries
+              limit: 1000,
+            },
+          ],
+          { signal }
+        ).catch(() => []);
+
+        const reactionCounts = new Map<string, { likes: number; reposts: number; replies: number }>();
+        eventIds.forEach(id => reactionCounts.set(id, { likes: 0, reposts: 0, replies: 0 }));
+
+        reactions.forEach(reaction => {
+          const eTag = reaction.tags.find(([name]) => name === 'e')?.[1];
+          if (eTag && reactionCounts.has(eTag)) {
+            const counts = reactionCounts.get(eTag)!;
+            if (reaction.content === '+' || reaction.content === '👍') {
+              counts.likes++;
+            } else if (reaction.content === '🔁' || reaction.kind === 6) {
+              counts.reposts++;
+            }
+          }
+        });
+
+        // Rank posts by engagement
+        const ranked = events.map((event) => {
+          const counts = reactionCounts.get(event.id) || { likes: 0, reposts: 0, replies: 0 };
+          const ageHours = (Math.floor(Date.now() / 1000) - event.created_at) / 3600;
+          const score = calculateEngagementScore(counts.likes, 0, counts.reposts, 0, ageHours);
+
+          return {
+            id: event.id,
+            title: event.content.substring(0, 100),
+            type: 'post' as const,
+            engagementScore: score,
+            likes: counts.likes,
+            reposts: counts.reposts,
+            author: event.pubkey,
+            timestamp: event.created_at,
+          };
+        }).sort((a, b) => b.engagementScore - a.engagementScore);
+
+        return ranked.slice(0, limit);
       } catch {
         return [];
       }
@@ -172,7 +216,7 @@ export function useTrendingUsers(hours: number = 24, limit: number = 10) {
   return useQuery({
     queryKey: ['trending-users', hours, limit],
     queryFn: async (c) => {
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(4000)]);
+      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
       const since = Math.floor((Date.now() - hours * 3600000) / 1000);
 
       try {
@@ -192,17 +236,45 @@ export function useTrendingUsers(hours: number = 24, limit: number = 10) {
           return [];
         }
 
-        const mentions = extractMentionsFromEvents(events, limit);
+        const mentions = extractMentionsFromEvents(events, limit * 2);
 
-        // Convert to TrendingItem format
-        return mentions.map(({ pubkey, count }) => ({
-          id: pubkey,
-          title: pubkey.slice(0, 10),
-          type: 'user' as const,
-          engagementScore: count,
-          author: pubkey,
-          timestamp: Math.floor(Date.now() / 1000),
-        }));
+        // Fetch metadata for top mentions
+        const pubkeysToFetch = mentions.slice(0, limit).map(m => m.pubkey);
+        const metadata = await nostr.query(
+          [
+            {
+              kinds: [0],  // Metadata
+              authors: pubkeysToFetch,
+              limit: limit,
+            },
+          ],
+          { signal }
+        ).catch(() => []);
+
+        const metadataMap = new Map<string, any>();
+        metadata.forEach(event => {
+          try {
+            const data = JSON.parse(event.content);
+            metadataMap.set(event.pubkey, data);
+          } catch {
+            // Invalid JSON, skip
+          }
+        });
+
+        // Convert to TrendingItem format with user names
+        return mentions.slice(0, limit).map(({ pubkey, count }) => {
+          const userMetadata = metadataMap.get(pubkey);
+          const name = userMetadata?.name || userMetadata?.display_name || genUserName(pubkey);
+
+          return {
+            id: pubkey,
+            title: name,
+            type: 'user' as const,
+            engagementScore: count,
+            author: pubkey,
+            timestamp: Math.floor(Date.now() / 1000),
+          };
+        });
       } catch {
         return [];
       }
@@ -211,19 +283,94 @@ export function useTrendingUsers(hours: number = 24, limit: number = 10) {
 }
 
 /**
- * Hook to fetch trending communities
+ * Hook to fetch trending communities based on recent activity
  */
 export function useTrendingCommunities(hours: number = 24, limit: number = 10) {
+  const { nostr } = useNostr();
+
   return useQuery({
     queryKey: ['trending-communities', hours, limit],
     queryFn: async (c) => {
-      // In a real implementation, this would track community activity
-      // For now, returns empty array - should be implemented with activity metrics
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(2000)]);
+      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
+      const since = Math.floor((Date.now() - hours * 3600000) / 1000);
 
       try {
-        // Placeholder implementation
-        return [] as TrendingItem[];
+        // Query for recent posts with community tags
+        const events = await nostr.query(
+          [
+            {
+              kinds: [1],           // Posts in communities
+              limit: 300,
+              since,
+            },
+          ],
+          { signal }
+        );
+
+        if (events.length === 0) {
+          return [];
+        }
+
+        // Extract communities from 'a' tags (addressable event pointers)
+        const communityMap = new Map<string, { name: string; count: number; pubkey: string; slug: string }>();
+
+        events.forEach(event => {
+          const aTag = event.tags.find(([name]) => name === 'a')?.[1];
+          if (aTag) {
+            // Format: 34550:pubkey:slug
+            const [kind, pubkey, slug] = aTag.split(':');
+            if (kind === '34550' && pubkey && slug) {
+              const id = `${pubkey}:${slug}`;
+              const current = communityMap.get(id);
+              communityMap.set(id, {
+                name: slug,
+                count: (current?.count || 0) + 1,
+                pubkey,
+                slug,
+              });
+            }
+          }
+        });
+
+        if (communityMap.size === 0) {
+          return [];
+        }
+
+        // Sort by activity count
+        const sorted = Array.from(communityMap.values())
+          .sort((a, b) => b.count - a.count)
+          .slice(0, limit);
+
+        // Fetch community definitions for better names
+        const communityAddrs = sorted.map(c => `34550:${c.pubkey}:${c.slug}`);
+        const communities = await nostr.query(
+          [
+            {
+              kinds: [34550],  // Community definitions
+              limit: limit,
+            },
+          ],
+          { signal }
+        ).catch(() => []);
+
+        const communityNames = new Map<string, string>();
+        communities.forEach(event => {
+          const dTag = event.tags.find(([name]) => name === 'd')?.[1];
+          const nameTag = event.tags.find(([name]) => name === 'name')?.[1];
+          if (dTag && nameTag) {
+            communityNames.set(`${event.pubkey}:${dTag}`, nameTag);
+          }
+        });
+
+        // Build final results
+        return sorted.map(community => ({
+          id: `${community.pubkey}:${community.slug}`,
+          title: communityNames.get(`${community.pubkey}:${community.slug}`) || community.slug,
+          type: 'community' as const,
+          engagementScore: community.count,
+          author: community.pubkey,
+          timestamp: Math.floor(Date.now() / 1000),
+        }));
       } catch {
         return [];
       }

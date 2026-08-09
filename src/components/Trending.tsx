@@ -6,6 +6,8 @@ import {
   Hash,
   Users,
   MessageSquare,
+  Zap,
+  ArrowUp,
 } from 'lucide-react';
 import {
   useTrendingPosts,
@@ -16,6 +18,7 @@ import {
 } from '@/hooks/useTrending';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 interface TrendingProps {
@@ -35,10 +38,17 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
   const { data: communities, isLoading: communitiesLoading } = useTrendingCommunities(hours, limit);
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-2">
-        <Flame className="h-6 w-6 text-orange-500" />
-        <h2 className="text-2xl font-bold">Trending</h2>
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/10">
+            <Flame className="h-6 w-6 text-orange-500" />
+          </div>
+          <h2 className="text-3xl font-bold">Trending Now</h2>
+        </div>
+        <p className="text-sm text-muted-foreground ml-13">
+          Discover what's popular right now on Nostr
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -126,50 +136,66 @@ function TrendingCard({
   renderItem,
 }: TrendingCardProps) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="overflow-hidden hover:shadow-lg transition-shadow">
+      <CardHeader className="bg-gradient-to-r from-primary/5 to-transparent pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icon className="h-5 w-5" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <Icon className="h-4 w-4 text-primary" />
+          </div>
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-4">
         {isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 rounded" />
+              <Skeleton key={i} className="h-12 rounded-lg" />
             ))}
           </div>
         ) : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">
-            No trending items yet
-          </p>
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <Icon className="h-8 w-8 text-muted-foreground/40 mb-3" />
+            <p className="text-sm text-muted-foreground">
+              No trending items yet
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Check back soon for updates
+            </p>
+          </div>
         ) : (
           <ol className="space-y-2">
             {items.slice(0, 5).map((item, index) => (
               <li
                 key={item.id}
                 className={cn(
-                  'flex items-start gap-3 rounded-lg p-2 hover:bg-muted/50 transition-colors text-sm',
-                  index === 0 && 'bg-primary/5'
+                  'group flex items-center gap-3 rounded-lg p-3 transition-all',
+                  'hover:bg-accent/50 border border-transparent hover:border-primary/20',
+                  index === 0 && 'bg-orange-500/5 border-orange-500/20'
                 )}
               >
-                <span
-                  className={cn(
-                    'flex h-6 w-6 shrink-0 items-center justify-center rounded font-bold text-xs',
-                    index === 0 && 'bg-orange-500/20 text-orange-600'
-                  )}
-                >
-                  {index + 1}
-                </span>
-                <span className="min-w-0 flex-1">
-                  {renderItem(item, index)}
+                <div className={cn(
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-bold text-xs font-semibold',
+                  index === 0 ? 'bg-orange-500/20 text-orange-600' : 'bg-muted text-muted-foreground'
+                )}>
+                  {index === 0 && <Flame className="h-3.5 w-3.5" />}
+                  {index > 0 && (index + 1)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium truncate group-hover:text-primary transition-colors">
+                    {renderItem(item, index)}
+                  </div>
                   {item.engagementScore > 0 && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      ⚡ {item.engagementScore.toLocaleString()} engagement
-                    </p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <Zap className="h-3 w-3 text-yellow-500" />
+                      <p className="text-xs text-muted-foreground">
+                        {Math.round(item.engagementScore)} {item.engagementScore === 1 ? 'engagement' : 'engagements'}
+                      </p>
+                    </div>
                   )}
-                </span>
+                </div>
+                {index === 0 && (
+                  <ArrowUp className="h-4 w-4 text-orange-500/60 shrink-0" />
+                )}
               </li>
             ))}
           </ol>
