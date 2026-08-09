@@ -54,59 +54,52 @@ function parseOGMetadata(html: string): OGMetadata {
 
 /**
  * Hook to fetch OG metadata from a URL
+ * Uses client-side approach with timeouts to prevent blocking
  */
 export function useOGMetadata(url: string | null | undefined) {
   return useQuery({
     queryKey: ['og-metadata', url],
-    queryFn: async () => {
+    queryFn: async (context) => {
       if (!url) return null;
 
       try {
-        // Try to extract domain from URL
-        const urlObj = new URL(url);
-        const domain = urlObj.hostname;
+        // Create abort controller with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        // Use a CORS proxy to fetch the HTML
-        // We'll try multiple proxies as fallback
-        const proxies = [
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-          `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        ];
+        try {
+          // Use a CORS proxy to fetch the HTML
+          const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
 
-        let html = '';
-        let lastError: Error | null = null;
+          const response = await fetch(proxy, {
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+          });
 
-        for (const proxy of proxies) {
-          try {
-            const response = await fetch(proxy, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              },
-            });
+          clearTimeout(timeoutId);
 
-            if (response.ok) {
-              html = await response.text();
-              break;
-            }
-          } catch (error) {
-            lastError = error as Error;
-            continue;
+          if (!response.ok) {
+            return null;
           }
-        }
 
-        if (!html) {
-          throw lastError || new Error('Failed to fetch metadata');
-        }
+          const html = await response.text();
+          if (!html) return null;
 
-        const metadata = parseOGMetadata(html);
-        return metadata;
+          const metadata = parseOGMetadata(html);
+          return metadata.title || metadata.image ? metadata : null;
+        } finally {
+          clearTimeout(timeoutId);
+        }
       } catch (error) {
-        console.error('Failed to fetch OG metadata:', error);
+        // Silently fail - OG metadata is optional
         return null;
       }
     },
     enabled: !!url,
     staleTime: 24 * 60 * 60 * 1000, // Cache for 24 hours
+    retry: 0, // Don't retry failed OG metadata fetches
   });
 }
 

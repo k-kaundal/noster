@@ -186,22 +186,22 @@ function PostPreview({ content, index }: PostPreviewProps) {
   const { data: ogData, isLoading } = useOGMetadata(url);
 
   // Show OG preview if available and we have image or title
-  if (ogData && (ogData.image || ogData.title || ogData.description)) {
+  if (ogData?.title || ogData?.image) {
     return (
       <div className="flex gap-2 items-start">
         {ogData.image && (
-          <div className="shrink-0 overflow-hidden rounded">
+          <div className="shrink-0 overflow-hidden rounded bg-muted">
             <img
               src={ogData.image}
               alt=""
               className="h-12 w-12 object-cover"
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              onError={() => {}} // Silently fail
             />
           </div>
         )}
         <div className="min-w-0 flex-1">
           {ogData.title && (
-            <p className="text-sm font-medium truncate hover:text-primary transition-colors">
+            <p className="text-sm font-medium line-clamp-2 hover:text-primary transition-colors">
               {ogData.title}
             </p>
           )}
@@ -210,24 +210,14 @@ function PostPreview({ content, index }: PostPreviewProps) {
               {ogData.description}
             </p>
           )}
-          {ogData.siteName && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {ogData.siteName}
-            </p>
-          )}
         </div>
       </div>
     );
   }
 
-  // Show loading state
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2">
-        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">Loading...</span>
-      </div>
-    );
+  // Show loading state only on first load
+  if (isLoading && !url) {
+    return <span className="text-xs text-muted-foreground">[Loading...]</span>;
   }
 
   // Fallback to regular preview
