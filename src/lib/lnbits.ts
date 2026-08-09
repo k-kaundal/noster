@@ -407,6 +407,48 @@ export async function loginWithPassword(
 }
 
 /**
+ * Pulls the account id out of whatever someone pasted.
+ *
+ * The id is the only credential most existing LNbits users have: accounts made
+ * before this app never set a username or password, and the wallet is reached
+ * by a link carrying `?usr=`. Accepting the whole URL means they can paste the
+ * address bar instead of hunting for the id inside it.
+ */
+export function parseUserId(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const uuid = /[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+  // A pasted link keeps the id in `usr`; anything else is read as a bare id
+  try {
+    const url = new URL(trimmed);
+    const usr = url.searchParams.get('usr');
+    if (usr && uuid.test(usr)) return usr;
+  } catch {
+    // Not a URL, so fall through to matching the id on its own
+  }
+
+  const match = trimmed.match(uuid);
+  return match ? match[0] : null;
+}
+
+/**
+ * Logs in with an LNbits account id, the credential behind a `?usr=` wallet
+ * link. Requires `user-id-only` in the instance's `auth_allowed_methods`.
+ */
+export async function loginWithUserId(
+  usr: string
+): Promise<string | undefined> {
+  const body = await lnbitsRequest<unknown>('/api/v1/auth/usr', {
+    method: 'POST',
+    body: { usr },
+  });
+
+  return readAccessToken(body);
+}
+
+/**
  * Whether a failure means "nobody is signed in" rather than something broken.
  *
  * LNbits answers an unauthenticated `/api/v1/auth` with a 400 and
