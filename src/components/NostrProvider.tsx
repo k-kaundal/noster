@@ -112,55 +112,6 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
         return available.length > 0 ? available : targets.slice(0, 3);
       },
     });
-
-    // Wrap pool methods to record relay health
-    const originalQuery = pool.current.query.bind(pool.current);
-    const originalPublish = pool.current.publish.bind(pool.current);
-
-    pool.current.query = async (filters, options) => {
-      const startTime = performance.now();
-      try {
-        const results = await originalQuery(filters, options);
-
-        // Record success for relays that returned data
-        // Note: NPool doesn't expose which relays were queried, so we record all used relays
-        const allReadRelays = readRelays(relays.current);
-        allReadRelays.forEach((url) => {
-          const responseTime = performance.now() - startTime;
-          healthMonitor.recordSuccess(url, Math.round(responseTime / allReadRelays.length));
-        });
-
-        return results;
-      } catch (error) {
-        // Record failures
-        const allReadRelays = readRelays(relays.current);
-        allReadRelays.forEach((url) => {
-          healthMonitor.recordFailure(url);
-        });
-        throw error;
-      }
-    };
-
-    pool.current.publish = async (event, relaySet) => {
-      try {
-        const results = await originalPublish(event, relaySet);
-
-        // Record success for published event
-        const allWriteRelays = writeRelays(relays.current);
-        allWriteRelays.forEach((url) => {
-          healthMonitor.recordSuccess(url);
-        });
-
-        return results;
-      } catch (error) {
-        // Record failures
-        const allWriteRelays = writeRelays(relays.current);
-        allWriteRelays.forEach((url) => {
-          healthMonitor.recordFailure(url);
-        });
-        throw error;
-      }
-    };
   }
 
   return (

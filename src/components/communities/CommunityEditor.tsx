@@ -34,7 +34,7 @@ export function CommunityEditor({ community, onClose, onSave }: CommunityEditorP
   const [newRelayInput, setNewRelayInput] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
 
-  const { mutate: publishEvent } = useNostrPublish();
+  const { mutateAsync: publishEvent } = useNostrPublish();
   const { toast } = useToast();
 
   const handleAddModerator = useCallback(() => {

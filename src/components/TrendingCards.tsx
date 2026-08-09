@@ -78,6 +78,10 @@ export function TrendingPeople({
   limit = 5,
   className,
 }: TrendingPeopleProps) {
+  const validMentions = mentions.filter(
+    (m) => m?.pubkey && typeof m.pubkey === 'string' && /^[0-9a-f]{64}$/.test(m.pubkey)
+  );
+
   return (
     <Card className={cn('overflow-hidden', className)}>
       <CardHeader className="pb-3">
@@ -89,13 +93,13 @@ export function TrendingPeople({
       <CardContent className="p-0 pb-2">
         {isLoading ? (
           <RankedSkeleton withAvatar />
-        ) : mentions.length === 0 ? (
+        ) : validMentions.length === 0 ? (
           <p className="px-6 pb-4 text-sm text-muted-foreground">
             No mentions found on this relay.
           </p>
         ) : (
           <ul>
-            {mentions.slice(0, limit).map(({ pubkey, count }, index) => (
+            {validMentions.slice(0, limit).map(({ pubkey, count }, index) => (
               <MentionedUser
                 key={pubkey}
                 pubkey={pubkey}
@@ -119,6 +123,10 @@ function MentionedUser({
   count: number;
   rank: number;
 }) {
+  if (!pubkey || !/^[0-9a-f]{64}$/.test(pubkey)) {
+    return null;
+  }
+
   const author = useAuthor(pubkey);
   const metadata = author.data?.metadata;
   const displayName =
