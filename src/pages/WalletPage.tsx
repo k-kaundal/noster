@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountCard } from '@/components/wallet/AccountCard';
 import { IdentityCard } from '@/components/wallet/IdentityCard';
-import { PasswordSignIn } from '@/components/wallet/PasswordSignIn';
+import { ExistingWalletSignIn } from '@/components/wallet/ExistingWalletSignIn';
 import { ReceiveDialog } from '@/components/wallet/ReceiveDialog';
 import { SendDialog } from '@/components/wallet/SendDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -28,6 +28,7 @@ import { useLightningAddress } from '@/hooks/useLightningAddress';
 import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
 import { useLnbitsPayments, useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useSeo } from '@/hooks/useSeo';
+import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
 import { msatToSat, paymentTimeMs } from '@/lib/lnbits';
 import { formatSats } from '@/lib/zap';
 import { cn } from '@/lib/utils';
@@ -111,10 +112,16 @@ function CreateWalletCard() {
         </div>
 
         <h2 className="text-3xl font-bold tracking-tight">Set up your wallet</h2>
-        <p className="mx-auto mt-3 max-w-md text-base text-muted-foreground leading-relaxed">
-          One tap creates a lightning wallet and your own
-          <span className="block font-medium text-foreground mt-1">name@address</span>
-          <span>so people can zap you from any Nostr client.</span>
+
+        <p className="mx-auto mt-3 max-w-sm text-base leading-relaxed text-muted-foreground">
+          One tap creates a lightning wallet and an address like
+        </p>
+        {/* The real domain, so the promise is checkable before it is accepted */}
+        <p className="mt-2 font-mono text-sm font-medium text-foreground">
+          you@{ADDRESS_DOMAIN}
+        </p>
+        <p className="mx-auto mt-2 max-w-sm text-base leading-relaxed text-muted-foreground">
+          that people can zap from any Nostr client.
         </p>
 
         <Button
@@ -133,13 +140,17 @@ function CreateWalletCard() {
 
         {connectError && (
           <div className="mx-auto mt-6 max-w-md rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-left">
-            <p className="text-sm text-destructive font-medium">Error</p>
-            <p className="text-xs text-destructive/80 mt-1">{connectError}</p>
+            <p className="text-sm font-medium text-destructive">
+              Couldn't create your wallet
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-destructive/80">
+              {connectError}
+            </p>
           </div>
         )}
 
-        <div className="mx-auto mt-8 max-w-md">
-          <PasswordSignIn />
+        <div className="mt-6 flex items-center justify-center">
+          <ExistingWalletSignIn />
         </div>
       </div>
 
