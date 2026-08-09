@@ -2,42 +2,49 @@ import { Suspense, lazy } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { PostSkeletonList } from "./components/PostSkeleton";
+import { importChunk } from "./lib/importChunk";
 
 import Index from "./pages/Index";
 
 // Everything past the home page loads on demand, so the first paint stays small
-const ComposePage = lazy(() => import("./pages/ComposePage"));
-const TrendingPage = lazy(() => import("./pages/TrendingPage"));
-const DiscoveryPage = lazy(() => import("./pages/DiscoveryPage"));
-const ExplorePage = lazy(() => import("./pages/ExplorePage"));
-const HashtagPage = lazy(() => import("./pages/HashtagPage"));
-const RelaysPage = lazy(() => import("./pages/RelaysPage"));
-const ReelsPage = lazy(() => import("./pages/ReelsPage"));
-const BookmarksPage = lazy(() => import("./pages/BookmarksPage"));
-const ChatPage = lazy(() => import("./pages/ChatPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsPage"));
-const PremiumPage = lazy(() => import("./pages/PremiumPage"));
-const WalletPage = lazy(() => import("./pages/WalletPage"));
-const WritePage = lazy(() => import("./pages/WritePage"));
-const CommunitiesPage = lazy(() => import("./pages/CommunitiesPage"));
-const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
-const IdentityVaultPage = lazy(() => import("./pages/IdentityVaultPage"));
-const CommunityTreasuryPage = lazy(() => import("./pages/CommunityTreasuryPage"));
-const BountiesPage = lazy(() => import("./pages/BountiesPage"));
-const MembershipsPage = lazy(() => import("./pages/MembershipsPage"));
-const SatsDropsPage = lazy(() => import("./pages/SatsDropsPage"));
-const LiveStreamingPage = lazy(() => import("./pages/LiveStreamingPage"));
-const MiniAppsPage = lazy(() => import("./pages/MiniAppsPage"));
+const ComposePage = lazy(() => importChunk(() => import("./pages/ComposePage")));
+const TrendingPage = lazy(() => importChunk(() => import("./pages/TrendingPage")));
+const DiscoveryPage = lazy(() => importChunk(() => import("./pages/DiscoveryPage")));
+const ExplorePage = lazy(() => importChunk(() => import("./pages/ExplorePage")));
+const HashtagPage = lazy(() => importChunk(() => import("./pages/HashtagPage")));
+const RelaysPage = lazy(() => importChunk(() => import("./pages/RelaysPage")));
+const ReelsPage = lazy(() => importChunk(() => import("./pages/ReelsPage")));
+const BookmarksPage = lazy(() => importChunk(() => import("./pages/BookmarksPage")));
+const ChatPage = lazy(() => importChunk(() => import("./pages/ChatPage")));
+const SettingsPage = lazy(() => importChunk(() => import("./pages/SettingsPage")));
+const PremiumPage = lazy(() => importChunk(() => import("./pages/PremiumPage")));
+const WalletPage = lazy(() => importChunk(() => import("./pages/WalletPage")));
+const WritePage = lazy(() => importChunk(() => import("./pages/WritePage")));
+const CommunitiesPage = lazy(() => importChunk(() => import("./pages/CommunitiesPage")));
+const NotificationsPage = lazy(() => importChunk(() => import("./pages/NotificationsPage")));
+const IdentityVaultPage = lazy(() => importChunk(() => import("./pages/IdentityVaultPage")));
+const CommunityTreasuryPage = lazy(() => importChunk(() => import("./pages/CommunityTreasuryPage")));
+const BountiesPage = lazy(() => importChunk(() => import("./pages/BountiesPage")));
+const MembershipsPage = lazy(() => importChunk(() => import("./pages/MembershipsPage")));
+const SatsDropsPage = lazy(() => importChunk(() => import("./pages/SatsDropsPage")));
+const LiveStreamingPage = lazy(() => importChunk(() => import("./pages/LiveStreamingPage")));
+const MiniAppsPage = lazy(() => importChunk(() => import("./pages/MiniAppsPage")));
 const NIP19Page = lazy(() =>
-  import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
+  importChunk(() =>
+    import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
+  )
 );
 const FollowingPage = lazy(() =>
-  import("./pages/FollowingPage").then((m) => ({ default: m.FollowingPage }))
+  importChunk(() =>
+    import("./pages/FollowingPage").then((m) => ({ default: m.FollowingPage }))
+  )
 );
 const FollowersPage = lazy(() =>
-  import("./pages/FollowersPage").then((m) => ({ default: m.FollowersPage }))
+  importChunk(() =>
+    import("./pages/FollowersPage").then((m) => ({ default: m.FollowersPage }))
+  )
 );
-const NotFound = lazy(() => import("./pages/NotFound"));
+const NotFound = lazy(() => importChunk(() => import("./pages/NotFound")));
 
 function RouteFallback() {
   return (
