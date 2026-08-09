@@ -269,12 +269,12 @@ export function Post({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1 text-sm">
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-1.5">
               <UserHoverCard pubkey={event.pubkey}>
                 <Link
                   to={`/${npub}`}
-                  className="truncate font-semibold hover:underline"
+                  className="truncate font-semibold text-sm hover:underline"
                 >
                   {displayName}
                 </Link>
@@ -283,20 +283,20 @@ export function Post({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <BadgeCheck
-                      className="h-4 w-4 shrink-0 text-primary"
+                      className="h-3.5 w-3.5 shrink-0 text-primary"
                       aria-label="Verified NIP-05 address"
                     />
                   </TooltipTrigger>
                   <TooltipContent>{metadata.nip05}</TooltipContent>
                 </Tooltip>
               )}
-              <span className="truncate text-muted-foreground">@{username}</span>
+              <span className="truncate text-xs text-muted-foreground">@{username}</span>
               <span className="text-muted-foreground" aria-hidden="true">
                 ·
               </span>
               <Link
                 to={`/${noteId}`}
-                className="shrink-0 text-muted-foreground hover:underline"
+                className="shrink-0 text-xs text-muted-foreground hover:underline"
               >
                 {timeAgo}
               </Link>
@@ -429,7 +429,7 @@ export function Post({
         </div>
 
         {!embedded && (
-          <div className="-ml-2 mt-3 flex items-center justify-between gap-1 sm:justify-start sm:gap-2">
+          <div className="-ml-3 mt-3 flex flex-wrap items-center gap-2 sm:gap-4">
             <ActionButton
               icon={MessageCircle}
               label="Reply"
@@ -524,12 +524,12 @@ export function Post({
         )}
       >
         {isRepost && (
-          <div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
-            <Repeat2 className="h-3.5 w-3.5 text-repost" />
-            <Link to={`/${npub}`} className="font-medium hover:underline">
+          <div className="flex items-center gap-2 border-b bg-repost/5 px-4 py-2.5 text-xs text-repost font-medium">
+            <Repeat2 className="h-4 w-4 shrink-0 text-repost/80" />
+            <Link to={`/${npub}`} className="hover:underline">
               {displayName}
             </Link>
-            <span>reposted</span>
+            <span className="text-repost/70">reposted</span>
           </div>
         )}
 
@@ -616,12 +616,14 @@ function ReplyingTo({ event, noteId }: { event: NostrEvent; noteId: string }) {
   return (
     <Link
       to={`/${noteId}`}
-      className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+      className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
     >
-      <MessageCircle className="h-3 w-3" />
-      {parentPubkey
-        ? `Replying to @${metadata?.name || genUserName(parentPubkey)}`
-        : 'Replying to a thread'}
+      <MessageCircle className="h-3.5 w-3.5 shrink-0 opacity-60" />
+      <span>
+        {parentPubkey
+          ? `Replying to @${metadata?.name || genUserName(parentPubkey)}`
+          : 'Replying to a thread'}
+      </span>
     </Link>
   );
 }
@@ -673,7 +675,7 @@ function ActionButton({
           aria-label={label}
           aria-pressed={active}
           className={cn(
-            'press group flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+            'press group flex min-h-9 items-center gap-2 rounded-full px-3 py-2 text-xs font-medium text-muted-foreground transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40 hover:scale-105 active:scale-95',
             TONE_CLASSES[tone],
             active && ACTIVE_CLASSES[tone]
           )}
@@ -683,13 +685,13 @@ function ActionButton({
           ) : (
             <Icon
               className={cn(
-                'h-4 w-4 transition-transform group-active:scale-90',
+                'h-4 w-4 shrink-0 transition-transform',
                 active && fillWhenActive && 'fill-current'
               )}
             />
           )}
           {count !== undefined && count > 0 && (
-            <span className="tabular-nums">{formatCount(count)}</span>
+            <span className="tabular-nums text-xs text-muted-foreground">{formatCount(count)}</span>
           )}
         </button>
       </TooltipTrigger>

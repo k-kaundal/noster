@@ -3,9 +3,13 @@ import { Link } from 'react-router-dom';
 import { ArrowUp, Film, Loader2, MessageSquare, RefreshCw, Users } from 'lucide-react';
 import { useFeed, type FeedScope } from '@/hooks/useFeed';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useAdvancedFilters } from '@/hooks/useAdvancedFilters';
+import { useProfessionalUI } from '@/hooks/useProfessionalUI';
 import { Post } from '@/components/Post';
+import { PostProfessional } from '@/components/PostProfessional';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { EmptyState } from '@/components/EmptyState';
+import { AdvancedFiltersButton } from '@/components/AdvancedFilters';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrendingHashtags, TrendingPeople } from '@/components/TrendingCards';
@@ -16,6 +20,7 @@ import { cn } from '@/lib/utils';
 
 export function Feed() {
   const { user } = useCurrentUser();
+  const { enabled: useProfessional } = useProfessionalUI();
   const [scope, setScope] = useState<FeedScope>('global');
 
   const {
@@ -32,12 +37,69 @@ export function Feed() {
 
   const { data: trending, isLoading: isTrendingLoading } = useTrending();
   const { list: muteList } = useMuteList();
+  const { filters } = useAdvancedFilters();
 
   // Muted authors, words and hashtags never reach the timeline
-  const posts = useMemo(
-    () => (rawPosts ? filterMuted(rawPosts, muteList) : rawPosts),
-    [rawPosts, muteList]
-  );
+  const posts = useMemo(() => {
+    if (!rawPosts) return rawPosts;
+
+    let filtered = filterMuted(rawPosts, muteList);
+
+    // Apply advanced filters if enabled
+    if (filters.enabled) {
+      filtered = filtered.filter((post) => {
+        // Hide replies if filter is enabled
+        if (filters.hideReplies && post.tags.some(([name]) => name === 'e')) {
+          return false;
+        }
+
+        // Hide reposts if filter is enabled
+        if (filters.hideReposts && (post.kind === 6 || post.kind === 16)) {
+          return false;
+        }
+
+        // Filter by content type
+        if (
+          filters.contentTypes.length > 0 &&
+          !filters.contentTypes.includes('all')
+        ) {
+          const hasImage = post.tags.some(([name, value]) =>
+            name === 'imeta' || (name === 'media' && value?.includes('image'))
+          );
+          const hasVideo = post.tags.some(([name, value]) =>
+            (name === 'imeta' && value?.includes('video')) ||
+            (name === 'media' && value?.includes('video'))
+          );
+          const isArticle = post.kind === 23;
+
+          if (
+            filters.contentTypes.includes('image') && !hasImage ||
+            filters.contentTypes.includes('video') && !hasVideo ||
+            filters.contentTypes.includes('article') && !isArticle ||
+            filters.contentTypes.includes('text') && (hasImage || hasVideo || isArticle)
+          ) {
+            return false;
+          }
+        }
+
+        // Filter by engagement (check tags for engagement metrics)
+        if (filters.minEngagement > 0) {
+          const replies = parseInt(post.tags.find(([name]) => name === 'replies')?.[1] ?? '0');
+          const reposts = parseInt(post.tags.find(([name]) => name === 'reposts')?.[1] ?? '0');
+          const reactions = parseInt(post.tags.find(([name]) => name === 'reactions')?.[1] ?? '0');
+          const totalEngagement = replies + reposts + reactions;
+
+          if (totalEngagement < filters.minEngagement) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+    }
+
+    return filtered;
+  }, [rawPosts, muteList, filters]);
 
   // Track the newest note the reader has actually seen, so the "new posts"
   // pill only counts notes that arrived after they arrived on the page.
@@ -97,19 +159,22 @@ export function Feed() {
           </TabsList>
         </Tabs>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={isRefetching}
-          aria-label="Refresh feed"
-          className="text-muted-foreground"
-        >
-          <RefreshCw
-            className={cn('h-4 w-4 sm:mr-2', isRefetching && 'animate-spin')}
-          />
-          <span className="hidden sm:inline">Refresh</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <AdvancedFiltersButton />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isRefetching}
+            aria-label="Refresh feed"
+            className="text-muted-foreground"
+          >
+            <RefreshCw
+              className={cn('h-4 w-4 sm:mr-2', isRefetching && 'animate-spin')}
+            />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+        </div>
       </div>
 
       {newCount > 0 && (
@@ -224,7 +289,11 @@ export function Feed() {
                   { '--stagger-index': Math.min(index, 8) } as React.CSSProperties
                 }
               >
-                <Post event={post} />
+                {useProfessional ? (
+                  <PostProfessional event={post} />
+                ) : (
+                  <Post event={post} />
+                )}
               </div>
             ))}
           </div>

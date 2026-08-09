@@ -10,6 +10,8 @@ import {
   buildMuteListTags,
   parseMuteList,
   type MuteList,
+  type MutedItem,
+  isActiveMute,
 } from '@/lib/mute';
 
 /**
@@ -134,8 +136,45 @@ export function useMuteList() {
   );
 
   const isUserMuted = useCallback(
-    (pubkey: string) => list.pubkeys.includes(pubkey),
+    (pubkey: string) => {
+      return list.pubkeys.some((item) => {
+        const value = typeof item === 'string' ? item : item.value;
+        if (value !== pubkey) return false;
+        return isActiveMute(item);
+      });
+    },
     [list]
+  );
+
+  const muteUserTemporarily = useCallback(
+    (pubkey: string, durationMs: number) => {
+      if (list.pubkeys.some((p) => {
+        const value = typeof p === 'string' ? p : p.value;
+        return value === pubkey && isActiveMute(p);
+      })) {
+        return Promise.resolve(list);
+      }
+
+      const expiry = Math.floor((Date.now() + durationMs) / 1000);
+      const item: MutedItem = { value: pubkey, expiry };
+      return update({ ...list, pubkeys: [...list.pubkeys, item] });
+    },
+    [list, update]
+  );
+
+  const softMuteUser = useCallback(
+    (pubkey: string) => {
+      if (list.pubkeys.some((p) => {
+        const value = typeof p === 'string' ? p : p.value;
+        return value === pubkey;
+      })) {
+        return Promise.resolve(list);
+      }
+
+      const item: MutedItem = { value: pubkey, soft: true };
+      return update({ ...list, pubkeys: [...list.pubkeys, item] });
+    },
+    [list, update]
   );
 
   return {
@@ -145,6 +184,8 @@ export function useMuteList() {
     isUserMuted,
     muteUser,
     unmuteUser,
+    muteUserTemporarily,
+    softMuteUser,
     muteWord,
     unmuteWord,
     muteHashtag,

@@ -6,6 +6,7 @@ import {
   Loader2,
   MessagesSquare,
   Plus,
+  Sparkles,
   Settings,
   Type,
   Upload,
@@ -24,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -32,8 +34,11 @@ import { useMuteList } from '@/hooks/useMuteList';
 import { useDmRelayList } from '@/hooks/useDmRelayList';
 import { useRelays } from '@/hooks/useRelays';
 import { useSeo } from '@/hooks/useSeo';
+import { useProfessionalUI } from '@/hooks/useProfessionalUI';
+import { AdvancedThemeSwitcher } from '@/components/AdvancedThemeSwitcher';
 import { genUserName } from '@/lib/genUserName';
 import { relayDisplayName } from '@/lib/relay';
+import { getMuteValue } from '@/lib/mute';
 
 export function SettingsPage() {
   useSeo({
@@ -59,6 +64,9 @@ export function SettingsPage() {
             <TabsTrigger value="appearance" className="flex-1 sm:flex-none">
               Appearance
             </TabsTrigger>
+            <TabsTrigger value="ui" className="flex-1 sm:flex-none">
+              UI
+            </TabsTrigger>
             <TabsTrigger value="muted" className="flex-1 sm:flex-none">
               Muted
             </TabsTrigger>
@@ -72,6 +80,9 @@ export function SettingsPage() {
 
           <TabsContent value="appearance">
             <AppearanceSettings />
+          </TabsContent>
+          <TabsContent value="ui">
+            <UISettings />
           </TabsContent>
           <TabsContent value="muted">
             {user ? <MuteSettings /> : <SignedOutNotice what="mute list" />}
@@ -189,14 +200,17 @@ function MuteSettings() {
             </p>
           ) : (
             <ul className="divide-y border-t">
-              {list.pubkeys.map((pubkey) => (
-                <MutedPersonRow
-                  key={pubkey}
-                  pubkey={pubkey}
-                  onUnmute={() => unmuteUser(pubkey)}
-                  disabled={isUpdating}
-                />
-              ))}
+              {list.pubkeys.map((item) => {
+                const pubkey = getMuteValue(item);
+                return (
+                  <MutedPersonRow
+                    key={pubkey}
+                    pubkey={pubkey}
+                    onUnmute={() => unmuteUser(pubkey)}
+                    disabled={isUpdating}
+                  />
+                );
+              })}
             </ul>
           )}
         </CardContent>
@@ -213,7 +227,7 @@ function MuteSettings() {
           await muteWord(word);
           setWord('');
         }}
-        items={list.words}
+        items={list.words.map(getMuteValue)}
         onRemove={unmuteWord}
         disabled={isUpdating}
       />
@@ -229,7 +243,7 @@ function MuteSettings() {
           await muteHashtag(hashtag);
           setHashtag('');
         }}
-        items={list.hashtags}
+        items={list.hashtags.map(getMuteValue)}
         onRemove={unmuteHashtag}
         disabled={isUpdating}
         prefix="#"
@@ -439,6 +453,50 @@ function MessageRelaySettings() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function UISettings() {
+  const { enabled: professionalUI, setEnabled: setProfessionalUI } =
+    useProfessionalUI();
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-4 w-4" />
+            Interface Enhancements
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Professional UI Mode</p>
+              <p className="text-xs text-muted-foreground">
+                Enhanced post layout with professional design and improved spacing.
+              </p>
+            </div>
+            <Switch
+              checked={professionalUI}
+              onCheckedChange={setProfessionalUI}
+            />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Advanced Themes
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Choose from 13+ professional and creative theme presets, including X-inspired, premium corporate, and crypto-themed options.
+            </p>
+            <AdvancedThemeSwitcher />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

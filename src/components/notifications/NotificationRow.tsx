@@ -93,7 +93,11 @@ export function NotificationRow({
                 compact ? 'line-clamp-2' : 'line-clamp-3'
               )}
             >
-              {notification.content}
+              {notification.type === 'repost' ? (
+                <span className="italic">Note: {notification.content}</span>
+              ) : (
+                notification.content
+              )}
             </p>
           )}
 
