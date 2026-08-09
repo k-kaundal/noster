@@ -175,3 +175,26 @@ export function useTrendingCommunities(hours: number = 24, limit: number = 10) {
     },
   });
 }
+
+/**
+ * Combined trending data hook for discovery widgets
+ */
+export function useTrending() {
+  const trendingHashtags = useTrendingHashtags(24, 10);
+  const trendingUsers = useTrendingUsers(24, 5);
+
+  return {
+    data:
+      trendingHashtags.data || trendingUsers.data
+        ? {
+            topHashtags: trendingHashtags.data ?? [],
+            topMentions:
+              trendingUsers.data?.map((user) => ({
+                pubkey: user.id,
+                count: Math.round(user.engagementScore),
+              })) ?? [],
+          }
+        : undefined,
+    isLoading: trendingHashtags.isLoading || trendingUsers.isLoading,
+  };
+}
