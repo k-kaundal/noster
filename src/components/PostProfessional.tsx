@@ -3,15 +3,17 @@
  * Provides better spacing, typography, and interaction feedback
  */
 
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { nip19 } from 'nostr-tools';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useNostr } from '@nostrify/react';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Heart, MessageCircle, Repeat2, Share } from 'lucide-react';
+import { Heart, MessageCircle, Repeat2, Share, Loader2 } from 'lucide-react';
 import { genUserName } from '@/lib/genUserName';
 import { cn } from '@/lib/utils';
 
@@ -34,9 +36,51 @@ export function PostProfessional({
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
   const [isLiked, setIsLiked] = useState(false);
+  const { nostr } = useNostr();
+  const [engagement, setEngagement] = useState({ replies: 0, reposts: 0, likes: 0 });
+  const [isLoadingEngagement, setIsLoadingEngagement] = useState(true);
 
   const date = new Date(event.created_at * 1000);
   const timeAgo = getTimeAgo(date);
+
+  // Fetch engagement metrics
+  useEffect(() => {
+    const fetchEngagement = async () => {
+      try {
+        const signal = AbortSignal.timeout(2000);
+
+        // Fetch reactions (likes and other reactions)
+        const reactions = await nostr.query(
+          [{ kinds: [7], '#e': [event.id], limit: 100 }],
+          { signal }
+        ).catch(() => []);
+
+        // Fetch reposts (kind 6 and 16)
+        const reposts = await nostr.query(
+          [{ kinds: [6, 16], '#e': [event.id], limit: 100 }],
+          { signal }
+        ).catch(() => []);
+
+        // Fetch replies (posts with 'e' tag pointing to this post)
+        const replies = await nostr.query(
+          [{ kinds: [1], '#e': [event.id], limit: 100 }],
+          { signal }
+        ).catch(() => []);
+
+        setEngagement({
+          likes: reactions.length,
+          reposts: reposts.length,
+          replies: replies.length,
+        });
+      } catch (error) {
+        console.error('Failed to fetch engagement:', error);
+      } finally {
+        setIsLoadingEngagement(false);
+      }
+    };
+
+    fetchEngagement();
+  }, [event.id, nostr]);
 
   return (
     <Card
@@ -61,7 +105,7 @@ export function PostProfessional({
 
             <div className="min-w-0 flex-1">
               <Link
-                to={`/${event.pubkey}`}
+                to={`/${nip19.npubEncode(event.pubkey)}`}
                 className="block truncate font-semibold text-foreground hover:text-primary transition-colors"
               >
                 {displayName}
@@ -90,21 +134,28 @@ export function PostProfessional({
 
       {/* Interaction Stats */}
       <div className="px-6 py-3 border-t border-b border-border/30 bg-background/40 text-sm text-muted-foreground">
-        <div className="flex gap-6">
-          <span>💬 <span className="font-semibold text-foreground">42</span> replies</span>
-          <span>🔄 <span className="font-semibold text-foreground">12</span> reposts</span>
-          <span>❤️ <span className="font-semibold text-foreground">156</span> likes</span>
-        </div>
+        {isLoadingEngagement ? (
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            <span className="text-xs">Loading metrics...</span>
+          </div>
+        ) : (
+          <div className="flex gap-6">
+            <span>💬 <span className="font-semibold text-foreground">{engagement.replies}</span> {engagement.replies === 1 ? 'reply' : 'replies'}</span>
+            <span>🔄 <span className="font-semibold text-foreground">{engagement.reposts}</span> {engagement.reposts === 1 ? 'repost' : 'reposts'}</span>
+            <span>❤️ <span className="font-semibold text-foreground">{engagement.likes}</span> {engagement.likes === 1 ? 'like' : 'likes'}</span>
+          </div>
+        )}
       </div>
 
       {/* Action Buttons */}
       <div className="px-4 py-3 flex items-center justify-between">
-        <ActionButton icon={MessageCircle} label="Reply" count={42} />
-        <ActionButton icon={Repeat2} label="Repost" count={12} />
+        <ActionButton icon={MessageCircle} label="Reply" count={engagement.replies} />
+        <ActionButton icon={Repeat2} label="Repost" count={engagement.reposts} />
         <ActionButton
           icon={Heart}
           label="Like"
-          count={156}
+          count={engagement.likes}
           isActive={isLiked}
           onClick={() => setIsLiked(!isLiked)}
         />
