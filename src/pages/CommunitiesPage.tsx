@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
+import { AvatarStack } from '@/components/AvatarStack';
 import { ImagePlus, Loader2, Plus, Users } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
@@ -112,10 +113,16 @@ function CommunityCard({ community }: { community: Community }) {
               {community.description}
             </p>
           )}
-          <p className="text-xs text-muted-foreground">
+        </CardContent>
+
+        {/* Outside the padded content so the faces sit on the card edge, and
+            below the description so the place is judged before its people */}
+        <CardContent className="flex items-center justify-between gap-2 pt-0">
+          <AvatarStack pubkeys={community.moderators} max={6} />
+          <span className="shrink-0 text-xs text-muted-foreground">
             {community.moderators.length}{' '}
             {community.moderators.length === 1 ? 'moderator' : 'moderators'}
-          </p>
+          </span>
         </CardContent>
       </Link>
     </Card>
