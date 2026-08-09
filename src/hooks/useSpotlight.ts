@@ -14,6 +14,7 @@ export interface SpotlightItem {
 }
 
 export interface SpotlightConfig {
+  id?: string;  // Optional ID for relay validation
   items: SpotlightItem[];
 }
 
@@ -59,7 +60,11 @@ export function usePublishSpotlight() {
 
   return {
     publishSpotlight: async (items: SpotlightItem[]) => {
-      const content = JSON.stringify({ items } as SpotlightConfig);
+      const config: SpotlightConfig = {
+        id: 'spotlight-' + Date.now(),
+        items,
+      };
+      const content = JSON.stringify(config);
 
       return nostr.event({
         kind: 30000,

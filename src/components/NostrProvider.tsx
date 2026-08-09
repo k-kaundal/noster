@@ -5,13 +5,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/hooks/useAppContext';
 import { readRelays, writeRelays } from '@/lib/relay';
 import { withPrimaryFirst } from '@/lib/relayRouting';
+import { getRelayHealthMonitor } from '@/lib/relayHealth';
 
 interface NostrProviderProps {
   children: React.ReactNode;
 }
 
 /** Cap on relays contacted per request, so a long list can't stall a query. */
-const MAX_READ_RELAYS = 8;
+const MAX_READ_RELAYS = 10;
 const MAX_WRITE_RELAYS = 8;
 
 const NostrProvider: React.FC<NostrProviderProps> = (props) => {
@@ -52,31 +53,114 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
   }, [relayKey, queryClient]);
 
   if (!pool.current) {
+    const healthMonitor = getRelayHealthMonitor();
+
     pool.current = new NPool({
       open(url: string) {
-        return new NRelay1(url);
+        return new NRelay1(url, {
+          // Configure reconnection with exponential backoff
+          reconnectTimeout: 5000,   // Start with 5 second delay
+          maxReconnectTime: 60000,  // Cap at 60 seconds
+          requestTimeout: 3000,     // Timeout individual requests after 3 seconds
+        });
       },
       /**
        * Fan the same filters out to every read relay. NPool merges and
        * deduplicates the responses, so the feed is the union of all of them
        * rather than whatever a single relay happens to hold.
+       *
+       * Uses health-aware relay selection to prefer healthy relays.
        */
       reqRouter(filters) {
-        const targets = withPrimaryFirst(
-          readRelays(relays.current),
-          relayUrl.current
-        ).slice(0, MAX_READ_RELAYS);
+        const allReadRelays = readRelays(relays.current);
+        const primary = relayUrl.current;
 
-        return new Map(targets.map((url) => [url, filters]));
+        // Sort by health to prefer healthy relays
+        const healthySorted = healthMonitor.sortByHealth(allReadRelays);
+        const primaryFirst = withPrimaryFirst(healthySorted, primary);
+
+        // Cap to MAX_READ_RELAYS to prevent query stalling
+        const targets = primaryFirst.slice(0, MAX_READ_RELAYS);
+
+        // Filter out relays with open circuit breakers
+        const available = targets.filter((url) => healthMonitor.canQuery(url));
+
+        // If all relays have circuit breakers open, use them anyway as last resort
+        const toQuery = available.length > 0 ? available : targets.slice(0, 3);
+
+        return new Map(toQuery.map((url) => [url, filters]));
       },
-      /** Publish to the relays the user marked as write targets. */
+
+      /**
+       * Publish to the relays the user marked as write targets.
+       * Prefers healthy relays for better publish reliability.
+       */
       eventRouter(_event: NostrEvent) {
-        return withPrimaryFirst(
-          writeRelays(relays.current),
-          relayUrl.current
-        ).slice(0, MAX_WRITE_RELAYS);
+        const allWriteRelays = writeRelays(relays.current);
+        const primary = relayUrl.current;
+
+        // Sort by health
+        const healthySorted = healthMonitor.sortByHealth(allWriteRelays);
+        const primaryFirst = withPrimaryFirst(healthySorted, primary);
+
+        // Cap to MAX_WRITE_RELAYS
+        const targets = primaryFirst.slice(0, MAX_WRITE_RELAYS);
+
+        // Filter out relays with open circuit breakers
+        const available = targets.filter((url) => healthMonitor.canQuery(url));
+
+        return available.length > 0 ? available : targets.slice(0, 3);
       },
     });
+
+    // Wrap pool methods to record relay health
+    const originalQuery = pool.current.query.bind(pool.current);
+    const originalPublish = pool.current.publish.bind(pool.current);
+
+    pool.current.query = async (filters, options) => {
+      const startTime = performance.now();
+      try {
+        const results = await originalQuery(filters, options);
+
+        // Record success for relays that returned data
+        // Note: NPool doesn't expose which relays were queried, so we record all used relays
+        const allReadRelays = readRelays(relays.current);
+        allReadRelays.forEach((url) => {
+          const responseTime = performance.now() - startTime;
+          healthMonitor.recordSuccess(url, Math.round(responseTime / allReadRelays.length));
+        });
+
+        return results;
+      } catch (error) {
+        // Record failures
+        const allReadRelays = readRelays(relays.current);
+        allReadRelays.forEach((url) => {
+          healthMonitor.recordFailure(url);
+        });
+        throw error;
+      }
+    };
+
+    pool.current.publish = async (event, relaySet) => {
+      try {
+        const results = await originalPublish(event, relaySet);
+
+        // Record success for published event
+        const allWriteRelays = writeRelays(relays.current);
+        allWriteRelays.forEach((url) => {
+          healthMonitor.recordSuccess(url);
+        });
+
+        return results;
+      } catch (error) {
+        // Record failures
+        const allWriteRelays = writeRelays(relays.current);
+        allWriteRelays.forEach((url) => {
+          healthMonitor.recordFailure(url);
+        });
+        throw error;
+      }
+    };
   }
 
   return (

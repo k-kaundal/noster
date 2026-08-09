@@ -55,15 +55,14 @@ persistQueryCache(queryClient);
 const defaultConfig: AppConfig = {
   theme: "system",
   accent: "violet",
-  // Our own relay is the primary: it is always queried first and never
-  // truncated away by the per-request relay cap.
-  relayUrl: "wss://relay.nostrfeed.com",
+  // Use relay.nostr.band as primary for better engagement data indexing
+  relayUrl: "wss://relay.nostr.band",
   // Reads fan out across all of these; writes go to the ones marked write
   relays: [
-    { url: "wss://relay.nostrfeed.com", read: true, write: true },
-    { url: "wss://nos.lol", read: true, write: true },
     { url: "wss://relay.nostr.band", read: true, write: true },
     { url: "wss://relay.primal.net", read: true, write: true },
+    { url: "wss://nos.lol", read: true, write: true },
+    { url: "wss://relay.nostrfeed.com", read: true, write: true },
     { url: "wss://nostr.wine", read: true, write: true },
     { url: "wss://offchain.pub", read: true, write: false },
   ],

@@ -8,6 +8,8 @@ import {
   MessageSquare,
   Zap,
   ArrowUp,
+  Image as ImageIcon,
+  Loader2,
 } from 'lucide-react';
 import {
   useTrendingPosts,
@@ -16,6 +18,7 @@ import {
   useTrendingCommunities,
   type TrendingItem,
 } from '@/hooks/useTrending';
+import { useOGMetadata, extractUrlFromContent } from '@/hooks/useOGMetadata';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -58,12 +61,12 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
           icon={MessageSquare}
           items={posts}
           isLoading={postsLoading}
-          renderItem={(item) => (
+          renderItem={(item, index) => (
             <Link
               to={`/${nip19.noteEncode(item.id)}`}
-              className="block truncate hover:text-primary hover:underline"
+              className="block hover:text-primary hover:underline"
             >
-              {item.title}
+              <PostPreview content={item.title} index={index} />
             </Link>
           )}
         />
@@ -118,6 +121,117 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
       </div>
     </div>
   );
+}
+
+function formatPostPreview(content: string): string {
+  if (!content) return '(empty)';
+
+  // Check if content is a URL
+  const urlPattern = /^https?:\/\/[^\s]+$/;
+  if (urlPattern.test(content.trim())) {
+    const url = content.trim();
+    // Detect media type by extension
+    if (/\.(jpg|jpeg|png|gif|webp|avif)$/i.test(url)) {
+      return '[Image]';
+    }
+    if (/\.(mp4|webm|mov|mkv)$/i.test(url)) {
+      return '[Video]';
+    }
+    if (/\.(mp3|wav|m4a|ogg)$/i.test(url)) {
+      return '[Audio]';
+    }
+    return '[Link]';
+  }
+
+  try {
+    // Try to parse as JSON
+    const parsed = JSON.parse(content);
+
+    // Handle different JSON structures
+    if (typeof parsed === 'object' && parsed !== null) {
+      // Check for common text fields
+      if (parsed.title) return parsed.title.substring(0, 100);
+      if (parsed.content) return parsed.content.substring(0, 100);
+      if (parsed.text) return parsed.text.substring(0, 100);
+      if (parsed.message) return parsed.message.substring(0, 100);
+      if (parsed.name) return parsed.name.substring(0, 100);
+
+      // Check for structured data with description
+      if (parsed.description) return parsed.description.substring(0, 100);
+      if (parsed.summary) return parsed.summary.substring(0, 100);
+
+      // Fallback: show object type if recognizable
+      if (parsed.type) return `[${parsed.type}]`;
+    }
+
+    return '[Structured data]';
+  } catch {
+    // Not JSON, truncate text content
+    const trimmed = content.trim().substring(0, 100);
+    // Check if it looks like just URLs in the text
+    if (trimmed.startsWith('http')) {
+      return '[Link]';
+    }
+    return trimmed;
+  }
+}
+
+interface PostPreviewProps {
+  content: string;
+  index: number;
+}
+
+function PostPreview({ content, index }: PostPreviewProps) {
+  const url = extractUrlFromContent(content);
+  const { data: ogData, isLoading } = useOGMetadata(url);
+
+  // Show OG preview if available and we have image or title
+  if (ogData && (ogData.image || ogData.title || ogData.description)) {
+    return (
+      <div className="flex gap-2 items-start">
+        {ogData.image && (
+          <div className="shrink-0 overflow-hidden rounded">
+            <img
+              src={ogData.image}
+              alt=""
+              className="h-12 w-12 object-cover"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          {ogData.title && (
+            <p className="text-sm font-medium truncate hover:text-primary transition-colors">
+              {ogData.title}
+            </p>
+          )}
+          {ogData.description && (
+            <p className="text-xs text-muted-foreground line-clamp-2">
+              {ogData.description}
+            </p>
+          )}
+          {ogData.siteName && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {ogData.siteName}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2">
+        <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Loading...</span>
+      </div>
+    );
+  }
+
+  // Fallback to regular preview
+  return <span>{formatPostPreview(content)}</span>;
 }
 
 interface TrendingCardProps {
