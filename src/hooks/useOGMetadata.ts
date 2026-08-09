@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+// OG Metadata fetching temporarily disabled due to rendering issues
+// Will be re-enabled after debugging the hook usage
 
 export interface OGMetadata {
   title?: string;
@@ -55,8 +56,9 @@ function parseOGMetadata(html: string): OGMetadata {
 /**
  * Hook to fetch OG metadata from a URL
  * Uses client-side approach with timeouts to prevent blocking
+ * TEMPORARILY DISABLED - causing render issues
  */
-export function useOGMetadata(url: string | null | undefined) {
+export function useOGMetadata_disabled(url: string | null | undefined) {
   return useQuery({
     queryKey: ['og-metadata', url],
     queryFn: async (context) => {
