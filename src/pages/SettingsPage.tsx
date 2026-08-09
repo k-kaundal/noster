@@ -34,6 +34,7 @@ import { useRelays } from '@/hooks/useRelays';
 import { useSeo } from '@/hooks/useSeo';
 import { genUserName } from '@/lib/genUserName';
 import { relayDisplayName } from '@/lib/relay';
+import { getMuteValue } from '@/lib/mute';
 
 export function SettingsPage() {
   useSeo({
@@ -189,14 +190,17 @@ function MuteSettings() {
             </p>
           ) : (
             <ul className="divide-y border-t">
-              {list.pubkeys.map((pubkey) => (
-                <MutedPersonRow
-                  key={pubkey}
-                  pubkey={pubkey}
-                  onUnmute={() => unmuteUser(pubkey)}
-                  disabled={isUpdating}
-                />
-              ))}
+              {list.pubkeys.map((item) => {
+                const pubkey = getMuteValue(item);
+                return (
+                  <MutedPersonRow
+                    key={pubkey}
+                    pubkey={pubkey}
+                    onUnmute={() => unmuteUser(pubkey)}
+                    disabled={isUpdating}
+                  />
+                );
+              })}
             </ul>
           )}
         </CardContent>
@@ -213,7 +217,7 @@ function MuteSettings() {
           await muteWord(word);
           setWord('');
         }}
-        items={list.words}
+        items={list.words.map(getMuteValue)}
         onRemove={unmuteWord}
         disabled={isUpdating}
       />
@@ -229,7 +233,7 @@ function MuteSettings() {
           await muteHashtag(hashtag);
           setHashtag('');
         }}
-        items={list.hashtags}
+        items={list.hashtags.map(getMuteValue)}
         onRemove={unmuteHashtag}
         disabled={isUpdating}
         prefix="#"

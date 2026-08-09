@@ -153,14 +153,37 @@ export function getMuteReason(
   event: NostrEvent,
   list: MuteList
 ): MuteReason {
-  if (list.pubkeys.includes(event.pubkey)) return 'author';
+  // Check pubkeys with active mute status
+  for (const item of list.pubkeys) {
+    const value = getMuteValue(item);
+    const isActive = isActiveMute(item);
+    if (value === event.pubkey && isActive) {
+      const soft = typeof item === 'string' ? false : (item.soft ?? false);
+      return muteReason('author', soft);
+    }
+  }
 
   if (list.threads.length) {
     const referenced = event.tags
       .filter(([name]) => name === 'e')
       .map(([, id]) => id);
-    if (referenced.some((id) => list.threads.includes(id))) return 'thread';
-    if (list.threads.includes(event.id)) return 'thread';
+    for (const item of list.threads) {
+      const value = getMuteValue(item);
+      const isActive = isActiveMute(item);
+      if (referenced.includes(value) && isActive) {
+        const soft = typeof item === 'string' ? false : (item.soft ?? false);
+        return muteReason('thread', soft);
+      }
+    }
+    // Check if the event itself is in the threads list
+    for (const item of list.threads) {
+      const value = getMuteValue(item);
+      const isActive = isActiveMute(item);
+      if (value === event.id && isActive) {
+        const soft = typeof item === 'string' ? false : (item.soft ?? false);
+        return muteReason('thread', soft);
+      }
+    }
   }
 
   if (list.hashtags.length) {
@@ -169,22 +192,39 @@ export function getMuteReason(
       .map(([, value]) => value?.toLowerCase())
       .filter(Boolean);
 
-    if (tagged.some((tag) => list.hashtags.includes(tag))) return 'hashtag';
+    for (const item of list.hashtags) {
+      const value = getMuteValue(item);
+      const isActive = isActiveMute(item);
+      if (tagged.includes(value) && isActive) {
+        const soft = typeof item === 'string' ? false : (item.soft ?? false);
+        return muteReason('hashtag', soft);
+      }
+    }
 
     // Hashtags written inline aren't always mirrored into `t` tags
-    if (
-      list.hashtags.some((tag) => containsWord(event.content, `#${tag}`)) ||
-      list.hashtags.some((tag) => containsWord(event.content, tag))
-    ) {
-      return 'hashtag';
+    for (const item of list.hashtags) {
+      const value = getMuteValue(item);
+      const isActive = isActiveMute(item);
+      if (isActive && (
+        containsWord(event.content, `#${value}`) ||
+        containsWord(event.content, value)
+      )) {
+        const soft = typeof item === 'string' ? false : (item.soft ?? false);
+        return muteReason('hashtag', soft);
+      }
     }
   }
 
-  if (list.words.some((word) => containsWord(event.content, word))) {
-    return 'word';
+  for (const item of list.words) {
+    const value = getMuteValue(item);
+    const isActive = isActiveMute(item);
+    if (isActive && containsWord(event.content, value)) {
+      const soft = typeof item === 'string' ? false : (item.soft ?? false);
+      return muteReason('word', soft);
+    }
   }
 
-  return null;
+  return muteReason(null);
 }
 
 export function isMuted(event: NostrEvent, list: MuteList): boolean {
