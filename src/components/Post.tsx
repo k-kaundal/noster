@@ -250,265 +250,276 @@ export function Post({
   };
 
   const body = (
-    <article className={cn('flex gap-3 p-5', embedded && 'gap-2.5 p-3.5')}>
-      <UserHoverCard pubkey={event.pubkey}>
-        <Link to={`/${npub}`} className="shrink-0" tabIndex={-1} aria-hidden="true">
-          <Avatar
-            className={cn(
-              'transition-opacity hover:opacity-90',
-              embedded ? 'h-8 w-8' : 'h-10 w-10'
-            )}
+    <article className={cn('p-4 sm:p-5', embedded && 'p-3')}>
+      {/* Identity is a row; the note below it is not trapped in the column
+          beside the avatar, which on a phone costs a quarter of the width */}
+      <div className="flex items-start gap-2.5 sm:gap-3">
+        <UserHoverCard pubkey={event.pubkey}>
+          <Link
+            to={`/${npub}`}
+            className="shrink-0"
+            tabIndex={-1}
+            aria-hidden="true"
           >
-            <AvatarImage src={metadata?.picture} alt="" />
-            <AvatarFallback className="text-xs">
-              {displayName.slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-        </Link>
-      </UserHoverCard>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-1.5">
-              <UserHoverCard pubkey={event.pubkey}>
-                <Link
-                  to={`/${npub}`}
-                  className="truncate font-semibold text-sm hover:underline"
-                >
-                  {displayName}
-                </Link>
-              </UserHoverCard>
-              {metadata?.nip05 && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <BadgeCheck
-                      className="h-3.5 w-3.5 shrink-0 text-primary"
-                      aria-label="Verified NIP-05 address"
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent>{metadata.nip05}</TooltipContent>
-                </Tooltip>
+            <Avatar
+              className={cn(
+                'transition-opacity hover:opacity-90',
+                embedded ? 'h-7 w-7 sm:h-8 sm:w-8' : 'h-9 w-9 sm:h-10 sm:w-10',
               )}
-              <span className="truncate text-xs text-muted-foreground">@{username}</span>
-              <span className="text-muted-foreground" aria-hidden="true">
-                ·
-              </span>
+            >
+              <AvatarImage src={metadata?.picture} alt="" />
+              <AvatarFallback className="text-xs">
+                {displayName.slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </Link>
+        </UserHoverCard>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-1.5">
+            <UserHoverCard pubkey={event.pubkey}>
               <Link
-                to={`/${noteId}`}
-                className="shrink-0 text-xs text-muted-foreground hover:underline"
+                to={`/${npub}`}
+                className="truncate font-semibold text-sm hover:underline"
               >
-                {timeAgo}
+                {displayName}
               </Link>
-            </div>
-
-            {isReply && <ReplyingTo event={event} noteId={noteId} />}
+            </UserHoverCard>
+            {metadata?.nip05 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <BadgeCheck
+                    className="h-3.5 w-3.5 shrink-0 text-primary"
+                    aria-label="Verified NIP-05 address"
+                  />
+                </TooltipTrigger>
+                <TooltipContent>{metadata.nip05}</TooltipContent>
+              </Tooltip>
+            )}
+            <span className="truncate text-xs text-muted-foreground">
+              @{username}
+            </span>
+            <span className="text-muted-foreground" aria-hidden="true">
+              ·
+            </span>
+            <Link
+              to={`/${noteId}`}
+              className="shrink-0 text-xs text-muted-foreground hover:underline"
+            >
+              {timeAgo}
+            </Link>
           </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="-mr-1 h-8 w-8 shrink-0 text-muted-foreground"
-                aria-label="More actions"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem onClick={() => copy(postUrl, 'Link')}>
-                <Link2 className="mr-2 h-4 w-4" />
-                Copy link
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => copy(noteId, 'Note ID')}>
-                <Copy className="mr-2 h-4 w-4" />
-                Copy note ID
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => copy(npub, 'Public key')}>
-                <Copy className="mr-2 h-4 w-4" />
-                Copy author npub
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+          {isReply && <ReplyingTo event={event} noteId={noteId} />}
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="-mr-1 h-8 w-8 shrink-0 text-muted-foreground"
+              aria-label="More actions"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem onClick={() => copy(postUrl, 'Link')}>
+              <Link2 className="mr-2 h-4 w-4" />
+              Copy link
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => copy(noteId, 'Note ID')}>
+              <Copy className="mr-2 h-4 w-4" />
+              Copy note ID
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => copy(npub, 'Public key')}>
+              <Copy className="mr-2 h-4 w-4" />
+              Copy author npub
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={isToggling}
+              onClick={() => {
+                if (!user) return requireLogin('bookmark');
+                toggleBookmark(event);
+              }}
+            >
+              <Bookmark
+                className={cn(
+                  'mr-2 h-4 w-4',
+                  isBookmarked(event.id) && 'fill-current text-primary',
+                )}
+              />
+              {isBookmarked(event.id) ? 'Remove bookmark' : 'Bookmark'}
+            </DropdownMenuItem>
+            {/* Muting your own notes would just hide your timeline */}
+            {user && !isOwnPost && (
               <DropdownMenuItem
-                disabled={isToggling}
-                onClick={() => {
-                  if (!user) return requireLogin('bookmark');
-                  toggleBookmark(event);
-                }}
+                className="text-destructive focus:text-destructive"
+                onClick={() =>
+                  isUserMuted(event.pubkey)
+                    ? unmuteUser(event.pubkey)
+                    : muteUser(event.pubkey)
+                }
               >
-                <Bookmark
-                  className={cn(
-                    'mr-2 h-4 w-4',
-                    isBookmarked(event.id) && 'fill-current text-primary'
-                  )}
-                />
-                {isBookmarked(event.id) ? 'Remove bookmark' : 'Bookmark'}
+                <VolumeX className="mr-2 h-4 w-4" />
+                {isUserMuted(event.pubkey)
+                  ? `Unmute ${displayName}`
+                  : `Mute ${displayName}`}
               </DropdownMenuItem>
-              {/* Muting your own notes would just hide your timeline */}
-              {user && !isOwnPost && (
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() =>
-                    isUserMuted(event.pubkey)
-                      ? unmuteUser(event.pubkey)
-                      : muteUser(event.pubkey)
-                  }
-                >
-                  <VolumeX className="mr-2 h-4 w-4" />
-                  {isUserMuted(event.pubkey)
-                    ? `Unmute ${displayName}`
-                    : `Mute ${displayName}`}
-                </DropdownMenuItem>
-              )}
-              {user && !isOwnPost && (
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => setReportOpen(true)}
-                >
-                  <Flag className="mr-2 h-4 w-4" />
-                  Report
-                </DropdownMenuItem>
-              )}
-              {isOwnPost && (
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete post
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <a
-                  href={`https://njump.me/${noteId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Open on njump
-                </a>
+            )}
+            {user && !isOwnPost && (
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => setReportOpen(true)}
+              >
+                <Flag className="mr-2 h-4 w-4" />
+                Report
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+            )}
+            {isOwnPost && (
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete post
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <a
+                href={`https://njump.me/${noteId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Open on njump
+              </a>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
-        <div className="mt-2 text-[15px]">
-          {isRepost ? (
-            repostedEvent ? (
-              /* One level of embedding only, so a repost chain can't recurse */
-              embedded ? (
-                <Link
-                  to={`/${nip19.noteEncode(repostedEvent.id)}`}
-                  className="text-sm font-medium text-primary hover:underline"
-                >
-                  View the reposted note
-                </Link>
-              ) : (
-                <Card className="overflow-hidden bg-muted/30">
-                  <Post event={repostedEvent} showReplies={false} embedded />
-                </Card>
-              )
+      <div className={cn('mt-2 text-[15px]', !embedded && 'sm:ml-[3.25rem]')}>
+        {isRepost ? (
+          repostedEvent ? (
+            /* One level of embedding only, so a repost chain can't recurse */
+            embedded ? (
+              <Link
+                to={`/${nip19.noteEncode(repostedEvent.id)}`}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                View the reposted note
+              </Link>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                The reposted note could not be loaded.
-              </p>
+              <Card className="overflow-hidden bg-muted/30">
+                <Post event={repostedEvent} showReplies={false} embedded />
+              </Card>
             )
-          ) : contentWarning ? (
-            <ContentWarning reason={contentWarning.reason}>
-              <NoteBody event={event} />
-            </ContentWarning>
           ) : (
+            <p className="text-sm text-muted-foreground">
+              The reposted note could not be loaded.
+            </p>
+          )
+        ) : contentWarning ? (
+          <ContentWarning reason={contentWarning.reason}>
             <NoteBody event={event} />
-          )}
-
-          {quotedId && !isRepost && (
-            <QuotedNote eventId={quotedId} className="mt-3" />
-          )}
-        </div>
-
-        {!embedded && (
-          <div className="mt-4 flex flex-wrap items-center gap-1 border-t pt-3 sm:gap-2">
-            <ActionButton
-              icon={MessageCircle}
-              label="Reply"
-              count={replyCount}
-              tone="reply"
-              onClick={handleReply}
-            />
-            <ActionButton
-              icon={Repeat2}
-              label={isReposted ? 'Reposted' : 'Repost'}
-              count={repostCount}
-              tone="repost"
-              active={isReposted}
-              busy={isReposting}
-              onClick={handleRepost}
-            />
-            <ActionButton
-              icon={Heart}
-              label={isLiked ? 'Remove reaction' : 'Like'}
-              count={likeCount}
-              tone="like"
-              active={isLiked}
-              busy={isLiking}
-              fillWhenActive
-              onClick={handleLike}
-            />
-            <ActionButton
-              icon={Zap}
-              label={
-                isOwnPost
-                  ? "You can't zap your own note"
-                  : canZap
-                    ? 'Zap'
-                    : 'Author has no Lightning address'
-              }
-              tone="zap"
-              disabled={!canZap}
-              onClick={() => {
-                if (!user) return requireLogin('zap');
-                setZapOpen(true);
-              }}
-            />
-            <ActionButton
-              icon={Quote}
-              label="Quote"
-              tone="repost"
-              onClick={() => {
-                if (!user) return requireLogin('quote');
-                setQuoteOpen(true);
-              }}
-            />
-            <ReactionPicker event={event} />
-            <ActionButton
-              icon={Share2}
-              label="Share"
-              tone="reply"
-              onClick={handleShare}
-            />
-          </div>
+          </ContentWarning>
+        ) : (
+          <NoteBody event={event} />
         )}
 
-        {/* Emoji left by others, beyond the plain like counted above */}
-        {!embedded && (
-          <ReactionChips event={event} groups={groups} className="mt-2" />
-        )}
-
-        {!embedded && showReplies && replyCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setRepliesOpen((open) => !open)}
-            className="mt-2 text-xs font-medium text-primary hover:underline"
-            aria-expanded={repliesOpen}
-          >
-            {repliesOpen
-              ? 'Hide replies'
-              : `Show ${formatCount(replyCount)} ${replyCount === 1 ? 'reply' : 'replies'}`}
-          </button>
+        {quotedId && !isRepost && (
+          <QuotedNote eventId={quotedId} className="mt-3" />
         )}
       </div>
+
+      {!embedded && (
+        <div className="mt-4 flex flex-wrap items-center gap-1 border-t pt-3 sm:ml-[3.25rem] sm:gap-2">
+          <ActionButton
+            icon={MessageCircle}
+            label="Reply"
+            count={replyCount}
+            tone="reply"
+            onClick={handleReply}
+          />
+          <ActionButton
+            icon={Repeat2}
+            label={isReposted ? 'Reposted' : 'Repost'}
+            count={repostCount}
+            tone="repost"
+            active={isReposted}
+            busy={isReposting}
+            onClick={handleRepost}
+          />
+          <ActionButton
+            icon={Heart}
+            label={isLiked ? 'Remove reaction' : 'Like'}
+            count={likeCount}
+            tone="like"
+            active={isLiked}
+            busy={isLiking}
+            fillWhenActive
+            onClick={handleLike}
+          />
+          <ActionButton
+            icon={Zap}
+            label={
+              isOwnPost
+                ? "You can't zap your own note"
+                : canZap
+                  ? 'Zap'
+                  : 'Author has no Lightning address'
+            }
+            tone="zap"
+            disabled={!canZap}
+            onClick={() => {
+              if (!user) return requireLogin('zap');
+              setZapOpen(true);
+            }}
+          />
+          <ActionButton
+            icon={Quote}
+            label="Quote"
+            tone="repost"
+            onClick={() => {
+              if (!user) return requireLogin('quote');
+              setQuoteOpen(true);
+            }}
+          />
+          <ReactionPicker event={event} />
+          <ActionButton
+            icon={Share2}
+            label="Share"
+            tone="reply"
+            onClick={handleShare}
+          />
+        </div>
+      )}
+
+      {/* Emoji left by others, beyond the plain like counted above */}
+      {!embedded && (
+        <ReactionChips
+          event={event}
+          groups={groups}
+          className="mt-2 sm:ml-[3.25rem]"
+        />
+      )}
+
+      {!embedded && showReplies && replyCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setRepliesOpen((open) => !open)}
+          className="mt-2 text-xs font-medium text-primary hover:underline sm:ml-[3.25rem]"
+          aria-expanded={repliesOpen}
+        >
+          {repliesOpen
+            ? 'Hide replies'
+            : `Show ${formatCount(replyCount)} ${replyCount === 1 ? 'reply' : 'replies'}`}
+        </button>
+      )}
     </article>
   );
 
