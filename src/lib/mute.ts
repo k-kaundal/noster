@@ -228,7 +228,10 @@ export function getMuteReason(
 }
 
 export function isMuted(event: NostrEvent, list: MuteList): boolean {
-  return getMuteReason(event, list) !== null;
+  // `getMuteReason` always returns a MuteReason object — an unmuted event is
+  // one whose `reason` is null. Comparing the object itself to null was true
+  // for every event, so a single mute entry emptied the whole feed.
+  return getMuteReason(event, list).reason !== null;
 }
 
 /** Removes muted events from a list. */

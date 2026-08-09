@@ -123,12 +123,15 @@ function MentionedUser({
   count: number;
   rank: number;
 }) {
-  if (!pubkey || !/^[0-9a-f]{64}$/.test(pubkey)) {
-    return null;
-  }
+  // A malformed pubkey would make npubEncode throw, so it renders nothing —
+  // but the check runs after the hook, since skipping it would change the
+  // hook order between renders
+  const isValidPubkey = !!pubkey && /^[0-9a-f]{64}$/.test(pubkey);
 
-  const author = useAuthor(pubkey);
+  const author = useAuthor(isValidPubkey ? pubkey : undefined);
   const metadata = author.data?.metadata;
+  if (!isValidPubkey) return null;
+
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(pubkey);
 

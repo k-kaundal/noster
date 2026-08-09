@@ -2,7 +2,7 @@ import {
   BarChart3,
   TrendingUp,
   MessageCircle,
-  RepeatCw,
+  Repeat2,
   Heart,
   FileText,
 } from 'lucide-react';
@@ -66,7 +66,7 @@ export function UserAnalytics({ pubkey, className }: UserAnalyticsProps) {
     {
       label: 'Reposts',
       value: stats.totalReposts,
-      icon: RepeatCw,
+      icon: Repeat2,
       color: 'text-purple-500',
     },
     {

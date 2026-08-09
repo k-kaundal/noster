@@ -9,12 +9,11 @@ import {
 import { useSpotlight, usePublishSpotlight, type SpotlightItem } from '@/hooks/useSpotlight';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { genUserName } from '@/lib/genUserName';
-import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
 import { SpotlightEditor } from '@/components/SpotlightEditor';
 
@@ -35,10 +34,6 @@ export function Spotlight({ pubkey, events }: SpotlightProps) {
   const { toast } = useToast();
   const [isPublishing, setIsPublishing] = useState(false);
   const isOwnProfile = user?.pubkey === pubkey;
-
-  if (!spotlight?.items?.length && !isOwnProfile) {
-    return null;
-  }
 
   const handleStartEditing = useCallback(() => {
     setEditItems(spotlight?.items ?? []);
@@ -72,7 +67,7 @@ export function Spotlight({ pubkey, events }: SpotlightProps) {
         title: 'Success',
         description: 'Spotlight updated',
       });
-    } catch (error) {
+    } catch {
       toast({
         title: 'Error',
         description: 'Failed to update spotlight',
@@ -82,6 +77,12 @@ export function Spotlight({ pubkey, events }: SpotlightProps) {
       setIsPublishing(false);
     }
   }, [user, editItems, publishSpotlight, toast]);
+
+  // Below every hook: this used to sit above them, so the render where the
+  // spotlight arrived changed the hook count and React tore the tree down
+  if (!spotlight?.items?.length && !isOwnProfile) {
+    return null;
+  }
 
   return (
     <div className="space-y-4">

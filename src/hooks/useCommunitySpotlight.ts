@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
-import type { NostrEvent } from '@nostrify/nostrify';
 
 /**
  * Community spotlight item - featured members and posts

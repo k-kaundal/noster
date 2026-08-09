@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
-import type { NostrEvent } from '@nostrify/nostrify';
+import type { NostrEvent, NostrMetadata } from '@nostrify/nostrify';
 import { genUserName } from '@/lib/genUserName';
 
 /**
@@ -126,24 +126,36 @@ export function useTrendingPosts(hours: number = 24, limit: number = 20) {
 }
 
 /**
- * Extract hashtags from events and return sorted by frequency
+ * Extract hashtags from events and return sorted by frequency.
+ *
+ * Returns the same `TrendingItem` shape as the other trending hooks, so the
+ * cards on the trending page can render every list through one component.
  */
-function extractHashtagsFromEvents(events: NostrEvent[], limit: number): Array<{ tag: string; count: number }> {
-  const hashtagMap = new Map<string, number>();
+function extractHashtagsFromEvents(events: NostrEvent[], limit: number): TrendingItem[] {
+  const counts = new Map<string, number>();
+  // The newest note carrying a tag stands in for how current the tag is
+  const lastSeen = new Map<string, number>();
 
   events.forEach((event) => {
     const tags = event.tags.filter(([name]) => name === 't');
     tags.forEach(([, tag]) => {
-      if (tag) {
-        hashtagMap.set(tag.toLowerCase(), (hashtagMap.get(tag.toLowerCase()) || 0) + 1);
-      }
+      if (!tag) return;
+      const key = tag.toLowerCase();
+      counts.set(key, (counts.get(key) || 0) + 1);
+      lastSeen.set(key, Math.max(lastSeen.get(key) ?? 0, event.created_at));
     });
   });
 
-  return Array.from(hashtagMap.entries())
+  return Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
-    .map(([tag, count]) => ({ tag, count }));
+    .map(([tag, count]) => ({
+      id: tag,
+      title: tag,
+      type: 'hashtag' as const,
+      engagementScore: count,
+      timestamp: lastSeen.get(tag) ?? 0,
+    }));
 }
 
 /**
@@ -250,7 +262,7 @@ export function useTrendingUsers(hours: number = 24, limit: number = 10) {
           { signal }
         ).catch(() => []);
 
-        const metadataMap = new Map<string, any>();
+        const metadataMap = new Map<string, NostrMetadata>();
         metadata.forEach(event => {
           try {
             const data = JSON.parse(event.content);
@@ -341,7 +353,6 @@ export function useTrendingCommunities(hours: number = 24, limit: number = 10) {
           .slice(0, limit);
 
         // Fetch community definitions for better names
-        const communityAddrs = sorted.map(c => `34550:${c.pubkey}:${c.slug}`);
         const communities = await nostr.query(
           [
             {
@@ -389,7 +400,13 @@ export function useTrending() {
     data:
       trendingHashtags.data?.length || trendingUsers.data?.length
         ? {
-            topHashtags: (trendingHashtags.data ?? []).slice(0, 10),
+            // The sidebar widget ranks by raw mention count, not the score
+            topHashtags: (trendingHashtags.data ?? [])
+              .slice(0, 10)
+              .map((hashtag) => ({
+                tag: hashtag.title,
+                count: hashtag.engagementScore,
+              })),
             topMentions:
               (trendingUsers.data ?? []).map((user) => ({
                 pubkey: user.id,

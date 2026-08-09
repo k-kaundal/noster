@@ -94,8 +94,30 @@ export interface LnbitsPayment {
   status: 'pending' | 'success' | 'failed' | string;
   memo?: string;
   preimage?: string;
-  time?: string;
+  /** ISO 8601 on LNbits v1, a unix seconds integer on older versions. */
+  time?: string | number;
   extra?: Record<string, unknown>;
+}
+
+/**
+ * Epoch milliseconds for a payment, or 0 when the timestamp is unusable.
+ *
+ * Both timestamp shapes LNbits has shipped are accepted, because the wallet a
+ * user points us at may be running either — and a payment sorted to 1970 is
+ * worse than one shown without a date.
+ */
+export function paymentTimeMs(time: string | number | undefined): number {
+  if (time === undefined || time === null || time === '') return 0;
+
+  const numeric = typeof time === 'number' ? time : Number(time);
+  if (Number.isFinite(numeric)) {
+    // Seconds and milliseconds are told apart by magnitude: no plausible
+    // seconds value reaches this bound, and no plausible ms value falls below
+    return numeric > 1e11 ? numeric : numeric * 1000;
+  }
+
+  const parsed = Date.parse(String(time));
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 /**
@@ -235,14 +257,58 @@ export async function nip98Header(
   );
 }
 
-/** Logs in with a Nostr key. Returns the session token, when one is issued. */
+/**
+ * Whether a failure is LNbits rejecting the `u` tag specifically.
+ *
+ * Told apart from every other login failure because it is the only one a
+ * differently-spelled URL could fix; a bad signature or a deactivated account
+ * would fail identically on a second attempt.
+ */
+function isUrlTagRejection(error: unknown): boolean {
+  return (
+    error instanceof LnbitsError && /tag 'u'/i.test(error.message)
+  );
+}
+
+/**
+ * Logs in with a Nostr key. Returns the session token, when one is issued.
+ *
+ * LNbits does not check the NIP-98 `u` tag against the URL actually requested.
+ * It accepts `<entry>/nostr` for each entry of its `nostr_absolute_request_urls`
+ * setting, which defaults to a bare origin — so the value it wants is usually
+ * `https://host/nostr`, not the endpoint's own path. Since an operator may have
+ * configured either spelling, both are tried instead of requiring every
+ * deployment to be set up the way ours is.
+ */
 export async function loginWithNostr(
   signer: NostrSigner
 ): Promise<string | undefined> {
-  const url = `${LNBITS_URL}/api/v1/auth/nostr`;
-  const authorization = await nip98Header(signer, url, 'POST');
+  const endpoint = `${LNBITS_URL}/api/v1/auth/nostr`;
+  const candidates = [`${LNBITS_URL}/nostr`, endpoint];
 
-  const response = await fetch(url, {
+  let lastError: unknown;
+
+  for (const signedUrl of candidates) {
+    try {
+      return await postNostrLogin(signer, endpoint, signedUrl);
+    } catch (error) {
+      if (!isUrlTagRejection(error)) throw error;
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
+/** One nostr login attempt, signing `signedUrl` while posting to `endpoint`. */
+async function postNostrLogin(
+  signer: NostrSigner,
+  endpoint: string,
+  signedUrl: string
+): Promise<string | undefined> {
+  const authorization = await nip98Header(signer, signedUrl, 'POST');
+
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { Authorization: authorization },
     credentials: 'include',

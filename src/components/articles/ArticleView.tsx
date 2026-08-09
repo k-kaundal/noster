@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { nip19 } from 'nostr-tools';
 import { BadgeCheck, Clock, Pencil } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -24,6 +25,7 @@ export function ArticleView({ article }: { article: Article }) {
   const author = useAuthor(article.event.pubkey);
   const metadata = author.data?.metadata;
   const [isEditing, setIsEditing] = useState(false);
+  const queryClient = useQueryClient();
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(article.event.pubkey);
@@ -162,7 +164,10 @@ export function ArticleView({ article }: { article: Article }) {
           onClose={() => setIsEditing(false)}
           onSave={() => {
             setIsEditing(false);
-            // In a real app, we'd refetch the article here
+            // The edit replaced the addressable event, so the cached copy is
+            // now the old revision — without this the page keeps showing it
+            queryClient.invalidateQueries({ queryKey: ['article'] });
+            queryClient.invalidateQueries({ queryKey: ['articles'] });
           }}
         />
       )}

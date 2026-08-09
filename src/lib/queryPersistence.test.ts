@@ -9,7 +9,10 @@ import {
   shouldPersistKey,
 } from './queryPersistence';
 
-const NOW = Date.parse('2026-08-08T12:00:00Z');
+// Relative to the run, not a fixed date: `restoreQueryCache` compares against
+// the real clock, so a hardcoded timestamp starts failing once it ages past
+// MAX_AGE_MS
+const NOW = Date.now();
 
 function clientWith(entries: [readonly unknown[], unknown][]): QueryClient {
   const client = new QueryClient();

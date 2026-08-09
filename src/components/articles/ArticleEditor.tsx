@@ -62,7 +62,7 @@ export function ArticleEditor({ article, onClose, onSave }: ArticleEditorProps) 
 
       onSave?.();
       onClose();
-    } catch (error) {
+    } catch {
       toast({
         title: 'Error',
         description: 'Failed to update article',

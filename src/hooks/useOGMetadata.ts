@@ -1,5 +1,4 @@
-// OG Metadata fetching temporarily disabled due to rendering issues
-// Will be re-enabled after debugging the hook usage
+import { useQuery } from '@tanstack/react-query';
 
 export interface OGMetadata {
   title?: string;
@@ -54,14 +53,16 @@ function parseOGMetadata(html: string): OGMetadata {
 }
 
 /**
- * Hook to fetch OG metadata from a URL
- * Uses client-side approach with timeouts to prevent blocking
- * TEMPORARILY DISABLED - causing render issues
+ * Fetch Open Graph metadata for a URL, for link previews.
+ *
+ * The fetch is best-effort: a site without OG tags, a blocked proxy or a slow
+ * response all resolve to null rather than surfacing an error, because a
+ * missing preview should never take a note down with it.
  */
-export function useOGMetadata_disabled(url: string | null | undefined) {
+export function useOGMetadata(url: string | null | undefined) {
   return useQuery({
     queryKey: ['og-metadata', url],
-    queryFn: async (context) => {
+    queryFn: async () => {
       if (!url) return null;
 
       try {
@@ -94,7 +95,7 @@ export function useOGMetadata_disabled(url: string | null | undefined) {
         } finally {
           clearTimeout(timeoutId);
         }
-      } catch (error) {
+      } catch {
         // Silently fail - OG metadata is optional
         return null;
       }

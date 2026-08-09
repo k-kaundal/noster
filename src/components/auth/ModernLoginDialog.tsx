@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Zap, QrCode, Lock, Key } from 'lucide-react';
+import { Zap, QrCode, Lock } from 'lucide-react';
 import { LoginArea } from '@/components/auth/LoginArea';
 
 interface ModernLoginDialogProps {

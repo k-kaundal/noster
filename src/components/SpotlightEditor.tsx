@@ -2,11 +2,8 @@ import { useState, useCallback, useMemo } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useQuery } from '@tanstack/react-query';
 import { nip19 } from 'nostr-tools';
-import type { NostrEvent } from '@nostrify/nostrify';
 import {
-  ChevronDown,
   Loader2,
-  X,
   Trash2,
   GripVertical,
   Plus,
@@ -15,7 +12,6 @@ import type { SpotlightItem } from '@/hooks/useSpotlight';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useFollows } from '@/hooks/useFollows';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -23,9 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { genUserName } from '@/lib/genUserName';
-import { cn } from '@/lib/utils';
 
 interface SpotlightEditorProps {
   items: SpotlightItem[];
