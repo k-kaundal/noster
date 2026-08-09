@@ -69,8 +69,20 @@ export function NoteBody({ event, className }: NoteBodyProps) {
       // Kind 20 carries its images in imeta tags, which NoteContent embeds
       return <NoteContent event={event} className={className} />;
 
-    default:
+    default: {
+      // For unknown kinds, check if content is JSON and display it nicely
+      const jsonContent = parseJsonContent(event.content);
+      if (jsonContent) {
+        return (
+          <StructuredPayload
+            data={jsonContent}
+            label={kindLabel(event.kind)}
+            className={className}
+          />
+        );
+      }
       return <UnknownKind event={event} className={className} />;
+    }
   }
 }
 
