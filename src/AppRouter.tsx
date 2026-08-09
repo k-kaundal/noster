@@ -20,6 +20,7 @@ const WalletPage = lazy(() => import("./pages/WalletPage"));
 const WritePage = lazy(() => import("./pages/WritePage"));
 const CommunitiesPage = lazy(() => import("./pages/CommunitiesPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+const IdentityVaultPage = lazy(() => import("./pages/IdentityVaultPage"));
 const NIP19Page = lazy(() =>
   import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
 );
@@ -70,6 +71,8 @@ export function AppRouter() {
           <Route path="/wallet" element={<WalletPage />} />
           {/* Paid relay access, sold through LNbits pay links */}
           <Route path="/premium" element={<PremiumPage />} />
+          {/* Nostr identity vault: signing devices, relays, apps, permissions */}
+          <Route path="/identity" element={<IdentityVaultPage />} />
           {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
           <Route path="/settings" element={<SettingsPage />} />
           {/* Follow pages */}
