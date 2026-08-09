@@ -201,11 +201,11 @@ export class RelayHealthMonitor {
     const timeSinceSuccess = Date.now() - metrics.lastSuccess;
 
     // Dead if no successful requests recently or error rate is very high
-    if (metrics.errorRate > 50% || timeSinceSuccess > 120000) {
+    if (metrics.errorRate > 0.5 || timeSinceSuccess > 120000) {
       metrics.status = 'dead';
     }
     // Degraded if error rate is moderate or some consecutive failures
-    else if (metrics.errorRate > 20% || metrics.consecutiveFailures > 0) {
+    else if (metrics.errorRate > 0.2 || metrics.consecutiveFailures > 0) {
       metrics.status = 'degraded';
     }
     // Healthy otherwise

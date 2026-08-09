@@ -138,7 +138,7 @@ export function SpotlightEditor({
           const name = event.tags.find(([t]) => t === 'name')?.[1] || slug;
           const image = event.tags.find(([t]) => t === 'image')?.[1];
           return {
-            id: `${event.pubkey}:${slug}`,
+            id: nip19.naddrEncode({ pubkey: event.pubkey, kind: 34550, identifier: slug }),
             title: name,
             subtitle: slug,
             type: 'community' as const,

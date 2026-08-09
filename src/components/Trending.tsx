@@ -63,7 +63,7 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
               to={`/${nip19.noteEncode(item.id)}`}
               className="block truncate hover:text-primary hover:underline"
             >
-              {item.title}
+              {formatPostPreview(item.title)}
             </Link>
           )}
         />
@@ -118,6 +118,37 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
       </div>
     </div>
   );
+}
+
+function formatPostPreview(content: string): string {
+  if (!content) return '(empty)';
+
+  try {
+    // Try to parse as JSON
+    const parsed = JSON.parse(content);
+
+    // Handle different JSON structures
+    if (typeof parsed === 'object' && parsed !== null) {
+      // Check for common text fields
+      if (parsed.title) return parsed.title.substring(0, 100);
+      if (parsed.content) return parsed.content.substring(0, 100);
+      if (parsed.text) return parsed.text.substring(0, 100);
+      if (parsed.message) return parsed.message.substring(0, 100);
+      if (parsed.name) return parsed.name.substring(0, 100);
+
+      // Check for structured data with description
+      if (parsed.description) return parsed.description.substring(0, 100);
+      if (parsed.summary) return parsed.summary.substring(0, 100);
+
+      // Fallback: show object type if recognizable
+      if (parsed.type) return `[${parsed.type}]`;
+    }
+
+    return '[Structured data]';
+  } catch {
+    // Not JSON, return as-is but truncated
+    return content.substring(0, 100);
+  }
 }
 
 interface TrendingCardProps {

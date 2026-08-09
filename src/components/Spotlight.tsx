@@ -174,6 +174,11 @@ function SpotlightItemCard({ item, event }: SpotlightItemCardProps) {
     if (item.type === 'user') return `/${nip19.npubEncode(item.id)}`;
     if (item.type === 'post') return `/${nip19.noteEncode(item.id)}`;
     if (item.type === 'article') return `/${nip19.naddrEncode({ pubkey: item.id.substring(0, 64), kind: 30023, identifier: 'article' })}`;
+    if (item.type === 'community') {
+      // If already an naddr, use it directly, otherwise encode it
+      if (item.id.startsWith('naddr1')) return `/${item.id}`;
+      return `/${nip19.naddrEncode({ pubkey: item.id.substring(0, 64), kind: 34550, identifier: item.id.substring(65) })}`;
+    }
     return '#';
   }, [item]);
 

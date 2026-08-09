@@ -45,28 +45,38 @@ export function CommunityEditor({ community, onClose, onSave }: CommunityEditorP
     let pubkey = input;
     if (input.startsWith('npub1')) {
       try {
-        const { data } = require('nostr-tools').nip19.decode(input) as { type: string; data: string };
-        pubkey = data;
-      } catch {
+        // Import nip19 from nostr-tools
+        const { nip19 } = require('nostr-tools');
+        const decoded = nip19.decode(input);
+
+        // nip19.decode returns { type, data }
+        if (decoded.type === 'npub' && typeof decoded.data === 'string') {
+          pubkey = decoded.data;
+        } else {
+          throw new Error('Invalid npub type');
+        }
+      } catch (error) {
         toast({
           title: 'Invalid npub format',
-          description: 'Please use a valid npub1... or hex pubkey',
+          description: 'Please use a valid npub1... or hex pubkey. Error: ' + (error as Error).message,
           variant: 'destructive',
         });
         return;
       }
     }
 
-    if (!/^[0-9a-f]{64}$/.test(pubkey.toLowerCase())) {
+    // Validate hex pubkey format (64 hex characters)
+    const cleanedPubkey = pubkey.toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(cleanedPubkey)) {
       toast({
         title: 'Invalid pubkey',
-        description: 'Pubkey must be 64 hex characters',
+        description: `Pubkey must be 64 hex characters. Got: ${cleanedPubkey.length} characters`,
         variant: 'destructive',
       });
       return;
     }
 
-    if (draft.moderators.includes(pubkey.toLowerCase())) {
+    if (draft.moderators.includes(cleanedPubkey)) {
       toast({
         title: 'Already a moderator',
         description: 'This person is already a moderator',
@@ -77,7 +87,7 @@ export function CommunityEditor({ community, onClose, onSave }: CommunityEditorP
 
     setDraft(prev => ({
       ...prev,
-      moderators: [...prev.moderators, pubkey.toLowerCase()],
+      moderators: [...prev.moderators, cleanedPubkey],
     }));
     setNewModeratorInput('');
   }, [newModeratorInput, draft.moderators, toast]);
