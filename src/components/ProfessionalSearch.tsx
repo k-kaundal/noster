@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Search, X, Trending2, Clock } from 'lucide-react';
+import { Search, X, TrendingUp, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -194,7 +194,7 @@ export function ProfessionalSearch({
 
               <div className="mt-4 pt-4 border-t border-border/30">
                 <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground mb-3">
-                  <Trending2 className="h-3 w-3" />
+                  <TrendingUp className="h-3 w-3" />
                   TRENDING
                 </div>
                 <div className="space-y-2">

@@ -21,6 +21,7 @@ import { WalletBadge } from '@/components/wallet/WalletBadge';
 import { SideNav } from '@/components/layout/SideNav';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { AuthorProjects } from '@/components/AuthorProjects';
+import { ThemePresetSwitcher } from '@/components/ThemePresetSwitcher';
 
 interface AppHeaderProps {
   onSearch: () => void;
@@ -107,14 +108,17 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Appearance
-                  </p>
-                  <div className="flex items-center gap-1">
-                    <AccentPicker />
-                    <ThemeToggle />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Appearance
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <AccentPicker />
+                      <ThemeToggle />
+                    </div>
                   </div>
+                  <ThemePresetSwitcher />
                 </div>
 
                 <Separator />

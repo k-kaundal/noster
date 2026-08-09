@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { genUserName } from '@/lib/genUserName';
-import { MessageCircle, Reply2 } from 'lucide-react';
+import { MessageCircle, Reply } from 'lucide-react';
 
 interface ThreadComment {
   id: string;
@@ -145,7 +145,7 @@ function ThreadComment({
             onClick={onReply}
             className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7 gap-1"
           >
-            <Reply2 className="h-3 w-3" />
+            <Reply className="h-3 w-3" />
             Reply
           </Button>
         </div>

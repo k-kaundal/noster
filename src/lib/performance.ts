@@ -7,7 +7,7 @@
  * Intersection Observer for infinite scroll and lazy loading
  */
 export function createIntersectionObserver(
-  callback: (entry: IntersectionObserverEntry) => void,
+  callback: (entries: IntersectionObserverEntry[]) => void,
   options?: IntersectionObserverInit
 ): IntersectionObserver {
   return new IntersectionObserver(callback, {
@@ -60,22 +60,22 @@ export function throttle<T extends (...args: unknown[]) => unknown>(
 /**
  * Request idle callback with polyfill
  */
-export function requestIdleTask(callback: () => void, timeout = 5000): number {
+export function requestIdleTask(callback: () => void, timeout = 5000): ReturnType<typeof setTimeout> {
   if ('requestIdleCallback' in window) {
-    return (window as unknown as { requestIdleCallback: (cb: () => void, opts: { timeout: number }) => number }).requestIdleCallback(
+    return (window as unknown as { requestIdleCallback: (cb: () => void, opts: { timeout: number }) => ReturnType<typeof setTimeout> }).requestIdleCallback(
       callback,
       { timeout }
     );
   }
-  return window.setTimeout(callback, 0) as unknown as number;
+  return setTimeout(callback, 0);
 }
 
 /**
  * Cancel idle task
  */
-export function cancelIdleTask(id: number): void {
+export function cancelIdleTask(id: ReturnType<typeof setTimeout>): void {
   if ('cancelIdleCallback' in window) {
-    (window as unknown as { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(id);
+    (window as unknown as { cancelIdleCallback: (id: ReturnType<typeof setTimeout>) => void }).cancelIdleCallback(id);
   } else {
     clearTimeout(id);
   }
