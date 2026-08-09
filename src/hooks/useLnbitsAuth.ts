@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useWalletLogout } from '@/hooks/useWalletLogout';
 import { useToast } from '@/hooks/useToast';
 import {
   LNBITS_URL,
@@ -14,6 +15,7 @@ import {
   parseUserId,
   type LnbitsUser,
 } from '@/lib/lnbits';
+import { WALLET_TOKENS_KEY } from '@/lib/walletSession';
 
 /**
  * Turns a failed sign-in into something someone can act on.
@@ -80,7 +82,7 @@ export function useLnbitsAuth() {
    * account's wallet to whoever logged in next.
    */
   const [tokens, setTokens] = useLocalStorage<Record<string, string>>(
-    'lnbits:tokens',
+    WALLET_TOKENS_KEY,
     {}
   );
 
@@ -232,24 +234,21 @@ export function useLnbitsAuth() {
     },
   });
 
+  const logoutWallet = useWalletLogout();
+
   const logout = useCallback(async () => {
-    try {
-      await lnbitsRequest('/api/v1/auth/logout', { method: 'POST', token });
-    } catch {
-      // A failed logout still means forgetting the token locally
-    }
+    if (!user) return;
 
-    if (user) {
-      setTokens((current) => {
-        const next = { ...current };
-        delete next[user.pubkey];
-        return next;
-      });
-    }
+    await logoutWallet(user.pubkey);
 
-    queryClient.removeQueries({ queryKey: ['lnbits-account'] });
-    queryClient.removeQueries({ queryKey: ['lnbits-wallets'] });
-  }, [token, user, setTokens, queryClient]);
+    // Storage is already cleared by the shared path; this drops the copy this
+    // hook is holding, which nothing else can reach in to update
+    setTokens((current) => {
+      const next = { ...current };
+      delete next[user.pubkey];
+      return next;
+    });
+  }, [user, logoutWallet, setTokens]);
 
   return {
     /** The LNbits account, or null when not connected. */

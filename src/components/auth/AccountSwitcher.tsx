@@ -16,6 +16,7 @@ import { RelaySelector } from '@/components/RelaySelector';
 import { WalletModal } from '@/components/WalletModal';
 import { PrivateKeyDialog } from './PrivateKeyDialog';
 import { useLoggedInAccounts, type Account } from '@/hooks/useLoggedInAccounts';
+import { useWalletLogout } from '@/hooks/useWalletLogout';
 import { genUserName } from '@/lib/genUserName';
 
 interface AccountSwitcherProps {
@@ -24,6 +25,7 @@ interface AccountSwitcherProps {
 
 export function AccountSwitcher({ onAddAccountClick }: AccountSwitcherProps) {
   const { currentUser, otherUsers, setLogin, removeLogin } = useLoggedInAccounts();
+  const logoutWallet = useWalletLogout();
 
   if (!currentUser) return null;
 
@@ -107,7 +109,13 @@ export function AccountSwitcher({ onAddAccountClick }: AccountSwitcherProps) {
           <span>Add another account</span>
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() => removeLogin(currentUser.id)}
+          onClick={() => {
+            // The wallet is reached by proving ownership of this key, so it
+            // goes when the key does. Its pubkey is read before the login is
+            // removed, since afterwards there is nothing left to identify it.
+            const { pubkey, id } = currentUser;
+            void logoutWallet(pubkey).finally(() => removeLogin(id));
+          }}
           className='flex items-center gap-2 cursor-pointer p-2 rounded-md text-destructive focus:text-destructive'
         >
           <LogOut className='w-4 h-4' />
