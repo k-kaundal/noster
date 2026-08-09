@@ -675,9 +675,11 @@ function ActionButton({
           aria-label={label}
           aria-pressed={active}
           className={cn(
-            'press group flex min-h-9 items-center gap-2 rounded-full px-3 py-2 text-xs font-medium text-muted-foreground transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40 hover:scale-105 active:scale-95',
+            'press group flex min-h-9 items-center gap-2 rounded-full px-3 py-2 text-xs font-medium text-muted-foreground transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50',
+            'hover:scale-110 active:scale-95',
             TONE_CLASSES[tone],
-            active && ACTIVE_CLASSES[tone]
+            active && ACTIVE_CLASSES[tone],
+            (busy || disabled) && 'pointer-events-none'
           )}
         >
           {busy ? (
@@ -685,13 +687,13 @@ function ActionButton({
           ) : (
             <Icon
               className={cn(
-                'h-4 w-4 shrink-0 transition-transform',
+                'h-4 w-4 shrink-0 transition-transform duration-150',
                 active && fillWhenActive && 'fill-current'
               )}
             />
           )}
           {count !== undefined && count > 0 && (
-            <span className="tabular-nums text-xs text-muted-foreground">{formatCount(count)}</span>
+            <span className="tabular-nums text-xs font-semibold">{formatCount(count)}</span>
           )}
         </button>
       </TooltipTrigger>

@@ -1,7 +1,7 @@
 // NOTE: This file is stable and usually should not be modified.
 // It is important that all functionality in this file is preserved, and should only be modified if explicitly requested.
 
-import { ChevronDown, LogOut, UserIcon, UserPlus, UserRound, Wallet } from 'lucide-react';
+import { ChevronDown, LogOut, UserIcon, UserPlus, UserRound, Wallet, Key } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import {
@@ -14,6 +14,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx';
 import { RelaySelector } from '@/components/RelaySelector';
 import { WalletModal } from '@/components/WalletModal';
+import { PrivateKeyDialog } from './PrivateKeyDialog';
 import { useLoggedInAccounts, type Account } from '@/hooks/useLoggedInAccounts';
 import { genUserName } from '@/lib/genUserName';
 
@@ -89,6 +90,15 @@ export function AccountSwitcher({ onAddAccountClick }: AccountSwitcherProps) {
             <span>Wallet Settings</span>
           </DropdownMenuItem>
         </WalletModal>
+        <PrivateKeyDialog>
+          <DropdownMenuItem
+            className='flex items-center gap-2 cursor-pointer p-2 rounded-md'
+            onSelect={(e) => e.preventDefault()}
+          >
+            <Key className='w-4 h-4' />
+            <span>View Private Key</span>
+          </DropdownMenuItem>
+        </PrivateKeyDialog>
         <DropdownMenuItem
           onClick={onAddAccountClick}
           className='flex items-center gap-2 cursor-pointer p-2 rounded-md'
