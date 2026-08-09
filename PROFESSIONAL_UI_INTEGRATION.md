@@ -1,14 +1,10 @@
 # Professional UI Integration Guide
 
-This document describes the new professional UI features integrated into NostrFeed, providing a comprehensive overview of theme presets, professional post display, and UI customization options.
+This document describes the UI features integrated into NostrFeed, providing an overview of theme presets, typography and spacing, and UI customization options.
+
+> **Note:** the "Professional UI Mode" post layout was removed. The feed renders the standard `Post` component everywhere, so posts look and behave the same on Home, Explore, profiles and hashtag pages.
 
 ## Quick Start
-
-### Enabling Professional UI Mode
-
-1. Navigate to **Settings → UI** tab
-2. Toggle **Professional UI Mode** to enable enhanced post display
-3. Refresh the page to see the changes applied
 
 ### Changing Theme Presets
 
@@ -22,38 +18,7 @@ This document describes the new professional UI features integrated into NostrFe
 
 ## Features
 
-### 1. Professional UI Mode
-
-When enabled in Settings → UI, the feed switches to an enhanced post display (PostProfessional) that includes:
-
-- **Improved Visual Hierarchy**: Better spacing and sizing for post content
-- **Professional Card Design**: Rounded corners, subtle shadows, and hover effects
-- **Engagement Metrics**: Clear display of replies, reposts, and likes counts
-- **Enhanced Action Buttons**: Better styled and positioned interaction buttons
-- **Professional Timestamps**: Relative time display (e.g., "2 hours ago")
-
-#### Toggling Professional UI
-
-```typescript
-// In components, detect if professional UI is enabled:
-import { useProfessionalUI } from '@/hooks/useProfessionalUI';
-
-function MyComponent() {
-  const { enabled: useProfessional } = useProfessionalUI();
-  
-  return (
-    <div>
-      {useProfessional ? (
-        <PostProfessional event={post} />
-      ) : (
-        <Post event={post} />
-      )}
-    </div>
-  );
-}
-```
-
-### 2. Theme Preset System
+### 1. Theme Preset System
 
 The app now includes 4 professional theme presets that modify the color scheme and visual appearance:
 
@@ -81,7 +46,7 @@ export const THEME_PRESETS: Record<ThemePreset, ThemeConfig> = {
 
 The preference is saved to localStorage as `theme:preset`.
 
-### 3. Typography and Spacing System
+### 2. Typography and Spacing System
 
 Professional UI uses a consistent design language:
 
@@ -110,29 +75,6 @@ export const SPACING = {
 ```
 
 ## Components
-
-### PostProfessional
-
-Enhanced post display component with professional styling.
-
-**Location**: `src/components/PostProfessional.tsx`
-
-**Features**:
-- Professional card-based layout
-- Author info with avatar and timestamp
-- Engagement stats display (replies, reposts, likes)
-- Professional action buttons with icons
-- Hover animations and state management
-
-**Usage**:
-```typescript
-import { PostProfessional } from '@/components/PostProfessional';
-import type { NostrEvent } from '@nostrify/nostrify';
-
-function MyComponent({ event }: { event: NostrEvent }) {
-  return <PostProfessional event={event} />;
-}
-```
 
 ### ThreadView
 
@@ -175,23 +117,6 @@ Component for users to select between theme presets.
 - CSS variable application
 
 **Used in**: AppHeader settings menu (mobile)
-
-## Hooks
-
-### useProfessionalUI
-
-Hook to check and control professional UI mode.
-
-```typescript
-import { useProfessionalUI } from '@/hooks/useProfessionalUI';
-
-function MyComponent() {
-  const { enabled, setEnabled } = useProfessionalUI();
-  
-  // enabled: boolean - whether professional UI is active
-  // setEnabled: (value: boolean) => void - toggle the mode
-}
-```
 
 ## Performance Utilities
 
@@ -241,73 +166,6 @@ const batcher = new RequestBatcher();
 const result = await batcher.batch('key', async () => {
   return fetch('/api/data').then(r => r.json());
 });
-```
-
-## Integration Details
-
-### Feed Component Integration
-
-The Feed component now conditionally renders PostProfessional based on the user's preference:
-
-```typescript
-// From src/components/Feed.tsx
-import { useProfessionalUI } from '@/hooks/useProfessionalUI';
-
-export function Feed() {
-  const { enabled: useProfessional } = useProfessionalUI();
-  
-  // ...
-  
-  return (
-    <div className="stagger-in space-y-3">
-      {posts.map((post) => (
-        <div key={post.id}>
-          {useProfessional ? (
-            <PostProfessional event={post} />
-          ) : (
-            <Post event={post} />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-```
-
-### Settings Page Integration
-
-New UI tab in Settings page allows users to enable/disable professional mode:
-
-```typescript
-// From src/pages/SettingsPage.tsx
-function UISettings() {
-  const { enabled: professionalUI, setEnabled } = useProfessionalUI();
-  
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4" />
-          Interface Enhancements
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between">
-          <div>
-            <p>Professional UI Mode</p>
-            <p className="text-xs text-muted-foreground">
-              Enhanced post layout and visual components
-            </p>
-          </div>
-          <Switch
-            checked={professionalUI}
-            onCheckedChange={setEnabled}
-          />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 ```
 
 ## Customization
@@ -390,46 +248,7 @@ function CustomComponent() {
 - Ensure touch targets are at least 48x48px
 - Adapt layouts for different screen sizes
 
-## Testing
-
-### Testing Professional UI Components
-
-```typescript
-import { render, screen } from '@testing-library/react';
-import { TestApp } from '@/test/TestApp';
-import { PostProfessional } from '@/components/PostProfessional';
-
-describe('PostProfessional', () => {
-  it('renders professional post layout', () => {
-    const mockEvent = {
-      id: '123',
-      kind: 1,
-      pubkey: 'abc',
-      created_at: Math.floor(Date.now() / 1000),
-      tags: [],
-      content: 'Test post',
-      sig: 'sig123',
-    };
-
-    render(
-      <TestApp>
-        <PostProfessional event={mockEvent} />
-      </TestApp>
-    );
-
-    expect(screen.getByText('Test post')).toBeInTheDocument();
-  });
-});
-```
-
 ## Troubleshooting
-
-### Professional UI not appearing
-
-1. Check Settings → UI to ensure Professional UI Mode is toggled on
-2. Clear browser cache and localStorage
-3. Refresh the page
-4. Check browser console for errors
 
 ### Theme not applying
 
@@ -460,11 +279,10 @@ Potential improvements for the professional UI system:
 
 ### New Files
 - `src/components/ThemePresetSwitcher.tsx` - Theme preset selector
-- `src/hooks/useProfessionalUI.ts` - Professional UI mode hook
 - `PROFESSIONAL_UI_INTEGRATION.md` - This guide
 
 ### Modified Files
-- `src/components/Feed.tsx` - Added professional UI mode support
+- `src/components/Feed.tsx` - Renders the standard `Post` component for every note
 - `src/components/ProfessionalSearch.tsx` - Fixed icon imports
 - `src/components/ThreadView.tsx` - Fixed icon imports
 - `src/components/layout/AppHeader.tsx` - Added ThemePresetSwitcher
@@ -474,6 +292,8 @@ Potential improvements for the professional UI system:
 
 ### Deleted Files
 - `src/lib/theme.test.ts` - Superseded by merged implementation
+- `src/components/PostProfessional.tsx` - Replaced by the standard `Post` component
+- `src/hooks/useProfessionalUI.ts` - Toggle removed along with the alternate layout
 
 ## References
 

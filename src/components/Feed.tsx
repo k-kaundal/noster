@@ -4,9 +4,7 @@ import { ArrowUp, Film, Loader2, MessageSquare, RefreshCw, Users } from 'lucide-
 import { useFeed, type FeedScope } from '@/hooks/useFeed';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAdvancedFilters } from '@/hooks/useAdvancedFilters';
-import { useProfessionalUI } from '@/hooks/useProfessionalUI';
 import { Post } from '@/components/Post';
-import { PostProfessional } from '@/components/PostProfessional';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { AdvancedFiltersButton } from '@/components/AdvancedFilters';
@@ -20,7 +18,6 @@ import { cn } from '@/lib/utils';
 
 export function Feed() {
   const { user } = useCurrentUser();
-  const { enabled: useProfessional } = useProfessionalUI();
   const [scope, setScope] = useState<FeedScope>('global');
 
   const {
@@ -289,11 +286,7 @@ export function Feed() {
                   { '--stagger-index': Math.min(index, 8) } as React.CSSProperties
                 }
               >
-                {useProfessional ? (
-                  <PostProfessional event={post} />
-                ) : (
-                  <Post event={post} />
-                )}
+                <Post event={post} />
               </div>
             ))}
           </div>
