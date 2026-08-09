@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyRound, Loader2 } from 'lucide-react';
+import { KeyRound, Link2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,11 +14,17 @@ import { cn } from '@/lib/utils';
  * as an equal option invites people to create credentials they don't need.
  */
 export function PasswordSignIn({ className }: { className?: string }) {
-  const { connectWithPassword, isConnectingWithPassword } = useLnbitsAuth();
+  const {
+    connectWithPassword,
+    isConnectingWithPassword,
+    connectWithLink,
+    isConnectingWithLink,
+  } = useLnbitsAuth();
 
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [walletLink, setWalletLink] = useState('');
 
   if (!open) {
     return (
@@ -30,7 +36,7 @@ export function PasswordSignIn({ className }: { className?: string }) {
           className
         )}
       >
-        Already have a wallet account? Sign in with a password
+        Already have a wallet? Sign in to it
       </button>
     );
   }
@@ -105,6 +111,50 @@ export function PasswordSignIn({ className }: { className?: string }) {
         If it isn't linked to the Nostr key you're signed in with, the wallet
         page will say so.
       </p>
+
+      {/* An account made before this app existed usually has no password at
+          all — the link it was created with is the only credential there is */}
+      <div className="space-y-1.5 border-t pt-3">
+        <Label htmlFor="wallet-link" className="text-xs">
+          No password? Paste your wallet link
+        </Label>
+        <Input
+          id="wallet-link"
+          value={walletLink}
+          onChange={(event) => setWalletLink(event.target.value)}
+          placeholder="https://…/wallet?usr=…"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={isConnectingWithLink || !walletLink.trim()}
+          onClick={() => {
+            void connectWithLink(walletLink).then(
+              () => {
+                setWalletLink('');
+                setOpen(false);
+              },
+              () => {
+                // useLnbitsAuth reports the reason; the field stays for a retry
+              }
+            );
+          }}
+        >
+          {isConnectingWithLink ? (
+            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Link2 className="mr-2 h-3.5 w-3.5" />
+          )}
+          Sign in with link
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          The whole address is fine — only the account id in it is used, and it
+          is never stored anywhere but this browser.
+        </p>
+      </div>
     </form>
   );
 }

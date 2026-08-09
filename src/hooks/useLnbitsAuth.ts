@@ -10,6 +10,8 @@ import {
   lnbitsRequest,
   loginWithNostr,
   loginWithPassword,
+  loginWithUserId,
+  parseUserId,
   type LnbitsUser,
 } from '@/lib/lnbits';
 
@@ -20,8 +22,22 @@ import {
  * errors that read like a bug in this app. Naming the setting is the
  * difference between "it's broken" and "switch that on".
  */
-export function describeLoginFailure(error: Error): string {
+export function describeLoginFailure(
+  error: Error,
+  method: 'nostr' | 'user-id' = 'nostr'
+): string {
   if (!(error instanceof LnbitsError)) return error.message;
+
+  // LNbits refuses a disabled sign-in method with this exact shape, whichever
+  // method it was, and the setting to change is named after the method
+  if (error.status === 403 && /not allowed/i.test(error.message)) {
+    const setting = method === 'nostr' ? 'nostr-auth-nip98' : 'user-id-only';
+    return `${LNBITS_URL} has that sign-in switched off. The instance needs "${setting}" in its auth_allowed_methods.`;
+  }
+
+  // The remaining advice is about signature checking, which only the Nostr
+  // flow does — offering it for a pasted account id would misdirect
+  if (method !== 'nostr') return error.message;
 
   if (error.status === 404 || error.status === 405) {
     return `${LNBITS_URL} doesn't accept Nostr sign-in. The instance needs "nostr-auth-nip98" in its auth_allowed_methods.`;
@@ -175,6 +191,37 @@ export function useLnbitsAuth() {
     },
   });
 
+  /**
+   * The same wallet, reached with the account id from a `?usr=` link.
+   *
+   * Accounts made before this app existed usually have no username or password
+   * at all — the link is the only credential they were ever given, so without
+   * this there is no way for those people to reach an existing balance.
+   */
+  const loginWithLink = useMutation({
+    mutationFn: async (input: string) => {
+      const usr = parseUserId(input);
+      if (!usr) {
+        throw new Error(
+          'That does not look like a wallet link or account id.'
+        );
+      }
+
+      return finishSignIn(await loginWithUserId(usr));
+    },
+    onSuccess: (issued) => {
+      storeToken(issued);
+      toast({ title: 'Signed in', description: 'Your wallet is ready.' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Could not sign in',
+        description: describeLoginFailure(error, 'user-id'),
+        variant: 'destructive',
+      });
+    },
+  });
+
   const logout = useCallback(async () => {
     try {
       await lnbitsRequest('/api/v1/auth/logout', { method: 'POST', token });
@@ -206,6 +253,9 @@ export function useLnbitsAuth() {
     /** Sign in to the same wallet with a username and password. */
     connectWithPassword: loginWithCredentials.mutateAsync,
     isConnectingWithPassword: loginWithCredentials.isPending,
+    /** Sign in with the account id from an existing wallet link. */
+    connectWithLink: loginWithLink.mutateAsync,
+    isConnectingWithLink: loginWithLink.isPending,
     /** Why the last sign-in attempt failed, phrased for a person. */
     connectError: login.error
       ? describeLoginFailure(login.error as Error)

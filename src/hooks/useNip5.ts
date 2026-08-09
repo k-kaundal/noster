@@ -6,7 +6,12 @@ import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
 import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
-import { LnbitsError, lnbitsRequest, readBolt11 } from '@/lib/lnbits';
+import {
+  LnbitsError,
+  lnbitsRequest,
+  readBolt11,
+  withExtension,
+} from '@/lib/lnbits';
 import {
   NIP5_DOMAIN,
   NIP5_DOMAIN_ID,
@@ -26,7 +31,8 @@ export interface PendingNip5 {
   paymentHash?: string;
 }
 
-const BASE = `/nostrnip5/api/v1`;
+const EXTENSION = 'nostrnip5';
+const BASE = `/${EXTENSION}/api/v1`;
 
 /**
  * Whether a failure means the extension isn't there.
@@ -55,9 +61,11 @@ export function useNip5Search(localPart: string, years = 1) {
   return useQuery<Nip5AddressStatus>({
     queryKey: ['nip5-search', NIP5_DOMAIN_ID, query, years],
     queryFn: ({ signal }) =>
-      lnbitsRequest<Nip5AddressStatus>(
-        `${BASE}/domain/${NIP5_DOMAIN_ID}/search?q=${encodeURIComponent(query)}&years=${years}`,
-        { token, signal }
+      withExtension(EXTENSION, token, () =>
+        lnbitsRequest<Nip5AddressStatus>(
+          `${BASE}/domain/${NIP5_DOMAIN_ID}/search?q=${encodeURIComponent(query)}&years=${years}`,
+          { token, signal }
+        )
       ),
     enabled: isNip5Configured() && isConnected && valid,
     staleTime: 30 * 1000,
@@ -109,7 +117,12 @@ export function useNip5() {
   const addresses = useQuery<Nip5Address[]>({
     queryKey: ['nip5-addresses', NIP5_DOMAIN_ID, user?.pubkey ?? ''],
     queryFn: ({ signal }) =>
-      lnbitsRequest<Nip5Address[]>(`${BASE}/user/addresses`, { token, signal }),
+      withExtension(EXTENSION, token, () =>
+        lnbitsRequest<Nip5Address[]>(`${BASE}/user/addresses`, {
+          token,
+          signal,
+        })
+      ),
     enabled: isNip5Configured() && isConnected,
     staleTime: 60 * 1000,
     retry: false,
@@ -134,9 +147,8 @@ export function useNip5() {
         );
       }
 
-      const body = await lnbitsRequest<unknown>(
-        `${BASE}/user/domain/${NIP5_DOMAIN_ID}/address`,
-        {
+      const body = await withExtension(EXTENSION, token, () =>
+        lnbitsRequest<unknown>(`${BASE}/user/domain/${NIP5_DOMAIN_ID}/address`, {
           method: 'POST',
           token,
           body: {
@@ -148,7 +160,7 @@ export function useNip5() {
             years,
             create_invoice: true,
           },
-        }
+        })
       );
 
       return {
@@ -206,13 +218,15 @@ export function useNip5() {
     mutationFn: async (address: Nip5Address) => {
       if (!wallet) throw new Error('Connect your wallet first');
 
-      await lnbitsRequest(
-        `${BASE}/user/domain/${NIP5_DOMAIN_ID}/address/${address.id}/lnaddress`,
-        {
-          method: 'PUT',
-          token,
-          body: { wallet: wallet.id, min: 1, max: 10_000_000 },
-        }
+      await withExtension(EXTENSION, token, () =>
+        lnbitsRequest(
+          `${BASE}/user/domain/${NIP5_DOMAIN_ID}/address/${address.id}/lnaddress`,
+          {
+            method: 'PUT',
+            token,
+            body: { wallet: wallet.id, min: 1, max: 10_000_000 },
+          }
+        )
       );
     },
     onSuccess: () => {
