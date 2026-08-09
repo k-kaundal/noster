@@ -4,11 +4,7 @@ import { nip19 } from 'nostr-tools';
 import type { NostrEvent } from '@nostrify/nostrify';
 import {
   Star,
-  Trash2,
-  GripVertical,
   Plus,
-  X,
-  Loader2,
 } from 'lucide-react';
 import { useSpotlight, usePublishSpotlight, type SpotlightItem } from '@/hooks/useSpotlight';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -17,10 +13,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
 import { genUserName } from '@/lib/genUserName';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/useToast';
+import { SpotlightEditor } from '@/components/SpotlightEditor';
 
 interface SpotlightProps {
   pubkey: string;
@@ -154,161 +150,6 @@ export function Spotlight({ pubkey, events }: SpotlightProps) {
     </div>
   );
 }
-
-interface SpotlightEditorProps {
-  items: SpotlightItem[];
-  onRemoveItem: (id: string) => void;
-  onAddItem: (item: SpotlightItem) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  isPublishing: boolean;
-}
-
-function SpotlightEditor({
-  items,
-  onRemoveItem,
-  onAddItem,
-  onSave,
-  onCancel,
-  isPublishing,
-}: SpotlightEditorProps) {
-  const [newItemType, setNewItemType] = useState<'post' | 'article' | 'community' | 'user'>('post');
-  const [newItemId, setNewItemId] = useState('');
-  const [newItemTitle, setNewItemTitle] = useState('');
-
-  const handleAddNewItem = useCallback(() => {
-    if (!newItemId.trim()) return;
-
-    onAddItem({
-      id: newItemId.trim(),
-      type: newItemType,
-      title: newItemTitle.trim() || undefined,
-      description: undefined,
-      order: items.length,
-    });
-
-    setNewItemId('');
-    setNewItemTitle('');
-  }, [newItemType, newItemId, newItemTitle, onAddItem, items.length]);
-
-  return (
-    <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
-      {/* Current Items */}
-      <div className="space-y-2">
-        <h3 className="font-semibold text-sm">Featured Items ({items.length})</h3>
-        {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No items added yet</p>
-        ) : (
-          <div className="space-y-2">
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between bg-background rounded-md p-3 border"
-              >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{item.title || item.id}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{item.type}</p>
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onRemoveItem(item.id)}
-                  className="h-7 w-7 p-0 text-destructive hover:bg-destructive/20 shrink-0"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Add New Item */}
-      <div className="space-y-3 pt-4 border-t">
-        <h3 className="font-semibold text-sm">Add Item</h3>
-
-        <div className="space-y-2">
-          <label className="text-xs font-medium">Type</label>
-          <div className="grid grid-cols-2 gap-2">
-            {(['post', 'article', 'community', 'user'] as const).map((type) => (
-              <Button
-                key={type}
-                size="sm"
-                variant={newItemType === type ? 'default' : 'outline'}
-                onClick={() => setNewItemType(type)}
-                className="capitalize text-xs"
-              >
-                {type}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-xs font-medium">ID (event/pubkey/address)</label>
-          <Input
-            placeholder={`Paste ${newItemType} ID or pubkey...`}
-            value={newItemId}
-            onChange={(e) => setNewItemId(e.target.value)}
-            className="text-sm"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-xs font-medium">Title (optional)</label>
-          <Input
-            placeholder="Custom title..."
-            value={newItemTitle}
-            onChange={(e) => setNewItemTitle(e.target.value)}
-            className="text-sm"
-          />
-        </div>
-
-        <Button
-          size="sm"
-          onClick={handleAddNewItem}
-          disabled={!newItemId.trim()}
-          className="w-full gap-2"
-        >
-          <Plus className="h-4 w-4" />
-          Add Item
-        </Button>
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-2 pt-4 border-t">
-        <Button
-          size="sm"
-          onClick={onSave}
-          disabled={isPublishing || items.length === 0}
-          className="flex-1"
-        >
-          {isPublishing ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            'Save Spotlight'
-          )}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={onCancel}
-          disabled={isPublishing}
-          className="flex-1"
-        >
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 
 interface SpotlightItemCardProps {
   item: SpotlightItem;
