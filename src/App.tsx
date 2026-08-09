@@ -61,7 +61,6 @@ const defaultConfig: AppConfig = {
   // Reads fan out across all of these; writes go to the ones marked write
   relays: [
     { url: "wss://relay.nostrfeed.com", read: true, write: true },
-    { url: "wss://relay.damus.io", read: true, write: true },
     { url: "wss://relay.primal.net", read: true, write: true },
     { url: "wss://relay.nostr.band", read: true, write: false },
     { url: "wss://nos.lol", read: true, write: true },
@@ -70,7 +69,6 @@ const defaultConfig: AppConfig = {
 
 const presetRelays = [
   { url: 'wss://relay.nostrfeed.com', name: 'NostrFeed', active: true },
-  { url: 'wss://relay.damus.io', name: 'Damus' },
   { url: 'wss://relay.primal.net', name: 'Primal' },
   { url: 'wss://relay.nostr.band', name: 'Nostr.Band' },
   { url: 'wss://nos.lol', name: 'nos.lol' },
