@@ -119,8 +119,19 @@ export function ReceiveDialog({
                 <span className="sr-only">Copy lightning address</span>
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Anyone can send to this address. No invoice needed.
+            {/* The address is the wallet's standing code: it works for any
+                amount, any number of times, and needs nothing created first.
+                An invoice QR only appears once one has been made, which is no
+                help to someone holding out a phone to be paid */}
+            <QrCode
+              value={`lightning:${lightningAddress}`}
+              label={`QR code for the lightning address ${lightningAddress}`}
+              size={176}
+              className="mt-3"
+            />
+
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              Scan or copy. Anyone can send to this, no invoice needed.
             </p>
           </div>
         )}

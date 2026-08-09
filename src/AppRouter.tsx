@@ -21,6 +21,7 @@ const PremiumPage = lazy(() => importChunk(() => import("./pages/PremiumPage")))
 const WalletPage = lazy(() => importChunk(() => import("./pages/WalletPage")));
 const WritePage = lazy(() => importChunk(() => import("./pages/WritePage")));
 const CommunitiesPage = lazy(() => importChunk(() => import("./pages/CommunitiesPage")));
+const ListsPage = lazy(() => importChunk(() => import("./pages/ListsPage")));
 const NotificationsPage = lazy(() => importChunk(() => import("./pages/NotificationsPage")));
 const IdentityVaultPage = lazy(() => importChunk(() => import("./pages/IdentityVaultPage")));
 const CommunityTreasuryPage = lazy(() => importChunk(() => import("./pages/CommunityTreasuryPage")));
@@ -82,6 +83,8 @@ export function AppRouter() {
           <Route path="/write" element={<WritePage />} />
           {/* NIP-72 moderated communities */}
           <Route path="/communities" element={<CommunitiesPage />} />
+          {/* NIP-51 follow sets and starter packs */}
+          <Route path="/lists" element={<ListsPage />} />
           {/* Custodial lightning wallet, authenticated with the Nostr key */}
           <Route path="/wallet" element={<WalletPage />} />
           {/* Paid relay access, sold through LNbits pay links */}
