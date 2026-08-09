@@ -25,6 +25,8 @@ const CommunityTreasuryPage = lazy(() => import("./pages/CommunityTreasuryPage")
 const BountiesPage = lazy(() => import("./pages/BountiesPage"));
 const MembershipsPage = lazy(() => import("./pages/MembershipsPage"));
 const SatsDropsPage = lazy(() => import("./pages/SatsDropsPage"));
+const LiveStreamingPage = lazy(() => import("./pages/LiveStreamingPage"));
+const MiniAppsPage = lazy(() => import("./pages/MiniAppsPage"));
 const NIP19Page = lazy(() =>
   import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
 );
@@ -85,6 +87,10 @@ export function AppRouter() {
           <Route path="/memberships" element={<MembershipsPage />} />
           {/* Sats Drops: LNURL-withdraw distributions to community */}
           <Route path="/sats-drops" element={<SatsDropsPage />} />
+          {/* Live Streaming: Broadcast content and earn sats in real-time */}
+          <Route path="/live" element={<LiveStreamingPage />} />
+          {/* Mini Apps: Community-built extensions and tools */}
+          <Route path="/mini-apps" element={<MiniAppsPage />} />
           {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
           <Route path="/settings" element={<SettingsPage />} />
           {/* Follow pages */}
