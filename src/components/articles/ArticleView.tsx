@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import { BadgeCheck, Clock, Pencil } from 'lucide-react';
@@ -13,6 +14,7 @@ import { UserHoverCard } from '@/components/UserHoverCard';
 import { ZapButton } from '@/components/ZapButton';
 import { CommentsSection } from '@/components/comments/CommentsSection';
 import { Markdown } from '@/components/articles/Markdown';
+import { ArticleEditor } from '@/components/articles/ArticleEditor';
 import { markdownToText } from '@/lib/markdown';
 import { readingMinutes, type Article } from '@/lib/article';
 
@@ -21,6 +23,7 @@ export function ArticleView({ article }: { article: Article }) {
   const { user } = useCurrentUser();
   const author = useAuthor(article.event.pubkey);
   const metadata = author.data?.metadata;
+  const [isEditing, setIsEditing] = useState(false);
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(article.event.pubkey);
@@ -105,11 +108,13 @@ export function ArticleView({ article }: { article: Article }) {
 
             <div className="ml-auto flex items-center gap-2">
               {isMine && (
-                <Button asChild size="sm" variant="outline">
-                  <Link to={`/write?slug=${encodeURIComponent(article.slug)}`}>
-                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                    Edit
-                  </Link>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                  Edit
                 </Button>
               )}
               <ZapButton target={article.event} />
@@ -150,6 +155,17 @@ export function ArticleView({ article }: { article: Article }) {
           emptyStateSubtitle="Be the first to reply to this article."
         />
       </Card>
+
+      {isEditing && (
+        <ArticleEditor
+          article={article}
+          onClose={() => setIsEditing(false)}
+          onSave={() => {
+            setIsEditing(false);
+            // In a real app, we'd refetch the article here
+          }}
+        />
+      )}
     </div>
   );
 }
