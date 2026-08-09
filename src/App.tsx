@@ -61,35 +61,40 @@ const defaultConfig: AppConfig = {
   // Reads fan out across all of these; writes go to the ones marked write
   relays: [
     { url: "wss://relay.nostrfeed.com", read: true, write: true },
-    { url: "wss://relay.primal.net", read: true, write: true },
-    { url: "wss://relay.nostr.band", read: true, write: false },
     { url: "wss://nos.lol", read: true, write: true },
+    { url: "wss://relay.nostr.band", read: true, write: true },
+    { url: "wss://relay.primal.net", read: true, write: true },
   ],
 };
 
 const presetRelays = [
+  // Primary & Top Tier Relays (most stable and reliable)
   { url: 'wss://relay.nostrfeed.com', name: 'NostrFeed', active: true },
-  { url: 'wss://relay.primal.net', name: 'Primal' },
-  { url: 'wss://relay.nostr.band', name: 'Nostr.Band' },
-  { url: 'wss://nos.lol', name: 'nos.lol' },
+  { url: 'wss://nos.lol', name: 'nos.lol', active: true },
+  { url: 'wss://relay.nostr.band', name: 'Nostr.Band', active: true },
+  { url: 'wss://relay.primal.net', name: 'Primal', active: true },
+
+  // Additional Quality Relays
+  { url: 'wss://nostr.wine', name: 'Nostr.Wine', active: true },
   { url: 'wss://relay.snort.social', name: 'Snort' },
   { url: 'wss://ditto.pub/relay', name: 'Ditto' },
-  { url: 'wss://nostr.oxtr.dev', name: 'Oxtr' },
-  { url: 'wss://nostr.bitcoiner.social', name: 'Bitcoiner.Social' },
-  { url: 'wss://nostr.wine', name: 'Nostr.Wine', active: true },
   { url: 'wss://at.nostrworks.com', name: 'NostrWorks', active: true },
-  { url: 'wss://btc.klendazu.com', name: 'Klendazu', active: true },
-  { url: 'wss://knostr.neutrine.com', name: 'Knostr', active: true },
-  { url: 'wss://nostr-1.nbo.angani.co', name: 'Angani', active: true },
-  { url: 'wss://atlas.nostr.land', name: 'Atlas', active: true },
-  { url: 'wss://bitcoiner.social', name: 'Bitcoiner', active: true },
-  { url: 'wss://filter.nostr.wine', name: 'Filter.Nostr.Wine', active: true },
-  { url: 'wss://puravida.nostr.land', name: 'PuraVida', active: true },
   { url: 'wss://relay.nostrplebs.com', name: 'NostrPlebs', active: true },
   { url: 'wss://offchain.pub', name: 'Offchain', active: true },
+  { url: 'wss://filter.nostr.wine', name: 'Filter.Nostr.Wine', active: true },
   { url: 'wss://relay.nostrview.com', name: 'NostrView', active: true },
+  { url: 'wss://atlas.nostr.land', name: 'Atlas', active: true },
+  { url: 'wss://puravida.nostr.land', name: 'PuraVida', active: true },
+
+  // Specialized Relays
+  { url: 'wss://nostr.oxtr.dev', name: 'Oxtr' },
+  { url: 'wss://nostr.bitcoiner.social', name: 'Bitcoiner.Social' },
+  { url: 'wss://bitcoiner.social', name: 'Bitcoiner', active: true },
+  { url: 'wss://knostr.neutrine.com', name: 'Knostr', active: true },
+  { url: 'wss://nostr-1.nbo.angani.co', name: 'Angani', active: true },
   { url: 'wss://eden.nostr.land', name: 'Eden', active: true },
-  { url: 'wss://theforest.nostr1.com', name: 'TheForest', active: true }
+  { url: 'wss://theforest.nostr1.com', name: 'TheForest', active: true },
+  { url: 'wss://btc.klendazu.com', name: 'Klendazu', active: true }
 ];
 
 export function App() {
