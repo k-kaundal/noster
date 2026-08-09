@@ -8,8 +8,6 @@ import {
   MessageSquare,
   Zap,
   ArrowUp,
-  Image as ImageIcon,
-  Loader2,
 } from 'lucide-react';
 import {
   useTrendingPosts,
@@ -18,7 +16,6 @@ import {
   useTrendingCommunities,
   type TrendingItem,
 } from '@/hooks/useTrending';
-import { useOGMetadata, extractUrlFromContent } from '@/hooks/useOGMetadata';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -61,12 +58,12 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
           icon={MessageSquare}
           items={posts}
           isLoading={postsLoading}
-          renderItem={(item, index) => (
+          renderItem={(item) => (
             <Link
               to={`/${nip19.noteEncode(item.id)}`}
-              className="block hover:text-primary hover:underline"
+              className="block truncate hover:text-primary hover:underline"
             >
-              <PostPreview content={item.title} index={index} />
+              {formatPostPreview(item.title)}
             </Link>
           )}
         />
@@ -174,54 +171,6 @@ function formatPostPreview(content: string): string {
     }
     return trimmed;
   }
-}
-
-interface PostPreviewProps {
-  content: string;
-  index: number;
-}
-
-function PostPreview({ content, index }: PostPreviewProps) {
-  const url = extractUrlFromContent(content);
-  const { data: ogData, isLoading } = useOGMetadata(url);
-
-  // Show OG preview if available and we have image or title
-  if (ogData?.title || ogData?.image) {
-    return (
-      <div className="flex gap-2 items-start">
-        {ogData.image && (
-          <div className="shrink-0 overflow-hidden rounded bg-muted">
-            <img
-              src={ogData.image}
-              alt=""
-              className="h-12 w-12 object-cover"
-              onError={() => {}} // Silently fail
-            />
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          {ogData.title && (
-            <p className="text-sm font-medium line-clamp-2 hover:text-primary transition-colors">
-              {ogData.title}
-            </p>
-          )}
-          {ogData.description && (
-            <p className="text-xs text-muted-foreground line-clamp-2">
-              {ogData.description}
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Show loading state only on first load
-  if (isLoading && !url) {
-    return <span className="text-xs text-muted-foreground">[Loading...]</span>;
-  }
-
-  // Fallback to regular preview
-  return <span>{formatPostPreview(content)}</span>;
 }
 
 interface TrendingCardProps {
