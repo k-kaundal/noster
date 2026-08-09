@@ -86,14 +86,14 @@ export function PostX({ event }: { event: NostrEvent }) {
         </div>
 
         {/* Content */}
-        <div className="ml-15 mt-2">
+        <div className="ml-[60px] mt-2">
           <div className="text-base leading-normal text-foreground break-words">
             <NoteContent event={event} />
           </div>
         </div>
 
         {/* Engagement Stats */}
-        <div className="ml-15 mt-3 flex gap-4 text-xs text-muted-foreground border-t border-border/30 pt-3 pb-2">
+        <div className="ml-[60px] mt-3 flex gap-4 text-xs text-muted-foreground border-t border-border/30 pt-3 pb-2">
           <button className="hover:text-reply transition-colors group/stat">
             <span className="group-hover/stat:bg-reply/10 group-hover/stat:text-reply px-2 py-1 rounded transition-colors">
               💬 1.2K
@@ -117,7 +117,7 @@ export function PostX({ event }: { event: NostrEvent }) {
         </div>
 
         {/* Action Buttons */}
-        <div className="ml-15 mt-3 flex justify-around text-muted-foreground">
+        <div className="ml-[60px] mt-3 flex justify-around text-muted-foreground">
           <Button
             variant="ghost"
             size="sm"
