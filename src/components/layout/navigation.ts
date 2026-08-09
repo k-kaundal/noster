@@ -5,6 +5,7 @@ import {
   Film,
   Flame,
   Home,
+  List,
   MessagesSquare,
   PenSquare,
   Server,
@@ -59,6 +60,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
       secondary: true,
     },
     { href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
+    { href: '/lists', icon: List, label: 'Lists', secondary: true },
     {
       href: '/communities',
       icon: Users,
