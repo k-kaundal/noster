@@ -12,7 +12,7 @@ interface NostrProviderProps {
 }
 
 /** Cap on relays contacted per request, so a long list can't stall a query. */
-const MAX_READ_RELAYS = 8;
+const MAX_READ_RELAYS = 10;
 const MAX_WRITE_RELAYS = 8;
 
 const NostrProvider: React.FC<NostrProviderProps> = (props) => {

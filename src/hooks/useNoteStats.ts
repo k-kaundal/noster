@@ -47,7 +47,7 @@ function getLoader(nostr: Relay): BatchLoader<string, NoteStats> {
             limit: Math.min(eventIds.length * 40, 2000),
           },
         ],
-        { signal: AbortSignal.timeout(5000) }
+        { signal: AbortSignal.timeout(8000) }
       );
 
       const results = new Map<string, NoteStats>();
@@ -100,7 +100,8 @@ export function useNoteStats(eventId: string | undefined) {
     enabled: !!eventId,
     staleTime: 60 * 1000,
     gcTime: 10 * 60 * 1000,
-    retry: 1,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(500 * 2 ** attempt, 2000),
   });
 
   return {
