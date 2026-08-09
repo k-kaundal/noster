@@ -34,6 +34,7 @@ import { useDmRelayList } from '@/hooks/useDmRelayList';
 import { useRelays } from '@/hooks/useRelays';
 import { useSeo } from '@/hooks/useSeo';
 import { useProfessionalUI } from '@/hooks/useProfessionalUI';
+import { AdvancedThemeSwitcher } from '@/components/AdvancedThemeSwitcher';
 import { genUserName } from '@/lib/genUserName';
 import { relayDisplayName } from '@/lib/relay';
 import { getMuteValue } from '@/lib/mute';
@@ -459,29 +460,42 @@ function UISettings() {
     useProfessionalUI();
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Sparkles className="h-4 w-4" />
-          Interface Enhancements
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium">Professional UI Mode</p>
-            <p className="text-xs text-muted-foreground">
-              Enhanced post layout and visual components with improved spacing
-              and interactions.
-            </p>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-4 w-4" />
+            Interface Enhancements
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Professional UI Mode</p>
+              <p className="text-xs text-muted-foreground">
+                Enhanced post layout with professional design and improved spacing.
+              </p>
+            </div>
+            <Switch
+              checked={professionalUI}
+              onCheckedChange={setProfessionalUI}
+            />
           </div>
-          <Switch
-            checked={professionalUI}
-            onCheckedChange={setProfessionalUI}
-          />
-        </div>
-      </CardContent>
-    </Card>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Advanced Themes
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Choose from 13+ professional and creative theme presets, including X-inspired, premium corporate, and crypto-themed options.
+            </p>
+            <AdvancedThemeSwitcher />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
