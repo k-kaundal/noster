@@ -39,6 +39,16 @@ export function describeLoginFailure(
   // flow does — offering it for a pasted account id would misdirect
   if (method !== 'nostr') return error.message;
 
+  /**
+   * LNbits does not compare the `u` tag to the URL it was called on: it builds
+   * the list it will accept from `nostr_absolute_request_urls`, which ships
+   * pointing at localhost. Until that setting names this instance no signature
+   * can satisfy it, so the value to add is the useful thing to say.
+   */
+  if (/tag 'u'/i.test(error.message)) {
+    return `${LNBITS_URL} is not expecting sign-ins addressed to itself. Add "${LNBITS_URL}" to its nostr_absolute_request_urls setting — it ships listing only localhost, so every signature is rejected until then.`;
+  }
+
   if (error.status === 404 || error.status === 405) {
     return `${LNBITS_URL} doesn't accept Nostr sign-in. The instance needs "nostr-auth-nip98" in its auth_allowed_methods.`;
   }
