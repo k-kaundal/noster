@@ -13,6 +13,7 @@ import { useLoginActions } from '@/hooks/useLoginActions';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { generateSecretKey, nip19 } from 'nostr-tools';
+import { initialContactTags } from '@/lib/onboarding';
 import { cn } from '@/lib/utils';
 
 interface SignupDialogProps {
@@ -184,6 +185,24 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
     localStorage.setItem('signup_completed', Date.now().toString());
 
     try {
+      /**
+       * A new account follows the people who run this app.
+       *
+       * Published before the profile, so the Following tab has something in it
+       * by the time anyone reaches the feed. Written without reading the
+       * relays first, which is safe only here: this key was generated seconds
+       * ago, so there is provably no existing contact list to merge with or
+       * overwrite.
+       */
+      await publishEvent({
+        kind: 3,
+        content: '',
+        tags: initialContactTags(),
+      }).catch(() => {
+        // A failed follow is not worth blocking signup over — the outbox will
+        // retry it, and the suggestions below still work
+      });
+
       // Publish profile if user provided information
       if (!skipProfile && (profileData.name || profileData.about || profileData.picture)) {
         const metadata: Record<string, string> = {};

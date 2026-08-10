@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useMuteList } from '@/hooks/useMuteList';
+import { useAdultContent } from '@/hooks/useAdultContent';
 import { useDmRelayList } from '@/hooks/useDmRelayList';
 import { useRelays } from '@/hooks/useRelays';
 import { useSeo } from '@/hooks/useSeo';
@@ -78,6 +79,7 @@ export function SettingsPage() {
 
           <TabsContent value="appearance">
             <AppearanceSettings />
+            <ContentSettings />
           </TabsContent>
           <TabsContent value="ui">
             <UISettings />
@@ -160,6 +162,50 @@ function AppearanceSettings() {
           </div>
           <ThemeToggle />
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * What the feed is allowed to show without being asked.
+ *
+ * Lives beside appearance rather than inside the advanced filters, because
+ * those are opt-in as a group: a filter that only applies once someone has
+ * opened a settings panel is no protection for the people most likely never
+ * to open one.
+ */
+function ContentSettings() {
+  const { showAdult, setShowAdult } = useAdultContent();
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Content</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Adult content</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Off by default. Posts that label themselves as adult — a NIP-36
+              warning, or tags like #nsfw — are kept out of your feed. Nothing
+              unlabelled is guessed at, so this depends on posters marking
+              their own work.
+            </p>
+          </div>
+          <Switch
+            checked={showAdult}
+            onCheckedChange={setShowAdult}
+            aria-label="Show adult content"
+          />
+        </div>
+
+        <p className="rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+          This filters what arrives, whichever relay it came from. Which relays
+          you read is a separate choice — the suggested ones on the relays page
+          are the moderated ones.
+        </p>
       </CardContent>
     </Card>
   );

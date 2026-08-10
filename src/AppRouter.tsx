@@ -1,7 +1,8 @@
 import { Suspense, lazy } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { ScrollRestoration } from "./components/ScrollRestoration";
-import { PostSkeletonList } from "./components/PostSkeleton";
+
 import { importChunk } from "./lib/importChunk";
 
 import Index from "./pages/Index";
@@ -49,10 +50,23 @@ const FollowersPage = lazy(() =>
 );
 const NotFound = lazy(() => importChunk(() => import("./pages/NotFound")));
 
+/**
+ * Shown only while a route's code is still downloading.
+ *
+ * Deliberately quiet, and deliberately not post-shaped. It used to be three
+ * shimmering post cards, which meant opening Settings flashed a fake timeline
+ * at you first — an animation promising content that was never coming. The
+ * loading bar at the top of the layout already says something is happening;
+ * this only needs to hold the space without lying about what goes in it.
+ */
 function RouteFallback() {
   return (
-    <div className="container py-10">
-      <PostSkeletonList count={3} />
+    <div
+      className="container flex min-h-[50vh] items-center justify-center"
+      role="status"
+      aria-label="Loading"
+    >
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
     </div>
   );
 }
