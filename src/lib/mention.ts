@@ -203,3 +203,39 @@ export function extractQuotedEvents(
 
   return [...quotes.values()];
 }
+
+/**
+ * `q` tags for cited events.
+ *
+ * NIP-27 is the normative word on references written into text, and the tag
+ * it names is `q` — NIP-18's quote tag — not `e`. The difference is not
+ * cosmetic: an `e` tag is how a reply is threaded, so citing a note with one
+ * files the citation among that note's replies and, on a kind 1, makes it a
+ * reply outright. `q` says "this text mentions that event" and nothing more,
+ * which is what quoting is.
+ *
+ * NIP-23's example still shows `e` and `a` for the same job. It predates this
+ * and defers to NIP-27 in its own prose, so `q` wins.
+ */
+export function buildQuoteTags(quotes: QuotedEvent[]): string[][] {
+  const seen = new Set<string>();
+  const tags: string[][] = [];
+
+  for (const quote of quotes) {
+    if (!quote.value || seen.has(quote.value)) continue;
+    seen.add(quote.value);
+
+    /**
+     * Positional, so a missing relay hint has to hold its place when an
+     * author follows it — otherwise the pubkey lands in the hint's slot and
+     * names a relay after a person.
+     */
+    const tag = ['q', quote.value, quote.relay ?? ''];
+    if (quote.pubkey) tag.push(quote.pubkey);
+
+    while (tag.length > 2 && !tag[tag.length - 1]) tag.pop();
+    tags.push(tag);
+  }
+
+  return tags;
+}

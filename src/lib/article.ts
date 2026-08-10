@@ -1,4 +1,5 @@
 import type { NostrEvent } from '@nostrify/nostrify';
+import { buildQuoteTags, type QuotedEvent } from './mention';
 
 /** NIP-23 long-form content. Drafts use the neighbouring kind. */
 export const ARTICLE_KIND = 30023;
@@ -113,7 +114,7 @@ export interface ArticleReferences {
   /** Pubkeys named in the body. */
   mentions?: string[];
   /** Events cited in the body, by id or by `kind:pubkey:d` address. */
-  quotes?: Array<{ value: string; relay?: string }>;
+  quotes?: QuotedEvent[];
 }
 
 /** The tags for a NIP-23 article. */
@@ -147,19 +148,12 @@ export function buildArticleTags(
   }
 
   /**
-   * An address goes in an `a` tag and an id in an `e` tag, as NIP-23's own
-   * example shows. Which one a citation is decides whether it survives the
-   * cited author editing their post: an address follows the article, an id
-   * names one revision of it.
+   * Citations are `q` tags, per NIP-27, which NIP-23 defers to for anything
+   * written into the body. Its own example still shows `e` and `a` for this
+   * and predates that rule — and an `e` tag would file the citation among the
+   * cited event's replies rather than saying the article mentions it.
    */
-  const cited = new Set<string>();
-  for (const quote of references.quotes ?? []) {
-    if (!quote.value || cited.has(quote.value)) continue;
-    cited.add(quote.value);
-
-    const name = quote.value.includes(':') ? 'a' : 'e';
-    tags.push(quote.relay ? [name, quote.value, quote.relay] : [name, quote.value]);
-  }
+  tags.push(...buildQuoteTags(references.quotes ?? []));
 
   return tags;
 }

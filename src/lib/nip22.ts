@@ -1,5 +1,6 @@
 import type { NostrEvent } from '@nostrify/nostrify';
 import { addressOf } from './eventKinds';
+import { buildQuoteTags, type QuotedEvent } from './mention';
 
 export { addressOf };
 
@@ -137,7 +138,7 @@ export interface CommentInput {
   /** Pubkeys named in the content with `nostr:` URIs. */
   mentions?: string[];
   /** Events cited in the content with `nostr:` URIs. */
-  quotes?: Array<{ value: string; relay?: string; pubkey?: string }>;
+  quotes?: QuotedEvent[];
 }
 
 /**
@@ -152,9 +153,7 @@ export function buildCommentTags(input: CommentInput): string[][] {
 
   const tags = [...rootTags(input.root), ...parentTags(parent)];
 
-  for (const quote of input.quotes ?? []) {
-    tags.push(tag('q', quote.value, quote.relay, quote.pubkey));
-  }
+  tags.push(...buildQuoteTags(input.quotes ?? []));
 
   /**
    * Mentions are appended rather than merged into the `p` tags above, but a

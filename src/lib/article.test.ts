@@ -206,9 +206,9 @@ describe('buildArticleTags references', () => {
     expect(tags).toContainEqual(['p', 'a'.repeat(64)]);
   });
 
-  it('cites an event id with an e tag and an address with an a tag', () => {
-    // Which one it is decides whether the citation survives the cited author
-    // editing their post
+  it('cites events with q tags, whether by id or by address', () => {
+    // NIP-27 names `q` for references written into text. An `e` tag would
+    // file the citation among the cited event's replies instead
     const tags = buildArticleTags(draft, {
       quotes: [
         { value: 'b'.repeat(64), relay: 'wss://relay.example.com' },
@@ -216,17 +216,18 @@ describe('buildArticleTags references', () => {
       ],
     });
 
-    expect(tags).toContainEqual(['e', 'b'.repeat(64), 'wss://relay.example.com']);
+    expect(tags).toContainEqual(['q', 'b'.repeat(64), 'wss://relay.example.com']);
     expect(tags).toContainEqual([
-      'a',
+      'q',
       `30023:${'c'.repeat(64)}:ipsum`,
       'wss://relay.nostr.org',
     ]);
+    expect(tags.some(([name]) => name === 'e' || name === 'a')).toBe(false);
   });
 
   it('omits a relay hint it does not have rather than writing an empty one', () => {
     expect(buildArticleTags(draft, { quotes: [{ value: 'b'.repeat(64) }] })).toContainEqual(
-      ['e', 'b'.repeat(64)]
+      ['q', 'b'.repeat(64)]
     );
   });
 
@@ -237,7 +238,7 @@ describe('buildArticleTags references', () => {
     });
 
     expect(tags.filter(([name]) => name === 'p')).toHaveLength(1);
-    expect(tags.filter(([name]) => name === 'e')).toHaveLength(1);
+    expect(tags.filter(([name]) => name === 'q')).toHaveLength(1);
   });
 
   it('changes nothing when the body references nothing', () => {
