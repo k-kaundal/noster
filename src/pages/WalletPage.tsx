@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Banknote,
   KeyRound,
   Loader2,
   LogOut,
@@ -288,6 +289,18 @@ function ConnectedWallet() {
           >
             <Sparkles className="h-4 w-4" />
             <span>Buy relay access with these sats</span>
+            <span className="ml-auto">→</span>
+          </Link>
+
+          {/* The other wallet. Worth naming here rather than only in the nav,
+              because "the balance is held by whoever runs the server" is the
+              exact objection ecash answers */}
+          <Link
+            to="/ecash"
+            className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-500/10 dark:text-emerald-400"
+          >
+            <Banknote className="h-4 w-4" />
+            <span>Hold sats as private ecash instead</span>
             <span className="ml-auto">→</span>
           </Link>
 

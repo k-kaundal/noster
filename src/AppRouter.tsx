@@ -19,6 +19,7 @@ const ChatPage = lazy(() => importChunk(() => import("./pages/ChatPage")));
 const SettingsPage = lazy(() => importChunk(() => import("./pages/SettingsPage")));
 const PremiumPage = lazy(() => importChunk(() => import("./pages/PremiumPage")));
 const WalletPage = lazy(() => importChunk(() => import("./pages/WalletPage")));
+const EcashPage = lazy(() => importChunk(() => import("./pages/EcashPage")));
 const WritePage = lazy(() => importChunk(() => import("./pages/WritePage")));
 const CommunitiesPage = lazy(() => importChunk(() => import("./pages/CommunitiesPage")));
 const ListsPage = lazy(() => importChunk(() => import("./pages/ListsPage")));
@@ -87,6 +88,8 @@ export function AppRouter() {
           <Route path="/lists" element={<ListsPage />} />
           {/* Custodial lightning wallet, authenticated with the Nostr key */}
           <Route path="/wallet" element={<WalletPage />} />
+          {/* NIP-60 Cashu ecash, held in the browser and backed up to relays */}
+          <Route path="/ecash" element={<EcashPage />} />
           {/* Paid relay access, sold through LNbits pay links */}
           <Route path="/premium" element={<PremiumPage />} />
           {/* Nostr identity vault: signing devices, relays, apps, permissions */}
