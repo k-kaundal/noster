@@ -7,6 +7,9 @@ import { isRenderableEvent } from '@/lib/eventKinds';
 /** Newest-first pages, as `useInfiniteQuery` stores them. */
 type FeedPages = InfiniteData<NostrEvent[], number | undefined>;
 
+/** Most notes the live subscription will let the first page hold. */
+const MAX_LIVE_PAGE = 200;
+
 /**
  * The pool, as far as this file is concerned.
  *
@@ -79,7 +82,12 @@ export function useLiveFeed(
                 return current;
               }
 
-              return { ...current, pages: [[event, ...first], ...rest] };
+              // Capped: a busy global feed left open all day would otherwise
+              // grow the first page without limit, and everything above what
+              // the reader has seen is held back rather than rendered anyway
+              const grown = [event, ...first].slice(0, MAX_LIVE_PAGE);
+
+              return { ...current, pages: [grown, ...rest] };
             }
           );
         }
