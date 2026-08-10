@@ -23,7 +23,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { MentionAutocomplete } from '@/components/MentionAutocomplete';
-import { extractMentionPubkeys } from '@/lib/mention';
+import {
+  buildQuoteTags,
+  extractMentionPubkeys,
+  extractQuotedEvents,
+} from '@/lib/mention';
 import { nip19 } from 'nostr-tools';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
@@ -187,6 +191,16 @@ export function Compose() {
       // Mentions only notify the person if they are also tagged
       const mentioned = extractMentionPubkeys(postContent, nip19.decode);
 
+      /**
+       * NIP-27: an event pasted into the text as a `nostr:` link is invisible
+       * to everything except a reader of that paragraph until it is tagged.
+       * `q` rather than `e`, so citing a note does not file this among that
+       * note's replies.
+       */
+      const quoted = buildQuoteTags(
+        extractQuotedEvents(postContent, nip19.decode)
+      );
+
       const tags = [
         ...uploadedImages.map((url) => [
           'imeta',
@@ -194,6 +208,7 @@ export function Compose() {
           `m ${getImageMimeType(url)}`,
         ]),
         ...mentioned.map((pubkey) => ['p', pubkey]),
+        ...quoted,
         ...hashtags.map((tag) => ['t', tag]),
         // NIP-36: readers approve before the note is shown
         ...(warningEnabled
@@ -213,6 +228,7 @@ export function Compose() {
               relays: writeUrls.slice(0, 4),
             }),
             ...mentioned.map((pubkey) => ['p', pubkey]),
+            ...quoted,
             ...hashtags.map((tag) => ['t', tag]),
             ...(warningEnabled ? [['content-warning', warningReason.trim()]] : []),
           ],

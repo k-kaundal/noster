@@ -1,12 +1,10 @@
 import { useState, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useNostrPublish } from '@/hooks/useNostrPublish';
+import { usePostReply } from '@/hooks/usePostReply';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
-import { buildReplyTags } from '@/lib/thread';
 import { useToast } from '@/hooks/useToast';
 import {
   Dialog,
@@ -34,11 +32,10 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const { user } = useCurrentUser();
   const currentUserAuthor = useAuthor(user?.pubkey || '');
-  const { mutateAsync: createEvent } = useNostrPublish();
+  const { mutateAsync: postReply } = usePostReply();
   const { mutateAsync: uploadFile, isPending: isUploading } = useUploadFile();
 
   const currentUserMetadata = currentUserAuthor.data?.metadata;
@@ -134,21 +131,19 @@ export function ReplyDialog({ open, onOpenChange, replyingTo }: ReplyDialogProps
         `m ${getImageMimeType(url)}`,
       ]);
 
-      await createEvent({
-        kind: 1,
+      // Through the shared reply path, which owns the threading tags and the
+      // NIP-27 mention and citation tags alike — building them here as well
+      // is how the two composers drifted apart in the first place
+      await postReply({
+        parent: replyingTo,
         content: replyContent,
-        tags: [...buildReplyTags(replyingTo), ...imageTags],
+        extraTags: imageTags,
       });
 
       toast({
         title: "Reply posted",
         description: "Your reply has been published successfully.",
       });
-
-      // The reply belongs to a thread, not just to its parent
-      queryClient.invalidateQueries({ queryKey: ['thread'] });
-      queryClient.invalidateQueries({ queryKey: ['note-stats', replyingTo.id] });
-      queryClient.invalidateQueries({ queryKey: ['replies', replyingTo.id] });
 
       setContent('');
       setUploadedImages([]);

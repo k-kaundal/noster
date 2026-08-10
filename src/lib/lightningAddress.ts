@@ -134,3 +134,90 @@ export function buildPayLinkBody(input: {
     disposable: false,
   };
 }
+
+/** A lightning address someone holds somewhere other than here. */
+export interface ExternalAddress {
+  /** The part before the `@`. */
+  name: string;
+  /** The part after it, lowercased. */
+  domain: string;
+  /** The whole thing, normalised. */
+  address: string;
+  /** Where a wallet fetches its LNURL-pay offer from. */
+  lnurlpUrl: string;
+}
+
+export type AddressProblem =
+  | 'empty'
+  | 'not-an-address'
+  | 'invalid-name'
+  | 'invalid-domain'
+  | null;
+
+/**
+ * Reads an address someone bought or was given elsewhere.
+ *
+ * People paste these from all sorts of places, so what arrives is rarely the
+ * bare string: `lightning:` prefixes from QR codes, a leading ⚡ from profile
+ * pages, capitals from a phone keyboard that helpfully capitalised the first
+ * letter. All of those name a working address and all of them fail a strict
+ * comparison, so they are normalised rather than rejected.
+ *
+ * An LNURL string is refused rather than unpacked. `lnurl1...` is a different
+ * encoding of a payment endpoint and is not what `lud16` holds — a profile
+ * carrying one there is unzappable by every client that reads the field.
+ */
+export function parseLightningAddress(
+  input: string
+): { address: ExternalAddress; problem: null } | { address: null; problem: AddressProblem } {
+  const value = input
+    .trim()
+    .replace(/^(lightning:|⚡\s*)/i, '')
+    .trim()
+    .toLowerCase();
+
+  if (!value) return { address: null, problem: 'empty' };
+  if (!value.includes('@')) return { address: null, problem: 'not-an-address' };
+
+  const [name, ...rest] = value.split('@');
+  const domain = rest.join('@');
+
+  if (!name || !/^[a-z0-9-_.]+$/.test(name)) {
+    return { address: null, problem: 'invalid-name' };
+  }
+
+  // A hostname with at least one dot and no path, port or credentials on it
+  if (!domain || !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain)) {
+    return { address: null, problem: 'invalid-domain' };
+  }
+
+  return {
+    problem: null,
+    address: {
+      name,
+      domain,
+      address: `${name}@${domain}`,
+      lnurlpUrl: `https://${domain}/.well-known/lnurlp/${name}`,
+    },
+  };
+}
+
+export function describeAddressProblem(problem: AddressProblem): string {
+  switch (problem) {
+    case 'empty':
+      return 'Enter an address.';
+    case 'not-an-address':
+      return 'A lightning address looks like you@example.com.';
+    case 'invalid-name':
+      return 'The part before the @ can only be letters, numbers, dots, dashes and underscores.';
+    case 'invalid-domain':
+      return "That doesn't look like a domain name.";
+    default:
+      return '';
+  }
+}
+
+/** Whether an address is one this app issues. */
+export function isOurAddress(address: string): boolean {
+  return address.trim().toLowerCase().endsWith(`@${ADDRESS_DOMAIN.toLowerCase()}`);
+}

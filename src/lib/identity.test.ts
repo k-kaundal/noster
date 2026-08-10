@@ -247,3 +247,84 @@ describe('listAddresses', () => {
     expect(listAddresses([], { format })).toEqual([]);
   });
 });
+
+describe('describeIdentity with an address from elsewhere', () => {
+  it('does not call a deliberate external address out of date', () => {
+    // The nag exists for someone who claimed a name and forgot to publish it,
+    // not for someone being paid at a wallet they chose
+    const status = describeIdentity({
+      lightningAddress: 'me@nostrfeed.com',
+      profileLud16: 'alice@getalby.com',
+    });
+
+    expect(status.unpublished).not.toContain('lud16');
+    expect(status.external).toBe('alice@getalby.com');
+  });
+
+  it('still flags an address of ours that the profile has not caught up with', () => {
+    const status = describeIdentity({
+      lightningAddress: 'new@nostrfeed.com',
+      profileLud16: 'old@nostrfeed.com',
+      ownedAddresses: ['new@nostrfeed.com', 'old@nostrfeed.com'],
+    });
+
+    expect(status.unpublished).toContain('lud16');
+    expect(status.external).toBeNull();
+  });
+
+  it('does not read a second address of their own as having left', () => {
+    const status = describeIdentity({
+      lightningAddress: 'main@nostrfeed.com',
+      profileLud16: 'shop@nostrfeed.com',
+      ownedAddresses: ['main@nostrfeed.com', 'shop@nostrfeed.com'],
+    });
+
+    expect(status.external).toBeNull();
+  });
+
+  it('counts someone with only an external address as having one', () => {
+    // Otherwise the card offers to claim them an address as though they had
+    // nothing, when they are already being paid
+    const status = describeIdentity({ profileLud16: 'alice@getalby.com' });
+
+    expect(status.tier).toBe('external');
+    expect(status.primary).toBe('alice@getalby.com');
+  });
+
+  it('lets a verified name still lead', () => {
+    const status = describeIdentity({
+      verifiedName: 'alice@nostrfeed.com',
+      profileNip05: 'alice@nostrfeed.com',
+      profileLud16: 'alice@getalby.com',
+    });
+
+    expect(status.tier).toBe('verified');
+    expect(status.primary).toBe('alice@nostrfeed.com');
+    expect(status.external).toBe('alice@getalby.com');
+  });
+
+  it('does not report a mismatch against an address it does not manage', () => {
+    // "Move your zaps to your verified name" is a sensible offer about our
+    // own addresses and a wrong one about somebody else's wallet
+    const status = describeIdentity({
+      verifiedName: 'alice@nostrfeed.com',
+      lightningAddress: 'old@nostrfeed.com',
+      profileLud16: 'alice@getalby.com',
+    });
+
+    expect(status.mismatched).toBe(false);
+  });
+
+  it('ignores whitespace and case when deciding what is ours', () => {
+    const status = describeIdentity({
+      lightningAddress: 'me@nostrfeed.com',
+      profileLud16: '  ME@NostrFeed.com  ',
+    });
+
+    expect(status.external).toBeNull();
+  });
+
+  it('says nothing is external when the profile has no address at all', () => {
+    expect(describeIdentity({ lightningAddress: 'me@nostrfeed.com' }).external).toBeNull();
+  });
+});

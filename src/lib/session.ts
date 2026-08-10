@@ -97,7 +97,7 @@ export function decodeViewerKey(input: string): string {
 
   if (/^[0-9a-f]{64}$/i.test(value)) return value.toLowerCase();
 
-  let decoded: nip19.DecodeResult;
+  let decoded: nip19.DecodedResult;
   try {
     decoded = nip19.decode(value);
   } catch {

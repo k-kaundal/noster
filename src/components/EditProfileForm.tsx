@@ -22,6 +22,8 @@ import { NSchema as n, type NostrMetadata } from '@nostrify/nostrify';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useLightningAddress } from '@/hooks/useLightningAddress';
+import { useAddressCheck } from '@/hooks/useAddressCheck';
+import { useDebounce } from '@/hooks/useDebounce';
 
 
 interface EditProfileFormProps {
@@ -413,6 +415,17 @@ const LightningAddressField: React.FC<{
   const { address } = useLightningAddress();
   const alreadySet = !!address && field.value === address;
 
+  /**
+   * Checked as they stop typing.
+   *
+   * This field takes any string, and a wrong one fails silently forever: the
+   * zap button on every post keeps looking like it works, payers assume their
+   * own wallet is broken, and the person being paid finds out weeks later.
+   * `getalby.con` is indistinguishable from `getalby.com` by eye.
+   */
+  const debounced = useDebounce(field.value, 600);
+  const check = useAddressCheck(debounced, debounced === field.value);
+
   return (
     <FormItem>
       <FormLabel>Lightning address</FormLabel>
@@ -437,6 +450,25 @@ const LightningAddressField: React.FC<{
           <Zap className="mr-2 h-3.5 w-3.5" />
           Use {address}
         </Button>
+      )}
+
+      {check.status === 'checking' && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Checking that address answers…
+        </p>
+      )}
+
+      {check.status === 'unreachable' && (
+        <p className="text-xs text-destructive">{check.reason}</p>
+      )}
+
+      {check.status === 'ok' && (
+        <p className="text-xs text-success">
+          {check.zaps
+            ? 'That address answers and supports Nostr zaps.'
+            : 'That address takes payments, but not Nostr zaps — zaps from other clients will fail.'}
+        </p>
       )}
 
       <FormDescription>

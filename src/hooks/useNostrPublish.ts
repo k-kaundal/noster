@@ -84,9 +84,7 @@ export function useNostrPublish(): UseMutationResult<NostrEvent> {
            */
           recordSignerFailure(user.pubkey, problem.kind);
 
-          throw new Error(`${problem.title}. ${problem.description}`, {
-            cause: error,
-          });
+          throw new Error(`${problem.title}. ${problem.description}`);
         }
 
         // One working signature disproves any earlier verdict about the signer

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { nip19 } from 'nostr-tools';
 import {
   applyMention,
+  buildQuoteTags,
   extractMentionPubkeys,
   extractQuotedEvents,
   findMentionQuery,
@@ -193,5 +194,38 @@ describe('extractQuotedEvents', () => {
 
   it('finds nothing in text with no citations', () => {
     expect(extractQuotedEvents('just words', nip19.decode)).toEqual([]);
+  });
+});
+
+describe('buildQuoteTags', () => {
+  const ID = 'c'.repeat(64);
+
+  it('uses q, not e, so a citation is not filed as a reply', () => {
+    // An `e` tag is how a reply is threaded; citing with one puts the
+    // citation among that note's replies
+    expect(buildQuoteTags([{ value: ID }])).toEqual([['q', ID]]);
+  });
+
+  it('carries the relay hint and author when it has them', () => {
+    expect(
+      buildQuoteTags([{ value: ID, relay: 'wss://r', pubkey: PUBKEY }])
+    ).toEqual([['q', ID, 'wss://r', PUBKEY]]);
+  });
+
+  it('holds the hint position open when an author follows it', () => {
+    // Dropping the empty hint would move the pubkey into its slot and name a
+    // relay after a person
+    expect(buildQuoteTags([{ value: ID, pubkey: PUBKEY }])).toEqual([
+      ['q', ID, '', PUBKEY],
+    ]);
+  });
+
+  it('quotes an address as readily as an id', () => {
+    const address = `30023:${PUBKEY}:my-post`;
+    expect(buildQuoteTags([{ value: address }])).toEqual([['q', address]]);
+  });
+
+  it('cites each event once', () => {
+    expect(buildQuoteTags([{ value: ID }, { value: ID }])).toHaveLength(1);
   });
 });
