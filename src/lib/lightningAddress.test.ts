@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ADDRESS_DOMAIN,
   buildPayLinkBody,
+  isOurAddress,
+  parseLightningAddress,
   suggestUsername,
   validateUsername,
 } from './lightningAddress';
@@ -117,5 +120,77 @@ describe('buildPayLinkBody', () => {
       walletId: 'wallet-1',
     });
     expect(anonymous.description).toBeTruthy();
+  });
+});
+
+describe('parseLightningAddress', () => {
+  it('reads a plain address', () => {
+    const { address } = parseLightningAddress('alice@getalby.com');
+
+    expect(address?.name).toBe('alice');
+    expect(address?.domain).toBe('getalby.com');
+    expect(address?.address).toBe('alice@getalby.com');
+  });
+
+  it('builds the URL a wallet will actually fetch', () => {
+    expect(parseLightningAddress('alice@getalby.com').address?.lnurlpUrl).toBe(
+      'https://getalby.com/.well-known/lnurlp/alice'
+    );
+  });
+
+  it('normalises what people actually paste', () => {
+    // QR codes carry a `lightning:` prefix, profile pages a ⚡, and phone
+    // keyboards capitalise the first letter - all name a working address
+    for (const input of [
+      'lightning:alice@getalby.com',
+      '⚡ alice@getalby.com',
+      '  Alice@GetAlby.com  ',
+      'LIGHTNING:ALICE@GETALBY.COM',
+    ]) {
+      expect(parseLightningAddress(input).address?.address).toBe(
+        'alice@getalby.com'
+      );
+    }
+  });
+
+  it('accepts the punctuation LUD-16 allows in a name', () => {
+    expect(parseLightningAddress('a.b-c_d@example.com').address?.name).toBe(
+      'a.b-c_d'
+    );
+  });
+
+  it('accepts a subdomain', () => {
+    expect(parseLightningAddress('alice@pay.example.co.uk').address?.domain).toBe(
+      'pay.example.co.uk'
+    );
+  });
+
+  it('refuses an LNURL string, which is not what lud16 holds', () => {
+    // A profile carrying one here is unzappable by every client reading the
+    // field, and it looks close enough to right to go unnoticed
+    expect(parseLightningAddress('lnurl1dp68gurn8ghj7').problem).toBe(
+      'not-an-address'
+    );
+  });
+
+  it('names what is wrong rather than just failing', () => {
+    expect(parseLightningAddress('').problem).toBe('empty');
+    expect(parseLightningAddress('alice').problem).toBe('not-an-address');
+    expect(parseLightningAddress('al ice@x.com').problem).toBe('invalid-name');
+    expect(parseLightningAddress('@x.com').problem).toBe('invalid-name');
+    expect(parseLightningAddress('alice@localhost').problem).toBe('invalid-domain');
+    expect(parseLightningAddress('alice@x.com/pay').problem).toBe('invalid-domain');
+    expect(parseLightningAddress('alice@x.com:3000').problem).toBe('invalid-domain');
+  });
+});
+
+describe('isOurAddress', () => {
+  it('recognises an address this app issued', () => {
+    expect(isOurAddress(`bob@${ADDRESS_DOMAIN}`)).toBe(true);
+    expect(isOurAddress(`BOB@${ADDRESS_DOMAIN.toUpperCase()}`)).toBe(true);
+  });
+
+  it('does not claim an address from elsewhere', () => {
+    expect(isOurAddress('bob@getalby.com')).toBe(false);
   });
 });

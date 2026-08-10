@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AddressList } from '@/components/wallet/AddressList';
+import { ExternalAddress } from '@/components/wallet/ExternalAddress';
 import { Nip5Section } from '@/components/wallet/Nip5Section';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
@@ -48,7 +49,11 @@ export function IdentityCard() {
             <Skeleton className="h-10 w-full rounded-lg" />
             <Skeleton className="h-3 w-48 rounded" />
           </div>
-        ) : identity.status.tier === 'none' ? (
+        ) : identity.status.tier === 'none' ||
+          identity.status.tier === 'external' ? (
+          /* Someone paid at an address from elsewhere has no address *here*,
+             so the offer still applies — and the section below already shows
+             the one they have, rather than this badging it as ours */
           <ClaimForm />
         ) : (
           <>
@@ -57,6 +62,12 @@ export function IdentityCard() {
             <AddressList />
           </>
         )}
+
+        <Separator className="my-4" />
+
+        {/* Offered whether or not they have one of ours: someone who arrived
+            with an address already should not have to claim one here first */}
+        <ExternalAddress />
 
         <Separator className="my-4" />
 
@@ -185,7 +196,8 @@ function CurrentIdentity() {
  * either way it is stable, so it doesn't change between two looks at the page.
  */
 function ClaimForm() {
-  const { lightning, suggestion } = useIdentity();
+  const { lightning, suggestion, status } = useIdentity();
+  const elsewhere = status.tier === 'external';
 
   const [username, setUsername] = useState(suggestion);
   const [touched, setTouched] = useState(false);
@@ -198,9 +210,13 @@ function ClaimForm() {
     <div className="space-y-4">
       <div className="rounded-lg bg-gradient-to-br from-blue-50 to-blue-50/50 p-4 dark:from-blue-950/30 dark:to-blue-950/10">
         <p className="text-sm">
-          <span className="font-medium">Start receiving zaps.</span>{' '}
+          <span className="font-medium">
+            {elsewhere ? 'Want one here as well?' : 'Start receiving zaps.'}
+          </span>{' '}
           <span className="text-muted-foreground">
-            Pick a name, and anyone on Nostr can pay you. Free and yours for good.
+            {elsewhere
+              ? 'Your zaps already arrive elsewhere. An address here is free, yours for good, and can be switched to whenever you like.'
+              : 'Pick a name, and anyone on Nostr can pay you. Free and yours for good.'}
           </span>
         </p>
       </div>

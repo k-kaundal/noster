@@ -44,6 +44,9 @@ export function useIdentity() {
     lightningAddress: lightning.address,
     profileNip05: metadata?.nip05,
     profileLud16: metadata?.lud16,
+    // Every address of theirs, so a profile pointing at their own second one
+    // is not mistaken for a profile pointing somewhere else entirely
+    ownedAddresses: lightning.addresses.map((entry) => entry.address),
   });
 
   /**

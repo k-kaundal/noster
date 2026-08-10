@@ -20,7 +20,7 @@
  * is left to do about it, which is the part worth testing.
  */
 
-export type IdentityTier = 'none' | 'free' | 'verified';
+export type IdentityTier = 'none' | 'external' | 'free' | 'verified';
 
 /** Which profile field is behind, if either. */
 export type ProfileField = 'nip05' | 'lud16';
@@ -35,6 +35,14 @@ export interface IdentitySnapshot {
   /** What the published profile currently says. */
   profileNip05?: string;
   profileLud16?: string;
+  /**
+   * Every address this app issued for them.
+   *
+   * Needed to tell a stale zap address from a deliberate one: a profile
+   * pointing somewhere we do not recognise is a person using a wallet from
+   * elsewhere, not a person who forgot to press publish.
+   */
+  ownedAddresses?: string[];
 }
 
 export interface IdentityStatus {
@@ -51,6 +59,14 @@ export interface IdentityStatus {
    * still going to the old one.
    */
   mismatched: boolean;
+  /**
+   * An address on the profile that this app did not issue.
+   *
+   * Someone can perfectly well be paid at an address they bought somewhere
+   * else, and the app used to treat that as a mistake — nagging them on every
+   * visit to overwrite a working address with ours.
+   */
+  external: string | null;
 }
 
 /** The part before the `@`. */
@@ -72,19 +88,53 @@ export function describeIdentity(snapshot: IdentitySnapshot): IdentityStatus {
 
   const address = snapshot.lightningAddress ?? null;
 
+  /**
+   * An address on the profile that is none of ours.
+   *
+   * Compared against every address they hold here rather than just the
+   * primary one, so pointing zaps at their own second address does not read
+   * as having left.
+   */
+  const owned = new Set(
+    [...(snapshot.ownedAddresses ?? []), ...(address ? [address] : [])].map(
+      (entry) => entry.toLowerCase()
+    )
+  );
+
+  const profileLud16 = snapshot.profileLud16?.trim() || '';
+  const external =
+    profileLud16 && !owned.has(profileLud16.toLowerCase()) ? profileLud16 : null;
+
   const unpublished: ProfileField[] = [];
   if (verified && snapshot.profileNip05 !== verified) unpublished.push('nip05');
-  if (address && snapshot.profileLud16 !== address) unpublished.push('lud16');
 
-  const tier: IdentityTier = verified ? 'verified' : address ? 'free' : 'none';
+  /**
+   * Not flagged when the profile deliberately points elsewhere. "Your zap
+   * address is out of date" is true of someone who claimed a new name and
+   * forgot to publish it, and false — and quite annoying — for someone being
+   * paid at a wallet they chose.
+   */
+  if (address && !external && snapshot.profileLud16 !== address) {
+    unpublished.push('lud16');
+  }
+
+  const tier: IdentityTier = verified
+    ? 'verified'
+    : address
+      ? 'free'
+      : external
+        ? 'external'
+        : 'none';
 
   return {
     tier,
-    primary: verified ?? address,
+    primary: verified ?? address ?? external,
     unpublished,
+    external,
     mismatched:
       !!verified &&
       !!address &&
+      !external &&
       localPartOf(verified) !== localPartOf(address),
   };
 }
