@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountCard } from '@/components/wallet/AccountCard';
+import { WalletKeys } from '@/components/wallet/WalletKeys';
 import { IdentityCard } from '@/components/wallet/IdentityCard';
 import { ExistingWalletSignIn } from '@/components/wallet/ExistingWalletSignIn';
 import { ReceiveDialog } from '@/components/wallet/ReceiveDialog';
@@ -276,6 +277,8 @@ function ConnectedWallet() {
       <ActivityCard />
 
       <AccountCard />
+
+      <WalletKeys />
 
       <Card>
         <CardContent className="space-y-4 pt-6">
