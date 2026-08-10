@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
+import { useAccountStored } from '@/hooks/useStore';
 import { useToast } from '@/hooks/useToast';
 import {
   lnbitsRequest,
@@ -41,8 +42,44 @@ export function useLnbitsWallet() {
     [wallets.data, account]
   );
 
-  const wallet = list[0] ?? null;
+  /**
+   * Which wallet the app is acting on.
+   *
+   * An LNbits account can hold any number of wallets — one for spending, one
+   * for a shop, one kept apart from the rest — and this app only ever used the
+   * first one the server happened to list. Every other wallet on the account
+   * was invisible: no balance, no keys, and nothing to send from.
+   *
+   * Remembered per Nostr identity, because which wallet is "the" wallet is a
+   * choice about this account and not about this browser.
+   */
+  const [activeId, setActiveId] = useAccountStored<string>('lnbits:wallet', '');
+
+  /**
+   * Falls back rather than showing nothing.
+   *
+   * A remembered id can name a wallet that has since been deleted, or one
+   * belonging to a different LNbits account after signing in elsewhere. The
+   * first wallet is a usable answer; an empty screen is not.
+   */
+  const wallet = list.find((entry) => entry.id === activeId) ?? list[0] ?? null;
   const balanceSats = wallet ? msatToSat(wallet.balance_msat) : 0;
+
+  const totalBalanceSats = useMemo(
+    () => list.reduce((sum, entry) => sum + msatToSat(entry.balance_msat), 0),
+    [list]
+  );
+
+  const selectWallet = useCallback(
+    (id: string) => {
+      setActiveId(id);
+
+      // Balances and history belong to the wallet that was showing
+      queryClient.invalidateQueries({ queryKey: ['lnbits-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['lnurlp-links'] });
+    },
+    [setActiveId, queryClient]
+  );
 
   const createWallet = useMutation({
     mutationFn: (name: string) =>
@@ -51,9 +88,12 @@ export function useLnbitsWallet() {
         token,
         body: { name, wallet_type: 'lightning' },
       }),
-    onSuccess: () => {
+    onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['lnbits-wallets'] });
       queryClient.invalidateQueries({ queryKey: ['lnbits-account'] });
+
+      // Switch to it: nobody makes a wallet in order to keep using the old one
+      if (created?.id) selectWallet(created.id);
     },
     onError: (error: Error) => {
       toast({
@@ -172,7 +212,12 @@ export function useLnbitsWallet() {
   return {
     wallets: list,
     wallet,
+    /** The wallet the app is acting on, resolved against what actually exists. */
+    activeWalletId: wallet?.id ?? '',
+    selectWallet,
     balanceSats,
+    /** Every wallet on the account added together. */
+    totalBalanceSats,
     isLoading: wallets.isLoading,
     createWallet: createWallet.mutateAsync,
     isCreatingWallet: createWallet.isPending,
