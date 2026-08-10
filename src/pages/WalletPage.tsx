@@ -4,6 +4,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Banknote,
+  ExternalLink,
   KeyRound,
   Loader2,
   LogOut,
@@ -33,7 +34,11 @@ import { useSeo } from '@/hooks/useSeo';
 import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
 import { msatToSat, paymentTimeMs } from '@/lib/lnbits';
 import { formatSats } from '@/lib/zap';
+import { serviceById } from '@/lib/services';
 import { cn } from '@/lib/utils';
+
+/** The standalone wallet site, promoted from the wallet people already use. */
+const WALLET_SITE = serviceById('wallet');
 
 /**
  * The wallet, as a place rather than a settings tab.
@@ -291,6 +296,19 @@ function ConnectedWallet() {
             <span>Buy relay access with these sats</span>
             <span className="ml-auto">→</span>
           </Link>
+
+          {/* The same wallet with nothing around it — useful on a phone, and
+              the one of the three services with no version inside this app */}
+          <a
+            href={WALLET_SITE.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 rounded-lg border p-3 text-sm font-medium transition-colors hover:bg-accent/60"
+          >
+            <ExternalLink className="h-4 w-4 text-muted-foreground" />
+            <span>Open this wallet on its own at {WALLET_SITE.host}</span>
+            <span className="ml-auto text-muted-foreground">↗</span>
+          </a>
 
           {/* The other wallet. Worth naming here rather than only in the nav,
               because "the balance is held by whoever runs the server" is the

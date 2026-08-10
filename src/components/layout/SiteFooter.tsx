@@ -27,6 +27,9 @@ export function SiteFooter({ className }: { className?: string }) {
       <Link to="/trending" className="hover:text-foreground hover:underline">
         Trending
       </Link>
+      <Link to="/services" className="hover:text-foreground hover:underline">
+        Wallet &amp; mint
+      </Link>
 
       <a
         href={AUTHOR.url}

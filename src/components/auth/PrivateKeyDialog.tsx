@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/useToast';
+import { KeyTransfer } from './KeyTransfer';
 
 interface PrivateKeyDialogProps {
   children?: React.ReactNode;
@@ -68,7 +69,7 @@ export function PrivateKeyDialog({ children }: PrivateKeyDialogProps) {
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[88vh] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -130,6 +131,11 @@ export function PrivateKeyDialog({ children }: PrivateKeyDialogProps) {
               </p>
             )}
           </div>
+
+          {/* Moving the key to another device is the reason most people open
+              this dialog at all, so it is offered rather than left as
+              "copy this string and work out the rest" */}
+          <KeyTransfer nsec={nsec} />
 
           {/* Additional Info */}
           <div className="space-y-2">

@@ -111,11 +111,33 @@ export function Feed() {
   // Track the newest note the reader has actually seen, so the "new posts"
   // pill only counts notes that arrived after they arrived on the page.
   const [seenTopId, setSeenTopId] = useState<string | null>(null);
-  const newCount = (() => {
+
+  /**
+   * Where the timeline the reader is looking at starts.
+   *
+   * Anything above this arrived after they did — from the live subscription,
+   * a poll, or a refetch. Counting it is useful; showing it is not. A note
+   * inserted at the top pushes everything down by its own height, which moves
+   * the paragraph someone is halfway through reading, and does it again every
+   * time another one lands.
+   */
+  const firstUnseen = useMemo(() => {
     if (!posts?.length || !seenTopId) return 0;
+
     const index = posts.findIndex((post) => post.id === seenTopId);
+
+    // Gone from the list entirely — a refetch that reached back past it — so
+    // there is no held-back section to speak of
     return index > 0 ? index : 0;
-  })();
+  }, [posts, seenTopId]);
+
+  const newCount = firstUnseen;
+
+  /** The held-back notes are dropped until the reader asks for them. */
+  const visiblePosts = useMemo(
+    () => (posts && firstUnseen > 0 ? posts.slice(firstUnseen) : posts),
+    [posts, firstUnseen]
+  );
 
   useEffect(() => {
     if (posts?.length && !seenTopId) setSeenTopId(posts[0].id);
@@ -288,7 +310,7 @@ export function Feed() {
       ) : (
         <>
           <div className="stagger-in space-y-4">
-            {posts.map((post, index) => (
+            {visiblePosts?.map((post, index) => (
               <div
                 key={post.id}
                 // Capped so late items in a long list still appear promptly

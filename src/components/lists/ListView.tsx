@@ -202,14 +202,15 @@ function Curator({ pubkey, at }: { pubkey: string; at: number }) {
 /**
  * Follows everyone who isn't already followed.
  *
- * Sequential rather than parallel: each follow republishes the whole contact
- * list, and firing twenty at once means twenty revisions of kind 3 racing each
- * other, with the last to land deciding who you follow.
+ * One revision, not one per person. A follow republishes the entire contact
+ * list, so twenty of them is twenty revisions of kind 3 racing each other with
+ * the last to land deciding who you follow — which, with any of them built
+ * from a copy read before the others published, is how a list shrinks instead
+ * of growing.
  */
 function FollowEveryone({ people }: { people: string[] }) {
   const { user } = useCurrentUser();
-  const { followingList, follow } = useFollows(user?.pubkey || '');
-  const { toast } = useToast();
+  const { followingList, followMany } = useFollows(user?.pubkey || '');
   const [running, setRunning] = useState(false);
 
   if (!user || !people.length) return null;
@@ -233,17 +234,9 @@ function FollowEveryone({ people }: { people: string[] }) {
     setRunning(true);
 
     try {
-      for (const pubkey of missing) {
-        await follow(pubkey);
-      }
-
-      toast({
-        title: 'Followed',
-        description: `Added ${missing.length} ${missing.length === 1 ? 'person' : 'people'} to your follows.`,
-      });
+      await followMany(missing);
     } catch {
-      // Each follow reports its own failure; stopping here leaves the ones
-      // that already went through in place rather than rolling them back
+      // The mutation says why; there is nothing useful to add here
     } finally {
       setRunning(false);
     }
