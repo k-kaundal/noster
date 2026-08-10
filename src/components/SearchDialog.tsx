@@ -21,6 +21,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 interface SearchDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Carried over from the palette, so the query is not typed twice. */
+  initialQuery?: string;
 }
 
 /** Detects a pasted NIP-19 identifier so it can be opened directly. */
@@ -35,9 +37,13 @@ function asNip19(query: string): string | null {
   }
 }
 
-export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
+export function SearchDialog({
+  open,
+  onOpenChange,
+  initialQuery = '',
+}: SearchDialogProps) {
   const navigate = useNavigate();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const debouncedQuery = useDebounce(query, 350);
   const { data: results, isFetching } = useSearch(debouncedQuery);
 
@@ -46,10 +52,11 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
     ? query.trim().slice(1).toLowerCase()
     : null;
 
-  // Reset between openings so an old query never greets the next search
+  // Opening takes whatever the palette was holding; closing clears it, so an
+  // old query never greets the next search
   useEffect(() => {
-    if (!open) setQuery('');
-  }, [open]);
+    setQuery(open ? initialQuery : '');
+  }, [open, initialQuery]);
 
   const close = () => onOpenChange(false);
 
