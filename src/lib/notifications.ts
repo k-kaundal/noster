@@ -5,6 +5,7 @@ import { reactionEmoji } from '@/lib/reactions';
 export type NotificationType =
   | 'mention'
   | 'reply'
+  | 'quote'
   | 'reaction'
   | 'repost'
   | 'zap';
@@ -29,8 +30,12 @@ export const NOTIFICATION_KINDS = [1, 6, 7, 16, ZAP_RECEIPT_KIND];
 
 function referencedEventId(event: NostrEvent): string | null {
   // A reply's target is its last "e" tag under the positionless convention,
-  // and its marked "reply"/"root" tag under NIP-10.
-  const eTags = event.tags.filter(([name]) => name === 'e');
+  // and its marked "reply"/"root" tag under NIP-10. A "mention" marker is a
+  // quote, so it is dropped before any of that — treating one as a reply is
+  // what put quotes inside the threads they were talking about.
+  const eTags = event.tags.filter(
+    ([name, , , marker]) => name === 'e' && marker !== 'mention'
+  );
   if (!eTags.length) return null;
 
   const reply = eTags.find(([, , , marker]) => marker === 'reply');
@@ -40,6 +45,24 @@ function referencedEventId(event: NostrEvent): string | null {
   if (root) return root[1];
 
   return eTags[eTags.length - 1][1];
+}
+
+/**
+ * The note a kind 1 is quoting, if it is quoting one.
+ *
+ * Two spellings, both current: a `q` tag, which is what NIP-18 settled on, and
+ * an `e` tag marked `mention`, which is the older NIP-10 form still sent by
+ * plenty of clients.
+ */
+function quotedEventId(event: NostrEvent): string | null {
+  const q = event.tags.find(([name, value]) => name === 'q' && !!value);
+  if (q) return q[1];
+
+  const mention = event.tags.find(
+    ([name, value, , marker]) => name === 'e' && !!value && marker === 'mention'
+  );
+
+  return mention?.[1] ?? null;
 }
 
 /**
@@ -69,24 +92,30 @@ export function toNotification(
   if (event.pubkey === pubkey) return null;
 
   const target = referencedEventId(event);
+  const quoted = quotedEventId(event);
 
   const type: NotificationType =
     event.kind === 7
       ? 'reaction'
       : event.kind === 6 || event.kind === 16
         ? 'repost'
-        : // A kind 1 that quotes or answers a note is a reply; one that only
-          // tags the user in its text is a mention.
+        : // A reply answers inside the thread; a quote lifts the note out into
+          // a post of its own. Both notify, and they are not the same event to
+          // the person being notified — one continues a conversation, the
+          // other starts one about them somewhere else.
           target
           ? 'reply'
-          : 'mention';
+          : quoted
+            ? 'quote'
+            : 'mention';
 
   return {
     event,
     type,
     pubkey: event.pubkey,
     createdAt: event.created_at,
-    targetEventId: target,
+    // A quote's target is the note it lifted, so the row links there
+    targetEventId: target ?? quoted,
     content:
       event.kind === 7
         ? reactionEmoji(event)
@@ -148,7 +177,7 @@ export function buildNotifications(
 
 export const NOTIFICATION_FILTERS = [
   { value: 'all', label: 'All', types: null },
-  { value: 'mentions', label: 'Mentions', types: ['mention', 'reply'] },
+  { value: 'mentions', label: 'Mentions', types: ['mention', 'reply', 'quote'] },
   { value: 'reactions', label: 'Reactions', types: ['reaction'] },
   { value: 'reposts', label: 'Reposts', types: ['repost'] },
   { value: 'zaps', label: 'Zaps', types: ['zap'] },

@@ -278,3 +278,64 @@ describe('repostedContent', () => {
     expect(notification.content).toBe('Just shipped something.');
   });
 });
+
+describe('quotes', () => {
+  const me = 'f'.repeat(64);
+  const them = 'e'.repeat(64);
+  const myNote = 'a'.repeat(64);
+
+  function kind1(tags: string[][]): NostrEvent {
+    return {
+      id: 'd'.repeat(64),
+      pubkey: them,
+      created_at: 2,
+      kind: 1,
+      tags,
+      content: 'worth reading',
+      sig: '',
+    } as NostrEvent;
+  }
+
+  it('reads a q tag as a quote, not a reply', () => {
+    const notification = toNotification(kind1([['q', myNote, '', me]]), me);
+
+    expect(notification?.type).toBe('quote');
+    expect(notification?.targetEventId).toBe(myNote);
+  });
+
+  it('reads the older mention marker as a quote too', () => {
+    const notification = toNotification(
+      kind1([['e', myNote, '', 'mention']]),
+      me
+    );
+
+    expect(notification?.type).toBe('quote');
+    expect(notification?.targetEventId).toBe(myNote);
+  });
+
+  it('still calls an actual reply a reply', () => {
+    const notification = toNotification(
+      kind1([['e', myNote, '', 'root']]),
+      me
+    );
+
+    expect(notification?.type).toBe('reply');
+  });
+
+  it('prefers the reply when a note both replies and quotes', () => {
+    const notification = toNotification(
+      kind1([
+        ['e', myNote, '', 'root'],
+        ['q', 'b'.repeat(64)],
+      ]),
+      me
+    );
+
+    expect(notification?.type).toBe('reply');
+    expect(notification?.targetEventId).toBe(myNote);
+  });
+
+  it('is still a mention when nothing is referenced', () => {
+    expect(toNotification(kind1([['p', me]]), me)?.type).toBe('mention');
+  });
+});
