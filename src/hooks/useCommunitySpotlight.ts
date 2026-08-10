@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
+import { useNostrPublish } from '@/hooks/useNostrPublish';
 
 /**
  * Community spotlight item - featured members and posts
@@ -53,10 +54,15 @@ export function useCommunitySpotlight(communityId: string) {
 }
 
 /**
- * Hook to publish community spotlight items
+ * Publishes a community's featured members and posts.
+ *
+ * Signed, for the same reason as the profile spotlight: `nostr.event()` takes
+ * a finished event and puts it on the wire verbatim, so a template handed to
+ * it arrives at the relay with no `id`, `pubkey` or `sig` and is rejected.
  */
 export function usePublishCommunitySpotlight() {
-  const { nostr } = useNostr();
+  const { mutateAsync: publishEvent } = useNostrPublish();
+  const queryClient = useQueryClient();
 
   return {
     publishCommunitySpotlight: async (communityId: string, items: CommunitySpotlightItem[]) => {
@@ -65,11 +71,17 @@ export function usePublishCommunitySpotlight() {
         updatedAt: Math.floor(Date.now() / 1000),
       } as CommunitySpotlightConfig);
 
-      return nostr.event({
+      const event = await publishEvent({
         kind: 30000,
         content,
         tags: [['d', `community-spotlight:${communityId}`]],
       });
+
+      queryClient.invalidateQueries({
+        queryKey: ['community-spotlight', communityId],
+      });
+
+      return event;
     },
   };
 }

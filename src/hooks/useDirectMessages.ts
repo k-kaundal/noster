@@ -5,6 +5,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useRelays } from '@/hooks/useRelays';
 import { useToast } from '@/hooks/useToast';
+import { canonicalTargets } from '@/lib/relayRouting';
 import {
   conversationKey,
   createDirectMessage,
@@ -68,7 +69,11 @@ export function useDirectMessages() {
     const configured = configuredRelays
       .filter((relay) => relay.read)
       .map((relay) => relay.url);
-    return [...new Set([...(ownDmRelays ?? []), ...configured])];
+
+    // Canonical, because a kind 10050 list is written by other clients and
+    // may spell a relay we are already connected to with a trailing slash —
+    // which the pool would answer with a second socket to the same relay
+    return canonicalTargets([...(ownDmRelays ?? []), ...configured]);
   }, [ownDmRelays, configuredRelays]);
 
   const query = useQuery({
@@ -312,10 +317,11 @@ export function useSendDirectMessage() {
             { signal: AbortSignal.timeout(4000) }
           );
           const latest = events.sort((a, b) => b.created_at - a.created_at)[0];
-          const urls = (latest?.tags ?? [])
-            .filter(([name]) => name === 'relay')
-            .map(([, url]) => url)
-            .filter(Boolean);
+          const urls = canonicalTargets(
+            (latest?.tags ?? [])
+              .filter(([name]) => name === 'relay')
+              .map(([, url]) => url)
+          );
 
           queryClient.setQueryData(cacheKey, urls);
           return urls;

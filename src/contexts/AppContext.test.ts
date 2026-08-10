@@ -72,4 +72,46 @@ describe('parseAppConfig', () => {
   it('leaves the user their chosen primary rather than hijacking it', () => {
     expect(parseAppConfig(legacy).relayUrl).toBe('wss://relay.damus.io');
   });
+
+  it('collapses relays that differ only by a trailing slash', () => {
+    // Two spellings of one relay are two websockets to it, so this is a
+    // connection count, not a tidiness preference
+    const config = parseAppConfig({
+      theme: 'dark',
+      relayUrl: 'wss://nos.lol',
+      seededHouseRelay: true,
+      relays: [
+        { url: 'wss://nos.lol', read: true, write: false },
+        { url: 'wss://nos.lol/', read: false, write: true },
+      ],
+    });
+
+    expect(config.relays).toEqual([
+      { url: 'wss://nos.lol', read: true, write: true },
+    ]);
+  });
+
+  it('does not re-seed the house relay over a slashed spelling of it', () => {
+    const config = parseAppConfig({
+      theme: 'dark',
+      relayUrl: 'wss://nos.lol',
+      relays: [
+        { url: `${HOUSE_RELAY}/`, read: true, write: true },
+        { url: 'wss://nos.lol', read: true, write: true },
+      ],
+    });
+
+    expect(config.relays.filter((r) => r.url === HOUSE_RELAY)).toHaveLength(1);
+  });
+
+  it('normalizes the primary, which the routers compare against', () => {
+    const config = parseAppConfig({
+      theme: 'dark',
+      relayUrl: 'wss://NOS.LOL/',
+      seededHouseRelay: true,
+      relays: [{ url: 'wss://nos.lol', read: true, write: true }],
+    });
+
+    expect(config.relayUrl).toBe('wss://nos.lol');
+  });
 });

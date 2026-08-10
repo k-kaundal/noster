@@ -1,7 +1,7 @@
 import { NostrMetadata, NostrSigner } from "@nostrify/nostrify";
 import { createContext } from "react";
 
-import type { RelayEntry } from '@/lib/relay';
+import { dedupeRelays, normalizeRelayUrl, type RelayEntry } from '@/lib/relay';
 import { DEFAULT_ACCENT } from '@/lib/theme';
 
 export type Theme = 'dark' | 'light' | 'system';
@@ -89,13 +89,25 @@ export function parseAppConfig(value: unknown): AppConfig {
     throw new Error('Stored config has no usable relay URL');
   }
 
+  const relayUrl = normalizeRelayUrl(stored.relayUrl) || stored.relayUrl;
+
   const listed = Array.isArray(stored.relays)
     ? stored.relays.filter(isRelayEntry)
     : [];
 
-  const relays = listed.length
-    ? listed
-    : [{ url: stored.relayUrl, read: true, write: true }];
+  /**
+   * Canonical form, every load.
+   *
+   * The pool opens one socket per distinct string it is handed, so a list
+   * holding both `wss://nos.lol` and `wss://nos.lol/` is two connections to
+   * one relay — and the health probes, the header dot and the relay page all
+   * double up behind it. Older builds stored whatever was typed or imported
+   * from a NIP-65 list, so this runs on read rather than only on write, and
+   * the result is written back.
+   */
+  const relays = dedupeRelays(
+    listed.length ? listed : [{ url: relayUrl, read: true, write: true }]
+  );
 
   const needsHouseRelay =
     stored.seededHouseRelay !== true &&
@@ -104,7 +116,7 @@ export function parseAppConfig(value: unknown): AppConfig {
   return {
     theme,
     accent: typeof stored.accent === 'string' ? stored.accent : DEFAULT_ACCENT,
-    relayUrl: stored.relayUrl,
+    relayUrl,
     seededHouseRelay: true,
     // Seeded at the head, since the routers treat list order as priority
     relays: needsHouseRelay
