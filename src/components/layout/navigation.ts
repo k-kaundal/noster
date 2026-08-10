@@ -69,6 +69,8 @@ export function getNavItems(pubkey?: string): NavItem[] {
       shortcut: 'G',
       secondary: true,
     },
+    // NIP-29: hosted by one relay, unlike the communities above
+    { href: '/groups', icon: MessagesSquare, label: 'Groups', secondary: true },
     {
       href: '/write',
       icon: PenLine,

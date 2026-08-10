@@ -291,9 +291,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
         } catch (error) {
           const problem = describeSignerError(error, { method: user.method });
           recordSignerFailure(user.pubkey, problem.kind);
-          throw new Error(`${problem.title}. ${problem.description}`, {
-            cause: error,
-          });
+          throw new Error(`${problem.title}. ${problem.description}`);
         }
 
         const response = await fetch(
