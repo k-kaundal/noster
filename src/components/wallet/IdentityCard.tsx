@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AddressList } from '@/components/wallet/AddressList';
 import { ExternalAddress } from '@/components/wallet/ExternalAddress';
+import { PortableAddress } from '@/components/wallet/PortableAddress';
 import { Nip5Section } from '@/components/wallet/Nip5Section';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
@@ -68,6 +69,12 @@ export function IdentityCard() {
         {/* Offered whether or not they have one of ours: someone who arrived
             with an address already should not have to claim one here first */}
         <ExternalAddress />
+
+        <Separator className="my-4" />
+
+        {/* The third kind: a name whose destination is a setting rather than
+            a consequence of who issued it */}
+        <PortableAddress />
 
         <Separator className="my-4" />
 
