@@ -10,6 +10,7 @@ import { BackToTop } from '@/components/BackToTop';
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog';
 import { useIdlePrefetch, useOnceOpened } from '@/hooks/useDeferredDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useOutboxDrain } from '@/hooks/useOutbox';
 import { cn } from '@/lib/utils';
 
 /**
@@ -35,6 +36,10 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
   const searchMounted = useOnceOpened(searchOpen);
 
   useIdlePrefetch(loadSearch);
+
+  // Here rather than on one page, so anything queued goes out as soon as
+  // sending works again — whichever page the reader happens to be on
+  useOutboxDrain();
 
   useKeyboardShortcuts({
     onSearch: () => setSearchOpen(true),
