@@ -25,14 +25,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Markdown } from '@/components/articles/Markdown';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useIdentity } from '@/hooks/useIdentity';
-import { useArticle } from '@/hooks/useArticles';
+import { useArticle, useMyDrafts } from '@/hooks/useArticles';
 import { usePublishArticle } from '@/hooks/usePublishArticle';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useToast } from '@/hooks/useToast';
 import { useSeo } from '@/hooks/useSeo';
 import { MarkdownToolbar } from '@/components/articles/MarkdownToolbar';
 import {
-  ARTICLE_DRAFT_KIND,
   parseHashtagInput,
   readingMinutes,
   slugify,
@@ -157,8 +156,21 @@ function Editor() {
 
   const editingSlug = params.get('slug') || undefined;
   const { article, isLoading } = useArticle(user?.pubkey, editingSlug);
-  const draftLookup = useArticle(user?.pubkey, editingSlug, ARTICLE_DRAFT_KIND);
-  const existing = article ?? draftLookup.article;
+
+  /**
+   * Drafts are looked up through the drafts list rather than by address.
+   *
+   * A NIP-37 draft is an encrypted wrap, so there is nothing to find by
+   * asking a relay for `30024:<pubkey>:<slug>` — the content has to be
+   * decrypted before the slug inside it is even visible. `useMyDrafts` is
+   * where that happens, and it is already loaded.
+   */
+  const { drafts, isLoading: draftsLoading } = useMyDrafts();
+  const draftLookup = editingSlug
+    ? drafts.find((entry) => entry.slug === editingSlug)
+    : undefined;
+
+  const existing = article ?? draftLookup;
 
   const { publish, isPublishing } = usePublishArticle();
   const { mutateAsync: uploadFile, isPending: isUploading } = useUploadFile();
@@ -333,7 +345,7 @@ function Editor() {
     if (!asDraft) navigate(`/${result.naddr}`);
   };
 
-  if (editingSlug && (isLoading || draftLookup.isLoading)) {
+  if (editingSlug && (isLoading || draftsLoading)) {
     return (
       <Card>
         <CardContent className="space-y-3 pt-6">
@@ -348,6 +360,45 @@ function Editor() {
 
   return (
     <div className="space-y-4">
+      {/*
+        Saved drafts, listed where someone would look for them.
+
+        Saving one used to publish an event with nothing anywhere that could
+        reopen it — the address existed, and no screen in the app led to it.
+        A draft you cannot get back to is worse than no draft, because it
+        looks like it worked.
+      */}
+      {!editingSlug && drafts.length > 0 && (
+        <Card>
+          <CardContent className="space-y-2 pt-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Your drafts
+            </p>
+            <ul className="divide-y">
+              {drafts.map((entry) => (
+                <li key={entry.slug} className="flex items-center gap-2 py-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/write?slug=${encodeURIComponent(entry.slug)}`)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span className="block truncate text-sm font-medium">
+                      {entry.title}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      Saved {new Date(entry.updatedAt * 1000).toLocaleDateString()}
+                    </span>
+                  </button>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {readingMinutes(entry.content)} min
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       {hasRecoverableDraft && (
         <Card className="border-primary/40 bg-primary/5">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">

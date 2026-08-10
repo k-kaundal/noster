@@ -6,9 +6,12 @@ import { useCurrentUser } from './useCurrentUser';
 import { useNostrPublish } from './useNostrPublish';
 import { useToast } from './useToast';
 import { useNoteStats, type NoteStats } from './useNoteStats';
+import { useAppContext } from './useAppContext';
 import {
   DELETION_KIND,
   REACTION_KIND,
+  buildReactionTags,
+  buildUnreactTags,
   groupReactions,
   isLike,
 } from '@/lib/reactions';
@@ -18,6 +21,17 @@ export function useReactions(eventId: string) {
   const { mutateAsync: createEvent } = useNostrPublish();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { config } = useAppContext();
+
+  /**
+   * Where the target can be found, as far as we know.
+   *
+   * NIP-25 asks for a hint and we do not record which relay each event
+   * arrived on, so this is the relay we are reading from — which is where it
+   * came from in the ordinary case. A hint is advisory, and a good guess
+   * beats the empty string that was there before.
+   */
+  const hint = config.relayUrl;
 
   // Counts come from the batched stats query shared by every visible note
   const { reactions, isLoading } = useNoteStats(eventId);
@@ -48,17 +62,13 @@ export function useReactions(eventId: string) {
         await createEvent({
           kind: DELETION_KIND,
           content: 'Unliked',
-          tags: [['e', userReaction.id]],
+          tags: buildUnreactTags(userReaction.id),
         });
       } else {
         await createEvent({
           kind: REACTION_KIND,
           content: '+',
-          tags: [
-            ['e', eventId, '', 'root'],
-            ['p', targetEvent.pubkey],
-            ['k', targetEvent.kind.toString()],
-          ],
+          tags: buildReactionTags(targetEvent, { relay: hint }),
         });
       }
     },
@@ -147,7 +157,7 @@ export function useReactions(eventId: string) {
         await createEvent({
           kind: DELETION_KIND,
           content: 'Reaction withdrawn',
-          tags: [['e', existing.id]],
+          tags: buildUnreactTags(existing.id),
         });
         return;
       }
@@ -155,12 +165,10 @@ export function useReactions(eventId: string) {
       await createEvent({
         kind: REACTION_KIND,
         content,
-        tags: [
-          ['e', eventId, '', 'root'],
-          ['p', targetEvent.pubkey],
-          ['k', targetEvent.kind.toString()],
-          ...(shortcode && url ? [['emoji', shortcode, url]] : []),
-        ],
+        tags: buildReactionTags(targetEvent, {
+          relay: hint,
+          emoji: shortcode && url ? { shortcode, url } : undefined,
+        }),
       });
     },
     onError: (error: Error) => {

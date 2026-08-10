@@ -101,8 +101,26 @@ export interface ArticleDraft {
   publishedAt?: number;
 }
 
+/**
+ * Things an article's text points at, lifted into tags.
+ *
+ * NIP-23 sends references through NIP-27: write them as `nostr:` links in the
+ * body, and add tags for them. The tags are what make the reference exist to
+ * anything other than a reader of that exact paragraph — a mentioned author
+ * is notified through `p`, and a cited article is discoverable through `a`.
+ */
+export interface ArticleReferences {
+  /** Pubkeys named in the body. */
+  mentions?: string[];
+  /** Events cited in the body, by id or by `kind:pubkey:d` address. */
+  quotes?: Array<{ value: string; relay?: string }>;
+}
+
 /** The tags for a NIP-23 article. */
-export function buildArticleTags(draft: ArticleDraft): string[][] {
+export function buildArticleTags(
+  draft: ArticleDraft,
+  references: ArticleReferences = {}
+): string[][] {
   const tags: string[][] = [['d', draft.slug]];
 
   if (draft.title.trim()) tags.push(['title', draft.title.trim()]);
@@ -118,6 +136,29 @@ export function buildArticleTags(draft: ArticleDraft): string[][] {
   // article findable by topic rather than only by author
   for (const tag of normalizeHashtags(draft.hashtags)) {
     tags.push(['t', tag]);
+  }
+
+  const mentioned = new Set<string>();
+  for (const pubkey of references.mentions ?? []) {
+    if (pubkey && !mentioned.has(pubkey)) {
+      mentioned.add(pubkey);
+      tags.push(['p', pubkey]);
+    }
+  }
+
+  /**
+   * An address goes in an `a` tag and an id in an `e` tag, as NIP-23's own
+   * example shows. Which one a citation is decides whether it survives the
+   * cited author editing their post: an address follows the article, an id
+   * names one revision of it.
+   */
+  const cited = new Set<string>();
+  for (const quote of references.quotes ?? []) {
+    if (!quote.value || cited.has(quote.value)) continue;
+    cited.add(quote.value);
+
+    const name = quote.value.includes(':') ? 'a' : 'e';
+    tags.push(quote.relay ? [name, quote.value, quote.relay] : [name, quote.value]);
   }
 
   return tags;

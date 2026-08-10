@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import type { NostrEvent } from '@nostrify/nostrify';
 import {
   buildDeletionTags,
+  buildReactionTags,
+  buildUnreactTags,
   buildReportTags,
   customEmojiUrl,
   groupReactions,
@@ -170,5 +172,99 @@ describe('buildDeletionTags', () => {
 
   it('returns nothing to delete for an empty list', () => {
     expect(buildDeletionTags([])).toEqual([]);
+  });
+});
+
+describe('buildReactionTags', () => {
+  const note: NostrEvent = {
+    id: 'n'.repeat(64),
+    pubkey: THEM,
+    kind: 1,
+    content: 'hello',
+    tags: [],
+    created_at: 0,
+    sig: '',
+  };
+
+  const article: NostrEvent = { ...note, kind: 30023, tags: [['d', 'my-post']] };
+
+  it('puts the target author in the fourth position of the e tag', () => {
+    // Not a NIP-10 marker: this used to say "root", so every reaction the app
+    // sent named a person called root as the author of what it reacted to
+    expect(buildReactionTags(note, { relay: 'wss://r' })).toContainEqual([
+      'e',
+      'n'.repeat(64),
+      'wss://r',
+      THEM,
+    ]);
+  });
+
+  it('tags the author and the kind', () => {
+    const tags = buildReactionTags(note, { relay: 'wss://r' });
+
+    expect(tags).toContainEqual(['p', THEM, 'wss://r']);
+    expect(tags).toContainEqual(['k', '1']);
+  });
+
+  it('adds an address alongside the id for an addressable target', () => {
+    // The id changes every time the author fixes a typo; the address does not
+    const tags = buildReactionTags(article);
+
+    expect(tags).toContainEqual(['a', `30023:${THEM}:my-post`]);
+    expect(tags.some(([name]) => name === 'e')).toBe(true);
+  });
+
+  it('gives a regular event no address, because it has none', () => {
+    expect(buildReactionTags(note).some(([name]) => name === 'a')).toBe(false);
+  });
+
+  it('keeps the id last among e tags and the author last among p tags', () => {
+    const tags = buildReactionTags(article);
+
+    const lastE = [...tags].reverse().find(([name]) => name === 'e');
+    const lastP = [...tags].reverse().find(([name]) => name === 'p');
+
+    expect(lastE?.[1]).toBe('n'.repeat(64));
+    expect(lastP?.[1]).toBe(THEM);
+  });
+
+  it('carries a NIP-30 custom emoji', () => {
+    const tags = buildReactionTags(note, {
+      emoji: { shortcode: 'soapbox', url: 'https://example.com/s.png' },
+    });
+
+    expect(tags).toContainEqual([
+      'emoji',
+      'soapbox',
+      'https://example.com/s.png',
+    ]);
+  });
+
+  it('does not pad tags with an empty relay hint it does not have', () => {
+    for (const tag of buildReactionTags(note)) {
+      expect(tag[tag.length - 1]).not.toBe('');
+    }
+  });
+
+  it('still writes the author when there is no hint to go before it', () => {
+    // Positional tags: dropping the empty hint would move the pubkey into the
+    // hint's slot and claim a relay named after a person
+    expect(buildReactionTags(note)).toContainEqual([
+      'e',
+      'n'.repeat(64),
+      '',
+      THEM,
+    ]);
+  });
+});
+
+describe('buildUnreactTags', () => {
+  it('names the reaction and its kind', () => {
+    // The kind lets a relay honour the request without looking the event up,
+    // including one that has already dropped it
+    expect(buildUnreactTags('r'.repeat(64))).toEqual([
+      ['e', 'r'.repeat(64)],
+      ['k', '7'],
+    ]);
   });
 });

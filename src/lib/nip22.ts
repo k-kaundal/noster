@@ -1,4 +1,7 @@
 import type { NostrEvent } from '@nostrify/nostrify';
+import { addressOf } from './eventKinds';
+
+export { addressOf };
 
 /**
  * NIP-22 comments (kind 1111), built to the letter.
@@ -42,41 +45,6 @@ export type CommentTarget =
       /** A web page where the thing can be seen, not a relay. */
       hint?: string;
     };
-
-/**
- * The NIP-01 kind ranges, spelled out rather than imported.
- *
- * `NKinds` from Nostrify does the same three comparisons, but importing a
- * value pulls the whole library into anything that touches this file — the
- * tests included, which then cannot run without a relay stack for the sake of
- * `kind >= 30000`.
- */
-function isAddressable(kind: number): boolean {
-  return kind >= 30000 && kind < 40000;
-}
-
-function isReplaceable(kind: number): boolean {
-  return kind >= 10000 && kind < 20000;
-}
-
-/**
- * The address of a replaceable or addressable event.
- *
- * Replaceable events (10000–19999) have one per author and so end in an empty
- * identifier; addressable ones (30000–39999) carry it in their `d` tag.
- */
-export function addressOf(event: NostrEvent): string | undefined {
-  if (isAddressable(event.kind)) {
-    const d = event.tags.find(([name]) => name === 'd')?.[1] ?? '';
-    return `${event.kind}:${event.pubkey}:${d}`;
-  }
-
-  if (isReplaceable(event.kind)) {
-    return `${event.kind}:${event.pubkey}:`;
-  }
-
-  return undefined;
-}
 
 export function targetFromEvent(
   event: NostrEvent,

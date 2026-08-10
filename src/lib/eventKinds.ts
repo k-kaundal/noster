@@ -40,6 +40,44 @@ const KIND_LABELS: Record<number, string> = {
   34236: 'Short video',
 };
 
+/**
+ * The NIP-01 storage classes, by kind number.
+ *
+ * Spelled out rather than imported from Nostrify: these are three
+ * comparisons, and importing a runtime value from that package pulls the
+ * whole library into everything that needs to ask "is this addressable",
+ * including tests that otherwise need no relay stack at all.
+ */
+export function isAddressableKind(kind: number): boolean {
+  return kind >= 30000 && kind < 40000;
+}
+
+export function isReplaceableKind(kind: number): boolean {
+  return kind >= 10000 && kind < 20000;
+}
+
+/**
+ * The `kind:pubkey:d` coordinate of an event that has one.
+ *
+ * Replaceable events (10000-19999) have one per author and so end in an empty
+ * identifier; addressable ones (30000-39999) carry it in their `d` tag.
+ * Regular events have no address at all, which is why this returns undefined
+ * rather than an empty string — the difference decides whether a reference
+ * should be an `a` tag or an `e` tag.
+ */
+export function addressOf(event: NostrEvent): string | undefined {
+  if (isAddressableKind(event.kind)) {
+    const d = event.tags.find(([name]) => name === 'd')?.[1] ?? '';
+    return `${event.kind}:${event.pubkey}:${d}`;
+  }
+
+  if (isReplaceableKind(event.kind)) {
+    return `${event.kind}:${event.pubkey}:`;
+  }
+
+  return undefined;
+}
+
 export function kindLabel(kind: number): string {
   return KIND_LABELS[kind] ?? `Kind ${kind}`;
 }
