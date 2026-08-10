@@ -1,5 +1,6 @@
 import { useNostr } from '@nostrify/react';
 import { useQuery } from '@tanstack/react-query';
+import { TIMELINE_KINDS } from '@/lib/eventKinds';
 
 export function useProfile(pubkey: string) {
   const { nostr } = useNostr();
@@ -9,10 +10,12 @@ export function useProfile(pubkey: string) {
     queryFn: async (c) => {
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(4000)]);
 
-      // Notes, reposts and metadata all travel in one request
+      // Notes, reposts and metadata all travel in one request. The same kinds
+      // as the home feed — asking for fewer here is what hid someone's own
+      // poll from their own profile while everyone else could see it.
       const events = await nostr.query(
         [
-          { kinds: [1, 6, 16], authors: [pubkey], limit: 60 },
+          { kinds: TIMELINE_KINDS, authors: [pubkey], limit: 60 },
           { kinds: [0], authors: [pubkey], limit: 1 },
         ],
         { signal }

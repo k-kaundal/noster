@@ -1,4 +1,5 @@
 import { useNostr } from '@nostrify/react';
+import { TIMELINE_KINDS } from '@/lib/eventKinds';
 import { useInfiniteQuery } from '@tanstack/react-query';
 
 const PAGE_SIZE = 30;
@@ -21,7 +22,9 @@ export function useHashtagFeed(tag: string) {
       const events = await nostr.query(
         [
           {
-            kinds: [1],
+            // The same kinds as any other timeline: a poll or an article
+            // tagged with this topic belongs here as much as a note does
+            kinds: TIMELINE_KINDS,
             '#t': [normalized],
             limit: PAGE_SIZE,
             ...(pageParam ? { until: pageParam } : {}),

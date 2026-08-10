@@ -11,10 +11,12 @@ export function useExplore() {
 
       // Get a diverse mix of content
       const [recentPosts, profiles, longFormContent] = await Promise.all([
-        // Recent posts from various authors
+        // Recent posts from various authors. Polls included: they are posts,
+        // and leaving them out is why one could be missing from every surface
+        // except the home feed.
         nostr.query([
           {
-            kinds: [1],
+            kinds: [1, 1068],
             limit: 30,
           }
         ], { signal }),

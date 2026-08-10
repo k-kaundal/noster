@@ -147,6 +147,20 @@ export function humanizeKey(key: string): string {
  * media, and no NIP-31 fallback. Such notes render as an empty card, so the
  * feed filters them out rather than leaving holes in the timeline.
  */
+/**
+ * What a timeline is made of.
+ *
+ * One list, shared by the home feed, a profile's notes and the hashtag feed,
+ * because they had drifted: the home feed asked for polls and articles and a
+ * profile did not, so someone's own poll appeared in everybody's feed and was
+ * missing from their own page. Three separate literals is three chances for
+ * that to happen again the next time a kind is added.
+ *
+ * 1 and 1068 are notes and NIP-88 polls; 6 and 16 are the two kinds of
+ * repost; 30023 is a NIP-23 article.
+ */
+export const TIMELINE_KINDS = [1, 6, 16, 1068, 30023];
+
 export function isRenderableEvent(event: NostrEvent): boolean {
   if (event.content.trim()) return true;
   if (getAltText(event)) return true;

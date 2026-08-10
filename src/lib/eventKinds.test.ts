@@ -8,6 +8,7 @@ import {
   isRenderableEvent,
   kindLabel,
   parseJsonContent,
+  TIMELINE_KINDS,
 } from './eventKinds';
 
 function makeEvent(overrides: Partial<NostrEvent>): NostrEvent {
@@ -213,5 +214,41 @@ describe('isRenderableEvent', () => {
   it('accepts empty reposts, which reference their target by tag', () => {
     const repost = makeEvent({ kind: 6, content: '', tags: [['e', 'abc']] });
     expect(isRenderableEvent(repost)).toBe(true);
+  });
+});
+
+describe('TIMELINE_KINDS', () => {
+  it('includes polls, which is the whole reason it exists', () => {
+    // A poll published here showed in everyone else's feed and was missing
+    // from its author's own profile, because the two asked for different kinds
+    expect(TIMELINE_KINDS).toContain(1068);
+  });
+
+  it('includes notes, both reposts and articles', () => {
+    expect(TIMELINE_KINDS).toEqual(
+      expect.arrayContaining([1, 6, 16, 30023])
+    );
+  });
+
+  it('lists nothing twice', () => {
+    expect(new Set(TIMELINE_KINDS).size).toBe(TIMELINE_KINDS.length);
+  });
+
+  it('is renderable in every kind it names', () => {
+    // A kind the timeline asks for but then discards is a gap the reader
+    // experiences as missing posts
+    for (const kind of TIMELINE_KINDS) {
+      const event = {
+        id: 'a',
+        pubkey: 'b',
+        created_at: 1,
+        kind,
+        tags: [],
+        content: 'something',
+        sig: '',
+      } as NostrEvent;
+
+      expect(isRenderableEvent(event), `kind ${kind}`).toBe(true);
+    }
   });
 });
