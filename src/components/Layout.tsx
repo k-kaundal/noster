@@ -7,6 +7,7 @@ import { RightRail } from '@/components/layout/RightRail';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { FloatingActionButton } from '@/components/FloatingActionButton';
 import { BackToTop } from '@/components/BackToTop';
+import { UpdatePrompt } from '@/components/UpdatePrompt';
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog';
 import { useIdlePrefetch, useOnceOpened } from '@/hooks/useDeferredDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -118,6 +119,7 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
       <MobileNav onSearch={openPalette} />
       <FloatingActionButton />
       <BackToTop />
+      <UpdatePrompt />
 
       <Suspense fallback={null}>
         {paletteMounted && (
