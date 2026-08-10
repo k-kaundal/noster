@@ -93,8 +93,11 @@ export function NotificationRow({
                 compact ? 'line-clamp-2' : 'line-clamp-3'
               )}
             >
+              {/* Quoted rather than labelled: "Note:" in front of someone's
+                  words read as a field name, and the label above already says
+                  what happened */}
               {notification.type === 'repost' ? (
-                <span className="italic">Note: {notification.content}</span>
+                <span className="italic">“{notification.content}”</span>
               ) : (
                 notification.content
               )}

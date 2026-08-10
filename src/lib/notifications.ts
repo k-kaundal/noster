@@ -87,9 +87,44 @@ export function toNotification(
     pubkey: event.pubkey,
     createdAt: event.created_at,
     targetEventId: target,
-    content: event.kind === 7 ? reactionEmoji(event) : event.content,
+    content:
+      event.kind === 7
+        ? reactionEmoji(event)
+        : type === 'repost'
+          ? repostedContent(event)
+          : event.content,
     amountSats: null,
   };
+}
+
+/**
+ * What a repost was actually a repost of.
+ *
+ * NIP-18 lets a kind 6 carry the whole original event, serialised, in its
+ * `content` — and that is what was being printed into the notification: a
+ * wall of JSON with the id, pubkey, tags and signature in it, headed "Note:".
+ * The note itself was in there, buried in an escaped string.
+ *
+ * So it is unwrapped. An empty result is correct and common: most clients send
+ * kind 6 with no content at all, and the row simply shows who reposted without
+ * a preview rather than inventing one.
+ */
+export function repostedContent(event: NostrEvent): string {
+  const raw = event.content?.trim();
+  if (!raw) return '';
+
+  // Only a JSON object can be an embedded event; anything else is a client
+  // that put its own text there, and that text is the better preview
+  if (!raw.startsWith('{')) return raw;
+
+  try {
+    const embedded = JSON.parse(raw) as Partial<NostrEvent>;
+
+    return typeof embedded?.content === 'string' ? embedded.content : '';
+  } catch {
+    // Truncated or malformed. Showing nothing beats showing the fragment.
+    return '';
+  }
 }
 
 /** Builds the notification list, newest first, with duplicates removed. */

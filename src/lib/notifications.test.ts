@@ -3,6 +3,7 @@ import type { NostrEvent } from '@nostrify/nostrify';
 import {
   buildNotifications,
   filterNotifications,
+  repostedContent,
   toNotification,
 } from './notifications';
 import { formatSats, parseZapReceipt } from './zap';
@@ -216,5 +217,64 @@ describe('filterNotifications', () => {
     expect(filterNotifications(notifications, 'reactions')).toHaveLength(1);
     expect(filterNotifications(notifications, 'reposts')).toHaveLength(1);
     expect(filterNotifications(notifications, 'zaps')).toHaveLength(0);
+  });
+});
+
+describe('repostedContent', () => {
+  const original = {
+    id: 'a'.repeat(64),
+    pubkey: 'b'.repeat(64),
+    created_at: 1,
+    kind: 1,
+    tags: [['t', 'nostr']],
+    content: 'Just shipped something.',
+    sig: 'c'.repeat(128),
+  };
+
+  function repost(content: string): NostrEvent {
+    return {
+      id: 'd'.repeat(64),
+      pubkey: 'e'.repeat(64),
+      created_at: 2,
+      kind: 6,
+      tags: [['e', original.id]],
+      content,
+      sig: '',
+    } as NostrEvent;
+  }
+
+  it('unwraps the embedded event rather than printing it', () => {
+    // The bug: the whole serialised event, signature and all, was shown as
+    // the notification's preview text
+    expect(repostedContent(repost(JSON.stringify(original)))).toBe(
+      'Just shipped something.'
+    );
+  });
+
+  it('shows nothing for the empty repost most clients send', () => {
+    expect(repostedContent(repost(''))).toBe('');
+    expect(repostedContent(repost('   '))).toBe('');
+  });
+
+  it('shows nothing rather than a fragment of broken JSON', () => {
+    expect(repostedContent(repost('{"id":"abc","content":'))).toBe('');
+  });
+
+  it('keeps plain text a client chose to put there', () => {
+    expect(repostedContent(repost('worth reading'))).toBe('worth reading');
+  });
+
+  it('shows nothing when the embedded event has no content field', () => {
+    expect(repostedContent(repost('{"id":"abc"}'))).toBe('');
+  });
+
+  it('builds a repost notification with the original text', () => {
+    const [notification] = buildNotifications(
+      [repost(JSON.stringify(original))],
+      'f'.repeat(64)
+    );
+
+    expect(notification.type).toBe('repost');
+    expect(notification.content).toBe('Just shipped something.');
   });
 });

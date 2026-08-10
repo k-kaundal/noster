@@ -114,6 +114,49 @@ export function isDarkSurface(value: string): boolean {
 }
 
 /**
+ * The floor for secondary text: WCAG's large-text minimum.
+ *
+ * Muted text is the token most likely to fail, because it is defined by
+ * backing away from the foreground and nothing in that definition knows how
+ * far it can go before the background catches up.
+ */
+const MUTED_MIN_CONTRAST = 3;
+
+/**
+ * Walks a colour back toward legibility.
+ *
+ * The derivations below shift lightness by fixed amounts, which is right for
+ * ordinary palettes and wrong for the extremes — a very bright or very
+ * saturated background swallows a colour that the same shift would leave
+ * perfectly readable elsewhere. Rather than hand-tuning every palette against
+ * every token, the result is nudged until it clears the bar.
+ *
+ * Steps in the direction that adds contrast, and gives up rather than looping:
+ * a colour that cannot reach the target after crossing the whole range is one
+ * where black or white is the honest answer.
+ */
+function ensureContrast(
+  value: string,
+  against: string,
+  minimum: number
+): string {
+  if (contrastRatio(value, against) >= minimum) return value;
+
+  const hsl = parseHsl(value);
+  const darken = relativeLuminance(against) > relativeLuminance(value);
+
+  for (let step = 1; step <= 20; step += 1) {
+    const l = darken ? hsl.l - step * 3 : hsl.l + step * 3;
+    if (l < 0 || l > 100) break;
+
+    const candidate = formatHsl({ ...hsl, l });
+    if (contrastRatio(candidate, against) >= minimum) return candidate;
+  }
+
+  return readableOn(against);
+}
+
+/**
  * Expands three core colors into the full token set.
  *
  * Elevation flips direction with the surface: on a dark background a raised
@@ -140,13 +183,17 @@ export function deriveTokens(core: CoreColors): ThemeTokens {
   });
 
   // Secondary text keeps the hue but backs off contrast, without vanishing
-  const mutedForeground = formatHsl({
-    h: foregroundHsl.h,
-    s: Math.max(foregroundHsl.s - 20, 0),
-    l: dark
-      ? Math.max(foregroundHsl.l - 30, 42)
-      : Math.min(foregroundHsl.l + 38, 52),
-  });
+  const mutedForeground = ensureContrast(
+    formatHsl({
+      h: foregroundHsl.h,
+      s: Math.max(foregroundHsl.s - 20, 0),
+      l: dark
+        ? Math.max(foregroundHsl.l - 30, 42)
+        : Math.min(foregroundHsl.l + 38, 52),
+    }),
+    background,
+    MUTED_MIN_CONTRAST
+  );
 
   const primaryForeground = readableOn(primary);
 
@@ -296,6 +343,60 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     name: 'Sand',
     light: { background: '40 30% 97%', foreground: '35 22% 13%', primary: '30 45% 38%' },
     dark: { background: '35 14% 7%', foreground: '40 16% 96%', primary: '33 48% 62%' },
+  },
+  {
+    id: 'aurora',
+    name: 'Aurora',
+    light: { background: '165 30% 98%', foreground: '170 25% 11%', primary: '162 72% 34%' },
+    dark: { background: '170 24% 6%', foreground: '160 16% 96%', primary: '158 66% 50%' },
+  },
+  {
+    id: 'cobalt',
+    name: 'Cobalt',
+    light: { background: '220 35% 98%', foreground: '222 30% 11%', primary: '221 83% 48%' },
+    dark: { background: '222 30% 6%', foreground: '218 20% 97%', primary: '217 85% 62%' },
+  },
+  {
+    id: 'coral',
+    name: 'Coral',
+    light: { background: '15 40% 98%', foreground: '12 22% 12%', primary: '9 78% 50%' },
+    dark: { background: '12 20% 6%', foreground: '18 18% 97%', primary: '10 82% 62%' },
+  },
+  {
+    id: 'grape',
+    name: 'Grape',
+    light: { background: '275 28% 98%', foreground: '272 22% 11%', primary: '272 72% 48%' },
+    dark: { background: '272 24% 6%', foreground: '276 16% 97%', primary: '272 76% 66%' },
+  },
+  {
+    id: 'lime',
+    name: 'Lime',
+    light: { background: '75 30% 98%', foreground: '80 20% 10%', primary: '70 62% 30%' },
+    dark: { background: '80 18% 6%', foreground: '75 14% 96%', primary: '70 60% 52%' },
+  },
+  {
+    id: 'wine',
+    name: 'Wine',
+    light: { background: '350 25% 98%', foreground: '345 25% 11%', primary: '345 70% 38%' },
+    dark: { background: '345 24% 6%', foreground: '350 14% 96%', primary: '344 65% 58%' },
+  },
+  {
+    id: 'sky',
+    name: 'Sky',
+    light: { background: '198 40% 98%', foreground: '200 28% 11%', primary: '196 82% 40%' },
+    dark: { background: '200 28% 6%', foreground: '198 18% 97%', primary: '194 85% 58%' },
+  },
+  {
+    id: 'cocoa',
+    name: 'Cocoa',
+    light: { background: '25 22% 97%', foreground: '22 24% 12%', primary: '18 52% 36%' },
+    dark: { background: '22 16% 6%', foreground: '28 14% 96%', primary: '20 55% 58%' },
+  },
+  {
+    id: 'midnight',
+    name: 'Midnight',
+    light: { background: '225 25% 97%', foreground: '228 32% 10%', primary: '228 45% 34%' },
+    dark: { background: '228 32% 5%', foreground: '220 18% 96%', primary: '225 60% 66%' },
   },
   {
     id: 'mono',
