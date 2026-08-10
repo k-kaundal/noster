@@ -1,3 +1,4 @@
+import { nip19 } from 'nostr-tools';
 import type { NostrEvent } from '@nostrify/nostrify';
 
 /** Follow sets: categorised groups of people (NIP-51). */
@@ -48,21 +49,30 @@ function isReserved(identifier: string): boolean {
 /**
  * Reads a people list, or null when the event is not one worth showing.
  *
- * A set with no public members is dropped rather than rendered empty: it is
- * either entirely private — and unreadable by anyone but its author — or a
- * leftover from a client that wrote the identifier before the contents.
+ * A set with no public members is dropped from a browse listing rather than
+ * rendered empty: it is either entirely private — and unreadable by anyone but
+ * its author — or a leftover from a client that wrote the identifier before
+ * the contents.
+ *
+ * Opening one directly is the exception, and what `options` is for. Someone
+ * following a link to their own half-built list should see it, not a page
+ * telling them it does not exist.
  */
-export function parsePeopleList(event: NostrEvent): PeopleList | null {
+export function parsePeopleList(
+  event: NostrEvent,
+  options: { allowEmpty?: boolean; allowReserved?: boolean } = {}
+): PeopleList | null {
   if (!LIST_KINDS.includes(event.kind)) return null;
 
   const identifier = tagValue(event, 'd');
-  if (!identifier || isReserved(identifier)) return null;
+  if (!identifier) return null;
+  if (!options.allowReserved && isReserved(identifier)) return null;
 
   const people = event.tags
     .filter(([name, value]) => name === 'p' && /^[0-9a-f]{64}$/i.test(value ?? ''))
     .map(([, pubkey]) => pubkey.toLowerCase());
 
-  if (!people.length) return null;
+  if (!people.length && !options.allowEmpty) return null;
 
   return {
     address: `${event.kind}:${event.pubkey}:${identifier}`,
@@ -102,4 +112,72 @@ export function dedupeLists(lists: PeopleList[]): PeopleList[] {
   }
 
   return [...newest.values()].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** A list being written, before it is an event. */
+export interface ListDraft {
+  /** The `d` tag. Fixed once published — it is half the list's address. */
+  identifier: string;
+  title: string;
+  description?: string;
+  image?: string;
+  people: string[];
+}
+
+/**
+ * A stable, readable `d` value for a new list.
+ *
+ * Readable because it shows up in the naddr and in other clients, and stable
+ * because it is the address: renaming a list must not create a second one. The
+ * suffix keeps two lists of the same name apart.
+ */
+export function newListIdentifier(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return slug ? `${slug}-${suffix}` : `list-${suffix}`;
+}
+
+export function buildListTags(draft: ListDraft): string[][] {
+  return [
+    ['d', draft.identifier],
+    ['title', draft.title.trim()],
+    ...(draft.description?.trim()
+      ? [['description', draft.description.trim()]]
+      : []),
+    ...(draft.image?.trim() ? [['image', draft.image.trim()]] : []),
+    // Public members. NIP-51 also allows private ones, encrypted into the
+    // content — not written here, because a member nobody can see is a
+    // different feature and would be silently lost by clients that ignore it.
+    ...draft.people.map((pubkey) => ['p', pubkey]),
+  ];
+}
+
+/**
+ * Reads a pubkey out of whatever someone pasted.
+ *
+ * People copy npubs from one client, hex from another, and `nostr:` prefixed
+ * links from a note. Refusing all but one spelling makes adding someone to a
+ * list a puzzle rather than a paste.
+ */
+export function toPubkey(input: string): string | null {
+  const value = input.trim().replace(/^nostr:/, '');
+  if (!value) return null;
+
+  if (/^[0-9a-f]{64}$/i.test(value)) return value.toLowerCase();
+
+  try {
+    const decoded = nip19.decode(value);
+
+    if (decoded.type === 'npub') return decoded.data;
+    if (decoded.type === 'nprofile') return decoded.data.pubkey;
+  } catch {
+    // Not an identifier this app understands
+  }
+
+  return null;
 }

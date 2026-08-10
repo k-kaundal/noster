@@ -1,15 +1,19 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { List as ListIcon } from 'lucide-react';
+import { List as ListIcon, Plus } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { AvatarStack } from '@/components/AvatarStack';
+import { ListEditor } from '@/components/lists/ListEditor';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthor } from '@/hooks/useAuthor';
-import { useLists } from '@/hooks/useLists';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useLists, useMyLists } from '@/hooks/useLists';
 import { useSeo } from '@/hooks/useSeo';
 import { genUserName } from '@/lib/genUserName';
 import { STARTER_PACK_KIND, type PeopleList } from '@/lib/lists';
@@ -31,6 +35,9 @@ const ListsPage = () => {
   });
 
   const { data: lists, isLoading, error } = useLists();
+  const { user } = useCurrentUser();
+  const { lists: mine, isLoading: isLoadingMine } = useMyLists();
+  const [creating, setCreating] = useState(false);
 
   return (
     <Layout>
@@ -39,7 +46,41 @@ const ListsPage = () => {
           icon={ListIcon}
           title="Lists"
           description="Groups of people someone thought belonged together."
+          action={
+            user ? (
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                New list
+              </Button>
+            ) : undefined
+          }
         />
+
+        {/* Yours first. A page that opens on other people's lists buries the
+            ones you actually maintain */}
+        {user && (mine.length > 0 || isLoadingMine) && (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Your lists
+            </h2>
+
+            {isLoadingMine && !mine.length ? (
+              <Skeleton className="h-32 w-full rounded-lg" />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {mine.map((list) => (
+                  <ListCard key={list.address} list={list} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {user && (
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            From everyone else
+          </h2>
+        )}
 
         {isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -66,6 +107,14 @@ const ListsPage = () => {
             title="No lists here"
             description="This relay has no people lists on it. Another may."
             showRelaySelector
+            action={
+              user ? (
+                <Button onClick={() => setCreating(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Make the first one
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -75,6 +124,10 @@ const ListsPage = () => {
           </div>
         )}
       </div>
+
+      {creating && (
+        <ListEditor open={creating} onOpenChange={setCreating} />
+      )}
     </Layout>
   );
 };
