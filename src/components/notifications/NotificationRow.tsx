@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import { relativeTime } from '@/lib/time';
-import { AtSign, MessageCircle, Repeat2, Zap } from 'lucide-react';
+import { AtSign, MessageCircle, Quote, Repeat2, Zap } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 const TYPE_META = {
   mention: { icon: AtSign, label: 'mentioned you', tone: 'text-reply' },
   reply: { icon: MessageCircle, label: 'replied to you', tone: 'text-reply' },
+  quote: { icon: Quote, label: 'quoted your note', tone: 'text-reply' },
   reaction: { icon: null, label: 'reacted to your note', tone: 'text-like' },
   repost: { icon: Repeat2, label: 'reposted your note', tone: 'text-repost' },
   zap: { icon: Zap, label: 'zapped you', tone: 'text-zap' },
@@ -93,8 +94,11 @@ export function NotificationRow({
                 compact ? 'line-clamp-2' : 'line-clamp-3'
               )}
             >
+              {/* Quoted rather than labelled: "Note:" in front of someone's
+                  words read as a field name, and the label above already says
+                  what happened */}
               {notification.type === 'repost' ? (
-                <span className="italic">Note: {notification.content}</span>
+                <span className="italic">“{notification.content}”</span>
               ) : (
                 notification.content
               )}

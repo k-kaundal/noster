@@ -18,8 +18,20 @@ export interface ThreadPosition {
  * scrambles the shape of every thread that used the other.
  */
 export function getThreadPosition(event: NostrEvent): ThreadPosition {
+  /**
+   * `mention` is a quote, not a reply.
+   *
+   * NIP-10 defines the marker for exactly that, and dropping these before
+   * anything else is what keeps a quote out of the thread it quotes. Left in,
+   * a quote carrying a single `['e', id, '', 'mention']` fell through to the
+   * positional reading below, which treats a lone tag as both root and parent
+   * — so the quote appeared as a reply under the note it was talking about.
+   *
+   * Newer clients use a `q` tag instead, which never had this problem because
+   * it is not an `e` tag at all.
+   */
   const eTags = event.tags.filter(
-    ([name, value]) => name === 'e' && !!value
+    ([name, value, , marker]) => name === 'e' && !!value && marker !== 'mention'
   );
 
   if (!eTags.length) return { rootId: null, parentId: null };
@@ -74,7 +86,23 @@ export function buildReplyTags(parent: NostrEvent): string[][] {
   // Replying to a top-level note makes that note the root
   const root = rootId ?? parent.id;
 
-  const tags: string[][] = [['e', root, '', 'root']];
+  /**
+   * The root tag carries its author when we know who that is.
+   *
+   * NIP-10's fifth field is a pubkey hint, and a client reading a deep reply
+   * can use it to fetch the conversation's author without walking the chain.
+   * The parent's own root tag is where it comes from, since replying to a
+   * reply means the root is somebody else's note.
+   */
+  const rootAuthor =
+    root === parent.id
+      ? parent.pubkey
+      : (parent.tags.find(
+          ([name, value, , marker]) =>
+            name === 'e' && value === root && marker === 'root'
+        )?.[4] ?? '');
+
+  const tags: string[][] = [['e', root, '', 'root', rootAuthor]];
 
   // A reply to the root itself needs no second tag — root is the parent
   if (root !== parent.id) {

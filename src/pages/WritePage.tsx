@@ -30,12 +30,19 @@ import { usePublishArticle } from '@/hooks/usePublishArticle';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useToast } from '@/hooks/useToast';
 import { useSeo } from '@/hooks/useSeo';
+import { MarkdownToolbar } from '@/components/articles/MarkdownToolbar';
 import {
   ARTICLE_DRAFT_KIND,
   parseHashtagInput,
   readingMinutes,
   slugify,
 } from '@/lib/article';
+import {
+  applyAction,
+  wordCount,
+  type MarkdownAction,
+} from '@/lib/markdownEdit';
+import { useAccountStored } from '@/hooks/useStore';
 
 /**
  * The article editor.
@@ -132,6 +139,16 @@ function WriterGate() {
   return <Editor />;
 }
 
+/** An article kept on this device while it is being written. */
+interface LocalDraft {
+  title: string;
+  summary: string;
+  image: string;
+  content: string;
+  hashtags: string;
+  savedAt: number;
+}
+
 function Editor() {
   const { user } = useCurrentUser();
   const [params] = useSearchParams();
@@ -160,6 +177,26 @@ function Editor() {
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const loadedFor = useRef<string | undefined>(undefined);
 
+  /**
+   * The article as it stands on this device, saved as it is typed.
+   *
+   * "Save draft" publishes kind 30024 to relays, which is the right thing for
+   * a draft you intend to come back to — and useless for the far more common
+   * loss, which is a closed tab, a crashed browser or a followed link two
+   * paragraphs in. Nothing here leaves the machine.
+   *
+   * Keyed per article so working on two does not have them overwrite each
+   * other, and per account so a shared browser does not hand one person's
+   * unfinished writing to the next.
+   */
+  const [localDraft, setLocalDraft] = useAccountStored<LocalDraft | null>(
+    `article-draft:${editingSlug ?? 'new'}`,
+    null
+  );
+
+  const [restored, setRestored] = useState(false);
+  const dismissedRestore = useRef(false);
+
   // Fill the form once the article being edited arrives, and only once —
   // refetches must not overwrite what is being typed
   useEffect(() => {
@@ -174,6 +211,68 @@ function Editor() {
     setSlug(existing.slug);
     setPublishedAt(existing.publishedAt);
   }, [existing]);
+
+  /**
+   * Written on a timer rather than on every keystroke.
+   *
+   * Serialising and storing on each character is work the main thread is
+   * doing instead of showing the next one, and a second of lost typing is not
+   * the failure this is here to prevent.
+   */
+  useEffect(() => {
+    if (loadedFor.current === undefined && !title && !content) return;
+
+    const timer = setTimeout(() => {
+      setLocalDraft({
+        title,
+        summary,
+        image,
+        content,
+        hashtags,
+        savedAt: Date.now(),
+      });
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [title, summary, image, content, hashtags, setLocalDraft]);
+
+  /**
+   * Warns before leaving with unsaved work.
+   *
+   * Only for the tab closing — in-app navigation keeps the local draft, so
+   * there is nothing to warn about there.
+   */
+  useEffect(() => {
+    const dirty = !!title.trim() || !!content.trim();
+    if (!dirty) return;
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [title, content]);
+
+  const hasRecoverableDraft =
+    !!localDraft &&
+    !dismissedRestore.current &&
+    !restored &&
+    !title.trim() &&
+    !content.trim() &&
+    (!!localDraft.title?.trim() || !!localDraft.content?.trim());
+
+  const restore = () => {
+    if (!localDraft) return;
+
+    setTitle(localDraft.title ?? '');
+    setSummary(localDraft.summary ?? '');
+    setImage(localDraft.image ?? '');
+    setContent(localDraft.content ?? '');
+    setHashtags(localDraft.hashtags ?? '');
+    setRestored(true);
+  };
 
   const uploadCover = async (file: File) => {
     try {
@@ -228,6 +327,9 @@ function Editor() {
       asDraft,
     });
 
+    // Published or saved to relays, so the local copy has done its job
+    setLocalDraft(null);
+
     if (!asDraft) navigate(`/${result.naddr}`);
   };
 
@@ -246,6 +348,33 @@ function Editor() {
 
   return (
     <div className="space-y-4">
+      {hasRecoverableDraft && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <p className="text-sm">
+              You have unsaved writing from{' '}
+              {new Date(localDraft.savedAt).toLocaleString()}.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  dismissedRestore.current = true;
+                  setLocalDraft(null);
+                  setRestored(true);
+                }}
+              >
+                Discard
+              </Button>
+              <Button size="sm" onClick={restore}>
+                Restore it
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="space-y-4 pt-6">
           <div className="space-y-1.5">
@@ -360,7 +489,8 @@ function Editor() {
               </TabsTrigger>
             </TabsList>
 
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {wordCount(content).toLocaleString()} words ·{' '}
               {readingMinutes(content)} min read
             </span>
           </div>
@@ -412,7 +542,15 @@ function Editor() {
   );
 }
 
-/** The body field, with a drop target so an image can be dragged straight in. */
+/**
+ * The body field: a textarea, a toolbar, and the shortcuts to skip the
+ * toolbar.
+ *
+ * Formatting is applied through the shared pure functions rather than by
+ * splicing strings here, and the caret is restored afterwards — a formatting
+ * button that leaves the cursor at the end of the document is one nobody
+ * presses twice.
+ */
 const BodyEditor = ({
   ref,
   value,
@@ -427,6 +565,40 @@ const BodyEditor = ({
   isUploading: boolean;
 }) => {
   const [dragging, setDragging] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
+
+  const run = (action: MarkdownAction) => {
+    const textarea = ref.current;
+    if (!textarea) return;
+
+    const next = applyAction(action, {
+      value,
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+    });
+
+    onChange(next.value);
+
+    // After React has written the new value, or the selection is set against
+    // the old one and jumps
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(next.start, next.end);
+    });
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!event.metaKey && !event.ctrlKey) return;
+
+    const action = (
+      { b: 'bold', i: 'italic', k: 'link' } as const
+    )[event.key.toLowerCase()];
+
+    if (!action) return;
+
+    event.preventDefault();
+    run(action);
+  };
 
   return (
     <div
@@ -444,10 +616,29 @@ const BodyEditor = ({
         if (file?.type.startsWith('image/')) onInsertImage(file);
       }}
     >
+      <MarkdownToolbar
+        onAction={run}
+        onPickImage={() => imageInput.current?.click()}
+        isUploading={isUploading}
+      />
+
+      <input
+        ref={imageInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onInsertImage(file);
+          event.target.value = '';
+        }}
+      />
+
       <Textarea
         ref={ref}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
         placeholder={'Write in Markdown.\n\n## A heading\n\nA paragraph, with **bold** and a [link](https://example.com).'}
         className="min-h-[420px] resize-y rounded-none border-0 font-mono text-sm leading-relaxed focus-visible:ring-0"
       />

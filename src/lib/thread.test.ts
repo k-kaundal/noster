@@ -96,12 +96,50 @@ describe('getThreadPosition', () => {
   });
 });
 
+describe('quotes are not replies', () => {
+  it('ignores an e tag marked as a mention', () => {
+    // NIP-10 uses `mention` for a quote. Read as a reply, the quote appears
+    // inside the thread it was talking about.
+    const quote = note('b', [['e', 'a', '', 'mention']]);
+
+    expect(getThreadPosition(quote)).toEqual({ rootId: null, parentId: null });
+    expect(isReply(quote)).toBe(false);
+  });
+
+  it('ignores a q tag, which is not an e tag at all', () => {
+    const quote = note('b', [['q', 'a', '', 'pubkey-a']]);
+    expect(isReply(quote)).toBe(false);
+  });
+
+  it('still threads a reply that also quotes something', () => {
+    const event = note('c', [
+      ['e', 'a', '', 'root'],
+      ['e', 'b', '', 'reply'],
+      ['e', 'z', '', 'mention'],
+    ]);
+
+    expect(getThreadPosition(event)).toEqual({ rootId: 'a', parentId: 'b' });
+  });
+
+  it('does not let a mention tag become the positional parent', () => {
+    // The dangerous shape: an old-style reply plus a quote, where the quote
+    // is last and the positional rule would make it the parent
+    const event = note('c', [
+      ['e', 'a'],
+      ['e', 'z', '', 'mention'],
+    ]);
+
+    expect(getThreadPosition(event)).toEqual({ rootId: 'a', parentId: 'a' });
+  });
+});
+
 describe('buildReplyTags', () => {
   it('makes the parent the root when replying to a top-level note', () => {
     const tags = buildReplyTags(note('a'));
 
     expect(tags).toEqual([
-      ['e', 'a', '', 'root'],
+      // The root is the parent here, so its author is known
+      ['e', 'a', '', 'root', 'pubkey-a'],
       ['p', 'pubkey-a'],
     ]);
   });
@@ -110,8 +148,21 @@ describe('buildReplyTags', () => {
     const parent = note('b', [['e', 'a', '', 'root']]);
     const tags = buildReplyTags(parent);
 
-    expect(tags).toContainEqual(['e', 'a', '', 'root']);
+    // The parent's own root tag named no author, so none can be passed on
+    expect(tags).toContainEqual(['e', 'a', '', 'root', '']);
     expect(tags).toContainEqual(['e', 'b', '', 'reply', 'pubkey-b']);
+  });
+
+  it('passes on the root author when the parent named one', () => {
+    const parent = note('b', [['e', 'a', '', 'root', 'pubkey-a']]);
+
+    expect(buildReplyTags(parent)).toContainEqual([
+      'e',
+      'a',
+      '',
+      'root',
+      'pubkey-a',
+    ]);
   });
 
   it('keeps every participant in the conversation notified', () => {
