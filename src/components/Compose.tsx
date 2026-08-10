@@ -16,7 +16,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useAuthor } from '@/hooks/useAuthor';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useAccountStored } from '@/hooks/useStore';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,7 +64,15 @@ function extractHashtags(content: string): string[] {
 }
 
 export function Compose() {
-  const [content, setContent] = useLocalStorage<string>('nostr:draft', '');
+  /**
+   * The draft, kept per account.
+   *
+   * One shared draft meant switching accounts handed whatever you were half
+   * way through writing to the next identity's composer — a note addressed
+   * from the wrong person is the kind of mistake that cannot be taken back
+   * once it is posted.
+   */
+  const [content, setContent] = useAccountStored<string>('draft', '');
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPreview, setShowPreview] = useState(false);

@@ -1,6 +1,6 @@
 import { Suspense, lazy } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { ScrollToTop } from "./components/ScrollToTop";
+import { ScrollRestoration } from "./components/ScrollRestoration";
 import { PostSkeletonList } from "./components/PostSkeleton";
 import { importChunk } from "./lib/importChunk";
 
@@ -59,7 +59,7 @@ function RouteFallback() {
 export function AppRouter() {
   return (
     <BrowserRouter>
-      <ScrollToTop />
+      <ScrollRestoration />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<Index />} />

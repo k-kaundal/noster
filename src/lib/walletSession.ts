@@ -1,44 +1,27 @@
 import { lnbitsRequest } from '@/lib/lnbits';
+import { defineKey, readStore, writeStore } from '@/lib/store';
 
 /** Session tokens, keyed by the Nostr pubkey they belong to. */
 export const WALLET_TOKENS_KEY = 'lnbits:tokens';
 
-function readTokens(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(WALLET_TOKENS_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === 'object'
-      ? (parsed as Record<string, string>)
-      : {};
-  } catch {
-    // Unreadable or disabled storage means no session to end
-    return {};
-  }
-}
-
-function writeTokens(tokens: Record<string, string>): void {
-  try {
-    localStorage.setItem(WALLET_TOKENS_KEY, JSON.stringify(tokens));
-  } catch {
-    // Nothing can be persisted, so nothing was persisted to remove
-  }
-}
+export const walletTokensKey = defineKey<Record<string, string>>(
+  WALLET_TOKENS_KEY,
+  {}
+);
 
 /**
  * Ends the LNbits session belonging to one Nostr identity.
  *
- * Storage is read here rather than through `useLocalStorage`, whose state only
- * syncs between tabs — a second instance in this tab still holds whatever it
- * read when it mounted. Connecting a wallet and then logging out without a
- * reload would leave that snapshot empty, and the session would be forgotten
- * locally while staying open on the server.
+ * Goes through the shared store rather than storage directly, so the wallet
+ * hooks holding this value are told. Logging out from the account switcher
+ * never calls back into them, and a component still showing a balance it can
+ * no longer fetch is worse than one showing none.
  *
  * Only this identity's token is dropped. Another account signed in alongside
  * it keeps its own wallet.
  */
 export async function endWalletSession(pubkey: string): Promise<void> {
-  const tokens = readTokens();
-  const token = tokens[pubkey];
+  const token = readStore(walletTokensKey)[pubkey];
 
   if (token) {
     try {
@@ -49,8 +32,11 @@ export async function endWalletSession(pubkey: string): Promise<void> {
     }
   }
 
-  if (pubkey in tokens) {
-    delete tokens[pubkey];
-    writeTokens(tokens);
-  }
+  writeStore(walletTokensKey, (current) => {
+    if (!(pubkey in current)) return current;
+
+    const next = { ...current };
+    delete next[pubkey];
+    return next;
+  });
 }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowUp, Film, Loader2, MessageSquare, RefreshCw, Users } from 'lucide-react';
 import { useFeed, type FeedScope } from '@/hooks/useFeed';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useAccountStored } from '@/hooks/useStore';
 import { useAdvancedFilters } from '@/hooks/useAdvancedFilters';
 import { Post } from '@/components/Post';
 import { PostSkeletonList } from '@/components/PostSkeleton';
@@ -18,7 +19,16 @@ import { cn } from '@/lib/utils';
 
 export function Feed() {
   const { user } = useCurrentUser();
-  const [scope, setScope] = useState<FeedScope>('global');
+
+  /**
+   * Remembered per account.
+   *
+   * Someone who reads their Following tab was sent back to Global by every
+   * visit to a post and every reload — a preference re-stated a dozen times a
+   * session and never once kept. Per account, because whose follows they are
+   * is the whole difference between the two tabs.
+   */
+  const [scope, setScope] = useAccountStored<FeedScope>('feed:scope', 'global');
 
   const {
     posts: rawPosts,
