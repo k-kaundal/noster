@@ -20,6 +20,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { genUserName } from '@/lib/genUserName';
+import {
+  COMMUNITY_KIND,
+  canModerate,
+  communityAddress,
+  parseCommunity,
+} from '@/lib/community';
 
 interface SpotlightEditorProps {
   items: SpotlightItem[];
@@ -89,17 +95,54 @@ export function SpotlightEditor({
     enabled: !!user?.pubkey && selectedType === 'article',
   });
 
-  // Fetch user's communities (owner/moderator)
+  /**
+   * Communities this user can speak for — created *or* moderated.
+   *
+   * Two filters in one request. Asking only for `authors` finds communities
+   * the user created and nothing else, which is why being made a moderator of
+   * someone else's community left this list empty: the event is authored by
+   * whoever created it, and the moderator appears in a `p` tag. That is the
+   * whole of NIP-72 delegation, and it was being ignored.
+   */
   const { data: userCommunities, isLoading: communitiesLoading } = useQuery({
     queryKey: ['user-communities', user?.pubkey],
     queryFn: async () => {
       if (!user?.pubkey) return [];
-      const signal = AbortSignal.any([AbortSignal.timeout(3000)]);
+      const signal = AbortSignal.any([AbortSignal.timeout(4000)]);
+
       const events = await nostr.query(
-        [{ kinds: [34550], authors: [user.pubkey], limit: 50 }],
+        [
+          { kinds: [COMMUNITY_KIND], authors: [user.pubkey], limit: 50 },
+          { kinds: [COMMUNITY_KIND], '#p': [user.pubkey], limit: 50 },
+        ],
         { signal }
       );
-      return events.sort((a, b) => b.created_at - a.created_at).slice(0, 20);
+
+      /**
+       * Newest revision per address.
+       *
+       * Communities are addressable, so each relay may hold a different
+       * revision — and the `p` filter matches on any `p` tag, so a community
+       * that merely mentions this user comes back too. `canModerate` is the
+       * check that decides, since it also folds in the creator.
+       */
+      const newest = new Map<string, typeof events[number]>();
+
+      for (const event of events) {
+        const community = parseCommunity(event);
+        if (!community || !canModerate(community, user.pubkey)) continue;
+
+        const address = communityAddress(community);
+        const existing = newest.get(address);
+
+        if (!existing || event.created_at > existing.created_at) {
+          newest.set(address, event);
+        }
+      }
+
+      return [...newest.values()]
+        .sort((a, b) => b.created_at - a.created_at)
+        .slice(0, 20);
     },
     enabled: !!user?.pubkey && selectedType === 'community',
   });
@@ -132,7 +175,11 @@ export function SpotlightEditor({
           const name = event.tags.find(([t]) => t === 'name')?.[1] || slug;
           const image = event.tags.find(([t]) => t === 'image')?.[1];
           return {
-            id: nip19.naddrEncode({ pubkey: event.pubkey, kind: 34550, identifier: slug }),
+            id: nip19.naddrEncode({
+              pubkey: event.pubkey,
+              kind: COMMUNITY_KIND,
+              identifier: slug,
+            }),
             title: name,
             subtitle: slug,
             type: 'community' as const,

@@ -73,6 +73,19 @@ const PROFILE_STALE_TIME = 30 * 60 * 1000;
 /** Kept for a day, so moving around the app never redraws a grey circle. */
 const PROFILE_GC_TIME = 24 * 60 * 60 * 1000;
 
+/**
+ * Refetch a profile that has gone stale, even though the app does not do that
+ * anywhere else.
+ *
+ * The global default is `refetchOnMount: false`, which is right for a feed —
+ * going back to a page should paint from cache rather than re-querying. For
+ * profiles it was a trap: the cache is also restored from the last visit, so a
+ * name and avatar that were wrong once stayed wrong across reloads with
+ * nothing ever asking again. Stale here means "older than half an hour", not
+ * "every mount".
+ */
+const PROFILE_REFETCH_ON_MOUNT = true;
+
 export function useAuthors(pubkeys: string[], enabled = true) {
   const { nostr } = useNostr();
   const loader = useMemo(() => getLoader(nostr), [nostr]);
@@ -84,6 +97,7 @@ export function useAuthors(pubkeys: string[], enabled = true) {
       enabled,
       staleTime: PROFILE_STALE_TIME,
       gcTime: PROFILE_GC_TIME,
+      refetchOnMount: PROFILE_REFETCH_ON_MOUNT,
       retry: 1,
     })),
   });
@@ -110,6 +124,7 @@ export function useAuthor(pubkey: string | undefined) {
     },
     staleTime: PROFILE_STALE_TIME,
     gcTime: PROFILE_GC_TIME,
+    refetchOnMount: PROFILE_REFETCH_ON_MOUNT,
     retry: 1,
   });
 }
