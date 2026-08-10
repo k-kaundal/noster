@@ -41,11 +41,14 @@ export function AccentPicker({ className }: { className?: string }) {
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-72">
         <DropdownMenuLabel>Accent colour</DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        <div className="grid grid-cols-3 gap-2 p-2">
+        {/* Four across and scrollable: the list is long enough now that a
+            fixed three-column column would run past the bottom of a laptop
+            screen and hide the last row entirely */}
+        <div className="grid max-h-[60vh] grid-cols-4 gap-1.5 overflow-y-auto p-2">
           {ACCENT_PRESETS.map((preset) => {
             const tokens = deriveTokens(isDark ? preset.dark : preset.light);
             const isActive = preset.id === config.accent;
@@ -59,14 +62,14 @@ export function AccentPicker({ className }: { className?: string }) {
                 }
                 aria-pressed={isActive}
                 className={cn(
-                  'group flex flex-col items-center gap-1.5 rounded-lg border p-2 transition-colors',
+                  'group flex flex-col items-center gap-1 rounded-lg border p-1.5 transition-colors',
                   isActive
                     ? 'border-primary bg-primary/5'
                     : 'hover:border-primary/40 hover:bg-accent/50'
                 )}
               >
                 <span
-                  className="relative flex h-8 w-full items-center justify-center rounded-md border"
+                  className="relative flex h-7 w-full items-center justify-center rounded-md border"
                   style={{
                     backgroundColor: `hsl(${tokens.card})`,
                     borderColor: `hsl(${tokens.border})`,
@@ -85,7 +88,7 @@ export function AccentPicker({ className }: { className?: string }) {
                     />
                   )}
                 </span>
-                <span className="text-[11px] font-medium">{preset.name}</span>
+                <span className="text-[10px] font-medium leading-tight">{preset.name}</span>
               </button>
             );
           })}

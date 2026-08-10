@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { canonicalTargets, withPrimaryFirst } from './relayRouting';
+import {
+  canonicalTargets,
+  isIdentityRequest,
+  withPrimaryFirst,
+} from './relayRouting';
 
 const HOUSE = 'wss://relay.nostrfeed.com';
 
@@ -79,5 +83,32 @@ describe('canonicalTargets', () => {
     expect(canonicalTargets(['', '   ', 'wss://a.example'])).toEqual([
       'wss://a.example',
     ]);
+  });
+});
+
+describe('isIdentityRequest', () => {
+  it('recognises a profile lookup', () => {
+    expect(isIdentityRequest([{ kinds: [0] }])).toBe(true);
+  });
+
+  it('recognises a relay list lookup', () => {
+    expect(isIdentityRequest([{ kinds: [10002] }])).toBe(true);
+    expect(isIdentityRequest([{ kinds: [0, 10002] }])).toBe(true);
+  });
+
+  it('leaves the feed alone', () => {
+    // Two extra relays on every page of a timeline is the cost this avoids
+    expect(isIdentityRequest([{ kinds: [1, 6, 16, 1068, 30023] }])).toBe(false);
+  });
+
+  it('does not qualify a request that only partly asks about identity', () => {
+    expect(isIdentityRequest([{ kinds: [0, 1] }])).toBe(false);
+    expect(isIdentityRequest([{ kinds: [0] }, { kinds: [1] }])).toBe(false);
+  });
+
+  it('ignores a filter with no kinds at all', () => {
+    // An id-only lookup could be anything, and fanning it out helps nothing
+    expect(isIdentityRequest([{}])).toBe(false);
+    expect(isIdentityRequest([])).toBe(false);
   });
 });

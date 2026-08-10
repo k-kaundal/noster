@@ -408,15 +408,23 @@ function ShareProfileDialog({
           <QrCode className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>{displayName}</DialogTitle>
+          <DialogTitle className="truncate pr-6">{displayName}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Kept white in both themes: QR scanners need a light quiet zone */}
-          <div className="flex justify-center rounded-lg bg-white p-4">
-            <QRCodeSVG value={`nostr:${npub}`} size={200} />
+        <div className="min-w-0 space-y-4">
+          {/* Kept white in both themes: QR scanners need a light quiet zone.
+              Sized in CSS rather than by the `size` prop so it shrinks with a
+              narrow dialog instead of pushing it open */}
+          <div className="mx-auto w-fit max-w-full rounded-lg bg-white p-4">
+            <QRCodeSVG
+              value={`nostr:${npub}`}
+              size={224}
+              level="M"
+              marginSize={0}
+              className="h-auto w-full max-w-[224px]"
+            />
           </div>
 
           <CopyRow label="Public key" value={npub} onCopy={onCopy} />

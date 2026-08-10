@@ -70,34 +70,46 @@ const defaultConfig: AppConfig = {
   ],
 };
 
+/**
+ * Relays offered in the picker.
+ *
+ * `active` means "suggested" — the shortlist someone is steered towards. It
+ * used to mark almost everything, including several wide-open relays that
+ * carry whatever anybody posts, which is how adult content reaches a global
+ * feed. The suggested set is now small and moderated; the rest stay available
+ * for anyone who wants them, because removing a relay from a Nostr client is
+ * not the same as it not existing.
+ *
+ * This is a curated list, not a verdict on any operator. Self-labelled adult
+ * posts are filtered on the way in regardless of which relay they arrive
+ * from — see `lib/nsfw.ts` — because a general relay's contents change daily
+ * and a list like this cannot keep up.
+ */
 const presetRelays = [
-  // Primary & Top Tier Relays (most stable and reliable)
+  // Suggested: our own first, then well-run general relays
   { url: 'wss://relay.nostrfeed.com', name: 'NostrFeed', active: true },
-  { url: 'wss://nos.lol', name: 'nos.lol', active: true },
   { url: 'wss://relay.nostr.band', name: 'Nostr.Band', active: true },
   { url: 'wss://relay.primal.net', name: 'Primal', active: true },
+  { url: 'wss://nos.lol', name: 'nos.lol', active: true },
+  { url: 'wss://offchain.pub', name: 'Offchain', active: true },
 
-  // Additional Quality Relays
-  { url: 'wss://nostr.wine', name: 'Nostr.Wine', active: true },
+  // Paid and filtered: spam and adult content are far rarer behind a fee
+  { url: 'wss://nostr.wine', name: 'Nostr.Wine (paid)', active: true },
+  { url: 'wss://filter.nostr.wine', name: 'Filter.Nostr.Wine (paid)' },
+  { url: 'wss://relay.nostrplebs.com', name: 'NostrPlebs (paid)' },
+  { url: 'wss://eden.nostr.land', name: 'Eden (paid)' },
+  { url: 'wss://atlas.nostr.land', name: 'Atlas (paid)' },
+  { url: 'wss://puravida.nostr.land', name: 'PuraVida (paid)' },
+
+  // Available, not suggested. Open relays with no moderation of their own.
   { url: 'wss://relay.snort.social', name: 'Snort' },
   { url: 'wss://ditto.pub/relay', name: 'Ditto' },
-  { url: 'wss://at.nostrworks.com', name: 'NostrWorks', active: true },
-  { url: 'wss://relay.nostrplebs.com', name: 'NostrPlebs', active: true },
-  { url: 'wss://offchain.pub', name: 'Offchain', active: true },
-  { url: 'wss://filter.nostr.wine', name: 'Filter.Nostr.Wine', active: true },
-  { url: 'wss://relay.nostrview.com', name: 'NostrView', active: true },
-  { url: 'wss://atlas.nostr.land', name: 'Atlas', active: true },
-  { url: 'wss://puravida.nostr.land', name: 'PuraVida', active: true },
-
-  // Specialized Relays
   { url: 'wss://nostr.oxtr.dev', name: 'Oxtr' },
   { url: 'wss://nostr.bitcoiner.social', name: 'Bitcoiner.Social' },
-  { url: 'wss://bitcoiner.social', name: 'Bitcoiner', active: true },
-  { url: 'wss://knostr.neutrine.com', name: 'Knostr', active: true },
-  { url: 'wss://nostr-1.nbo.angani.co', name: 'Angani', active: true },
-  { url: 'wss://eden.nostr.land', name: 'Eden', active: true },
-  { url: 'wss://theforest.nostr1.com', name: 'TheForest', active: true },
-  { url: 'wss://btc.klendazu.com', name: 'Klendazu', active: true }
+  { url: 'wss://at.nostrworks.com', name: 'NostrWorks' },
+  { url: 'wss://relay.nostrview.com', name: 'NostrView' },
+  { url: 'wss://knostr.neutrine.com', name: 'Knostr' },
+  { url: 'wss://theforest.nostr1.com', name: 'TheForest' },
 ];
 
 export function App() {

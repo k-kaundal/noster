@@ -6,6 +6,7 @@ import {
   Banknote,
   ExternalLink,
   KeyRound,
+  Link2,
   Loader2,
   LogOut,
   ShieldCheck,
@@ -24,6 +25,7 @@ import { AccountCard } from '@/components/wallet/AccountCard';
 import { WalletKeys } from '@/components/wallet/WalletKeys';
 import { IdentityCard } from '@/components/wallet/IdentityCard';
 import { ExistingWalletSignIn } from '@/components/wallet/ExistingWalletSignIn';
+import { WalletModal } from '@/components/WalletModal';
 import { ReceiveDialog } from '@/components/wallet/ReceiveDialog';
 import { SendDialog } from '@/components/wallet/SendDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -156,8 +158,25 @@ function CreateWalletCard() {
           </div>
         )}
 
-        <div className="mt-6 flex items-center justify-center">
+        <div className="mt-6 flex flex-col items-center gap-2">
           <ExistingWalletSignIn />
+
+          {/*
+            The other kind of "I already have a wallet".
+            
+            Someone arriving from Primal, Alby, Coinos or a phone wallet does
+            not want a second custodial balance here — they want to spend the
+            one they have. That is Nostr Wallet Connect, which this app has
+            supported all along and never offered anywhere a person would look
+            for it: it was buried in the account menu, on a page you reach only
+            after deciding not to make a wallet.
+          */}
+          <WalletModal>
+            <Button variant="ghost" size="sm" className="text-muted-foreground">
+              <Link2 className="mr-2 h-4 w-4" />
+              Or connect a wallet you already have
+            </Button>
+          </WalletModal>
         </div>
       </div>
 

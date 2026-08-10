@@ -19,6 +19,14 @@ const loadSignup = () => import('./SignupDialog');
 const LoginDialog = lazy(loadLogin);
 const SignupDialog = lazy(loadSignup);
 
+/**
+ * Opened the moment signup finishes, so a new account never lands on an empty
+ * Following tab wondering what it just joined.
+ */
+const WelcomeFollows = lazy(() =>
+  import('./WelcomeFollows').then((m) => ({ default: m.WelcomeFollows }))
+);
+
 export interface LoginAreaProps {
   className?: string;
 }
@@ -27,8 +35,10 @@ export function LoginArea({ className }: LoginAreaProps) {
   const { currentUser } = useLoggedInAccounts();
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [signupDialogOpen, setSignupDialogOpen] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
   const loginMounted = useOnceOpened(loginDialogOpen);
   const signupMounted = useOnceOpened(signupDialogOpen);
+  const welcomeMounted = useOnceOpened(welcomeOpen);
 
   useIdlePrefetch(loadLogin);
   useIdlePrefetch(loadSignup);
@@ -78,7 +88,12 @@ export function LoginArea({ className }: LoginAreaProps) {
           <SignupDialog
             isOpen={signupDialogOpen}
             onClose={() => setSignupDialogOpen(false)}
+            onComplete={() => setWelcomeOpen(true)}
           />
+        )}
+
+        {welcomeMounted && (
+          <WelcomeFollows open={welcomeOpen} onOpenChange={setWelcomeOpen} />
         )}
       </Suspense>
     </div>

@@ -4,7 +4,12 @@ import { NostrContext } from '@nostrify/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/hooks/useAppContext';
 import { readRelays, writeRelays } from '@/lib/relay';
-import { canonicalTargets, withPrimaryFirst } from '@/lib/relayRouting';
+import {
+  INDEXER_RELAYS,
+  canonicalTargets,
+  isIdentityRequest,
+  withPrimaryFirst,
+} from '@/lib/relayRouting';
 import { getRelayHealthMonitor } from '@/lib/relayHealth';
 
 interface NostrProviderProps {
@@ -88,7 +93,20 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
         // If all relays have circuit breakers open, use them anyway as last resort
         const toQuery = available.length > 0 ? available : targets.slice(0, 3);
 
-        return new Map(toQuery.map((url) => [url, filters]));
+        /**
+         * Identity lookups also ask the indexers.
+         *
+         * Added rather than substituted, and only for kind 0 and kind 10002.
+         * A general relay serves whichever revision of a replaceable profile
+         * it happens to hold, which for someone who joined on another client
+         * is often nothing or something years old — and the newest answer only
+         * wins if somebody was asked who has it.
+         */
+        const withIndexers = isIdentityRequest(filters)
+          ? canonicalTargets([...toQuery, ...INDEXER_RELAYS])
+          : toQuery;
+
+        return new Map(withIndexers.map((url) => [url, filters]));
       },
 
       /**

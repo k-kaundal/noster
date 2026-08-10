@@ -262,27 +262,50 @@ export function getThemesByCategory(category: AdvancedThemeConfig['category']): 
 /**
  * Apply theme to document
  */
-export function applyAdvancedTheme(theme: AdvancedThemeConfig): void {
-  const root = document.documentElement;
+/**
+ * Whether a theme is meant to be read on a light or a dark ground.
+ *
+ * Taken from its own background rather than from its name: "sunset" and
+ * "bitcoin-gold" say nothing about lightness, and a theme applied in the wrong
+ * mode is unreadable rather than merely wrong.
+ */
+export function advancedThemeMode(
+  theme: AdvancedThemeConfig
+): 'light' | 'dark' {
+  // `H S% L%` — the third component is the one that decides
+  const lightness = Number.parseFloat(
+    theme.backgroundColor.trim().split(/\s+/)[2] ?? '100'
+  );
 
-  root.style.setProperty('--theme-primary', theme.primaryColor);
-  root.style.setProperty('--theme-secondary', theme.secondaryColor);
-  root.style.setProperty('--theme-accent', theme.accentColor);
-  root.style.setProperty('--theme-background', theme.backgroundColor);
-  root.style.setProperty('--theme-text', theme.textColor);
-  root.style.setProperty('--theme-border', theme.borderColor);
-  root.style.setProperty('--theme-success', theme.successColor);
-  root.style.setProperty('--theme-warning', theme.warningColor);
-  root.style.setProperty('--theme-error', theme.errorColor);
-
-  root.setAttribute('data-advanced-theme', theme.id);
-  localStorage.setItem('advanced-theme', theme.id);
+  return Number.isFinite(lightness) && lightness < 50 ? 'dark' : 'light';
 }
 
 /**
- * Get current theme from localStorage
+ * An advanced theme in the shape the real theming pipeline understands.
+ *
+ * This is the whole fix. These themes used to write `--theme-primary` and
+ * friends, which nothing in the stylesheet reads, and stamp a
+ * `data-advanced-theme` attribute no rule matches — so picking one changed
+ * nothing, and did not survive a reload either, because it was applied on
+ * click and never on load.
+ *
+ * Both modes are filled with the theme's own colours. A theme is a complete
+ * look, not a hue to be re-derived for the mode someone happens to be in, and
+ * selecting one sets the mode to match.
  */
-export function getCurrentAdvancedTheme(): AdvancedTheme {
-  if (typeof window === 'undefined') return 'x-light';
-  return (localStorage.getItem('advanced-theme') as AdvancedTheme) || 'x-light';
+export function advancedThemeToPreset(theme: AdvancedThemeConfig): {
+  id: string;
+  name: string;
+  light: { background: string; foreground: string; primary: string };
+  dark: { background: string; foreground: string; primary: string };
+} {
+  const cores = {
+    background: theme.backgroundColor,
+    foreground: theme.textColor,
+    // The accent, not `primaryColor`: these themes use "primary" for their
+    // text colour, so it is the accent that carries the identity
+    primary: theme.accentColor,
+  };
+
+  return { id: theme.id, name: theme.name, light: cores, dark: cores };
 }

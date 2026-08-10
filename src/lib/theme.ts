@@ -11,6 +11,8 @@
  * is far brighter to the eye than a pure blue at the same value.
  */
 
+import { ADVANCED_THEMES, advancedThemeToPreset } from '@/lib/advanced-themes';
+
 export interface Hsl {
   h: number;
   s: number;
@@ -248,6 +250,54 @@ export const ACCENT_PRESETS: AccentPreset[] = [
     dark: { background: '345 20% 6%', foreground: '350 20% 97%', primary: '341 80% 62%' },
   },
   {
+    id: 'ember',
+    name: 'Ember',
+    light: { background: '25 35% 98%', foreground: '20 20% 12%', primary: '38 92% 45%' },
+    dark: { background: '24 18% 6%', foreground: '40 20% 97%', primary: '43 96% 56%' },
+  },
+  {
+    id: 'lagoon',
+    name: 'Lagoon',
+    light: { background: '180 30% 98%', foreground: '190 25% 11%', primary: '178 78% 33%' },
+    dark: { background: '190 26% 6%', foreground: '180 18% 97%', primary: '175 72% 48%' },
+  },
+  {
+    id: 'indigo',
+    name: 'Indigo',
+    light: { background: '230 30% 98%', foreground: '230 25% 11%', primary: '234 78% 56%' },
+    dark: { background: '232 26% 7%', foreground: '228 20% 97%', primary: '232 82% 66%' },
+  },
+  {
+    id: 'plum',
+    name: 'Plum',
+    light: { background: '300 22% 98%', foreground: '295 20% 11%', primary: '292 68% 46%' },
+    dark: { background: '295 22% 6%', foreground: '300 15% 97%', primary: '291 70% 62%' },
+  },
+  {
+    id: 'moss',
+    name: 'Moss',
+    light: { background: '80 22% 98%', foreground: '90 18% 11%', primary: '84 55% 32%' },
+    dark: { background: '90 16% 6%', foreground: '80 14% 96%', primary: '82 52% 50%' },
+  },
+  {
+    id: 'slate',
+    name: 'Slate',
+    light: { background: '215 20% 98%', foreground: '215 25% 12%', primary: '215 35% 38%' },
+    dark: { background: '215 22% 7%', foreground: '210 16% 96%', primary: '213 40% 66%' },
+  },
+  {
+    id: 'crimson',
+    name: 'Crimson',
+    light: { background: '5 30% 98%', foreground: '0 20% 12%', primary: '0 74% 47%' },
+    dark: { background: '0 20% 6%', foreground: '10 18% 97%', primary: '0 78% 60%' },
+  },
+  {
+    id: 'sand',
+    name: 'Sand',
+    light: { background: '40 30% 97%', foreground: '35 22% 13%', primary: '30 45% 38%' },
+    dark: { background: '35 14% 7%', foreground: '40 16% 96%', primary: '33 48% 62%' },
+  },
+  {
     id: 'mono',
     name: 'Mono',
     light: { background: '0 0% 98%', foreground: '0 0% 8%', primary: '0 0% 18%' },
@@ -257,9 +307,23 @@ export const ACCENT_PRESETS: AccentPreset[] = [
 
 export const DEFAULT_ACCENT = 'violet';
 
+/**
+ * Every palette a person can be on, simple and advanced alike.
+ *
+ * One list, because there is one theming pipeline. The advanced themes used to
+ * run through a parallel one that wrote CSS variables nothing read; they are
+ * ordinary presets now, and are looked up the same way.
+ */
+export function allAccentPresets(): AccentPreset[] {
+  return [
+    ...ACCENT_PRESETS,
+    ...Object.values(ADVANCED_THEMES).map(advancedThemeToPreset),
+  ];
+}
+
 export function getAccentPreset(id: string): AccentPreset {
   return (
-    ACCENT_PRESETS.find((preset) => preset.id === id) ?? ACCENT_PRESETS[0]
+    allAccentPresets().find((preset) => preset.id === id) ?? ACCENT_PRESETS[0]
   );
 }
 
@@ -277,57 +341,6 @@ export function clearTokens(element: HTMLElement, tokens: ThemeTokens): void {
   }
 }
 
-/**
- * Professional theme presets for enhanced visual hierarchy and branding
- */
-export type ThemeMode = 'light' | 'dark' | 'system';
-export type ThemePreset = 'default' | 'professional' | 'minimal' | 'dark-mode';
-
-export interface ThemeConfig {
-  name: string;
-  preset: ThemePreset;
-  primaryColor: string;
-  accentColor: string;
-  description: string;
-}
-
-/**
- * Available theme presets for professional branding
- */
-export const THEME_PRESETS: Record<ThemePreset, ThemeConfig> = {
-  default: {
-    name: 'Default',
-    preset: 'default',
-    primaryColor: '262.1 83.3% 57.8%',
-    accentColor: '220 14.3% 95.9%',
-    description: 'Clean and balanced design',
-  },
-  professional: {
-    name: 'Professional',
-    preset: 'professional',
-    primaryColor: '217 91% 60%',
-    accentColor: '220 8.9% 46.1%',
-    description: 'Modern corporate aesthetic',
-  },
-  minimal: {
-    name: 'Minimal',
-    preset: 'minimal',
-    primaryColor: '240 10% 3.9%',
-    accentColor: '220 14.3% 95.9%',
-    description: 'Distraction-free interface',
-  },
-  'dark-mode': {
-    name: 'Dark Mode',
-    preset: 'dark-mode',
-    primaryColor: '263.4 70% 60%',
-    accentColor: '240 8% 7%',
-    description: 'Eye-friendly dark theme',
-  },
-};
-
-/**
- * Typography scale for professional hierarchy
- */
 export const TYPOGRAPHY = {
   h1: 'text-4xl font-bold tracking-tight',
   h2: 'text-3xl font-bold tracking-tight',

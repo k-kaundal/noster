@@ -1,5 +1,4 @@
 import { ReactNode, Suspense, lazy, useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { LoadingBar } from '@/components/layout/LoadingBar';
 import { SideNav } from '@/components/layout/SideNav';
@@ -41,7 +40,6 @@ interface LayoutProps {
 }
 
 export function Layout({ children, fullWidth = false }: LayoutProps) {
-  const { pathname } = useLocation();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,10 +95,20 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
 
         <main
           id="main-content"
-          // Keyed on the route so each navigation replays the entrance
-          key={pathname}
+          /*
+           * Deliberately not keyed on the route.
+           *
+           * It was, so that every navigation replayed an entrance animation —
+           * which meant every click in the sidebar tore down the whole page
+           * and built it again, skeletons and all, even for a page that was
+           * already loaded and cached. That teardown is the flicker, and it
+           * also undoes scroll restoration: there is nothing to scroll to at
+           * the moment the position is restored. Pages animate their own
+           * contents in; the shell does not need to flash to prove something
+           * happened, and the loading bar at the top says so anyway.
+           */
           className={cn(
-            'min-w-0 flex-1 animate-slide-up',
+            'min-w-0 flex-1',
             !fullWidth && 'mx-auto w-full max-w-2xl'
           )}
         >

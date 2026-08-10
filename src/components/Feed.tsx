@@ -14,7 +14,9 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrendingHashtags, TrendingPeople } from '@/components/TrendingCards';
 import { useTrending } from '@/hooks/useTrending';
 import { useMuteList } from '@/hooks/useMuteList';
+import { useAdultContent } from '@/hooks/useAdultContent';
 import { filterMuted } from '@/lib/mute';
+import { filterAdultContent } from '@/lib/nsfw';
 import { cn } from '@/lib/utils';
 
 export function Feed() {
@@ -45,12 +47,15 @@ export function Feed() {
   const { data: trending, isLoading: isTrendingLoading } = useTrending();
   const { list: muteList } = useMuteList();
   const { filters } = useAdvancedFilters();
+  const { showAdult } = useAdultContent();
 
   // Muted authors, words and hashtags never reach the timeline
   const posts = useMemo(() => {
     if (!rawPosts) return rawPosts;
 
-    let filtered = filterMuted(rawPosts, muteList);
+    // Before anything optional: adult content is filtered whether or not the
+    // advanced filters have ever been opened
+    let filtered = filterAdultContent(filterMuted(rawPosts, muteList), showAdult);
 
     // Apply advanced filters if enabled
     if (filters.enabled) {
@@ -106,7 +111,7 @@ export function Feed() {
     }
 
     return filtered;
-  }, [rawPosts, muteList, filters]);
+  }, [rawPosts, muteList, filters, showAdult]);
 
   // Track the newest note the reader has actually seen, so the "new posts"
   // pill only counts notes that arrived after they arrived on the page.
