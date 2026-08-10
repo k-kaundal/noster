@@ -3,11 +3,44 @@ import { useMutation, type UseMutationResult } from "@tanstack/react-query";
 
 import { useCurrentUser } from "./useCurrentUser";
 import { enqueue } from "@/lib/outbox";
+import { describeSignerError } from "@/lib/signerErrors";
+import { clearSignerFailure, recordSignerFailure } from "@/lib/signerStatus";
 
 import type { NostrEvent } from "@nostrify/nostrify";
 
 /** How long to wait for a relay before treating the note as undelivered. */
 const PUBLISH_TIMEOUT = 5000;
+
+/**
+ * How long to wait for a signature before assuming the signer is gone.
+ *
+ * Only remote signers can hang: an nsec signs in microseconds and an extension
+ * either prompts or throws. A NIP-46 bunker publishes the request to a relay
+ * and waits for an answer that may never come, and without a bound here the
+ * mutation stays pending forever — a spinner that never resolves, which reads
+ * as the app being broken rather than the signer being unreachable.
+ */
+const SIGN_TIMEOUT = 20_000;
+
+/**
+ * Bounds a signature request that has no timeout of its own.
+ *
+ * `AbortSignal` is not an option: `signEvent` takes no signal, so the only
+ * lever available is to stop waiting. The signer may still answer afterwards
+ * and its answer is simply dropped — an unwanted signature is harmless, an
+ * indefinite spinner is not.
+ */
+function withTimeout(signing: Promise<NostrEvent>): Promise<NostrEvent> {
+  return Promise.race([
+    signing,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error('Signing timed out')),
+        SIGN_TIMEOUT
+      )
+    ),
+  ]);
+}
 
 export function useNostrPublish(): UseMutationResult<NostrEvent> {
   const { nostr } = useNostr();
@@ -23,12 +56,41 @@ export function useNostrPublish(): UseMutationResult<NostrEvent> {
           tags.push(["client", location.hostname]);
         }
 
-        const event = await user.signer.signEvent({
-          kind: t.kind,
-          content: t.content ?? "",
-          tags,
-          created_at: t.created_at ?? Math.floor(Date.now() / 1000),
-        });
+        let event: NostrEvent;
+
+        try {
+          event = await withTimeout(
+            user.signer.signEvent({
+              kind: t.kind,
+              content: t.content ?? "",
+              tags,
+              created_at: t.created_at ?? Math.floor(Date.now() / 1000),
+            })
+          );
+        } catch (error) {
+          /**
+           * Signing happens somewhere this app cannot see, so what comes back
+           * is whatever that place decided to say. Raw, it told people their
+           * post failed without telling them the one thing they could do
+           * about it.
+           */
+          const problem = describeSignerError(error, { method: user.method });
+
+          /**
+           * A failed signature is the only unambiguous evidence that a remote
+           * signer is out of reach, so it is kept rather than spent on one
+           * toast — the next thing that needs signing already knows, and the
+           * banner offering to reconnect can appear before it is needed.
+           */
+          recordSignerFailure(user.pubkey, problem.kind);
+
+          throw new Error(`${problem.title}. ${problem.description}`, {
+            cause: error,
+          });
+        }
+
+        // One working signature disproves any earlier verdict about the signer
+        clearSignerFailure(user.pubkey);
 
         try {
           await nostr.event(event, {

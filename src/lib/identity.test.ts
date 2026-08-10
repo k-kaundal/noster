@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   describeIdentity,
+  listAddresses,
   localPartOf,
   pickPrimaryLink,
   suggestIdentityName,
@@ -169,5 +170,80 @@ describe('pickPrimaryLink', () => {
   it('returns nothing when there are no links', () => {
     expect(pickPrimaryLink([])).toBeNull();
     expect(pickPrimaryLink([{ username: undefined }])).toBeNull();
+  });
+});
+
+describe('listAddresses', () => {
+  const format = (username: string) => `${username}@nostrfeed.com`;
+
+  const links = [
+    { id: '1', username: 'zed' },
+    { id: '2', username: undefined },
+    { id: '3', username: 'alice' },
+    { id: '4', username: 'bob' },
+  ];
+
+  it('keeps every named link', () => {
+    // The whole point: a wallet answers to all of these, and showing one of
+    // them means an address someone handed out is invisible here
+    expect(listAddresses(links, { format }).map((entry) => entry.username)).toEqual([
+      'alice',
+      'bob',
+      'zed',
+    ]);
+  });
+
+  it('drops links with no name, which cannot be an address', () => {
+    expect(listAddresses(links, { format })).toHaveLength(3);
+  });
+
+  it('puts the verified name first and the zap target next', () => {
+    const entries = listAddresses(links, {
+      format,
+      preferredUsername: 'zed',
+      profileLud16: 'bob@nostrfeed.com',
+    });
+
+    expect(entries.map((entry) => entry.username)).toEqual(['zed', 'bob', 'alice']);
+  });
+
+  it('marks which one the profile advertises', () => {
+    const entries = listAddresses(links, {
+      format,
+      profileLud16: 'bob@nostrfeed.com',
+    });
+
+    expect(entries.filter((entry) => entry.onProfile).map((e) => e.username)).toEqual([
+      'bob',
+    ]);
+  });
+
+  it('marks nothing as advertised when the profile points elsewhere', () => {
+    // A lud16 pointing at another wallet entirely is legal and worth not
+    // mislabelling as one of these
+    const entries = listAddresses(links, {
+      format,
+      profileLud16: 'alice@example.com',
+    });
+
+    expect(entries.some((entry) => entry.onProfile)).toBe(false);
+  });
+
+  it('matches the verified name regardless of case', () => {
+    const entries = listAddresses(links, { format, preferredUsername: 'ALICE' });
+    expect(entries[0].preferred).toBe(true);
+    expect(entries[0].username).toBe('alice');
+  });
+
+  it('orders the rest alphabetically so the list does not reshuffle', () => {
+    const shuffled = [...links].reverse();
+
+    expect(listAddresses(shuffled, { format }).map((entry) => entry.username)).toEqual(
+      listAddresses(links, { format }).map((entry) => entry.username)
+    );
+  });
+
+  it('handles a wallet with no addresses', () => {
+    expect(listAddresses([], { format })).toEqual([]);
   });
 });

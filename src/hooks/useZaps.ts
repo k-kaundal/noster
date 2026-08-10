@@ -9,6 +9,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { readRelays } from '@/lib/relay';
+import { describeSignerError } from '@/lib/signerErrors';
+import { clearSignerFailure, recordSignerFailure } from '@/lib/signerStatus';
 import {
   fetchInvoice,
   fetchPayMetadata,
@@ -277,7 +279,22 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
           addressPointer: addressPointerFor(actualTarget) ?? undefined,
         });
 
-        const signed = await user.signer.signEvent(request);
+        /**
+         * The same treatment publishing gets: a zap request is a signature
+         * like any other, and a dead remote signer fails here exactly as it
+         * does there — with a message about aborting that explains nothing.
+         */
+        let signed: NostrEvent;
+        try {
+          signed = await user.signer.signEvent(request);
+          clearSignerFailure(user.pubkey);
+        } catch (error) {
+          const problem = describeSignerError(error, { method: user.method });
+          recordSignerFailure(user.pubkey, problem.kind);
+          throw new Error(`${problem.title}. ${problem.description}`, {
+            cause: error,
+          });
+        }
 
         const response = await fetch(
           zapCallbackUrl(payMetadata.callback, amountMsat, signed),

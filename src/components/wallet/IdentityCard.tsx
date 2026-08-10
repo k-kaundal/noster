@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AddressList } from '@/components/wallet/AddressList';
 import { Nip5Section } from '@/components/wallet/Nip5Section';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
@@ -50,7 +51,11 @@ export function IdentityCard() {
         ) : identity.status.tier === 'none' ? (
           <ClaimForm />
         ) : (
-          <CurrentIdentity />
+          <>
+            <CurrentIdentity />
+            <Separator className="my-4" />
+            <AddressList />
+          </>
         )}
 
         <Separator className="my-4" />

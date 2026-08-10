@@ -32,7 +32,7 @@ export interface LoginAreaProps {
 }
 
 export function LoginArea({ className }: LoginAreaProps) {
-  const { currentUser } = useLoggedInAccounts();
+  const { currentUser, isReadOnly } = useLoggedInAccounts();
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [signupDialogOpen, setSignupDialogOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
@@ -51,7 +51,20 @@ export function LoginArea({ className }: LoginAreaProps) {
   return (
     <div className={cn("inline-flex items-center justify-center", className)}>
       {currentUser ? (
-        <AccountSwitcher onAddAccountClick={() => setLoginDialogOpen(true)} />
+        <div className="flex items-center gap-2">
+          <AccountSwitcher onAddAccountClick={() => setLoginDialogOpen(true)} />
+          {/* Browsing as someone is not being them, and the way out of it
+              should not be hidden inside a menu that looks like an account */}
+          {isReadOnly && (
+            <Button
+              size="sm"
+              onClick={() => setLoginDialogOpen(true)}
+              className="rounded-full font-medium"
+            >
+              <span className="truncate">Log in</span>
+            </Button>
+          )}
+        </div>
       ) : (
         <div className="flex w-full items-center justify-center gap-2">
           <Button
