@@ -11,6 +11,8 @@
  * is far brighter to the eye than a pure blue at the same value.
  */
 
+import { ADVANCED_THEMES, advancedThemeToPreset } from '@/lib/advanced-themes';
+
 export interface Hsl {
   h: number;
   s: number;
@@ -305,9 +307,23 @@ export const ACCENT_PRESETS: AccentPreset[] = [
 
 export const DEFAULT_ACCENT = 'violet';
 
+/**
+ * Every palette a person can be on, simple and advanced alike.
+ *
+ * One list, because there is one theming pipeline. The advanced themes used to
+ * run through a parallel one that wrote CSS variables nothing read; they are
+ * ordinary presets now, and are looked up the same way.
+ */
+export function allAccentPresets(): AccentPreset[] {
+  return [
+    ...ACCENT_PRESETS,
+    ...Object.values(ADVANCED_THEMES).map(advancedThemeToPreset),
+  ];
+}
+
 export function getAccentPreset(id: string): AccentPreset {
   return (
-    ACCENT_PRESETS.find((preset) => preset.id === id) ?? ACCENT_PRESETS[0]
+    allAccentPresets().find((preset) => preset.id === id) ?? ACCENT_PRESETS[0]
   );
 }
 
@@ -325,57 +341,6 @@ export function clearTokens(element: HTMLElement, tokens: ThemeTokens): void {
   }
 }
 
-/**
- * Professional theme presets for enhanced visual hierarchy and branding
- */
-export type ThemeMode = 'light' | 'dark' | 'system';
-export type ThemePreset = 'default' | 'professional' | 'minimal' | 'dark-mode';
-
-export interface ThemeConfig {
-  name: string;
-  preset: ThemePreset;
-  primaryColor: string;
-  accentColor: string;
-  description: string;
-}
-
-/**
- * Available theme presets for professional branding
- */
-export const THEME_PRESETS: Record<ThemePreset, ThemeConfig> = {
-  default: {
-    name: 'Default',
-    preset: 'default',
-    primaryColor: '262.1 83.3% 57.8%',
-    accentColor: '220 14.3% 95.9%',
-    description: 'Clean and balanced design',
-  },
-  professional: {
-    name: 'Professional',
-    preset: 'professional',
-    primaryColor: '217 91% 60%',
-    accentColor: '220 8.9% 46.1%',
-    description: 'Modern corporate aesthetic',
-  },
-  minimal: {
-    name: 'Minimal',
-    preset: 'minimal',
-    primaryColor: '240 10% 3.9%',
-    accentColor: '220 14.3% 95.9%',
-    description: 'Distraction-free interface',
-  },
-  'dark-mode': {
-    name: 'Dark Mode',
-    preset: 'dark-mode',
-    primaryColor: '263.4 70% 60%',
-    accentColor: '240 8% 7%',
-    description: 'Eye-friendly dark theme',
-  },
-};
-
-/**
- * Typography scale for professional hierarchy
- */
 export const TYPOGRAPHY = {
   h1: 'text-4xl font-bold tracking-tight',
   h2: 'text-3xl font-bold tracking-tight',

@@ -22,7 +22,6 @@ import { OutboxIndicator } from '@/components/OutboxIndicator';
 import { SideNav } from '@/components/layout/SideNav';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { AuthorProjects } from '@/components/AuthorProjects';
-import { ThemePresetSwitcher } from '@/components/ThemePresetSwitcher';
 
 interface AppHeaderProps {
   onSearch: () => void;
@@ -122,7 +121,6 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
                       <ThemeToggle />
                     </div>
                   </div>
-                  <ThemePresetSwitcher />
                 </div>
 
                 <Separator />

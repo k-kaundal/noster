@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react';
 import {
-  ADVANCED_THEMES,
-  applyAdvancedTheme,
-  getCurrentAdvancedTheme,
+  advancedThemeMode,
   getThemesByCategory,
   type AdvancedTheme,
   type AdvancedThemeConfig,
 } from '@/lib/advanced-themes';
+import { useAppContext } from '@/hooks/useAppContext';
+import { deriveTokens } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
@@ -17,20 +16,25 @@ import {
 } from '@/components/ui/tabs';
 
 /**
- * Advanced theme switcher with categorized selection
+ * Full themes, as opposed to the accent picker's hues.
+ *
+ * These used to be a second theming system that did nothing: it wrote
+ * `--theme-primary` and friends, which no rule in the stylesheet reads, kept
+ * its choice in its own storage key, and re-applied on click but never on
+ * load. Selecting one appeared to work and changed nothing, and the selection
+ * was gone by the next reload.
+ *
+ * They are ordinary palettes now, stored in app config beside the accent and
+ * applied by the same effect. Choosing one also sets light or dark to match,
+ * because a theme is a complete look and half of these are only legible in the
+ * mode they were designed for.
  */
 export function AdvancedThemeSwitcher() {
-  const [currentTheme, setCurrentTheme] = useState<AdvancedTheme>('x-light');
+  const { config, updateConfig } = useAppContext();
+  const currentTheme = config.accent;
 
-  useEffect(() => {
-    const theme = getCurrentAdvancedTheme();
-    setCurrentTheme(theme);
-  }, []);
-
-  const handleThemeChange = (theme: AdvancedTheme) => {
-    setCurrentTheme(theme);
-    const themeConfig = ADVANCED_THEMES[theme];
-    applyAdvancedTheme(themeConfig);
+  const handleThemeChange = (theme: AdvancedTheme, mode: 'light' | 'dark') => {
+    updateConfig((current) => ({ ...current, accent: theme, theme: mode }));
   };
 
   const categories = ['inspired', 'premium', 'corporate', 'minimal', 'creative', 'crypto'] as const;
@@ -38,9 +42,10 @@ export function AdvancedThemeSwitcher() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold mb-2">Theme</h3>
-        <p className="text-xs text-muted-foreground mb-4">
-          Choose from professional and creative themes
+        <h3 className="mb-2 text-sm font-semibold">Full themes</h3>
+        <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+          Each one sets the whole palette and switches light or dark to match.
+          Picking an accent colour above replaces it.
         </p>
       </div>
 
@@ -74,7 +79,12 @@ export function AdvancedThemeSwitcher() {
                   key={theme.id}
                   theme={theme}
                   isActive={currentTheme === theme.id}
-                  onClick={() => handleThemeChange(theme.id as AdvancedTheme)}
+                  onClick={() =>
+                    handleThemeChange(
+                      theme.id as AdvancedTheme,
+                      advancedThemeMode(theme)
+                    )
+                  }
                 />
               ))}
             </div>
@@ -92,6 +102,12 @@ interface ThemeCardProps {
 }
 
 function ThemeCard({ theme, isActive, onClick }: ThemeCardProps) {
+  const preview = deriveTokens({
+    background: theme.backgroundColor,
+    foreground: theme.textColor,
+    primary: theme.accentColor,
+  });
+
   return (
     <Button
       variant={isActive ? 'default' : 'outline'}
@@ -101,18 +117,34 @@ function ThemeCard({ theme, isActive, onClick }: ThemeCardProps) {
         isActive && 'ring-2 ring-primary'
       )}
     >
-      {/* Color preview bars */}
-      <div className="w-full space-y-1">
-        <div className="h-2 rounded-sm flex gap-1">
-          <div
-            className="flex-1 rounded-sm"
-            style={{ backgroundColor: `hsl(${theme.primaryColor})` }}
+      {/*
+        A preview of the theme as it will actually render, built from the same
+        derivation the app uses. Two raw swatches said nothing about what
+        picking this would do to the page.
+      */}
+      <div
+        className="flex w-full items-center gap-1.5 rounded-md border p-1.5"
+        style={{
+          backgroundColor: `hsl(${preview.card})`,
+          borderColor: `hsl(${preview.border})`,
+        }}
+      >
+        <span
+          className="h-4 w-4 shrink-0 rounded-full"
+          style={{
+            backgroundImage: `linear-gradient(135deg, hsl(${preview['brand-from']}), hsl(${preview['brand-to']}))`,
+          }}
+        />
+        <span className="flex-1 space-y-1">
+          <span
+            className="block h-1.5 w-full rounded-full"
+            style={{ backgroundColor: `hsl(${preview.foreground})`, opacity: 0.8 }}
           />
-          <div
-            className="flex-1 rounded-sm"
-            style={{ backgroundColor: `hsl(${theme.accentColor})` }}
+          <span
+            className="block h-1.5 w-2/3 rounded-full"
+            style={{ backgroundColor: `hsl(${preview['muted-foreground']})` }}
           />
-        </div>
+        </span>
       </div>
 
       {/* Theme name and description */}
