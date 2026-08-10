@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogDescription } from "@/compon
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLoginActions } from '@/hooks/useLoginActions';
+import { decryptToNsec, isNcryptsec } from '@/lib/keyTransfer';
 import { cn } from '@/lib/utils';
 
 interface LoginDialogProps {
@@ -30,6 +31,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
   const [isLoading, setIsLoading] = useState(false);
   const [isFileLoading, setIsFileLoading] = useState(false);
   const [nsec, setNsec] = useState('');
+  const [passphrase, setPassphrase] = useState('');
   const [bunkerUri, setBunkerUri] = useState('');
   const [errors, setErrors] = useState<{
     nsec?: string;
@@ -37,6 +39,14 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
     file?: string;
     extension?: string;
   }>({});
+
+  /**
+   * A passphrase-protected key needs one more thing before it can be used.
+   *
+   * Detected from what was pasted rather than asked for up front, so someone
+   * arriving with a plain nsec never sees a field that does not apply to them.
+   */
+  const needsPassphrase = isNcryptsec(nsec);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const login = useLoginActions();
 
@@ -47,6 +57,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
       setIsLoading(false);
       setIsFileLoading(false);
       setNsec('');
+      setPassphrase('');
       setBunkerUri('');
       setErrors({});
       // Reset file input
@@ -99,16 +110,35 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
   };
 
   const handleKeyLogin = () => {
-    if (!nsec.trim()) {
+    const value = nsec.trim();
+
+    if (!value) {
       setErrors(prev => ({ ...prev, nsec: 'Please enter your secret key' }));
       return;
     }
 
-    if (!validateNsec(nsec)) {
-      setErrors(prev => ({ ...prev, nsec: 'Invalid secret key format. Must be a valid nsec starting with nsec1.' }));
+    // A protected key from another device: unwrap it, then log in as usual
+    if (isNcryptsec(value)) {
+      if (!passphrase) {
+        setErrors(prev => ({ ...prev, nsec: 'Enter the passphrase for this key.' }));
+        return;
+      }
+
+      try {
+        executeLogin(decryptToNsec(value, passphrase));
+      } catch (error) {
+        setErrors(prev => ({ ...prev, nsec: (error as Error).message }));
+      }
+
       return;
     }
-    executeLogin(nsec);
+
+    if (!validateNsec(value)) {
+      setErrors(prev => ({ ...prev, nsec: 'Invalid secret key format. Must be a valid nsec starting with nsec1, or an ncryptsec1 code from another device.' }));
+      return;
+    }
+
+    executeLogin(value);
   };
 
   const handleBunkerLogin = async () => {
@@ -269,7 +299,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
               <div className='space-y-4'>
                 <div className='space-y-2'>
                   <label htmlFor='nsec' className='text-sm font-medium'>
-                    Secret Key (nsec)
+                    Secret key
                   </label>
                   <Input
                     id='nsec'
@@ -282,9 +312,30 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
                     className={`rounded-lg ${
                       errors.nsec ? 'border-destructive focus-visible:ring-destructive' : ''
                     }`}
-                    placeholder='nsec1...'
+                    placeholder='nsec1... or ncryptsec1...'
                     autoComplete="off"
                   />
+
+                  {needsPassphrase && (
+                    <div className='space-y-2 pt-1'>
+                      <label htmlFor='key-passphrase' className='text-sm font-medium'>
+                        Passphrase
+                      </label>
+                      <Input
+                        id='key-passphrase'
+                        type='password'
+                        value={passphrase}
+                        onChange={(e) => {
+                          setPassphrase(e.target.value);
+                          if (errors.nsec) setErrors(prev => ({ ...prev, nsec: undefined }));
+                        }}
+                        className='rounded-lg'
+                        placeholder='The passphrase you set when making the code'
+                        autoComplete='off'
+                      />
+                    </div>
+                  )}
+
                   {errors.nsec && (
                     <p className="text-sm text-destructive">{errors.nsec}</p>
                   )}
@@ -293,7 +344,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
                 <Button
                   className='w-full rounded-full py-3'
                   onClick={handleKeyLogin}
-                  disabled={isLoading || !nsec.trim()}
+                  disabled={isLoading || !nsec.trim() || (needsPassphrase && !passphrase)}
                 >
                   {isLoading ? 'Verifying...' : 'Log In'}
                 </Button>
