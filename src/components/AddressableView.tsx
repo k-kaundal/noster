@@ -3,10 +3,13 @@ import { EmptyState } from '@/components/EmptyState';
 import { PostSkeleton } from '@/components/PostSkeleton';
 import { ArticleView } from '@/components/articles/ArticleView';
 import { CommunityView } from '@/components/communities/CommunityView';
+import { ListView } from '@/components/lists/ListView';
 import { useArticle } from '@/hooks/useArticles';
 import { useCommunity } from '@/hooks/useCommunities';
+import { useList } from '@/hooks/useLists';
 import { ARTICLE_DRAFT_KIND, ARTICLE_KIND } from '@/lib/article';
 import { COMMUNITY_KIND } from '@/lib/community';
+import { LIST_KINDS } from '@/lib/lists';
 import { kindLabel } from '@/lib/eventKinds';
 
 interface AddressableViewProps {
@@ -35,6 +38,10 @@ export function AddressableView({
     return <CommunityRoute pubkey={pubkey} identifier={identifier} />;
   }
 
+  if (LIST_KINDS.includes(kind)) {
+    return <ListRoute kind={kind} pubkey={pubkey} identifier={identifier} />;
+  }
+
   return (
     <EmptyState
       icon={FileQuestion}
@@ -61,6 +68,25 @@ function ArticleRoute({ kind, pubkey, identifier }: AddressableViewProps) {
   }
 
   return <ArticleView article={article} />;
+}
+
+function ListRoute({ kind, pubkey, identifier }: AddressableViewProps) {
+  const { list, isLoading } = useList(pubkey, identifier, kind);
+
+  if (isLoading) return <PostSkeleton />;
+
+  if (!list) {
+    return (
+      <EmptyState
+        icon={FileQuestion}
+        title="List not found"
+        description="It may have been removed, or it isn't on the relay you're connected to."
+        showRelaySelector
+      />
+    );
+  }
+
+  return <ListView list={list} />;
 }
 
 function CommunityRoute({
