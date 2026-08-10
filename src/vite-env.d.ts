@@ -14,6 +14,8 @@ interface ImportMetaEnv {
   readonly VITE_LNBITS_WALLET_ID?: string;
   /** Invoice/read key for the house wallet. Cannot spend. */
   readonly VITE_LNBITS_INVOICE_KEY?: string;
+  /** Base URL of the Cashu mint that issues this app's ecash. */
+  readonly VITE_CASHU_MINT_URL?: string;
   /** Domain for user lightning addresses. Defaults to the LNbits host. */
   readonly VITE_LIGHTNING_ADDRESS_DOMAIN?: string;
   /** LNbits pay link id for monthly relay access. */

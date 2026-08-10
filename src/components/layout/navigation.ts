@@ -1,4 +1,5 @@
 import {
+  Banknote,
   Bell,
   Bookmark,
   Compass,
@@ -99,6 +100,13 @@ export function getNavItems(pubkey?: string): NavItem[] {
       icon: Wallet,
       label: 'Wallet',
       shortcut: 'W',
+      requiresAuth: true,
+      secondary: true,
+    },
+    {
+      href: '/ecash',
+      icon: Banknote,
+      label: 'Ecash',
       requiresAuth: true,
       secondary: true,
     },
