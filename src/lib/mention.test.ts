@@ -3,6 +3,7 @@ import { nip19 } from 'nostr-tools';
 import {
   applyMention,
   extractMentionPubkeys,
+  extractQuotedEvents,
   findMentionQuery,
   rankMentions,
 } from './mention';
@@ -132,5 +133,65 @@ describe('rankMentions', () => {
 
   it('returns nothing when nobody matches', () => {
     expect(rankMentions(people, 'zzz')).toEqual([]);
+  });
+});
+
+describe('extractQuotedEvents', () => {
+  const ID = 'c'.repeat(64);
+
+  it('lifts a plain note reference out of the text', () => {
+    const content = `look at nostr:${nip19.noteEncode(ID)} for context`;
+
+    expect(extractQuotedEvents(content, nip19.decode)).toEqual([{ value: ID }]);
+  });
+
+  it('keeps the relay hint and author an nevent carries', () => {
+    // Dropping them makes the citation harder to resolve than the text it
+    // came from, which is the whole reason nevent exists
+    const nevent = nip19.neventEncode({
+      id: ID,
+      relays: ['wss://relay.example'],
+      author: PUBKEY,
+    });
+
+    expect(extractQuotedEvents(`see nostr:${nevent}`, nip19.decode)).toEqual([
+      { value: ID, relay: 'wss://relay.example', pubkey: PUBKEY },
+    ]);
+  });
+
+  it('turns an naddr into an address, with no separate author', () => {
+    // An address already names its author, and NIP-22 asks for the fourth
+    // position only for regular events
+    const naddr = nip19.naddrEncode({
+      kind: 30023,
+      pubkey: PUBKEY,
+      identifier: 'my-post',
+    });
+
+    expect(extractQuotedEvents(`nostr:${naddr}`, nip19.decode)).toEqual([
+      { value: `30023:${PUBKEY}:my-post` },
+    ]);
+  });
+
+  it('ignores mentions of people, which are p tags not q tags', () => {
+    expect(extractQuotedEvents(`hi nostr:${NPUB}`, nip19.decode)).toEqual([]);
+  });
+
+  it('cites each event once however often it is written', () => {
+    const note = `nostr:${nip19.noteEncode(ID)}`;
+
+    expect(extractQuotedEvents(`${note} and again ${note}`, nip19.decode)).toEqual([
+      { value: ID },
+    ]);
+  });
+
+  it('does not let a malformed URI stop the rest', () => {
+    const content = `nostr:note1broken and nostr:${nip19.noteEncode(ID)}`;
+
+    expect(extractQuotedEvents(content, nip19.decode)).toEqual([{ value: ID }]);
+  });
+
+  it('finds nothing in text with no citations', () => {
+    expect(extractQuotedEvents('just words', nip19.decode)).toEqual([]);
   });
 });
