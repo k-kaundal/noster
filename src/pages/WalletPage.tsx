@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountCard } from '@/components/wallet/AccountCard';
 import { WalletKeys } from '@/components/wallet/WalletKeys';
+import { WalletSwitcher } from '@/components/wallet/WalletSwitcher';
 import { IdentityCard } from '@/components/wallet/IdentityCard';
 import { ExistingWalletSignIn } from '@/components/wallet/ExistingWalletSignIn';
 import { WalletModal } from '@/components/WalletModal';
@@ -257,7 +258,13 @@ function ConnectedWallet() {
     <div className="space-y-5">
       <Card className="overflow-hidden">
         <div className="bg-gradient-to-br from-primary/15 via-primary/8 to-transparent px-6 py-8">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Balance</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Balance
+            </p>
+            {/* Only appears when the account holds more than one */}
+            <WalletSwitcher />
+          </div>
 
           {isLoading ? (
             <Skeleton className="mt-3 h-12 w-48 rounded-lg" />

@@ -8,6 +8,8 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useMuteList } from '@/hooks/useMuteList';
 import { useToast } from '@/hooks/useToast';
 import { filterMuted } from '@/lib/mute';
+import { buildCommentTags, targetFromEvent } from '@/lib/nip22';
+import { extractMentionPubkeys, extractQuotedEvents } from '@/lib/mention';
 import {
   APPROVAL_KIND,
   COMMUNITY_KIND,
@@ -237,14 +239,21 @@ export function usePostToCommunity(community: Community | null) {
       if (!community) throw new Error('No community');
       if (!content.trim()) throw new Error('Write something first');
 
+      /**
+       * A NIP-72 post is a NIP-22 comment scoped to the community, and this
+       * used to emit half the tags it needs: a lowercase `a` for the parent,
+       * uppercase `K` and `P` for the root, and nothing else. Missing `A`
+       * meant no other client could find these posts — everyone queries the
+       * uppercase root scope — and missing `k` broke a MUST outright.
+       */
       await createEvent({
         kind: 1111,
         content: content.trim(),
-        tags: [
-          ['a', communityAddress(community)],
-          ['K', String(COMMUNITY_KIND)],
-          ['P', community.creator],
-        ],
+        tags: buildCommentTags({
+          root: targetFromEvent(community.event),
+          mentions: extractMentionPubkeys(content, nip19.decode),
+          quotes: extractQuotedEvents(content, nip19.decode),
+        }),
       });
     },
     onSuccess: () => {

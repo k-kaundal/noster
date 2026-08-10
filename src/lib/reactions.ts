@@ -1,4 +1,5 @@
 import type { NostrEvent } from '@nostrify/nostrify';
+import { addressOf } from './eventKinds';
 
 /** NIP-25 reaction. */
 export const REACTION_KIND = 7;
@@ -35,6 +36,65 @@ export function customEmojiUrl(event: NostrEvent): string | null {
 export function isLike(event: NostrEvent): boolean {
   const content = event.content.trim();
   return content === '+' || content === '';
+}
+
+/**
+ * The tags on a NIP-25 reaction.
+ *
+ * The fourth position of the `e` tag is the **author of the event being
+ * reacted to**. This code used to put the literal string `root` there, copied
+ * from NIP-10 threading where the fourth field is a marker — so every
+ * reaction this app sent claimed to have been written by someone named
+ * "root", and any client resolving the target through that hint failed.
+ *
+ * An addressable target gets an `a` tag alongside the `e`, which is what lets
+ * a reaction to an article survive the author editing it: the id changes with
+ * every revision, the address does not.
+ */
+export function buildReactionTags(
+  target: NostrEvent,
+  options: {
+    /** Where the target can be found. A hint, so a guess is better than none. */
+    relay?: string;
+    emoji?: { shortcode: string; url: string };
+  } = {}
+): string[][] {
+  const hint = options.relay ?? '';
+  const tags: string[][] = [];
+
+  const address = addressOf(target);
+  if (address) tags.push(['a', address, hint]);
+
+  // The spec asks for the target's id to be the last `e` tag and its author
+  // the last `p`; with one of each that is satisfied by writing them at all
+  tags.push(['e', target.id, hint, target.pubkey]);
+  tags.push(['p', target.pubkey, hint]);
+  tags.push(['k', String(target.kind)]);
+
+  if (options.emoji) {
+    tags.push(['emoji', options.emoji.shortcode, options.emoji.url]);
+  }
+
+  return tags.map((tag) => {
+    // Trailing empties carry no information and only pad the event
+    const trimmed = [...tag];
+    while (trimmed.length > 2 && !trimmed[trimmed.length - 1]) trimmed.pop();
+    return trimmed;
+  });
+}
+
+/**
+ * The tags for withdrawing a reaction.
+ *
+ * NIP-09 asks for the kind of what is being deleted, which lets a relay
+ * decide whether it will honour the request without first looking the event
+ * up — and lets one that has already dropped it honour it anyway.
+ */
+export function buildUnreactTags(reactionId: string): string[][] {
+  return [
+    ['e', reactionId],
+    ['k', String(REACTION_KIND)],
+  ];
 }
 
 export interface ReactionGroup {

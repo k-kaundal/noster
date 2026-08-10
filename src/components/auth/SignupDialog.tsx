@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/useToast';
 import { useLoginActions } from '@/hooks/useLoginActions';
+import { useReadOnlySession } from '@/hooks/useReadOnlySession';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { generateSecretKey, nip19 } from 'nostr-tools';
@@ -38,6 +39,7 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
     picture: ''
   });
   const login = useLoginActions();
+  const browse = useReadOnlySession();
   const { mutateAsync: publishEvent, isPending: isPublishing } = useNostrPublish();
   const { mutateAsync: uploadFile, isPending: isUploading } = useUploadFile();
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
@@ -123,6 +125,9 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
   const finishKeySetup = () => {
     try {
       login.nsec(nsec);
+      // A new key supersedes any npub someone was browsing with, rather than
+      // waiting behind it to reappear at the next logout
+      browse.end();
       setStep('profile');
     } catch {
       toast({

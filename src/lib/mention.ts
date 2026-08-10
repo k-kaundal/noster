@@ -63,6 +63,10 @@ export function applyMention(
 
 const NOSTR_URI = /nostr:((?:npub1|nprofile1)[023456789acdefghjklmnpqrstuvwxyz]+)/gi;
 
+/** The identifiers that name an event rather than a person. */
+const NOSTR_EVENT_URI =
+  /nostr:((?:note1|nevent1|naddr1)[023456789acdefghjklmnpqrstuvwxyz]+)/gi;
+
 /**
  * Pubkeys mentioned in a note's body.
  *
@@ -121,4 +125,81 @@ export function rankMentions<
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((entry) => entry.candidate);
+}
+
+/** An event cited in a note's text, ready to become a `q` tag. */
+export interface QuotedEvent {
+  /** An event id, or a `kind:pubkey:d` address. */
+  value: string;
+  relay?: string;
+  /** The author, which NIP-22 puts in the fourth position of a `q` tag. */
+  pubkey?: string;
+}
+
+/**
+ * Events cited in the content, lifted out for tagging.
+ *
+ * A quote written only as a `nostr:` URI is invisible to everything except a
+ * client rendering that exact text: the quoted author is not notified, and no
+ * relay can answer "what cites this". NIP-18 and NIP-22 both use `q` for it,
+ * and it has to be a tag to be any of those things.
+ *
+ * Relay hints and the author come along where the identifier carries them —
+ * that is the entire reason `nevent` and `naddr` exist rather than plain
+ * `note`, and dropping them makes the citation harder to resolve than the
+ * text it came from.
+ */
+export function extractQuotedEvents(
+  content: string,
+  decode: (value: string) => { type: string; data: unknown }
+): QuotedEvent[] {
+  const quotes = new Map<string, QuotedEvent>();
+
+  for (const [, uri] of content.matchAll(NOSTR_EVENT_URI)) {
+    try {
+      const decoded = decode(uri);
+
+      if (decoded.type === 'note') {
+        const id = decoded.data as string;
+        if (!quotes.has(id)) quotes.set(id, { value: id });
+        continue;
+      }
+
+      if (decoded.type === 'nevent') {
+        const data = decoded.data as {
+          id: string;
+          relays?: string[];
+          author?: string;
+        };
+
+        quotes.set(data.id, {
+          value: data.id,
+          relay: data.relays?.[0],
+          pubkey: data.author,
+        });
+        continue;
+      }
+
+      if (decoded.type === 'naddr') {
+        const data = decoded.data as {
+          kind: number;
+          pubkey: string;
+          identifier: string;
+          relays?: string[];
+        };
+
+        const address = `${data.kind}:${data.pubkey}:${data.identifier}`;
+
+        /**
+         * No pubkey in the fourth position: NIP-22 asks for it only for a
+         * regular event, and an address already names its author in full.
+         */
+        quotes.set(address, { value: address, relay: data.relays?.[0] });
+      }
+    } catch {
+      // A malformed URI is just text; it should not block publishing
+    }
+  }
+
+  return [...quotes.values()];
 }

@@ -7,6 +7,7 @@ import { MobileNav } from '@/components/layout/MobileNav';
 import { FloatingActionButton } from '@/components/FloatingActionButton';
 import { BackToTop } from '@/components/BackToTop';
 import { UpdatePrompt } from '@/components/UpdatePrompt';
+import { SignerAlert } from '@/components/auth/SignerAlert';
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog';
 import { useIdlePrefetch, useOnceOpened } from '@/hooks/useDeferredDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -85,6 +86,10 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
       </a>
 
       <AppHeader onSearch={openPalette} />
+
+      {/* Under the header rather than over the page: a signer that has gone
+          away only matters when you go to write, and reading works fine */}
+      <SignerAlert />
 
       <div className="container flex gap-8 pb-24 pt-6 lg:gap-12 lg:pb-16 lg:pt-8">
         <aside className="hidden w-52 shrink-0 lg:block">

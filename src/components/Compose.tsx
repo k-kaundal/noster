@@ -247,7 +247,14 @@ export function Compose() {
     }
   };
 
-  if (!user) {
+  /**
+   * A read-only session gets the same door as no session at all.
+   *
+   * It has a pubkey, so every `if (!user)` guard in the app waves it through
+   * — and it can no more sign a note than a logged-out visitor can. Showing
+   * the composer and failing at publish would waste whatever was typed.
+   */
+  if (!user || user.readOnly) {
     return (
       <Card>
         <CardContent className="space-y-4 px-8 py-14 text-center">
@@ -255,9 +262,13 @@ export function Compose() {
             <PenSquare className="h-5 w-5 text-muted-foreground" />
           </div>
           <div className="space-y-1">
-            <h2 className="font-semibold">Log in to post</h2>
+            <h2 className="font-semibold">
+              {user ? 'Log in with your key to post' : 'Log in to post'}
+            </h2>
             <p className="text-sm text-muted-foreground">
-              You need a Nostr identity to publish notes.
+              {user
+                ? "You're browsing read-only, which can read everything and publish nothing."
+                : 'You need a Nostr identity to publish notes.'}
             </p>
           </div>
           <LoginArea className="mx-auto max-w-60" />

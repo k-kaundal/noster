@@ -2,13 +2,14 @@
 // It is important that all functionality in this file is preserved, and should only be modified if explicitly requested.
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Shield, Upload, AlertTriangle, UserPlus, KeyRound, Sparkles, Cloud } from 'lucide-react';
+import { Shield, Upload, AlertTriangle, Eye, UserPlus, KeyRound, Sparkles, Cloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLoginActions } from '@/hooks/useLoginActions';
+import { useReadOnlySession } from '@/hooks/useReadOnlySession';
 import { decryptToNsec, isNcryptsec } from '@/lib/keyTransfer';
 import { cn } from '@/lib/utils';
 
@@ -33,11 +34,13 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
   const [nsec, setNsec] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [bunkerUri, setBunkerUri] = useState('');
+  const [npub, setNpub] = useState('');
   const [errors, setErrors] = useState<{
     nsec?: string;
     bunker?: string;
     file?: string;
     extension?: string;
+    npub?: string;
   }>({});
 
   /**
@@ -49,6 +52,14 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
   const needsPassphrase = isNcryptsec(nsec);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const login = useLoginActions();
+  /**
+   * Any real login ends a read-only session rather than sitting on top of it.
+   *
+   * Left behind, it would lie in wait: log in, use the app for a week, log
+   * out, and find yourself silently browsing as whoever you had once pasted
+   * an npub for.
+   */
+  const browse = useReadOnlySession();
 
   // Reset all state when dialog opens/closes
   useEffect(() => {
@@ -59,6 +70,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
       setNsec('');
       setPassphrase('');
       setBunkerUri('');
+      setNpub('');
       setErrors({});
       // Reset file input
       if (fileInputRef.current) {
@@ -76,6 +88,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
         throw new Error('Nostr extension not found. Please install a NIP-07 extension.');
       }
       await login.extension();
+      browse.end();
       onLogin();
       onClose();
     } catch (e: unknown) {
@@ -100,6 +113,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
     setTimeout(() => {
       try {
         login.nsec(key);
+        browse.end();
         onLogin();
         onClose();
       } catch {
@@ -157,6 +171,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
 
     try {
       await login.bunker(bunkerUri);
+      browse.end();
       onLogin();
       onClose();
       // Clear the URI from memory
@@ -198,6 +213,23 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
       setErrors({ file: 'Failed to read file.' });
     };
     reader.readAsText(file);
+  };
+
+  /**
+   * Starts a read-only session.
+   *
+   * Synchronous and offline: an npub is decoded, not verified against
+   * anything, so there is nothing to wait for and nothing that can fail
+   * except the paste itself.
+   */
+  const handleBrowse = () => {
+    try {
+      browse.start(npub);
+      onLogin();
+      onClose();
+    } catch (error) {
+      setErrors(prev => ({ ...prev, npub: (error as Error).message }));
+    }
   };
 
   const handleSignupClick = () => {
@@ -418,6 +450,47 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
               </div>
             </TabsContent>
           </Tabs>
+
+          {/*
+            Looking before committing.
+
+            Every other way in asks for a key first, which is a lot to ask of
+            someone still deciding whether the app is worth it — and it is the
+            wrong thing to do entirely on a machine you don't trust. An npub
+            is public, so browsing with one gives nothing away.
+          */}
+          <div className='rounded-lg border border-dashed p-3 space-y-2'>
+            <div className='flex items-center gap-2'>
+              <Eye className='h-4 w-4 text-muted-foreground shrink-0' />
+              <p className='text-sm font-medium'>Just looking?</p>
+            </div>
+            <p className='text-xs text-muted-foreground'>
+              Browse with a public key. You can read everything and post
+              nothing, and no key touches this device.
+            </p>
+            <div className='flex gap-2'>
+              <Input
+                value={npub}
+                onChange={(e) => {
+                  setNpub(e.target.value);
+                  if (errors.npub) setErrors(prev => ({ ...prev, npub: undefined }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleBrowse();
+                }}
+                className='rounded-lg'
+                placeholder='npub1...'
+                autoComplete='off'
+                aria-label='Public key to browse as'
+              />
+              <Button variant='outline' onClick={handleBrowse} disabled={!npub.trim()}>
+                Browse
+              </Button>
+            </div>
+            {errors.npub && (
+              <p className='text-sm text-destructive'>{errors.npub}</p>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

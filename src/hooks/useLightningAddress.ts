@@ -7,7 +7,7 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import { LnbitsError, lnbitsRequest, withExtension } from '@/lib/lnbits';
 import { buildPayLinkBody, formatAddress } from '@/lib/lightningAddress';
-import { pickPrimaryLink } from '@/lib/identity';
+import { listAddresses, pickPrimaryLink } from '@/lib/identity';
 
 /** A pay link as returned by the lnurlp extension. */
 export interface PayLink {
@@ -61,6 +61,19 @@ export function useLightningAddress(preferredUsername?: string) {
    */
   const link = pickPrimaryLink(links.data ?? [], preferredUsername);
   const address = link?.username ? formatAddress(link.username) : null;
+
+  /**
+   * All of them, not just the winner.
+   *
+   * Every pay link on the wallet still receives — retiring a name is a
+   * deliberate act, not something claiming a new one does for you — so the
+   * list is what someone needs to see to know where their money can arrive.
+   */
+  const addresses = listAddresses(links.data ?? [], {
+    format: formatAddress,
+    profileLud16: metadata?.lud16,
+    preferredUsername,
+  });
 
   const claim = useMutation({
     mutationFn: async (username: string) => {
@@ -117,15 +130,52 @@ export function useLightningAddress(preferredUsername?: string) {
   });
 
   /**
-   * Publishes the address into the user's profile as `lud16`.
+   * Retires an address.
+   *
+   * The pay link is deleted at LNbits, so the name stops resolving and becomes
+   * claimable again. Anything already sent to it has long since arrived — a
+   * pay link is not an invoice — but a wallet app that saved the address will
+   * start failing, which is the point of removing it.
+   */
+  const remove = useMutation({
+    mutationFn: async (linkId: string) => {
+      if (!wallet) throw new Error('Connect your wallet first');
+
+      await withExtension('lnurlp', token, () =>
+        lnbitsRequest<void>(`/lnurlp/api/v1/links/${linkId}`, {
+          method: 'DELETE',
+          apiKey: wallet.adminkey,
+        })
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lnurlp-links'] });
+      toast({ title: 'Address removed' });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Could not remove that address',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  /**
+   * Publishes an address into the user's profile as `lud16`.
    *
    * Until this happens the address exists but nobody can zap them with it —
    * other clients read the zap target from kind 0 metadata, not from our
    * database. Creating the address without this step looks finished and isn't.
+   *
+   * Takes which address to publish, because a wallet can have several and the
+   * one someone wants zaps at is not always the one this hook would pick.
    */
   const publishToProfile = useMutation({
-    mutationFn: async () => {
-      if (!address) throw new Error('No address to publish');
+    mutationFn: async (chosen: string | undefined) => {
+      const target = chosen ?? address;
+
+      if (!target) throw new Error('No address to publish');
       if (!user) throw new Error('Log in first');
 
       /**
@@ -140,7 +190,7 @@ export function useLightningAddress(preferredUsername?: string) {
 
       await createEvent({
         kind: 0,
-        content: JSON.stringify({ ...(metadata ?? {}), lud16: address }),
+        content: JSON.stringify({ ...(metadata ?? {}), lud16: target }),
         tags: [],
       });
     },
@@ -163,13 +213,20 @@ export function useLightningAddress(preferredUsername?: string) {
   return {
     address,
     link,
+    /** Every address on this wallet, not only the one shown as primary. */
+    addresses,
     isLoading: links.isLoading,
     /** Whether the profile already advertises this address for zaps. */
     isOnProfile: !!address && metadata?.lud16 === address,
     profileAddress: metadata?.lud16,
     claim: claim.mutateAsync,
     isClaiming: claim.isPending,
-    publishToProfile: publishToProfile.mutateAsync,
+    remove: remove.mutateAsync,
+    isRemoving: remove.isPending,
+    /** Publishes the primary address; `setProfileAddress` picks another. */
+    publishToProfile: () => publishToProfile.mutateAsync(undefined),
+    setProfileAddress: (chosen: string) =>
+      publishToProfile.mutateAsync(chosen),
     isPublishing: publishToProfile.isPending,
     suggestedFrom: metadata?.name || metadata?.display_name || '',
   };

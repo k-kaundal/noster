@@ -147,3 +147,58 @@ export function pickPrimaryLink<T extends { username?: string }>(
 
   return links.find((link) => !!link.username) ?? null;
 }
+
+/** One lightning address on a wallet, and what it is currently doing. */
+export interface AddressEntry<T> {
+  link: T;
+  username: string;
+  address: string;
+  /** Whether the published profile sends zaps here. */
+  onProfile: boolean;
+  /** Whether this is the address matching a verified NIP-05 name. */
+  preferred: boolean;
+}
+
+/**
+ * Every address a wallet can receive at, in the order worth reading them.
+ *
+ * A wallet accumulates a pay link per name ever claimed, and the app used to
+ * reduce that list to one and drop the rest on the floor. They all still work
+ * — money sent to any of them arrives — so hiding them meant an address
+ * someone had handed out was invisible here and impossible to retire.
+ *
+ * Ordered by what the reader is looking for: the name they bought, then the
+ * one their profile actually advertises, then the rest alphabetically so the
+ * list does not reshuffle between two looks at the same page.
+ */
+export function listAddresses<T extends { username?: string }>(
+  links: T[],
+  options: {
+    format: (username: string) => string;
+    profileLud16?: string;
+    preferredUsername?: string | null;
+  }
+): AddressEntry<T>[] {
+  const preferred = options.preferredUsername?.toLowerCase();
+
+  const entries = links
+    .filter((link): link is T & { username: string } => !!link.username)
+    .map((link) => {
+      const address = options.format(link.username);
+
+      return {
+        link,
+        username: link.username,
+        address,
+        onProfile: !!options.profileLud16 && options.profileLud16 === address,
+        preferred: !!preferred && link.username.toLowerCase() === preferred,
+      };
+    });
+
+  const rank = (entry: AddressEntry<T>) =>
+    entry.preferred ? 0 : entry.onProfile ? 1 : 2;
+
+  return entries.sort(
+    (a, b) => rank(a) - rank(b) || a.username.localeCompare(b.username)
+  );
+}
