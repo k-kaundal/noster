@@ -1,5 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useNostrPublish } from '@/hooks/useNostrPublish';
 
 /**
  * Spotlight item - can be a post, article, community, or user
@@ -52,10 +54,17 @@ export function useSpotlight(pubkey: string) {
 }
 
 /**
- * Hook to publish a user's spotlight items
+ * Publishes a user's spotlight items.
+ *
+ * Goes through `useNostrPublish` so the event is signed. Handing an unsigned
+ * template straight to `nostr.event()` puts it on the wire exactly as written
+ * — no `id`, no `pubkey`, no `sig` — and every relay answers
+ * `bad msg: JSON object key "id" not found` while the UI reports success.
  */
 export function usePublishSpotlight() {
-  const { nostr } = useNostr();
+  const { user } = useCurrentUser();
+  const { mutateAsync: publishEvent } = useNostrPublish();
+  const queryClient = useQueryClient();
 
   return {
     publishSpotlight: async (items: SpotlightItem[]) => {
@@ -63,13 +72,20 @@ export function usePublishSpotlight() {
         id: 'spotlight-' + Date.now(),
         items,
       };
-      const content = JSON.stringify(config);
 
-      return nostr.event({
+      const event = await publishEvent({
         kind: 30000,
-        content,
+        content: JSON.stringify(config),
         tags: [['d', 'spotlight']],
       });
+
+      // The saved picks are what the page reads back; without this the reader
+      // keeps showing the previous set until the cache happens to expire
+      if (user) {
+        queryClient.invalidateQueries({ queryKey: ['spotlight', user.pubkey] });
+      }
+
+      return event;
     },
   };
 }

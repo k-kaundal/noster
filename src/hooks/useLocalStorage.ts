@@ -1,7 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useRef } from 'react';
+import { useStored } from '@/hooks/useStore';
+import { defineKey } from '@/lib/store';
 
 /**
- * Generic hook for managing localStorage state
+ * State backed by localStorage.
+ *
+ * A thin binding over the shared store, which is the part that matters: this
+ * used to keep a private copy per component, so two places reading one key
+ * drifted apart the moment either of them wrote. Cross-tab sync is still here
+ * and same-tab sync now works too — previously the `storage` event, which does
+ * not fire in the tab that caused it, was the only thing keeping copies
+ * aligned.
  */
 export function useLocalStorage<T>(
   key: string,
@@ -11,44 +20,19 @@ export function useLocalStorage<T>(
     deserialize: (value: string) => T;
   }
 ) {
-  const serialize = serializer?.serialize || JSON.stringify;
-  const deserialize = serializer?.deserialize || JSON.parse;
+  // Both are written inline at most call sites, so a new identity each render
+  // must not count as a different key
+  const defaultRef = useRef(defaultValue);
+  const serializerRef = useRef(serializer);
 
-  const [state, setState] = useState<T>(() => {
-    try {
-      const item = localStorage.getItem(key);
-      return item ? deserialize(item) : defaultValue;
-    } catch (error) {
-      console.warn(`Failed to load ${key} from localStorage:`, error);
-      return defaultValue;
-    }
-  });
+  const storeKey = useMemo(
+    () =>
+      defineKey<T>(key, defaultRef.current, {
+        serialize: serializerRef.current?.serialize,
+        deserialize: serializerRef.current?.deserialize,
+      }),
+    [key]
+  );
 
-  const setValue = (value: T | ((prev: T) => T)) => {
-    try {
-      const valueToStore = value instanceof Function ? value(state) : value;
-      setState(valueToStore);
-      localStorage.setItem(key, serialize(valueToStore));
-    } catch (error) {
-      console.warn(`Failed to save ${key} to localStorage:`, error);
-    }
-  };
-
-  // Sync with localStorage changes from other tabs
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === key && e.newValue !== null) {
-        try {
-          setState(deserialize(e.newValue));
-        } catch (error) {
-          console.warn(`Failed to sync ${key} from localStorage:`, error);
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [key, deserialize]);
-
-  return [state, setValue] as const;
+  return useStored(storeKey);
 }

@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog';
 
 const SHORTCUTS: { keys: string[]; description: string }[] = [
-  { keys: ['⌘', 'K'], description: 'Open search' },
+  { keys: ['⌘', 'K'], description: 'Open the command palette' },
   { keys: ['/'], description: 'Open search' },
   { keys: ['H'], description: 'Go home' },
   { keys: ['E'], description: 'Go to explore' },

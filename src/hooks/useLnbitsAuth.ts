@@ -239,16 +239,10 @@ export function useLnbitsAuth() {
   const logout = useCallback(async () => {
     if (!user) return;
 
+    // The shared store tells this hook about the token it just dropped, so
+    // there is nothing to clear here afterwards
     await logoutWallet(user.pubkey);
-
-    // Storage is already cleared by the shared path; this drops the copy this
-    // hook is holding, which nothing else can reach in to update
-    setTokens((current) => {
-      const next = { ...current };
-      delete next[user.pubkey];
-      return next;
-    });
-  }, [user, logoutWallet, setTokens]);
+  }, [user, logoutWallet]);
 
   return {
     /** The LNbits account, or null when not connected. */

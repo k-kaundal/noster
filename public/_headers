@@ -10,3 +10,9 @@
 
 /manifest.webmanifest
   Cache-Control: public, max-age=0, must-revalidate
+
+# The service worker decides what every other request is answered with, so a
+# cached copy of it is a cached copy of all the rules. A browser holding an old
+# one cannot be told about a new deploy by any means short of clearing storage.
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate

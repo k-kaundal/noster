@@ -7,9 +7,11 @@ import { RightRail } from '@/components/layout/RightRail';
 import { MobileNav } from '@/components/layout/MobileNav';
 import { FloatingActionButton } from '@/components/FloatingActionButton';
 import { BackToTop } from '@/components/BackToTop';
+import { UpdatePrompt } from '@/components/UpdatePrompt';
 import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog';
 import { useIdlePrefetch, useOnceOpened } from '@/hooks/useDeferredDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useOutboxDrain } from '@/hooks/useOutbox';
 import { cn } from '@/lib/utils';
 
 /**
@@ -22,6 +24,16 @@ const SearchDialog = lazy(() =>
   loadSearch().then((m) => ({ default: m.SearchDialog }))
 );
 
+/**
+ * The palette is the front door — one keystroke, and it answers from memory.
+ * Loaded on idle for the same reason as search: it must be instant the first
+ * time it is asked for, without being in the first paint.
+ */
+const loadPalette = () => import('@/components/CommandPalette');
+const CommandPalette = lazy(() =>
+  loadPalette().then((m) => ({ default: m.CommandPalette }))
+);
+
 interface LayoutProps {
   children: ReactNode;
   /** Drops the discovery rail — for pages that manage their own wide layout. */
@@ -30,14 +42,36 @@ interface LayoutProps {
 
 export function Layout({ children, fullWidth = false }: LayoutProps) {
   const { pathname } = useLocation();
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const searchMounted = useOnceOpened(searchOpen);
+  const paletteMounted = useOnceOpened(paletteOpen);
 
+  useIdlePrefetch(loadPalette);
   useIdlePrefetch(loadSearch);
 
+  /**
+   * One front door.
+   *
+   * Every way of asking for something — the key, the slash, the magnifier in
+   * the header, the one in the mobile bar — opens the palette. Relay search is
+   * inside it, as the answer for anything the browser does not already know.
+   */
+  const openPalette = () => setPaletteOpen(true);
+
+  const searchNostr = (query: string) => {
+    setSearchQuery(query);
+    setSearchOpen(true);
+  };
+
+  // Here rather than on one page, so anything queued goes out as soon as
+  // sending works again — whichever page the reader happens to be on
+  useOutboxDrain();
+
   useKeyboardShortcuts({
-    onSearch: () => setSearchOpen(true),
+    onSearch: openPalette,
     onHelp: () => setShortcutsOpen((open) => !open),
   });
 
@@ -52,7 +86,7 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
         Skip to content
       </a>
 
-      <AppHeader onSearch={() => setSearchOpen(true)} />
+      <AppHeader onSearch={openPalette} />
 
       <div className="container flex gap-8 pb-24 pt-6 lg:gap-12 lg:pb-16 lg:pt-8">
         <aside className="hidden w-52 shrink-0 lg:block">
@@ -82,13 +116,25 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
         )}
       </div>
 
-      <MobileNav onSearch={() => setSearchOpen(true)} />
+      <MobileNav onSearch={openPalette} />
       <FloatingActionButton />
       <BackToTop />
+      <UpdatePrompt />
 
       <Suspense fallback={null}>
+        {paletteMounted && (
+          <CommandPalette
+            open={paletteOpen}
+            onOpenChange={setPaletteOpen}
+            onSearchNostr={searchNostr}
+          />
+        )}
         {searchMounted && (
-          <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+          <SearchDialog
+            open={searchOpen}
+            onOpenChange={setSearchOpen}
+            initialQuery={searchQuery}
+          />
         )}
       </Suspense>
       <KeyboardShortcutsDialog

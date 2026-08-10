@@ -4,7 +4,7 @@ import { NostrContext } from '@nostrify/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/hooks/useAppContext';
 import { readRelays, writeRelays } from '@/lib/relay';
-import { withPrimaryFirst } from '@/lib/relayRouting';
+import { canonicalTargets, withPrimaryFirst } from '@/lib/relayRouting';
 import { getRelayHealthMonitor } from '@/lib/relayHealth';
 
 interface NostrProviderProps {
@@ -72,7 +72,7 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
        * Uses health-aware relay selection to prefer healthy relays.
        */
       reqRouter(filters) {
-        const allReadRelays = readRelays(relays.current);
+        const allReadRelays = canonicalTargets(readRelays(relays.current));
         const primary = relayUrl.current;
 
         // Sort by health to prefer healthy relays
@@ -96,7 +96,7 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
        * Prefers healthy relays for better publish reliability.
        */
       eventRouter(_event: NostrEvent) {
-        const allWriteRelays = writeRelays(relays.current);
+        const allWriteRelays = canonicalTargets(writeRelays(relays.current));
         const primary = relayUrl.current;
 
         // Sort by health

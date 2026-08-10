@@ -1,4 +1,5 @@
 import { dehydrate, hydrate, type QueryClient } from '@tanstack/react-query';
+import { onStorageFull } from '@/lib/store';
 
 /**
  * Keeps part of the query cache across reloads.
@@ -166,8 +167,18 @@ export function persistQueryCache(
     timer = setTimeout(write, throttleMs);
   });
 
+  /**
+   * This is the first thing to go when storage fills up.
+   *
+   * It is the largest thing the app stores and the only one that can be
+   * rebuilt from the network, so a setting someone chose should never be the
+   * write that fails while a cache of last night's feed keeps its room.
+   */
+  const unregister = onStorageFull(clearQueryCache);
+
   return () => {
     unsubscribe();
+    unregister();
     if (timer) clearTimeout(timer);
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { withPrimaryFirst } from './relayRouting';
+import { canonicalTargets, withPrimaryFirst } from './relayRouting';
 
 const HOUSE = 'wss://relay.nostrfeed.com';
 
@@ -52,5 +52,32 @@ describe('withPrimaryFirst', () => {
 
   it('yields just the primary for an empty list', () => {
     expect(withPrimaryFirst([], HOUSE)).toEqual([HOUSE]);
+  });
+
+  it('treats a slashed primary as the one already in the list', () => {
+    const result = withPrimaryFirst([HOUSE, 'wss://a.example'], `${HOUSE}/`);
+    expect(result).toEqual([HOUSE, 'wss://a.example']);
+  });
+});
+
+describe('canonicalTargets', () => {
+  it('collapses spellings that address the same relay', () => {
+    // Each distinct string is a separate websocket, so this is the difference
+    // between one connection to nos.lol and three
+    expect(
+      canonicalTargets(['wss://nos.lol', 'wss://nos.lol/', 'wss://NOS.LOL'])
+    ).toEqual(['wss://nos.lol']);
+  });
+
+  it('keeps the first occurrence, since order is priority', () => {
+    expect(
+      canonicalTargets(['wss://a.example', 'wss://b.example', 'wss://a.example/'])
+    ).toEqual(['wss://a.example', 'wss://b.example']);
+  });
+
+  it('drops entries that are not relay URLs at all', () => {
+    expect(canonicalTargets(['', '   ', 'wss://a.example'])).toEqual([
+      'wss://a.example',
+    ]);
   });
 });

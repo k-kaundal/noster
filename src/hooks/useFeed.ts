@@ -1,7 +1,9 @@
+import { useMemo } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { isRenderableEvent } from '@/lib/eventKinds';
+import { useLiveFeed } from './useLiveFeed';
 
 import { useCurrentUser } from './useCurrentUser';
 import { useFollows } from './useFollows';
@@ -9,6 +11,12 @@ import { useFollows } from './useFollows';
 export type FeedScope = 'global' | 'following';
 
 const PAGE_SIZE = 30;
+
+/**
+ * What a timeline is made of: text notes, both kinds of repost, NIP-88 polls
+ * and NIP-23 articles.
+ */
+const FEED_KINDS = [1, 6, 16, 1068, 30023];
 
 /** Drops events with timestamps relays could not have produced honestly. */
 function isPlausible(event: NostrEvent) {
@@ -27,8 +35,13 @@ export function useFeed(scope: FeedScope = 'global') {
   const authors = followingList.map((follow) => follow.pubkey);
   const enabled = scope === 'global' || authors.length > 0;
 
+  const queryKey = useMemo(
+    () => ['feed', scope, scope === 'following' ? authors.length : 0],
+    [scope, authors.length]
+  );
+
   const query = useInfiniteQuery({
-    queryKey: ['feed', scope, scope === 'following' ? authors.length : 0],
+    queryKey,
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal: querySignal }) => {
       const signal = AbortSignal.any([
@@ -39,10 +52,7 @@ export function useFeed(scope: FeedScope = 'global') {
       const events = await nostr.query(
         [
           {
-            // Include text notes, reposts, polls, and articles
-            // 1068 is NIP-88 polls
-            // 30023 is long-form articles (NIP-23)
-            kinds: [1, 6, 16, 1068, 30023],
+            kinds: FEED_KINDS,
             limit: PAGE_SIZE,
             ...(pageParam ? { until: pageParam } : {}),
             // Relays index authors, so following feeds filter server-side
@@ -64,8 +74,26 @@ export function useFeed(scope: FeedScope = 'global') {
       return lastPage[lastPage.length - 1].created_at - 1;
     },
     enabled,
+    // A safety net under the live subscription below, and the only refresh
+    // at all on a pool that cannot stream
     refetchInterval: 60_000,
   });
+
+  /**
+   * New notes arrive as they are published rather than on the next poll.
+   *
+   * They go into the cache, not into view — the "new posts" pill above the
+   * timeline counts them and the reader chooses when to jump.
+   */
+  useLiveFeed(
+    queryKey,
+    enabled
+      ? {
+          kinds: FEED_KINDS,
+          ...(scope === 'following' ? { authors: authors.slice(0, 500) } : {}),
+        }
+      : null
+  );
 
   // Relays can return overlapping pages, so identical ids are collapsed here
   const posts = query.data

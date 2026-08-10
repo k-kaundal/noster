@@ -40,6 +40,7 @@ export default tseslint.config(
         },
       ],
       "custom/no-placeholder-comments": "error",
+      "custom/no-unsigned-publish": "error",
       "no-warning-comments": [
         "error",
         { terms: ["fixme"] },
