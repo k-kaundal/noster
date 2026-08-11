@@ -17,6 +17,17 @@ export const WALLET_KIND = 17375;
 export const TOKEN_KIND = 7375;
 /** Optional, informational record of a balance change. */
 export const HISTORY_KIND = 7376;
+/** Optional record of a mint quote, so a deposit survives losing the device. */
+export const QUOTE_KIND = 7374;
+
+/**
+ * How long a quote event is kept.
+ *
+ * NIP-60 says two weeks, "which is around the maximum amount of time a
+ * Lightning payment may be in-flight". Past that the quote cannot be paid and
+ * the event is only clutter on somebody's relay.
+ */
+export const QUOTE_TTL_SECONDS = 14 * 24 * 60 * 60;
 
 /**
  * The unit proofs are denominated in when the payload does not say.
@@ -354,4 +365,71 @@ export async function parseHistoryEvent(
     createdAt: event.created_at,
     event,
   };
+}
+
+export interface QuoteRecord {
+  quoteId: string;
+  mint: string;
+  expiresAt?: number;
+  createdAt: number;
+  event: NostrEvent;
+}
+
+/**
+ * A mint quote, published so a deposit is recoverable from another device.
+ *
+ * NIP-60 is explicit that local state is preferred and that this should only
+ * be published "when it makes sense in the context of their application". The
+ * case where it makes sense is narrow but real: between paying a lightning
+ * invoice and claiming the proofs, the money exists only as a quote id. Lose
+ * the tab before claiming and — with local state alone — there is nothing
+ * anywhere that says a payment is owed. Publishing the id costs one event and
+ * turns that from lost money into a deposit that can be finished elsewhere.
+ */
+export async function buildQuoteContent(
+  signer: Nip44Signer,
+  pubkey: string,
+  quoteId: string
+): Promise<string> {
+  return sealToSelf(signer, pubkey, quoteId);
+}
+
+export function buildQuoteTags(
+  mint: string,
+  now: number = Math.floor(Date.now() / 1000)
+): string[][] {
+  return [
+    ['expiration', String(now + QUOTE_TTL_SECONDS)],
+    ['mint', mint],
+  ];
+}
+
+export async function parseQuoteEvent(
+  signer: Nip44Signer,
+  event: NostrEvent
+): Promise<QuoteRecord | null> {
+  if (event.kind !== QUOTE_KIND || !event.content) return null;
+
+  const mint = event.tags.find(([name]) => name === 'mint')?.[1]?.trim();
+  if (!mint) return null;
+
+  try {
+    const quoteId = await openFromSelf(signer, event.pubkey, event.content);
+    if (typeof quoteId !== 'string' || !quoteId) return null;
+
+    const expiration = Number.parseInt(
+      event.tags.find(([name]) => name === 'expiration')?.[1] ?? '',
+      10
+    );
+
+    return {
+      quoteId,
+      mint: mint.replace(/\/+$/, ''),
+      expiresAt: Number.isFinite(expiration) ? expiration : undefined,
+      createdAt: event.created_at,
+      event,
+    };
+  } catch {
+    return null;
+  }
 }

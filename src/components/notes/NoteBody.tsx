@@ -3,6 +3,14 @@ import type { NostrEvent } from '@nostrify/nostrify';
 import { nip19 } from 'nostr-tools';
 import { FileQuestion, FileText, Film, Clock, Ban } from 'lucide-react';
 import { NoteContent } from '@/components/NoteContent';
+import { ZapGoalCard } from '@/components/ZapGoalCard';
+import { HighlightCard } from '@/components/HighlightCard';
+import { CodeSnippetCard } from '@/components/CodeSnippetCard';
+import { SNIPPET_KIND } from '@/lib/nipc0';
+import { ListingCard } from '@/components/market/ListingCard';
+import { LISTING_DRAFT_KIND, LISTING_KIND, parseListing } from '@/lib/nip99';
+import { HIGHLIGHT_KIND } from '@/lib/nip84';
+import { GOAL_KIND } from '@/lib/nip75';
 import { StructuredPayload } from '@/components/notes/StructuredPayload';
 import { PollContent } from '@/components/notes/PollContent';
 import { parsePoll } from '@/lib/poll';
@@ -34,6 +42,44 @@ export function NoteBody({ event, className }: NoteBodyProps) {
   // An empty body would otherwise render as a blank card with no explanation
   if (!isRenderableEvent(event)) {
     return <EmptyNote className={className} />;
+  }
+
+  /**
+   * A goal before anything else. Its `content` is prose and its numbers live
+   * in tags, so every other branch here would render it as a plain note with
+   * the fundraising silently missing.
+   */
+  if (event.kind === GOAL_KIND) {
+    return <ZapGoalCard event={event} className={className} />;
+  }
+
+  /**
+   * A highlight's `.content` is somebody else's words, and its own meaning is
+   * in the tags. Rendered as prose it would read as the highlighter's post.
+   */
+  if (event.kind === HIGHLIGHT_KIND) {
+    return <HighlightCard event={event} className={className} />;
+  }
+
+  /**
+   * A snippet's content is source code, and its language lives in a tag. The
+   * structured branch below would treat a JSON snippet as a payload to
+   * summarise, and the text branch would run it through link and mention
+   * detection — which mangles code that contains a `#` or an `@`.
+   */
+  if (event.kind === SNIPPET_KIND) {
+    return <CodeSnippetCard event={event} className={className} />;
+  }
+
+  /**
+   * A listing's price and title are tags, so the article branch below would
+   * render one as a headline and a wall of markdown with no price on it.
+   */
+  if (event.kind === LISTING_KIND || event.kind === LISTING_DRAFT_KIND) {
+    const listing = parseListing(event);
+    if (listing) {
+      return <ListingCard listing={listing} className={className} />;
+    }
   }
 
   switch (renderKind) {

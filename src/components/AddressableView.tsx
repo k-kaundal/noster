@@ -4,12 +4,15 @@ import { PostSkeleton } from '@/components/PostSkeleton';
 import { ArticleView } from '@/components/articles/ArticleView';
 import { CommunityView } from '@/components/communities/CommunityView';
 import { ListView } from '@/components/lists/ListView';
+import { ListingView } from '@/components/market/ListingView';
 import { useArticle } from '@/hooks/useArticles';
 import { useCommunity } from '@/hooks/useCommunities';
 import { useList } from '@/hooks/useLists';
+import { useListing } from '@/hooks/useListings';
 import { ARTICLE_DRAFT_KIND, ARTICLE_KIND } from '@/lib/article';
 import { COMMUNITY_KIND } from '@/lib/community';
 import { LIST_KINDS } from '@/lib/lists';
+import { LISTING_DRAFT_KIND, LISTING_KIND } from '@/lib/nip99';
 import { kindLabel } from '@/lib/eventKinds';
 
 interface AddressableViewProps {
@@ -36,6 +39,10 @@ export function AddressableView({
 
   if (kind === COMMUNITY_KIND) {
     return <CommunityRoute pubkey={pubkey} identifier={identifier} />;
+  }
+
+  if (kind === LISTING_KIND || kind === LISTING_DRAFT_KIND) {
+    return <ListingRoute kind={kind} pubkey={pubkey} identifier={identifier} />;
   }
 
   if (LIST_KINDS.includes(kind)) {
@@ -109,4 +116,22 @@ function CommunityRoute({
   }
 
   return <CommunityView community={community} />;
+}
+
+function ListingRoute({ kind, pubkey, identifier }: AddressableViewProps) {
+  const { listing, isLoading } = useListing(pubkey, identifier, kind);
+
+  if (isLoading) return <PostSkeleton />;
+
+  if (!listing) {
+    return (
+      <EmptyState
+        icon={FileQuestion}
+        title="Listing not found"
+        description="No relay you read had this listing. It may have been taken down."
+      />
+    );
+  }
+
+  return <ListingView listing={listing} />;
 }

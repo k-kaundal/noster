@@ -34,6 +34,7 @@ import { VerificationMark } from '@/components/VerificationBadge';
 import { tierOf } from '@/lib/tiers';
 import { EditProfileForm } from '@/components/EditProfileForm';
 import { LinkedAccounts } from '@/components/identity/LinkedAccounts';
+import { ProfileZapGoals } from '@/components/ZapGoalCard';
 import { LinkedAccountsEditor } from '@/components/identity/LinkedAccountsEditor';
 import {
   ArticleCard,
@@ -319,6 +320,9 @@ export function Profile({ pubkey }: ProfileProps) {
           {/* NIP-39: accounts this profile claims elsewhere. Claims, not
               verifications — see the component. */}
           <LinkedAccounts pubkey={pubkey} />
+
+          {/* NIP-75: "Clients MAY display funding goals on user profiles." */}
+          <ProfileZapGoals pubkey={pubkey} />
 
           <div className="flex gap-5 text-sm">
             <Stat label="Notes" value={posts.length} />

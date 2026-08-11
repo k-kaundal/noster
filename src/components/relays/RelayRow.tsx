@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useRelayInfo } from '@/hooks/useRelayInfo';
 import type { RelayHealth } from '@/hooks/useRelayHealth';
+import { RelayAdminPanel } from '@/components/relays/RelayAdminPanel';
 import { relayDisplayName, type RelayEntry } from '@/lib/relay';
 import { cn } from '@/lib/utils';
 
@@ -197,6 +198,15 @@ export function RelayRow({
           ) : (
             <RelayInfoPanel info={info} url={relay.url} />
           )}
+
+          {/*
+            Outside the NIP-11 branch on purpose: a relay can serve the
+            management API while omitting the CORS headers its info document
+            needs, and an administrator should not lose their tools because a
+            different endpoint is unreachable. Renders nothing unless the relay
+            recognises this key.
+          */}
+          <RelayAdminPanel relayUrl={relay.url} />
         </div>
       )}
     </li>

@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { readRelays } from '@/lib/relay';
+import { GOAL_KIND, linkedGoal, parseZapGoal } from '@/lib/nip75';
 import { describeSignerError } from '@/lib/signerErrors';
 import { clearSignerFailure, recordSignerFailure } from '@/lib/signerStatus';
 import {
@@ -263,6 +264,34 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
       ];
 
       /**
+       * NIP-75: a goal names the relays its tally is read from, and a zap
+       * that does not publish its receipt there is money that leaves a wallet
+       * and never appears on the progress bar. Required rather than appended,
+       * so the relay cap cannot drop them.
+       */
+      const goal = parseZapGoal(actualTarget);
+
+      /**
+       * A goal the target merely links to, rather than being. Fetched because
+       * its `relays` tag is a MUST and the `goal` tag only carries a hint —
+       * one query, against the hint when there is one, so a zap toward an
+       * article's goal lands where that goal is counted.
+       */
+      const link = goal ? null : linkedGoal(actualTarget);
+      let linkedRelays: string[] = [];
+
+      if (link) {
+        const source = link.relay ? nostr.group([link.relay]) : nostr;
+        const [event] = await source
+          .query([{ ids: [link.id], kinds: [GOAL_KIND], limit: 1 }], {
+            signal: AbortSignal.timeout(4000),
+          })
+          .catch(() => [] as NostrEvent[]);
+
+        linkedRelays = event ? (parseZapGoal(event)?.relays ?? []) : [];
+      }
+
+      /**
        * A server that does not advertise `allowsNostr` will take the payment
        * and publish no receipt, so the zap is real money that shows up nowhere.
        * Worth paying anyway — the author still gets it — but worth saying.
@@ -274,6 +303,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
           recipientPubkey: actualTarget.pubkey,
           amountMsat,
           relays,
+          requiredRelays: goal?.relays ?? linkedRelays,
           comment,
           /**
            * A profile zap carries neither `e` nor `a`. NIP-57 attaches the
@@ -287,6 +317,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
               ? undefined
               : actualTarget.id,
           addressPointer: addressPointerFor(actualTarget) ?? undefined,
+          goalEventId: link?.id,
         });
 
         /**

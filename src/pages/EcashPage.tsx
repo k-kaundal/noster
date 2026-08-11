@@ -32,6 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EcashReceiveDialog } from '@/components/wallet/EcashReceiveDialog';
 import { EcashSendDialog } from '@/components/wallet/EcashSendDialog';
+import { EcashHistory } from '@/components/wallet/EcashHistory';
 import { MintInfoCard } from '@/components/wallet/MintInfoCard';
 import {
   MintDiscovery,
@@ -176,6 +177,8 @@ function Ecash() {
       </Card>
 
       {pendingQuotes.length > 0 && <PendingDeposits quotes={pendingQuotes} />}
+
+      <EcashHistory />
 
       <MintInfoCard />
 
