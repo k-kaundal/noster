@@ -1,22 +1,20 @@
 import type { NostrEvent, NostrSigner } from '@nostrify/nostrify';
-import { getEventHash, nip59 } from 'nostr-tools';
+import { giftWrapMany, unwrapGift, type Rumor } from '@/lib/nip59';
 
-/** NIP-17 / NIP-59 event kinds. */
+/**
+ * NIP-17: private messages, which are one application of NIP-59.
+ *
+ * The wrapping itself lives in `lib/nip59` — rumor, seal, wrap, and the checks
+ * that make an unsigned inner event trustworthy. What is left here is what is
+ * specific to chat: kind 14, the subject and reply tags, and the DM relay
+ * list.
+ */
 export const CHAT_MESSAGE_KIND = 14;
-export const SEAL_KIND = 13;
-export const GIFT_WRAP_KIND = 1059;
 /** NIP-17 preferred DM relays. */
 export const DM_RELAY_LIST_KIND = 10050;
 
-/** The unsigned inner event. Deniable precisely because it carries no signature. */
-export interface Rumor {
-  id: string;
-  pubkey: string;
-  created_at: number;
-  kind: number;
-  tags: string[][];
-  content: string;
-}
+export { SEAL_KIND, GIFT_WRAP_KIND } from '@/lib/nip59';
+export type { Rumor } from '@/lib/nip59';
 
 /** A decrypted chat message, as shown in the UI. */
 export interface ChatMessage {
@@ -33,21 +31,11 @@ export interface ChatMessage {
   wrapId: string;
 }
 
-/**
- * A timestamp up to two days in the past. The spec asks for this on the seal
- * and the wrap so an observer cannot correlate them by time.
- */
-function randomPastTimestamp(): number {
-  return Math.round(Date.now() / 1000 - Math.random() * 2 * 24 * 60 * 60);
-}
-
-/** Builds the unsigned rumor that carries the actual message. */
-function buildRumor(
-  senderPubkey: string,
+/** The chat-specific tags: who it is for, what it is about, what it answers. */
+function messageTags(
   recipients: string[],
-  content: string,
-  options: { subject?: string; replyTo?: string; relayHint?: string } = {}
-): Rumor {
+  options: { subject?: string; replyTo?: string; relayHint?: string }
+): string[][] {
   const tags: string[][] = recipients.map((pubkey) =>
     options.relayHint ? ['p', pubkey, options.relayHint] : ['p', pubkey]
   );
@@ -55,52 +43,7 @@ function buildRumor(
   if (options.subject) tags.push(['subject', options.subject]);
   if (options.replyTo) tags.push(['e', options.replyTo]);
 
-  const rumor = {
-    pubkey: senderPubkey,
-    created_at: Math.floor(Date.now() / 1000),
-    kind: CHAT_MESSAGE_KIND,
-    tags,
-    content,
-  };
-
-  // The rumor still gets an id even though it is never signed
-  return { ...rumor, id: getEventHash(rumor as never) };
-}
-
-/**
- * Wraps a message for one recipient.
- *
- * The seal must be signed by the sender, so it goes through the signer rather
- * than a raw key — that keeps extension and bunker logins working, since they
- * never expose a private key. Only the outer wrap uses a throwaway key, which
- * `nip59.createWrap` generates itself.
- */
-async function sealAndWrap(
-  signer: NostrSigner,
-  senderPubkey: string,
-  rumor: Rumor,
-  recipientPubkey: string
-): Promise<NostrEvent> {
-  if (!signer.nip44) {
-    throw new Error(
-      'Your signer does not support NIP-44 encryption, which private messages require.'
-    );
-  }
-
-  const sealedContent = await signer.nip44.encrypt(
-    recipientPubkey,
-    JSON.stringify(rumor)
-  );
-
-  // A seal deliberately carries no p tag; only the wrap reveals the recipient
-  const seal = await signer.signEvent({
-    kind: SEAL_KIND,
-    content: sealedContent,
-    tags: [],
-    created_at: randomPastTimestamp(),
-  });
-
-  return nip59.createWrap(seal as never, recipientPubkey) as NostrEvent;
+  return tags;
 }
 
 /**
@@ -122,15 +65,16 @@ export async function createDirectMessage(
   const audience = [...new Set(recipients)].filter(Boolean);
   if (!audience.length) throw new Error('A message needs at least one recipient');
 
-  const rumor = buildRumor(senderPubkey, audience, content, options);
-
-  const wraps = await Promise.all(
-    [...audience, senderPubkey].map((pubkey) =>
-      sealAndWrap(signer, senderPubkey, rumor, pubkey)
-    )
+  return await giftWrapMany(
+    signer,
+    senderPubkey,
+    {
+      kind: CHAT_MESSAGE_KIND,
+      content,
+      tags: messageTags(audience, options),
+    },
+    audience
   );
-
-  return { rumor, wraps };
 }
 
 /** The local view of a rumor, before any relay has confirmed it. */
@@ -151,45 +95,24 @@ export function rumorToMessage(rumor: Rumor): ChatMessage {
 }
 
 /**
- * Peels a gift wrap back to the message inside. Returns null for anything that
- * fails to decrypt or is not a chat message, since a relay will happily serve
- * wraps addressed to other people.
+ * Peels a gift wrap back to the message inside.
+ *
+ * The unwrapping and its checks live in `lib/nip59`; what is added here is
+ * that the rumor must actually be a chat message. Returns null for anything
+ * that fails, since a relay will serve wraps addressed to other people and
+ * those are expected rather than errors.
  */
 export async function unwrapDirectMessage(
   signer: NostrSigner,
   wrap: NostrEvent
 ): Promise<ChatMessage | null> {
-  if (!signer.nip44) return null;
+  const result = await unwrapGift(signer, wrap);
+  if (!result.ok) return null;
 
-  try {
-    const sealJson = await signer.nip44.decrypt(wrap.pubkey, wrap.content);
-    const seal = JSON.parse(sealJson) as NostrEvent;
-    if (seal.kind !== SEAL_KIND) return null;
+  const { rumor } = result;
+  if (rumor.kind !== CHAT_MESSAGE_KIND) return null;
 
-    const rumorJson = await signer.nip44.decrypt(seal.pubkey, seal.content);
-    const rumor = JSON.parse(rumorJson) as Rumor;
-    if (rumor.kind !== CHAT_MESSAGE_KIND) return null;
-
-    // The seal's author is the real sender; the wrap's author is throwaway
-    if (rumor.pubkey !== seal.pubkey) return null;
-
-    return {
-      id: rumor.id,
-      pubkey: rumor.pubkey,
-      createdAt: rumor.created_at,
-      content: rumor.content,
-      recipients: rumor.tags
-        .filter(([name]) => name === 'p')
-        .map(([, pubkey]) => pubkey)
-        .filter(Boolean),
-      subject: rumor.tags.find(([name]) => name === 'subject')?.[1],
-      replyTo: rumor.tags.find(([name]) => name === 'e')?.[1],
-      wrapId: wrap.id,
-    };
-  } catch {
-    // Wraps addressed to someone else are expected and not worth reporting
-    return null;
-  }
+  return { ...rumorToMessage(rumor), wrapId: wrap.id };
 }
 
 /**
