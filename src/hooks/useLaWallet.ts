@@ -4,9 +4,8 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useToast } from '@/hooks/useToast';
 import { usePayAnyWallet } from '@/hooks/usePayAnyWallet';
 import {
-  addressesForPubkey,
   invoiceAmountSats,
-  isMissingAccount,
+  isExpectedDenial,
   unwrapList,
   laWalletRequest,
   mergeHeldAddresses,
@@ -14,7 +13,6 @@ import {
   resolveIssuedDomain,
   type AddressMode,
   type AliasProbe,
-  type DirectoryAddress,
   type RemoteWallet,
   type ServiceInvoice,
   type WalletAddress,
@@ -64,17 +62,17 @@ export function useLaWallet() {
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['lawallet-addresses'] });
-    queryClient.invalidateQueries({ queryKey: ['lawallet-directory'] });
   }, [queryClient]);
 
   /**
-   * Every read here answers `NOT_FOUND` until somebody first uses the service,
-   * which is the normal state and not a failure. Returned as an empty result
-   * so React Query treats it as an answer rather than an error to retry and
-   * refetch — the difference between one request and a stream of them.
+   * Reads here are refused for two ordinary reasons — no account yet, or a
+   * route whose role this person does not hold — and neither is a failure
+   * worth surfacing. Answered as empty so React Query has data to keep, since
+   * a query that failed has nothing to go stale and so refetches on every
+   * mount.
    */
-  const emptyWhenMissing = <T>(fallback: T) => (error: unknown): T => {
-    if (isMissingAccount(error)) return fallback;
+  const emptyWhenDenied = <T>(fallback: T) => (error: unknown): T => {
+    if (isExpectedDenial(error)) return fallback;
     throw error;
   };
 
@@ -84,7 +82,7 @@ export function useLaWallet() {
       const body = await laWalletRequest<unknown>('/api/wallet/addresses', {
         signer: signer!,
         signal,
-      }).catch(emptyWhenMissing<unknown>([]));
+      }).catch(emptyWhenDenied<unknown>([]));
 
       return unwrapList<WalletAddress>(body);
     },
@@ -93,39 +91,20 @@ export function useLaWallet() {
     retry: false,
   });
 
-  /**
-   * Addresses on the platform already linked to this key.
+  /*
+   * `GET /api/lightning-addresses` is not called from here.
    *
-   * Somebody who used the service before — or through another client, or under
-   * an account they reached a different way — already has an address, and the
-   * app used to have no way of knowing. It offered them a fresh one as though
-   * they had none, which is how a person ends up with two names and their
-   * zaps arriving at the wrong one.
+   * It was, to find addresses linked to a key rather than to an account —
+   * genuinely the better question, since a key outlives an account. But the
+   * route is marked `VIEWER` in the schema and refuses every ordinary user
+   * with `AUTHORIZATION_ERROR`. Keeping it meant each person signing a NIP-98
+   * event and being turned away, on a loop, forever.
    *
-   * The directory answers that, and answers it for the key rather than for the
-   * account, which is the identity that actually persists. It also reports the
-   * domain the service issues under, so the address shown on screen is the one
-   * the service would resolve rather than the one our config guesses.
+   * Nothing is lost that this account can have. `/api/wallet/addresses` is
+   * role `USER`, returns the caller's own addresses with the same full records
+   * — mode, destination, primary flag — and is the endpoint that was always
+   * going to answer for somebody who is not an administrator.
    */
-  const directory = useQuery({
-    queryKey: ['lawallet-directory', user?.pubkey ?? ''],
-    queryFn: async ({ signal }) => {
-      const body = await laWalletRequest<unknown>('/api/lightning-addresses', {
-        signer: signer!,
-        signal,
-      }).catch(emptyWhenMissing<unknown>([]));
-
-      /**
-       * The directory is global — it lists every address on the platform with
-       * the key each belongs to — so filtering by pubkey is what makes it
-       * this person's list rather than everybody's.
-       */
-      return addressesForPubkey(unwrapList<DirectoryAddress>(body), user?.pubkey);
-    },
-    enabled: !!signer,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
 
   /** The caller's NWC-backed wallets on the service, for CUSTOM_NWC mode. */
   const wallets = useQuery({
@@ -134,7 +113,7 @@ export function useLaWallet() {
       const body = await laWalletRequest<unknown>('/api/remote-wallets', {
         signer: signer!,
         signal,
-      }).catch(emptyWhenMissing<unknown>([]));
+      }).catch(emptyWhenDenied<unknown>([]));
 
       return unwrapList<RemoteWallet>(body);
     },
@@ -438,8 +417,6 @@ export function useLaWallet() {
    * your name.
    */
 
-  const linked = directory.data ?? [];
-
   return {
     /** Null when signed out or browsing read-only; nothing here can be signed. */
     available: !!signer,
@@ -449,10 +426,10 @@ export function useLaWallet() {
      * Everything they hold here, including whatever the directory turned up
      * that their own list did not mention.
      */
-    held: mergeHeldAddresses(addresses.data ?? [], linked),
-    /** What the service issues under, per the service. */
-    domain: resolveIssuedDomain(linked),
-    isLoading: addresses.isLoading || directory.isLoading,
+    held: mergeHeldAddresses(addresses.data ?? [], []),
+    /** Configuration, now that the route which reported it is out of reach. */
+    domain: resolveIssuedDomain([]),
+    isLoading: addresses.isLoading,
     wallets: (wallets.data ?? []).filter((entry) => entry.status === 'ACTIVE'),
     checkName,
     probeAlias,

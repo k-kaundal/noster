@@ -4,6 +4,7 @@ import {
   LaWalletError,
   acceptsPayments,
   addressesForPubkey,
+  isExpectedDenial,
   refusalReason,
   unwrapList,
   invoiceAmountSats,
@@ -388,5 +389,35 @@ describe('mergeHeldAddresses with real directory records', () => {
     ]);
 
     expect(held.refusal).toBe('Disabled.');
+  });
+});
+
+describe('isExpectedDenial', () => {
+  const fail = (status: number, code?: string) =>
+    new LaWalletError('nope', status, code);
+
+  it('reads "no account here yet" as an ordinary state', () => {
+    expect(isExpectedDenial(fail(404))).toBe(true);
+    expect(isExpectedDenial(fail(400, 'NOT_FOUND'))).toBe(true);
+  });
+
+  it('reads a role this person does not hold as an ordinary state', () => {
+    // GET /api/lightning-addresses is marked VIEWER, so it refuses every
+    // ordinary user by design — a permanent, expected answer rather than a
+    // failure to retry on every mount
+    expect(isExpectedDenial(fail(403))).toBe(true);
+    expect(isExpectedDenial(fail(403, 'AUTHORIZATION_ERROR'))).toBe(true);
+  });
+
+  it('still reports a signature that did not verify', () => {
+    // Hiding a 401 behind an empty list turns "sign in again" into "you have
+    // nothing", which is the wrong thing to tell somebody
+    expect(isExpectedDenial(fail(401))).toBe(false);
+  });
+
+  it('still reports a server failure', () => {
+    expect(isExpectedDenial(fail(500))).toBe(false);
+    expect(isExpectedDenial(new Error('offline'))).toBe(false);
+    expect(isExpectedDenial(undefined)).toBe(false);
   });
 });

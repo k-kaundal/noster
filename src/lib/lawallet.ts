@@ -178,17 +178,31 @@ export class LaWalletError extends Error {
 }
 
 /**
- * Whether the service is saying this person has no account there yet.
+ * Whether a refusal is one to expect rather than one to report.
  *
- * The normal state for most people, and not an error. Treating it as one meant
- * three failing requests per mount of anything that reads identity — which is
- * most of the app — each retried and refetched, all answering `NOT_FOUND`
- * forever. A person who has never touched the wallet service produced a steady
- * stream of failures against it.
+ * Two of them, and both are the normal state for an ordinary account:
+ *
+ * - **404 / NOT_FOUND** — no account on the service yet, which is true of
+ *   everybody until they first use it.
+ * - **403 / AUTHORIZATION_ERROR** — the route needs a role this person does
+ *   not have. `GET /api/lightning-addresses` is marked `VIEWER` in the
+ *   schema, so the global directory refuses every ordinary user by design.
+ *
+ * Both were being treated as failures, and a failed query has no data to go
+ * stale, so React Query refetched all three on every mount of anything that
+ * reads identity — which, since identity feeds the profile and the composer,
+ * is most of the app. Answering empty is what turns a permanent stream of
+ * refused requests into one request per cache window.
+ *
+ * 401 is deliberately not in this list. That means the signature itself did
+ * not verify, which is worth telling somebody about rather than hiding behind
+ * an empty list.
  */
-export function isMissingAccount(error: unknown): boolean {
+export function isExpectedDenial(error: unknown): boolean {
   if (!(error instanceof LaWalletError)) return false;
-  return error.status === 404 || error.code === 'NOT_FOUND';
+
+  if (error.status === 404 || error.code === 'NOT_FOUND') return true;
+  return error.status === 403 || error.code === 'AUTHORIZATION_ERROR';
 }
 
 /**
