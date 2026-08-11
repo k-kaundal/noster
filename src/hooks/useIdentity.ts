@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLightningAddress } from '@/hooks/useLightningAddress';
+import { useLaWallet } from '@/hooks/useLaWallet';
 import { useNip5 } from '@/hooks/useNip5';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
@@ -34,6 +35,7 @@ export function useIdentity() {
   const metadata = author.data?.metadata;
 
   const nip5 = useNip5();
+  const lawallet = useLaWallet();
   const lightning = useLightningAddress({
     // The pay link that matches the bought name outranks any older one
     preferredUsername: localPartOf(nip5.identifier) ?? undefined,
@@ -53,9 +55,20 @@ export function useIdentity() {
     lightningAddress: lightning.address,
     profileNip05: metadata?.nip05,
     profileLud16: metadata?.lud16,
-    // Every address of theirs, so a profile pointing at their own second one
-    // is not mistaken for a profile pointing somewhere else entirely
-    ownedAddresses: lightning.addresses.map((entry) => entry.address),
+    /**
+     * Every address of theirs, so a profile pointing at their own second one
+     * is not mistaken for a profile pointing somewhere else entirely.
+     *
+     * Includes what the platform reports as linked to this key, not only what
+     * this app issued. Someone whose profile already zaps an address they set
+     * up before finding this app was being told, on every visit, that their
+     * zaps go somewhere foreign and offered a replacement — which is both
+     * wrong and the most annoying thing the page could say to them.
+     */
+    ownedAddresses: [
+      ...lightning.addresses.map((entry) => entry.address),
+      ...lawallet.held.map((entry) => entry.address),
+    ],
   });
 
   /**

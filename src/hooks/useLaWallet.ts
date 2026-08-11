@@ -4,10 +4,14 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useToast } from '@/hooks/useToast';
 import { usePayAnyWallet } from '@/hooks/usePayAnyWallet';
 import {
+  addressesForPubkey,
   laWalletRequest,
+  mergeHeldAddresses,
   requiresPayment,
+  resolveIssuedDomain,
   type AddressMode,
   type AliasProbe,
+  type DirectoryAddress,
   type RemoteWallet,
   type ServiceInvoice,
   type WalletAddress,
@@ -33,6 +37,7 @@ export function useLaWallet() {
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['lawallet-addresses'] });
+    queryClient.invalidateQueries({ queryKey: ['lawallet-directory'] });
   }, [queryClient]);
 
   const addresses = useQuery({
@@ -52,6 +57,35 @@ export function useLaWallet() {
      * worth retrying three times over — the service answers 404 until they
      * first do something.
      */
+    retry: false,
+  });
+
+  /**
+   * Addresses on the platform already linked to this key.
+   *
+   * Somebody who used the service before — or through another client, or under
+   * an account they reached a different way — already has an address, and the
+   * app used to have no way of knowing. It offered them a fresh one as though
+   * they had none, which is how a person ends up with two names and their
+   * zaps arriving at the wrong one.
+   *
+   * The directory answers that, and answers it for the key rather than for the
+   * account, which is the identity that actually persists. It also reports the
+   * domain the service issues under, so the address shown on screen is the one
+   * the service would resolve rather than the one our config guesses.
+   */
+  const directory = useQuery({
+    queryKey: ['lawallet-directory', user?.pubkey ?? ''],
+    queryFn: async ({ signal }) => {
+      const body = await laWalletRequest<{ data: DirectoryAddress[] }>(
+        '/api/lightning-addresses',
+        { signer: signer!, signal }
+      );
+
+      return addressesForPubkey(body.data ?? [], user?.pubkey);
+    },
+    enabled: !!signer,
+    staleTime: 60_000,
     retry: false,
   });
 
@@ -280,11 +314,21 @@ export function useLaWallet() {
    * your name.
    */
 
+  const linked = directory.data ?? [];
+
   return {
     /** Null when signed out or browsing read-only; nothing here can be signed. */
     available: !!signer,
+    /** The caller's own records, with the settings on them. */
     addresses: addresses.data ?? [],
-    isLoading: addresses.isLoading,
+    /**
+     * Everything they hold here, including whatever the directory turned up
+     * that their own list did not mention.
+     */
+    held: mergeHeldAddresses(addresses.data ?? [], linked),
+    /** What the service issues under, per the service. */
+    domain: resolveIssuedDomain(linked),
+    isLoading: addresses.isLoading || directory.isLoading,
     wallets: (wallets.data ?? []).filter((entry) => entry.status === 'ACTIVE'),
     checkName,
     probeAlias,

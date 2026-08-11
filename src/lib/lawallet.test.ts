@@ -2,11 +2,14 @@ import { describe, it, expect } from 'vitest';
 import {
   LAWALLET_MAX_USERNAME,
   LaWalletError,
+  addressesForPubkey,
   invoiceAmountSats,
+  mergeHeldAddresses,
   requiresPayment,
   describeMode,
   isLive,
   laWalletAddress,
+  resolveIssuedDomain,
   suggestLaWalletName,
   validateLaWalletName,
   type WalletAddress,
@@ -66,6 +69,108 @@ describe('suggestLaWalletName', () => {
 describe('laWalletAddress', () => {
   it('builds the address from the configured domain', () => {
     expect(laWalletAddress('alice')).toMatch(/^alice@/);
+  });
+
+  it('issues at the address domain, not the API host', () => {
+    // The platform is wallet.nostrfeed.com and hands out @getzap.me; deriving
+    // one from the other printed an address that resolves nowhere
+    expect(laWalletAddress('kk')).toBe('kk@getzap.me');
+  });
+
+  it('takes a domain the service reported', () => {
+    expect(laWalletAddress('kk', 'example.com')).toBe('kk@example.com');
+  });
+});
+
+describe('addressesForPubkey', () => {
+  const records = [
+    { username: 'kk', pubkey: 'ABC', domain: 'getzap.me' },
+    { username: 'someone', pubkey: 'def', domain: 'getzap.me' },
+    { username: 'unclaimed', pubkey: null, domain: 'getzap.me' },
+  ];
+
+  it('finds the addresses linked to a key', () => {
+    expect(addressesForPubkey(records, 'abc')).toEqual([records[0]]);
+  });
+
+  it('never matches an address with no key on it', () => {
+    // A null pubkey compared loosely would hand every unclaimed name on the
+    // platform to whoever signed in
+    expect(addressesForPubkey(records, '')).toEqual([]);
+    expect(addressesForPubkey(records, undefined)).toEqual([]);
+  });
+
+  it('returns nothing for a key that holds nothing', () => {
+    expect(addressesForPubkey(records, 'ffff')).toEqual([]);
+  });
+});
+
+describe('resolveIssuedDomain', () => {
+  it('believes the service over our configuration', () => {
+    expect(
+      resolveIssuedDomain([{ username: 'kk', domain: 'newdomain.me' }])
+    ).toBe('newdomain.me');
+  });
+
+  it('falls back when the service says nothing', () => {
+    expect(resolveIssuedDomain([], 'getzap.me')).toBe('getzap.me');
+    expect(resolveIssuedDomain([{ username: 'kk' }], 'getzap.me')).toBe(
+      'getzap.me'
+    );
+    expect(
+      resolveIssuedDomain([{ username: 'kk', domain: '  ' }], 'getzap.me')
+    ).toBe('getzap.me');
+  });
+});
+
+describe('mergeHeldAddresses', () => {
+  const managed: WalletAddress[] = [
+    { username: 'kk', mode: 'ALIAS', redirect: 'me@x.com' },
+  ];
+
+  it('keeps the settings of an address the service manages for us', () => {
+    const [held] = mergeHeldAddresses(managed, []);
+    expect(held.settings?.mode).toBe('ALIAS');
+    expect(held.address).toBe('kk@getzap.me');
+  });
+
+  it('discovers an address linked to the key but absent from our own list', () => {
+    // The case this exists for: somebody already has an address here, and
+    // being offered a fresh one as though they had none is how they end up
+    // with two
+    const held = mergeHeldAddresses([], [
+      { username: 'kk', pubkey: 'abc', domain: 'getzap.me' },
+    ]);
+
+    expect(held).toHaveLength(1);
+    expect(held[0].address).toBe('kk@getzap.me');
+    // Nothing is known about where it points, and pretending otherwise would
+    // put an editor on screen whose every save fails
+    expect(held[0].settings).toBeNull();
+  });
+
+  it('does not list an address twice when both sources have it', () => {
+    const held = mergeHeldAddresses(managed, [
+      { username: 'kk', pubkey: 'abc', domain: 'getzap.me' },
+    ]);
+
+    expect(held).toHaveLength(1);
+    expect(held[0].settings?.mode).toBe('ALIAS');
+  });
+
+  it('uses the domain the directory reported for every address', () => {
+    const held = mergeHeldAddresses(managed, [
+      { username: 'other', pubkey: 'abc', domain: 'newdomain.me' },
+    ]);
+
+    expect(held.map((entry) => entry.address)).toEqual([
+      'kk@newdomain.me',
+      'other@newdomain.me',
+    ]);
+  });
+
+  it('ignores a blank username rather than issuing `@getzap.me`', () => {
+    expect(mergeHeldAddresses([], [{ username: '  ' }])).toEqual([]);
   });
 });
 

@@ -16,7 +16,6 @@ import { useLaWallet } from '@/hooks/useLaWallet';
 import { useNWC } from '@/hooks/useNWCContext';
 import { useToast } from '@/hooks/useToast';
 import {
-  LAWALLET_DOMAIN,
   describeLaWalletNameProblem,
   describeMode,
   isLive,
@@ -51,23 +50,80 @@ export function PortableAddress() {
           A name that moves with you
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          An address at {LAWALLET_DOMAIN} that you point wherever you like — at
+          An address at {lawallet.domain} that you point wherever you like — at
           a wallet you connect, or on to another address. Change the
           destination whenever; the name stays the same.
         </p>
       </div>
 
-      {lawallet.addresses.map((address) => (
-        <AddressRow key={address.username} username={address.username} />
-      ))}
+      {lawallet.held.map((held) =>
+        held.settings ? (
+          <AddressRow key={held.username} username={held.username} />
+        ) : (
+          <LinkedAddress key={held.username} address={held.address} />
+        )
+      )}
 
-      {!lawallet.addresses.length && <ClaimForm />}
+      {/* Only when they hold nothing here at all. Offering a claim form to
+          somebody who already has an address — including one the directory
+          found rather than their own account list — is how a person ends up
+          with two names and their zaps arriving at the older one. */}
+      {!lawallet.held.length && !lawallet.isLoading && <ClaimForm />}
+    </div>
+  );
+}
+
+/**
+ * An address the directory says is theirs, which their account does not list.
+ *
+ * Made under a different account on the same platform, most likely. It
+ * resolves and it receives, so it is worth showing and worth publishing — but
+ * nothing here knows where it points, and an editor whose every save fails is
+ * worse than no editor.
+ */
+function LinkedAddress({ address }: { address: string }) {
+  const { lightning } = useIdentity();
+  const { toast } = useToast();
+
+  const onProfile = lightning.profileAddress === address;
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border p-3">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{address}</p>
+        <p className="text-xs text-muted-foreground">
+          Already linked to your key. Manage where it points where you set it
+          up.
+        </p>
+      </div>
+
+      {onProfile ? (
+        <Badge variant="secondary" className="gap-1 bg-success/15 text-success">
+          <Zap className="h-3 w-3" />
+          Zaps land here
+        </Badge>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-xs"
+          disabled={lightning.isPublishing}
+          onClick={() => {
+            void lightning
+              .setProfileAddress(address)
+              .then(() => toast({ title: `Zaps now go to ${address}` }))
+              .catch(() => {});
+          }}
+        >
+          Use for zaps
+        </Button>
+      )}
     </div>
   );
 }
 
 function ClaimForm() {
-  const { claim, isClaiming, checkName } = useLaWallet();
+  const { claim, isClaiming, checkName, domain } = useLaWallet();
   const { suggestion } = useIdentity();
 
   const [name, setName] = useState(() => suggestLaWalletName(suggestion));
@@ -110,11 +166,11 @@ function ClaimForm() {
             setAvailable(null);
           }}
           placeholder="yourname"
-          aria-label={`Name at ${LAWALLET_DOMAIN}`}
+          aria-label={`Name at ${domain}`}
           className="max-w-[10rem]"
         />
         <span className="flex-1 truncate text-sm text-muted-foreground">
-          @{LAWALLET_DOMAIN}
+          @{domain}
         </span>
       </div>
 
@@ -132,7 +188,7 @@ function ClaimForm() {
       ) : available ? (
         <p className="flex items-center gap-1 text-xs text-success">
           <Check className="h-3 w-3" />
-          {laWalletAddress(name)} is free
+          {laWalletAddress(name, domain)} is free
         </p>
       ) : null}
 
@@ -160,7 +216,7 @@ function AddressRow({ username }: { username: string }) {
 
   if (!address) return null;
 
-  const full = laWalletAddress(address.username);
+  const full = laWalletAddress(address.username, lawallet.domain);
   const live = isLive(address);
 
   const setMode = async (mode: AddressMode) => {
@@ -302,7 +358,7 @@ function AddressRow({ username }: { username: string }) {
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <Plug className="mt-0.5 h-3 w-3 shrink-0" />
           <span>
-            {LAWALLET_DOMAIN} holds a connection that can spend from this
+            {lawallet.domain} holds a connection that can spend from this
             wallet, so it can issue invoices for you. Revoke it there or in
             your wallet to stop that.
           </span>
