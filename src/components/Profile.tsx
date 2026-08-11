@@ -35,6 +35,7 @@ import { tierOf } from '@/lib/tiers';
 import { EditProfileForm } from '@/components/EditProfileForm';
 import { LinkedAccounts } from '@/components/identity/LinkedAccounts';
 import { ProfileZapGoals } from '@/components/ZapGoalCard';
+import { TrustScore } from '@/components/trust/TrustScore';
 import { LinkedAccountsEditor } from '@/components/identity/LinkedAccountsEditor';
 import {
   ArticleCard,
@@ -264,6 +265,9 @@ export function Profile({ pubkey }: ProfileProps) {
               )}
 
               {payTier && <VerificationMark tier={payTier} className="h-5 w-5" />}
+
+              {/* NIP-85: only rendered if the reader declared a rank provider */}
+              <TrustScore pubkey={pubkey} />
             </div>
             <p className="text-sm text-muted-foreground">@{username}</p>
           </div>
