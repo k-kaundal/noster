@@ -32,6 +32,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useMuteList } from '@/hooks/useMuteList';
 import { useAdultContent } from '@/hooks/useAdultContent';
 import { useMachineEvents } from '@/hooks/useMachineEvents';
+import { TrustProviderSettings } from '@/components/trust/TrustProviderSettings';
 import { useDmRelayList } from '@/hooks/useDmRelayList';
 import { useRelays } from '@/hooks/useRelays';
 import { useSeo } from '@/hooks/useSeo';
@@ -81,6 +82,7 @@ export function SettingsPage() {
           <TabsContent value="appearance">
             <AppearanceSettings />
             <ContentSettings />
+            <TrustProviderSettings />
           </TabsContent>
           <TabsContent value="ui">
             <UISettings />

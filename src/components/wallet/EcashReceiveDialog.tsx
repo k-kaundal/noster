@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowDownLeft,
   Check,
   Copy,
@@ -23,7 +24,7 @@ import { QrCode } from '@/components/wallet/QrCode';
 import { useCashuWallet, useMintQuoteStatus } from '@/hooks/useCashuWallet';
 import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useToast } from '@/hooks/useToast';
-import { looksLikeToken } from '@/lib/cashu';
+import { looksLikeToken, mintHost, type TokenPreview } from '@/lib/cashu';
 import type { PendingQuote } from '@/lib/cashuStore';
 import { cn } from '@/lib/utils';
 
@@ -316,11 +317,36 @@ function DepositPanel({
 
 /** Redeeming a token: paste it, it becomes balance. */
 function RedeemPanel({ onDone }: { onDone: () => void }) {
-  const { receive, isReceiving } = useCashuWallet();
+  const { receive, isReceiving, inspect, mintUrl } = useCashuWallet();
   const { toast } = useToast();
   const [token, setToken] = useState('');
+  const [preview, setPreview] = useState<TokenPreview | null>(null);
 
   const valid = looksLikeToken(token);
+
+  /**
+   * Read on paste, not on submit. What matters before pressing the button is
+   * which mint issued it — ecash from elsewhere cannot join this balance, and
+   * that should be visible while there is still a decision to make.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!valid) {
+      setPreview(null);
+      return;
+    }
+
+    void inspect(token).then((result) => {
+      if (!cancelled) setPreview(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, valid, inspect]);
+
+  const foreign = !!preview && preview.mint !== mintUrl;
 
   const redeem = async () => {
     /**
@@ -337,6 +363,7 @@ function RedeemPanel({ onDone }: { onDone: () => void }) {
       description: `${sats.toLocaleString()} sats added to your ecash.`,
     });
     setToken('');
+    setPreview(null);
     onDone();
   };
 
@@ -363,11 +390,59 @@ function RedeemPanel({ onDone }: { onDone: () => void }) {
         </p>
       </div>
 
+      {preview && (
+        <div
+          className={cn(
+            'space-y-1.5 rounded-lg border p-3 text-sm',
+            foreign && 'border-warning/40 bg-warning/5'
+          )}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Amount</span>
+            <span className="font-medium">
+              {preview.amountSats.toLocaleString()} sats
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Mint</span>
+            <span className="truncate font-medium">
+              {mintHost(preview.mint)}
+            </span>
+          </div>
+
+          {preview.memo && (
+            <p className="line-clamp-2 pt-1 text-xs italic text-muted-foreground">
+              “{preview.memo}”
+            </p>
+          )}
+
+          {foreign ? (
+            /*
+              Said as a fact about the token rather than as a failure. Ecash is
+              issued by one mint and only that mint will honour it, so this is
+              not a thing to fix — it is a thing to know before trying.
+            */
+            <p className="flex items-start gap-1.5 pt-1 text-xs text-warning-strong">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              This is from a different mint. Your wallet holds ecash from{' '}
+              {mintHost(mintUrl)}, and the two cannot be merged — redeem it in a
+              wallet on {mintHost(preview.mint)} instead.
+            </p>
+          ) : (
+            <p className="flex items-center gap-1.5 pt-1 text-xs text-success-strong">
+              <Check className="h-3.5 w-3.5 shrink-0" />
+              Same mint as your wallet.
+            </p>
+          )}
+        </div>
+      )}
+
       <Button
         className="w-full"
         size="lg"
         onClick={redeem}
-        disabled={!valid || isReceiving}
+        disabled={!valid || isReceiving || foreign}
       >
         {isReceiving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Redeem

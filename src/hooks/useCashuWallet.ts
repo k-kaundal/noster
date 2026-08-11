@@ -17,11 +17,15 @@ import {
   loadWallet,
   mergeProofs,
   mintHost,
+  previewToken,
   proofsToSats,
+  type TokenPreview,
   withoutProofs,
 } from '@/lib/cashu';
 import {
   addQuote,
+  recordMovement,
+  settleMovement,
   addUsedSecrets,
   readProofs,
   readQuotes,
@@ -410,6 +414,23 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       };
 
       addQuote(pubkey, mintUrl, pending);
+
+      /**
+       * The type is written down here because here is where it is known. A
+       * NIP-60 history event records only a direction and an amount, so
+       * minting, melting, sending and receiving are indistinguishable in it —
+       * which is why the wallet could say "+10,000 sats" and nothing else.
+       */
+      recordMovement(pubkey, {
+        id: `mint:${quote.quote}`,
+        type: 'cashu_mint',
+        mint: mintUrl,
+        amountSats,
+        status: 'pending',
+        quoteId: quote.quote,
+        invoice: quote.request,
+      });
+
       void ensureWalletEvent();
 
       /**
@@ -557,6 +578,11 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       removeQuote(pubkey, mintUrl, pending.quote);
       await commit(mergeProofs(currentProofs(), minted), []);
 
+      // Settles the row the deposit started as, rather than adding a second
+      settleMovement(pubkey, `mint:${pending.quote}`, {
+        amountSats: proofsToSats(minted),
+      });
+
       /**
        * The quote is spent, so its event is retired. Without this, another
        * device reading the published quotes offers to claim a deposit the
@@ -603,6 +629,16 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       // The swap spent inputs to make both sides; those originals are gone
       await commit(keep, [...outgoing, ...consumedProofs(available, keep, outgoing)]);
 
+      if (pubkey) {
+        recordMovement(pubkey, {
+          type: 'cashu_send',
+          mint: mintUrl,
+          amountSats: proofsToSats(outgoing),
+          status: 'settled',
+          settledAt: Math.floor(Date.now() / 1000),
+        });
+      }
+
       return encodeToken(outgoing, mintUrl, memo);
     },
     onError: (error: Error) => {
@@ -613,6 +649,26 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       });
     },
   });
+
+  /**
+   * Reads a pasted token without redeeming it.
+   *
+   * So the mint can be shown before the button is pressed. Ecash from another
+   * mint cannot join this balance, and learning that from an error afterwards
+   * reads as the wallet being broken rather than as the token being from
+   * somewhere else.
+   */
+  const inspect = useCallback(
+    async (token: string): Promise<TokenPreview | null> => {
+      try {
+        const wallet = await loadWallet(mintUrl);
+        return previewToken(token, (value) => wallet.decodeToken(value));
+      } catch {
+        return null;
+      }
+    },
+    [mintUrl]
+  );
 
   /**
    * Redeems a token someone handed over.
@@ -637,6 +693,16 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
 
       const received = await wallet.receive(trimmed);
       await commit(mergeProofs(currentProofs(), received), []);
+
+      if (pubkey) {
+        recordMovement(pubkey, {
+          type: 'cashu_receive',
+          mint: mintUrl,
+          amountSats: proofsToSats(received),
+          status: 'settled',
+          settledAt: Math.floor(Date.now() / 1000),
+        });
+      }
 
       return proofsToSats(received);
     },
@@ -715,10 +781,21 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
          * smaller than the amount that actually left. Taking it from the
          * balance either side covers both, whatever the mint charges.
          */
-        return {
-          amountSats: amount,
-          feeSats: Math.max(0, held - proofsToSats(next) - amount),
-        };
+        const feeSats = Math.max(0, held - proofsToSats(next) - amount);
+
+        if (pubkey) {
+          recordMovement(pubkey, {
+            type: 'cashu_melt',
+            mint: mintUrl,
+            amountSats: amount,
+            feeSats,
+            status: 'settled',
+            invoice,
+            settledAt: Math.floor(Date.now() / 1000),
+          });
+        }
+
+        return { amountSats: amount, feeSats };
       } catch (error) {
         // The payment may or may not have gone through. Putting the proofs
         // back is safe either way: the next load asks the mint which of them
@@ -766,6 +843,8 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
     isSending: send.isPending,
     receive: receive.mutateAsync,
     isReceiving: receive.isPending,
+    /** Reads a token's mint and value without redeeming it. */
+    inspect,
     payInvoice: payInvoice.mutateAsync,
     isPaying: payInvoice.isPending,
     refresh,

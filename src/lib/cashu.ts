@@ -270,6 +270,48 @@ export function looksLikeToken(value: string): boolean {
   return /^cashu[AB]/i.test(value.trim());
 }
 
+export interface TokenPreview {
+  /** Mint the proofs belong to, without a trailing slash. */
+  mint: string;
+  amountSats: number;
+  memo?: string;
+}
+
+/**
+ * What a token is worth and where it is from, before redeeming it.
+ *
+ * Read on paste rather than on submit, because the mint is the thing a person
+ * needs to see first: ecash from a mint they do not use cannot join their
+ * balance, and finding that out from an error after pressing the button reads
+ * as the wallet being broken rather than as the token being from elsewhere.
+ *
+ * Takes the decoder rather than importing one: a token's binary form can only
+ * be read with the mint's keyset ids, so decoding belongs to a loaded wallet.
+ *
+ * Returns null for anything unreadable — a truncated paste is the common case
+ * and is not worth an error.
+ */
+export function previewToken(
+  raw: string,
+  decode: (token: string) => Token
+): TokenPreview | null {
+  const trimmed = raw.trim();
+  if (!looksLikeToken(trimmed)) return null;
+
+  try {
+    const decoded = decode(trimmed);
+    const proofs = parseProofs(decoded.proofs);
+
+    return {
+      mint: (decoded.mint ?? '').replace(/\/+$/, ''),
+      amountSats: proofsToSats(proofs),
+      memo: decoded.memo?.trim() || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Drops proofs the mint has already marked spent.
  *

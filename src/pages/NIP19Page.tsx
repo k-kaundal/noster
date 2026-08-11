@@ -1,5 +1,5 @@
 import { nip19 } from 'nostr-tools';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { useSeo } from '@/hooks/useSeo';
 import { Layout } from '@/components/Layout';
 import { Profile } from '@/components/Profile';
@@ -18,6 +18,29 @@ export function NIP19Page() {
 
   if (!identifier) {
     return <NotFound />;
+  }
+
+  /**
+   * A bare 64-character hex key, redirected to its `npub`.
+   *
+   * `nip19.decode` throws on these, so they used to 404 — and they are not
+   * hypothetical: this app published them itself from the trending list, and
+   * other clients link profiles this way too. Fixing the links that generate
+   * them does nothing for the ones already shared or bookmarked.
+   *
+   * Read as a public key rather than an event id. Both are 32 bytes of hex and
+   * nothing in the URL distinguishes them, but events are shared as `note1`
+   * and `nevent1` in practice while raw keys turn up constantly. Redirecting
+   * rather than rendering in place also canonicalises the address, so what
+   * gets copied from the bar afterwards is the identifier everything else
+   * understands.
+   */
+  if (/^[0-9a-f]{64}$/i.test(identifier)) {
+    try {
+      return <Navigate to={`/${nip19.npubEncode(identifier.toLowerCase())}`} replace />;
+    } catch {
+      return <NotFound />;
+    }
   }
 
   let decoded;
