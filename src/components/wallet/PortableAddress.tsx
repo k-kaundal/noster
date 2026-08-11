@@ -259,7 +259,7 @@ function LinkedAddress({ held }: { held: HeldAddress }) {
         )}
 
         {onProfile ? (
-          <Badge variant="secondary" className="gap-1 bg-success/15 text-success">
+          <Badge variant="secondary" className="gap-1 bg-success/15 text-success-strong">
             <Zap className="h-3 w-3" />
             Zaps land here
           </Badge>
@@ -530,7 +530,7 @@ function AddressRow({ held }: { held: HeldAddress }) {
           variant={live ? 'secondary' : 'outline'}
           className={
             live
-              ? 'bg-success/15 text-success'
+              ? 'bg-success/15 text-success-strong'
               : held.refusal
                 ? 'bg-destructive/15 text-destructive'
                 : ''

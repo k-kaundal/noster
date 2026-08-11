@@ -37,6 +37,21 @@
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
+    /*
+     * Text colours for a *tinted* background, as opposed to a solid one.
+     *
+     * The `-foreground` pair above is what goes on top of a solid fill: white
+     * on amber here, near-black on amber in the dark theme. Used instead on a
+     * `bg-warning/8` tint — which is really the page background with a hint of
+     * amber — it is white text on white in one theme and black on black in the
+     * other. Invisible in both, and each theme hides it from the person
+     * testing the other.
+     *
+     * These are the same hues pushed to where they read against the page.
+     */
+    --success-strong: 142 72% 26%;
+    --warning-strong: 32 81% 29%;
+
     --border: 220 13% 91%;
     --input: 220 13% 91%;
     --ring: 262.1 83.3% 57.8%;
@@ -117,6 +132,10 @@
 
     --warning: 38 92% 55%;
     --warning-foreground: 240 10% 4%;
+
+    /* Lightened rather than darkened, for the same reason in reverse */
+    --success-strong: 142 65% 62%;
+    --warning-strong: 38 95% 68%;
 
     --border: 240 5% 17%;
     --input: 240 5% 17%;

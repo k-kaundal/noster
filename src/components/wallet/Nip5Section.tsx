@@ -130,7 +130,7 @@ function OwnedName() {
 
       {!matchesCurrentKey && (
         <div className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm backdrop-blur-sm">
-          <p className="text-warning-foreground">
+          <p className="text-warning-strong">
             This name verifies a different Nostr key, so it won't show a ✓ on your posts here.
           </p>
         </div>
@@ -196,7 +196,7 @@ function UnpaidName({ address }: { address: Nip5Address }) {
 
   return (
     <div className="space-y-3 rounded-lg border border-warning/30 bg-warning/8 p-4">
-      <p className="text-sm text-warning-foreground">
+      <p className="text-sm text-warning-strong">
         {formatNip5(address.local_part)} is reserved for you and not live yet.
         {sats ? ` It costs ${sats.toLocaleString()} sats.` : ''} Nobody else can
         take it in the meantime.
@@ -264,7 +264,7 @@ function LapseWarning({
           : 'border-warning/30 bg-warning/8'
       )}
     >
-      <p className={gone ? 'text-destructive' : 'text-warning-foreground'}>
+      <p className={gone ? 'text-destructive' : 'text-warning-strong'}>
         {gone
           ? `${formatNip5(address.local_part)} has expired.`
           : `${formatNip5(address.local_part)} runs out in ${days} ${

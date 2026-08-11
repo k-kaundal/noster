@@ -91,8 +91,8 @@ export function SignerAlert() {
     <>
       <div className="border-b border-warning/40 bg-warning/10">
         <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-2 px-4 py-2 text-sm">
-          <CloudOff className="h-4 w-4 shrink-0 text-warning-foreground" />
-          <p className="min-w-0 flex-1 text-warning-foreground">
+          <CloudOff className="h-4 w-4 shrink-0 text-warning-strong" />
+          <p className="min-w-0 flex-1 text-warning-strong">
             Your remote signer isn't answering. You can read, but nothing can be
             signed until it reconnects.
           </p>

@@ -176,7 +176,7 @@ function DepositPanel({
           className={cn(
             'flex items-center justify-center gap-2 rounded-lg border p-3 text-sm font-medium',
             isPaid || isIssued
-              ? 'border-success/30 bg-success/10 text-success'
+              ? 'border-success/30 bg-success/10 text-success-strong'
               : 'border-muted bg-muted/40 text-muted-foreground'
           )}
           role="status"

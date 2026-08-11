@@ -130,7 +130,7 @@ function RelayPicker({
             {info?.name ?? value} hosts groups.
           </p>
         ) : (
-          <p className="text-xs text-warning-foreground">
+          <p className="text-xs text-warning-strong">
             This relay doesn't advertise NIP-29, so it probably hosts no
             groups. Groups need a relay that enforces them — there is no way to
             run one from the browser.

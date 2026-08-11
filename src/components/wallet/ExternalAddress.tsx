@@ -133,7 +133,7 @@ export function ExternalAddress() {
               It supports Nostr zaps, so zaps from any client will work.
             </p>
           ) : (
-            <p className="flex items-start gap-1.5 text-xs text-warning-foreground">
+            <p className="flex items-start gap-1.5 text-xs text-warning-strong">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
               <span>
                 It takes payments but does not support Nostr zaps, so zaps from

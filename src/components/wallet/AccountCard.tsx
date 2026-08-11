@@ -80,7 +80,7 @@ export function AccountCard() {
           <div className="flex gap-3 rounded-lg border border-warning/30 bg-warning/8 p-4 backdrop-blur-sm">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
             <div className="text-sm">
-              <p className="font-medium text-warning-foreground mb-1">Secure with a password</p>
+              <p className="font-medium text-warning-strong mb-1">Secure with a password</p>
               <p className="text-xs text-muted-foreground">
                 Right now only your Nostr key opens this wallet. Add a password to sign in from any device.
               </p>
@@ -146,7 +146,7 @@ function MismatchNotice({
   return (
     <div className="space-y-3 rounded-lg border border-warning/30 bg-warning/8 p-4 backdrop-blur-sm">
       <div>
-        <p className="text-sm font-medium text-warning-foreground mb-1">
+        <p className="text-sm font-medium text-warning-strong mb-1">
           This wallet is linked to a different key
         </p>
         <p className="text-xs text-muted-foreground">
@@ -324,7 +324,7 @@ function PasswordForm() {
       />
 
       {!mismatched && !tooShort && repeat && next === repeat && (
-        <p className="flex items-center gap-1.5 text-xs text-success bg-success/10 p-2 rounded">
+        <p className="flex items-center gap-1.5 text-xs text-success-strong bg-success/10 p-2 rounded">
           <Check className="h-3.5 w-3.5" />
           Ready to save
         </p>
