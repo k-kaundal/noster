@@ -1,5 +1,7 @@
-import { useState, useCallback } from 'react';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useState, useCallback, useEffect } from 'react';
+import { useAccountStored } from '@/hooks/useStore';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { defineKey, readStore, removeStore } from '@/lib/store';
 import { useToast } from '@/hooks/useToast';
 import type { LN } from '@getalby/sdk';
 
@@ -36,11 +38,66 @@ export interface NWCInfo {
   notifications?: string[];
 }
 
+/**
+ * Where connections used to live: one list, shared by every account.
+ *
+ * Read once per account so an upgrade does not look like a wallet
+ * disappearing, then cleared.
+ */
+const LEGACY_CONNECTIONS = 'nwc-connections';
+const LEGACY_ACTIVE = 'nwc-active-connection';
+
 export function useNWCInternal() {
   const { toast } = useToast();
-  const [connections, setConnections] = useLocalStorage<NWCConnection[]>('nwc-connections', []);
-  const [activeConnection, setActiveConnection] = useLocalStorage<string | null>('nwc-active-connection', null);
+  const { user } = useCurrentUser();
+
+  /**
+   * Connections belong to one account, not to the browser.
+   *
+   * These were kept under a single key shared by every login, so switching
+   * Nostr accounts left the previous account's wallets connected — and an NWC
+   * connection string is a spending credential, not a preference. The next
+   * person to use the app could see that balance and pay from it.
+   */
+  const [connections, setConnections] = useAccountStored<NWCConnection[]>(
+    'nwc:connections',
+    []
+  );
+  const [activeConnection, setActiveConnection] = useAccountStored<
+    string | null
+  >('nwc:active', null);
   const [connectionInfo, setConnectionInfo] = useState<Record<string, NWCInfo>>({});
+
+  /**
+   * Adopts anything left in the old shared slot.
+   *
+   * Given to whichever account is signed in when the upgrade lands, because
+   * that is who the app was already showing them to — the old storage records
+   * no owner, so there is nothing better to go on, and dropping them would
+   * disconnect a working wallet without saying so. Cleared afterwards, which
+   * is what stops the sharing.
+   *
+   * Never while signed out: handing them to the anonymous scope would strand
+   * them somewhere no real account can reach.
+   */
+  useEffect(() => {
+    if (!user || connections.length) return;
+
+    const legacy = readStore(
+      defineKey<NWCConnection[]>(LEGACY_CONNECTIONS, [])
+    );
+    if (!legacy.length) return;
+
+    const legacyActive = readStore(
+      defineKey<string | null>(LEGACY_ACTIVE, null)
+    );
+
+    setConnections(legacy);
+    if (legacyActive) setActiveConnection(legacyActive);
+
+    removeStore(defineKey<NWCConnection[]>(LEGACY_CONNECTIONS, []));
+    removeStore(defineKey<string | null>(LEGACY_ACTIVE, null));
+  }, [user, connections.length, setConnections, setActiveConnection]);
 
   // Add new connection
   const addConnection = async (uri: string, alias?: string): Promise<boolean> => {
