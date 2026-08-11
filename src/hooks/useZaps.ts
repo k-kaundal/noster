@@ -7,8 +7,10 @@ import { nip57 } from 'nostr-tools';
 import type { Event } from 'nostr-tools';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
-import type { NostrEvent } from '@nostrify/nostrify';
+import type { NostrEvent, NostrMetadata } from '@nostrify/nostrify';
 import { readRelays } from '@/lib/relay';
+import { validateZapReceipt } from '@/lib/zap';
+import { parseZapSplits, splitAmount } from '@/lib/zapSplit';
 import { GOAL_KIND, linkedGoal, parseZapGoal } from '@/lib/nip75';
 import { describeSignerError } from '@/lib/signerErrors';
 import { clearSignerFailure, recordSignerFailure } from '@/lib/signerStatus';
@@ -153,7 +155,35 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
     if (!zapEvents || !Array.isArray(zapEvents) || !actualTarget) return { zapCount: 0, totalSats: 0, zaps: [] };
     let count = 0;
     let sats = 0;
-    zapEvents.forEach(zap => {
+
+    /**
+     * NIP-57 Appendix F. Every kind 9735 with a matching `#e` used to be
+     * counted, so anybody could publish a receipt naming any note and any
+     * amount and inflate its total — which is the number readers judge a post
+     * by. Checked now: the embedded zap request must be validly signed, must
+     * be about this target and this recipient, and its stated amount must
+     * match the invoice attached to the receipt.
+     *
+     * The provider check — that the receipt is signed by the recipient's own
+     * lightning server — needs their lnurl endpoint and is applied where that
+     * is known. Everything checkable without a request is checked here.
+     */
+    const address =
+      actualTarget.kind >= 30000 && actualTarget.kind < 40000
+        ? `${actualTarget.kind}:${actualTarget.pubkey}:${
+            actualTarget.tags.find((t) => t[0] === 'd')?.[1] || ''
+          }`
+        : undefined;
+
+    const trustworthy = zapEvents.filter((zap) =>
+      validateZapReceipt(zap, {
+        recipientPubkey: actualTarget.pubkey,
+        eventId: address ? undefined : actualTarget.id,
+        address,
+      })
+    );
+
+    trustworthy.forEach(zap => {
       count++;
       const amountTag = zap.tags.find(([name]) => name === 'amount')?.[1];
       if (amountTag) {
@@ -187,7 +217,9 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
       }
       console.warn('Could not extract amount from zap receipt:', zap.id);
     });
-    return { zapCount: count, totalSats: sats, zaps: zapEvents };
+    // Only the validated ones are handed out, so a list of zappers cannot
+    // name somebody who never sent one
+    return { zapCount: count, totalSats: sats, zaps: trustworthy };
   }, [zapEvents, actualTarget]);
 
   /**
@@ -201,7 +233,15 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
    */
   const requestInvoice = async (
     amount: number,
-    comment: string
+    comment: string,
+    /**
+     * Who to pay, when it is not the event's author.
+     *
+     * A NIP-57 Appendix G `zap` tag routes an event's zaps to somebody else,
+     * and the amount is split between them. Passing the recipient in keeps one
+     * invoice path for both cases rather than a second one that would drift.
+     */
+    override?: { pubkey: string; metadata?: NostrMetadata; event?: NostrEvent }
   ): Promise<ZapInvoice | null> => {
     if (amount <= 0) return null;
 
@@ -216,7 +256,32 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
 
     if (!actualTarget) return null;
 
-    const metadata = author.data?.metadata;
+    const payeePubkey = override?.pubkey ?? actualTarget.pubkey;
+
+    let payeeEvent = override ? override.event : author.data?.event;
+    let metadata = override ? override.metadata : author.data?.metadata;
+
+    /**
+     * A split recipient is named by pubkey alone, so their profile has to be
+     * fetched before there is a lightning address to resolve. Only when it was
+     * not supplied — the ordinary path already has it in hand.
+     */
+    if (!metadata && override) {
+      const [profile] = await nostr.query(
+        [{ kinds: [0], authors: [payeePubkey], limit: 1 }],
+        { signal: AbortSignal.timeout(5000) }
+      );
+
+      if (profile) {
+        payeeEvent = profile;
+        try {
+          metadata = JSON.parse(profile.content) as NostrMetadata;
+        } catch {
+          // An unreadable profile falls through to the message below
+        }
+      }
+    }
+
     if (!metadata) {
       toast({
         title: "Couldn't read their profile",
@@ -242,8 +307,8 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
        */
       const endpoint = metadata.lud16
         ? lightningAddressUrl(metadata.lud16)
-        : author.data?.event
-          ? await nip57.getZapEndpoint(author.data.event as Event)
+        : payeeEvent
+          ? await nip57.getZapEndpoint(payeeEvent as Event)
           : null;
 
       if (!endpoint) throw new Error('Their lightning address did not resolve.');
@@ -300,7 +365,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
 
       if (payMetadata.allowsNostr) {
         const request = buildZapRequest({
-          recipientPubkey: actualTarget.pubkey,
+          recipientPubkey: payeePubkey,
           amountMsat,
           relays,
           requiredRelays: goal?.relays ?? linkedRelays,
@@ -317,6 +382,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
               ? undefined
               : actualTarget.id,
           addressPointer: addressPointerFor(actualTarget) ?? undefined,
+          targetKind: actualTarget.kind === 0 ? undefined : actualTarget.kind,
           goalEventId: link?.id,
         });
 
@@ -387,7 +453,33 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
     setInvoice(null);
   }, []);
 
+  /**
+   * Where this event says its zaps should go.
+   *
+   * Empty for the ordinary case, where the author is the recipient. When it is
+   * not empty the author is not the destination at all — NIP-57 Appendix G —
+   * and paying them would be paying the wrong person.
+   */
+  const splits = useMemo(
+    () => (actualTarget ? parseZapSplits(actualTarget) : []),
+    [actualTarget]
+  );
+
+  /**
+   * How an amount divides across the split, in millisats.
+   *
+   * Exposed rather than applied here because paying it is several invoices,
+   * one per recipient, and the caller is what knows how to pay.
+   */
+  const resolveSplit = useCallback(
+    (amountSats: number) => splitAmount(splits, amountSats * 1000),
+    [splits]
+  );
+
   return {
+    splits,
+    hasSplit: splits.length > 0,
+    resolveSplit,
     zaps,
     zapCount,
     totalSats,

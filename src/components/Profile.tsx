@@ -36,6 +36,7 @@ import { EditProfileForm } from '@/components/EditProfileForm';
 import { LinkedAccounts } from '@/components/identity/LinkedAccounts';
 import { ProfileZapGoals } from '@/components/ZapGoalCard';
 import { TrustScore } from '@/components/trust/TrustScore';
+import { BadgeSettings, ProfileBadges } from '@/components/badges/ProfileBadges';
 import { LinkedAccountsEditor } from '@/components/identity/LinkedAccountsEditor';
 import {
   ArticleCard,
@@ -208,6 +209,9 @@ export function Profile({ pubkey }: ProfileProps) {
                   {/* Kind 10011 is its own replaceable event, so it saves
                       separately from the kind 0 profile above. */}
                   <LinkedAccountsEditor />
+
+                  {/* Badges are awarded without asking; this is the consent */}
+                  <BadgeSettings />
                 </DialogContent>
               </Dialog>
             ) : (
@@ -324,6 +328,9 @@ export function Profile({ pubkey }: ProfileProps) {
           {/* NIP-39: accounts this profile claims elsewhere. Claims, not
               verifications — see the component. */}
           <LinkedAccounts pubkey={pubkey} />
+
+          {/* NIP-58: only what this person chose to display, verified */}
+          <ProfileBadges pubkey={pubkey} />
 
           {/* NIP-75: "Clients MAY display funding goals on user profiles." */}
           <ProfileZapGoals pubkey={pubkey} />
