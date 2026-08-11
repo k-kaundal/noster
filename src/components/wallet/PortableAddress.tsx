@@ -24,6 +24,7 @@ import {
   validateLaWalletName,
   type AddressMode,
 } from '@/lib/lawallet';
+import type { NamePrice } from '@/hooks/useLaWallet';
 
 /**
  * An address that keeps its name while you change what is behind it.
@@ -123,12 +124,22 @@ function LinkedAddress({ address }: { address: string }) {
 }
 
 function ClaimForm() {
-  const { claim, isClaiming, checkName, domain } = useLaWallet();
+  const { claim, isClaiming, buy, isBuying, checkName, domain } = useLaWallet();
   const { suggestion } = useIdentity();
 
   const [name, setName] = useState(() => suggestLaWalletName(suggestion));
   const [available, setAvailable] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(false);
+
+  /**
+   * Set when the service answers "that one costs money".
+   *
+   * There is no price endpoint to ask beforehand — the charge only appears as
+   * a refusal, and the figure only inside the invoice raised in response. So
+   * the price arrives after the first press, and the second press is the one
+   * that spends.
+   */
+  const [price, setPrice] = useState<NamePrice | null>(null);
 
   const problem = validateLaWalletName(name);
   const debounced = useDebounce(name, 500);
@@ -192,14 +203,62 @@ function ClaimForm() {
         </p>
       ) : null}
 
-      <Button
-        size="sm"
-        disabled={!!problem || available === false || isClaiming}
-        onClick={() => void claim({ username: name }).catch(() => {})}
-      >
-        {isClaiming && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-        Claim it
-      </Button>
+      {price ? (
+        <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
+          <p className="text-sm">
+            <span className="font-medium">
+              {laWalletAddress(price.username, domain)}
+            </span>{' '}
+            <span className="text-muted-foreground">
+              {price.amountSats === null
+                ? 'has to be paid for.'
+                : `costs ${price.amountSats.toLocaleString()} sats.`}
+            </span>
+          </p>
+          {/* The number comes from the invoice the service raised, not from
+              any rule of ours — there is no amount field to send and no price
+              endpoint to read, so this is the only figure that is certain to
+              match what the wallet gets charged */}
+          <p className="text-xs text-muted-foreground">
+            Paid once, from a wallet connected here. The name is yours
+            afterwards and is never reissued to anybody else.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              disabled={isBuying}
+              onClick={() =>
+                void buy(price)
+                  .then(() => setPrice(null))
+                  .catch(() => {})
+              }
+            >
+              {isBuying && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              {price.amountSats === null
+                ? 'Pay and claim'
+                : `Pay ${price.amountSats.toLocaleString()} sats`}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPrice(null)}>
+              Not now
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          size="sm"
+          disabled={!!problem || available === false || isClaiming}
+          onClick={() =>
+            void claim({ username: name })
+              .then((outcome) => {
+                if (outcome.kind === 'price') setPrice(outcome);
+              })
+              .catch(() => {})
+          }
+        >
+          {isClaiming && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+          Claim it
+        </Button>
+      )}
     </div>
   );
 }

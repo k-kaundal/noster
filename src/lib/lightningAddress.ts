@@ -2,21 +2,20 @@
  * Lightning addresses (LUD-16) issued to our users by the LNbits `lnurlp`
  * extension.
  *
- * The address domain is not the LNbits host and is not derived from it. Users
- * are given `kk@getzap.me`; the machinery behind that lives at
- * `ln.nostrfeed.com` and `wallet.nostrfeed.com`, and neither belongs in an
- * address somebody hands to a friend.
+ * These are the `@ln.nostrfeed.com` ones, and they are a different product
+ * from the `@getzap.me` addresses in `lawallet.ts` — different issuer,
+ * different backend, different rules. Both are real, both belong to the same
+ * person, and the app shows both; what it must never do is print one domain
+ * over the other's name, because an address that reads right and resolves
+ * nowhere is worse than no address at all.
  *
- * It used to be derived from `VITE_LNBITS_URL`, which meant the app printed
- * `kk@ln.nostrfeed.com` — a different address from the one the operator
- * issues, and one that goes on a profile and quietly resolves nowhere.
- *
- * Serving `getzap.me` addresses from LNbits needs that domain to proxy
- * `/.well-known/lnurlp/*` through to the LNbits host; LNbits only answers the
- * well-known route on its own origin. See docs/lightning-addresses.md.
+ * Still configurable, and still not derived from the LNbits host: serving
+ * these under a nicer domain only needs that domain to proxy
+ * `/.well-known/lnurlp/*` through to LNbits, which answers the well-known
+ * route on its own origin only. See docs/lightning-addresses.md.
  */
 export const ADDRESS_DOMAIN = (
-  import.meta.env.VITE_LIGHTNING_ADDRESS_DOMAIN || 'getzap.me'
+  import.meta.env.VITE_LIGHTNING_ADDRESS_DOMAIN || 'ln.nostrfeed.com'
 )
   .replace(/^@/, '')
   .replace(/^https?:\/\//, '')

@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/useToast';
 import { usePayAnyWallet } from '@/hooks/usePayAnyWallet';
 import {
   addressesForPubkey,
+  invoiceAmountSats,
   laWalletRequest,
   mergeHeldAddresses,
   requiresPayment,
@@ -16,6 +17,30 @@ import {
   type ServiceInvoice,
   type WalletAddress,
 } from '@/lib/lawallet';
+
+export interface ClaimRequest {
+  username: string;
+  mode?: AddressMode;
+}
+
+/**
+ * A name that has to be bought, and what it costs.
+ *
+ * `amountSats` is null when the invoice carries no amount — rare, but it means
+ * the figure is unknown rather than zero, and the two must not be confused
+ * where money is concerned.
+ */
+export interface NamePrice {
+  kind: 'price';
+  username: string;
+  mode: AddressMode;
+  invoice: ServiceInvoice;
+  amountSats: number | null;
+}
+
+export type ClaimOutcome =
+  | { kind: 'claimed'; address: WalletAddress }
+  | NamePrice;
 
 /**
  * Addresses at `wallet.nostrfeed.com`, which point wherever you tell them.
@@ -156,13 +181,27 @@ export function useLaWallet() {
       signer: signer!,
     });
 
-  const payForName = async (username: string) => {
+  /**
+   * Asks the service what a name costs.
+   *
+   * The price is not ours to compute. `POST /api/invoices` takes a purpose and
+   * a username and nothing else — there is no amount field — so the server
+   * decides and the only place the figure appears is inside the BOLT11 it
+   * returns. Working it out here from name length or rarity would produce a
+   * number that disagrees with what the wallet is about to be charged, which
+   * is the one number that must not be wrong.
+   */
+  const quoteName = async (username: string) => {
     const invoice = await laWalletRequest<ServiceInvoice>('/api/invoices', {
       method: 'POST',
       body: { purpose: 'wallet-address', metadata: { username } },
       signer: signer!,
     });
 
+    return { invoice, amountSats: invoiceAmountSats(invoice.pr) };
+  };
+
+  const payForName = async (invoice: ServiceInvoice) => {
     const option = preferredFor(0);
     const result = await pay({ bolt11: invoice.pr, optionId: option.id });
 
@@ -186,33 +225,65 @@ export function useLaWallet() {
     );
   };
 
-  const claim = useMutation({
-    mutationFn: async ({
-      username,
-      mode = 'IDLE',
-    }: {
-      username: string;
-      mode?: AddressMode;
-    }) => {
+  /**
+   * Claims a name, or comes back with its price.
+   *
+   * Whether a name costs anything is a per-instance decision the API does not
+   * expose anywhere — there is no price endpoint, and the charge only surfaces
+   * as a refusal when the name is claimed. So the free path is tried first and
+   * the refusal is read: if it means "pay first", an invoice is raised for
+   * exactly this username and the amount comes back for someone to agree to.
+   *
+   * It used to pay that invoice on the spot. Nobody should have their wallet
+   * charged by a button labelled "Claim it" without being told the number
+   * first — least of all when the number is set by a server and can change
+   * without this app knowing.
+   */
+  const claim = useMutation<ClaimOutcome, Error, ClaimRequest>({
+    mutationFn: async ({ username, mode = 'IDLE' }) => {
       try {
-        return await claimName(username, mode);
+        return { kind: 'claimed', address: await claimName(username, mode) };
       } catch (error) {
         if (!requiresPayment(error)) throw error;
 
-        await payForName(username);
-        return await claimName(username, mode);
+        const { invoice, amountSats } = await quoteName(username);
+        return { kind: 'price', username, mode, invoice, amountSats };
       }
     },
-    onSuccess: (created) => {
+    onSuccess: (outcome) => {
+      if (outcome.kind !== 'claimed') return;
+
       invalidate();
       toast({
         title: 'Address claimed',
-        description: `${created.username} is yours. Point it somewhere to start receiving.`,
+        description: `${outcome.address.username} is yours. Point it somewhere to start receiving.`,
       });
     },
     onError: (error: Error) => {
       toast({
         title: 'Could not claim that name',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  /** Pays a price already shown to someone, then takes the name. */
+  const buy = useMutation({
+    mutationFn: async (quote: NamePrice) => {
+      await payForName(quote.invoice);
+      return await claimName(quote.username, quote.mode);
+    },
+    onSuccess: (created) => {
+      invalidate();
+      toast({
+        title: 'Address bought',
+        description: `${created.username} is yours. Point it somewhere to start receiving.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Could not buy that name',
         description: error.message,
         variant: 'destructive',
       });
@@ -334,6 +405,8 @@ export function useLaWallet() {
     probeAlias,
     claim: claim.mutateAsync,
     isClaiming: claim.isPending,
+    buy: buy.mutateAsync,
+    isBuying: buy.isPending,
     point: point.mutateAsync,
     isPointing: point.isPending,
     connectWallet: connectWallet.mutateAsync,
