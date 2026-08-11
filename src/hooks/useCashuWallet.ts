@@ -435,28 +435,58 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       const reserve = quote.fee_reserve.toNumber();
       const needed = amount + reserve;
       const available = currentProofs();
+      const held = proofsToSats(available);
 
-      if (proofsToSats(available) < needed) {
+      if (held < needed) {
         throw new Error(
-          `That invoice needs ${needed.toLocaleString()} sats including the mint's fee reserve, and you have ${proofsToSats(available).toLocaleString()}.`
+          `That invoice needs ${needed.toLocaleString()} sats including the mint's fee reserve, and you have ${held.toLocaleString()}.`
         );
       }
 
-      const { keep, send: outgoing } = await wallet.send(needed, available, {
-        includeFees: true,
-      });
+      let keep: Proof[];
+      let outgoing: Proof[];
+
+      try {
+        ({ keep, send: outgoing } = await wallet.send(needed, available, {
+          includeFees: true,
+        }));
+      } catch (error) {
+        /**
+         * The check above is a floor, not the whole price. NUT-02 lets a mint
+         * charge `input_fee_ppk` for every proof spent as an input, and NUT-05
+         * requires the wallet to cover `amount + fee_reserve + that fee`. How
+         * many inputs it takes is only known once they are selected, which is
+         * here — so a balance that clears the floor can still fall short, and
+         * saying so beats passing the library's wording through.
+         */
+        if (held < needed + wallet.getFeesForProofs(available).toNumber()) {
+          throw new Error(
+            `That invoice needs ${needed.toLocaleString()} sats plus this mint's per-input fee, which is more than the ${held.toLocaleString()} you have.`
+          );
+        }
+
+        throw error;
+      }
 
       const consumed = consumedProofs(available, keep, outgoing);
 
       try {
         const result = await wallet.meltProofsBolt11(quote, outgoing);
         const change = result.change ?? [];
+        const next = mergeProofs(keep, change);
 
-        await commit(mergeProofs(keep, change), [...outgoing, ...consumed]);
+        await commit(next, [...outgoing, ...consumed]);
 
+        /**
+         * Measured rather than estimated. This used to report
+         * `reserve - change`, which is the unused part of the routing reserve
+         * and misses what the mint charged per input — so the figure shown was
+         * smaller than the amount that actually left. Taking it from the
+         * balance either side covers both, whatever the mint charges.
+         */
         return {
           amountSats: amount,
-          feeSats: Math.max(0, reserve - proofsToSats(change)),
+          feeSats: Math.max(0, held - proofsToSats(next) - amount),
         };
       } catch (error) {
         // The payment may or may not have gone through. Putting the proofs

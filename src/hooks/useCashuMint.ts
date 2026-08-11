@@ -1,6 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import type { GetInfoResponse, SwapMethod } from '@cashu/cashu-ts';
-import { CASHU_MINT_URL, fetchMintInfo } from '@/lib/cashu';
+import {
+  CASHU_MINT_URL,
+  activeInputFeePpk,
+  fetchMintInfo,
+  inputFeeSats,
+  loadWallet,
+  type KeysetSummary,
+} from '@/lib/cashu';
 
 export interface MintLimits {
   /** Smallest deposit the mint will quote, in sats. */
@@ -24,6 +31,16 @@ export interface MintSummary {
   /** Withdrawals to lightning are open (NUT-05). */
   canWithdraw: boolean;
   deposit: MintLimits;
+  /**
+   * NUT-02 input fee on the active keyset, in parts per thousand.
+   *
+   * Charged per proof spent, so it applies to sending, receiving and paying —
+   * not to the balance sitting still. Shown because a wallet whose balance
+   * drops for invisible reasons reads as broken.
+   */
+  inputFeePpk: number;
+  /** What that fee costs for a typical few-proof payment, in sats. */
+  typicalFeeSats: number;
   info: GetInfoResponse;
 }
 
@@ -64,6 +81,20 @@ export function useCashuMint(mintUrl: string = CASHU_MINT_URL) {
       const nut4 = info.nuts?.['4'];
       const nut5 = info.nuts?.['5'];
 
+      /**
+       * Keysets come from the loaded wallet rather than a second request, and
+       * a mint that will not load must still describe itself — the fee is
+       * worth knowing but not worth hiding the rest of the card over.
+       */
+      let inputFeePpk = 0;
+      try {
+        const wallet = await loadWallet(mintUrl);
+        const keysets = wallet.keyChain.getKeysets() as KeysetSummary[];
+        inputFeePpk = activeInputFeePpk(keysets ?? []);
+      } catch {
+        // Left at zero, which reads as "no fee shown" rather than a wrong one
+      }
+
       return {
         url: mintUrl,
         name: info.name || mintUrl,
@@ -79,6 +110,9 @@ export function useCashuMint(mintUrl: string = CASHU_MINT_URL) {
         canDeposit: !!nut4 && !nut4.disabled,
         canWithdraw: !!nut5 && !nut5.disabled,
         deposit: bolt11Sats(nut4?.methods),
+        inputFeePpk,
+        // Three proofs is what a typical amount decomposes into
+        typicalFeeSats: inputFeeSats(3, inputFeePpk),
         info,
       };
     },

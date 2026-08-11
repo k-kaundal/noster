@@ -102,6 +102,15 @@ export function MintInfoCard({ mintUrl }: { mintUrl?: string }) {
               <Badge variant={mint.canWithdraw ? 'secondary' : 'destructive'}>
                 {mint.canWithdraw ? 'Withdrawals open' : 'Withdrawals closed'}
               </Badge>
+              {/* NUT-02: charged per proof spent, so it applies to sending
+                  and paying rather than to sitting still. Said out loud
+                  because a balance that shrinks for invisible reasons reads
+                  as a broken wallet rather than as a fee. */}
+              {mint.inputFeePpk > 0 && (
+                <Badge variant="outline">
+                  ~{mint.typicalFeeSats.toLocaleString()} sat fee per payment
+                </Badge>
+              )}
               {mint.deposit.minSats !== undefined && (
                 <Badge variant="outline">
                   min {mint.deposit.minSats.toLocaleString()}
