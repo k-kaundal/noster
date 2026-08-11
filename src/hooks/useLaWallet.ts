@@ -6,6 +6,7 @@ import { usePayAnyWallet } from '@/hooks/usePayAnyWallet';
 import {
   addressesForPubkey,
   invoiceAmountSats,
+  unwrapList,
   laWalletRequest,
   mergeHeldAddresses,
   requiresPayment,
@@ -68,12 +69,12 @@ export function useLaWallet() {
   const addresses = useQuery({
     queryKey: ['lawallet-addresses', user?.pubkey ?? ''],
     queryFn: async ({ signal }) => {
-      const body = await laWalletRequest<{ data: WalletAddress[] }>(
-        '/api/wallet/addresses',
-        { signer: signer!, signal }
-      );
+      const body = await laWalletRequest<unknown>('/api/wallet/addresses', {
+        signer: signer!,
+        signal,
+      });
 
-      return body.data ?? [];
+      return unwrapList<WalletAddress>(body);
     },
     enabled: !!signer,
     staleTime: 30_000,
@@ -102,12 +103,17 @@ export function useLaWallet() {
   const directory = useQuery({
     queryKey: ['lawallet-directory', user?.pubkey ?? ''],
     queryFn: async ({ signal }) => {
-      const body = await laWalletRequest<{ data: DirectoryAddress[] }>(
-        '/api/lightning-addresses',
-        { signer: signer!, signal }
-      );
+      const body = await laWalletRequest<unknown>('/api/lightning-addresses', {
+        signer: signer!,
+        signal,
+      });
 
-      return addressesForPubkey(body.data ?? [], user?.pubkey);
+      /**
+       * The directory is global — it lists every address on the platform with
+       * the key each belongs to — so filtering by pubkey is what makes it
+       * this person's list rather than everybody's.
+       */
+      return addressesForPubkey(unwrapList<DirectoryAddress>(body), user?.pubkey);
     },
     enabled: !!signer,
     staleTime: 60_000,
@@ -117,11 +123,14 @@ export function useLaWallet() {
   /** The caller's NWC-backed wallets on the service, for CUSTOM_NWC mode. */
   const wallets = useQuery({
     queryKey: ['lawallet-wallets', user?.pubkey ?? ''],
-    queryFn: async ({ signal }) =>
-      await laWalletRequest<RemoteWallet[]>('/api/remote-wallets', {
+    queryFn: async ({ signal }) => {
+      const body = await laWalletRequest<unknown>('/api/remote-wallets', {
         signer: signer!,
         signal,
-      }),
+      });
+
+      return unwrapList<RemoteWallet>(body);
+    },
     enabled: !!signer,
     staleTime: 60_000,
     retry: false,
@@ -374,6 +383,43 @@ export function useLaWallet() {
     },
   });
 
+  /**
+   * Revokes a connection the service holds.
+   *
+   * Unlike an address, this should be removable and easily: the stored value
+   * is an NWC connection string, which is a spending credential for somebody's
+   * own wallet sitting on someone else's server. It can spend for as long as
+   * it lives, so being unable to withdraw it is the actual problem.
+   *
+   * The service soft-deletes — the wallet flips to REVOKED rather than
+   * vanishing — so nothing is lost from its records and no name is freed. What
+   * does stop is any address pointing at it, which is worth saying before the
+   * click rather than discovering as silence.
+   */
+  const revokeWallet = useMutation({
+    mutationFn: async (id: string) =>
+      await laWalletRequest<void>(`/api/remote-wallets/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        signer: signer!,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lawallet-wallets'] });
+      invalidate();
+      toast({
+        title: 'Wallet disconnected',
+        description:
+          'It can no longer spend on your behalf. Addresses pointing at it stop receiving until you point them somewhere else.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Could not disconnect that wallet',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   /* `DELETE /api/wallet/addresses/{username}` is not called from here, for the
    * same reason it is not called against our own pay links: the service's own
    * `/api/lightning-addresses/check` reports a deleted name as available
@@ -411,5 +457,7 @@ export function useLaWallet() {
     isPointing: point.isPending,
     connectWallet: connectWallet.mutateAsync,
     isConnecting: connectWallet.isPending,
+    revokeWallet: revokeWallet.mutateAsync,
+    isRevoking: revokeWallet.isPending,
   };
 }
