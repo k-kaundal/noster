@@ -127,9 +127,13 @@ export function TokenCard({
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
+    /**
+     * The amount and the note are deliberately not passed. The card is a
+     * picture that gets forwarded, and printing the value announces it to
+     * everyone it passes on the way — the person scanning it finds out, and
+     * nobody else needs to.
+     */
     drawTokenCard(canvas, {
-      amountSats: sent.amountSats,
-      memo: sent.memo,
       fromName,
       mintHost: mintHost(sent.mint),
       platform: SITE_NAME,
@@ -155,7 +159,7 @@ export function TokenCard({
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = tokenCardFilename(sent.amountSats);
+    anchor.download = tokenCardFilename();
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -164,9 +168,7 @@ export function TokenCard({
     const blob = await buildImage();
     if (!blob) return;
 
-    const file = new File([blob], tokenCardFilename(sent.amountSats), {
-      type: 'image/png',
-    });
+    const file = new File([blob], tokenCardFilename(), { type: 'image/png' });
 
     /**
      * Only offered when the browser will actually take a file. `canShare` is
