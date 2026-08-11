@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { QrCode } from '@/components/wallet/QrCode';
+import { QrScanner } from '@/components/wallet/QrScanner';
 import { useCashuWallet, useMintQuoteStatus } from '@/hooks/useCashuWallet';
 import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useToast } from '@/hooks/useToast';
@@ -63,7 +64,7 @@ export function EcashReceiveDialog({
             Receive ecash
           </DialogTitle>
           <DialogDescription>
-            Buy ecash with lightning, or redeem a token someone sent you.
+            Buy ecash with lightning, or redeem a token someone sent you — paste it, or scan the card.
           </DialogDescription>
         </DialogHeader>
 
@@ -72,7 +73,7 @@ export function EcashReceiveDialog({
             <TabsTrigger value="deposit" disabled={!canDeposit}>
               Lightning
             </TabsTrigger>
-            <TabsTrigger value="token">Paste token</TabsTrigger>
+            <TabsTrigger value="token">Scan or paste</TabsTrigger>
           </TabsList>
 
           <TabsContent value="deposit" className="pt-4">
@@ -389,6 +390,13 @@ function RedeemPanel({ onDone }: { onDone: () => void }) {
           it wins.
         </p>
       </div>
+
+      {/*
+        Scanning fills the same box rather than redeeming straight away, so the
+        mint check below still happens and nothing is claimed before it has
+        been looked at.
+      */}
+      <QrScanner onToken={setToken} />
 
       {preview && (
         <div

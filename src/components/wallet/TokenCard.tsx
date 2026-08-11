@@ -21,7 +21,7 @@ import { QrCode } from '@/components/wallet/QrCode';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useToast } from '@/hooks/useToast';
-import { SITE_NAME } from '@/hooks/useSeo';
+import { SITE_NAME, SITE_URL } from '@/hooks/useSeo';
 import { genUserName } from '@/lib/genUserName';
 import { mintHost, type TokenState } from '@/lib/cashu';
 import type { SentToken } from '@/hooks/useSentTokens';
@@ -136,6 +136,7 @@ export function TokenCard({
     drawTokenCard(canvas, {
       fromName,
       mintHost: mintHost(sent.mint),
+      claimSite: SITE_URL.replace(/^https?:\/\//, ''),
       platform: SITE_NAME,
       claimed,
       qr: qrRef.current?.querySelector('canvas') ?? null,
@@ -229,7 +230,10 @@ export function TokenCard({
 
             <div className="space-y-0.5 pt-1 text-xs text-muted-foreground">
               {fromName && <p className="truncate">from {fromName}</p>}
-              <p className="truncate">Issued by {mintHost(sent.mint)}</p>
+              <p className="truncate">
+                Claim at {SITE_URL.replace(/^https?:\/\//, '')}
+              </p>
+              <p className="truncate">issued by {mintHost(sent.mint)}</p>
               <p>cut {relativeTime(sent.createdAt * 1000)}</p>
             </div>
           </div>

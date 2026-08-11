@@ -22,6 +22,15 @@ export interface TokenCardArt {
   fromName?: string;
   /** The mint that will honour it — the one thing a holder must know. */
   mintHost: string;
+  /**
+   * Where a person actually goes to claim it.
+   *
+   * Distinct from the mint, and the card needs both. A mint host is an API
+   * endpoint: typing it into a browser gets you JSON, not a wallet. Somebody
+   * handed a card needs a site they can open, and naming only the mint leaves
+   * them holding a code with nowhere to take it.
+   */
+  claimSite: string;
   platform: string;
   /** Whether it is still claimable, which changes the whole card. */
   claimed: boolean;
@@ -222,12 +231,25 @@ export function drawTokenCard(
   context.fillStyle = 'rgba(148,163,184,0.9)';
   context.font = `500 22px ${FONT}`;
   context.letterSpacing = '1.5px';
-  context.fillText('REDEEM AT', left, line);
+  context.fillText('CLAIM AT', left, line);
   context.letterSpacing = '0px';
 
+  /**
+   * The site first and larger, because it is the instruction. The mint sits
+   * under it as the smaller fact about who is holding the money — true, and
+   * worth stating, but not what somebody does next.
+   */
   context.fillStyle = '#ffffff';
-  context.font = `600 32px ${FONT}`;
-  context.fillText(fit(context, art.mintHost, 480), left, line + 42);
+  context.font = `600 34px ${FONT}`;
+  context.fillText(fit(context, art.claimSite, 480), left, line + 44);
+
+  context.fillStyle = 'rgba(148,163,184,0.85)';
+  context.font = `400 22px ${FONT}`;
+  context.fillText(
+    fit(context, `issued by ${art.mintHost}`, 480),
+    left,
+    line + 78
+  );
 
   // Status along the bottom, quiet unless it matters
   context.fillStyle = art.claimed ? 'rgba(203,213,225,0.85)' : 'rgba(134,239,172,0.95)';
