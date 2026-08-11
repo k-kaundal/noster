@@ -53,6 +53,7 @@ const ReportDialog = lazy(() =>
 import { RepliesSection } from '@/components/RepliesSection';
 import { QuotedNote } from '@/components/QuotedNote';
 import { MaybeWarned } from '@/components/ContentWarning';
+import { formatTimeLeft, secondsUntilExpiry } from '@/lib/expiration';
 import { ReactionChips, ReactionPicker } from '@/components/ReactionPicker';
 import {
   AlertDialog,
@@ -72,6 +73,7 @@ import {
 import {
   BadgeCheck,
   Bookmark,
+  Clock,
   Copy,
   Flag,
   Trash2,
@@ -174,6 +176,7 @@ export function Post({
   const repostedEvent = embeddedRepost ?? fetchedRepost ?? null;
 
   const contentWarning = getContentWarning(event);
+  const timeLeft = secondsUntilExpiry(event);
   // A `q` tag is authoritative; otherwise fall back to an inline nostr: URI
   const quotedId = getQuotedEventId(event) ?? getInlineQuoteId(event.content);
 
@@ -401,6 +404,23 @@ export function Post({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {timeLeft !== null && (
+        /*
+          NIP-40. Shown because the author asked for this note to stop being
+          served, and a reader deciding whether to reply deserves to know it
+          is on a clock.
+        */
+        <div
+          className={cn(
+            'mt-2 flex items-center gap-1.5 text-xs text-muted-foreground',
+            !embedded && 'sm:ml-[3.25rem]'
+          )}
+        >
+          <Clock className="h-3 w-3" />
+          {formatTimeLeft(timeLeft)}
+        </div>
+      )}
 
       <div className={cn('mt-2 text-[15px]', !embedded && 'sm:ml-[3.25rem]')}>
         {isRepost ? (

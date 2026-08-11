@@ -40,6 +40,9 @@ import { relayDisplayName } from '@/lib/relay';
 import { POLL_KIND, buildPollTags } from '@/lib/poll';
 import { NoteContent } from '@/components/NoteContent';
 import { ContentWarningField } from '@/components/notes/ContentWarningField';
+import { ExpiryField } from '@/components/notes/ExpiryField';
+import { useExpirySupport } from '@/hooks/useExpirySupport';
+import { EXPIRY_CHOICES, expirationTags } from '@/lib/expiration';
 import { contentWarningTags } from '@/lib/contentWarning';
 import { cn } from '@/lib/utils';
 
@@ -85,6 +88,7 @@ export function Compose() {
   const [warningEnabled, setWarningEnabled] = useState(false);
   const [warningReason, setWarningReason] = useState('');
   const [warningCategories, setWarningCategories] = useState<string[]>([]);
+  const [expiry, setExpiry] = useState('never');
   const [pollEnabled, setPollEnabled] = useState(false);
   const [pollChoices, setPollChoices] = useState<string[]>(['', '']);
   const [multipleChoice, setMultipleChoice] = useState(false);
@@ -99,6 +103,7 @@ export function Compose() {
   const { mutateAsync: createEvent } = useNostrPublish();
   const { mutateAsync: uploadFile, isPending: isUploading } = useUploadFile();
   const { writeUrls } = useRelays();
+  const { unsupported: unsupportedExpiryRelays } = useExpirySupport();
 
   const metadata = author.data?.metadata;
   const displayName =
@@ -214,6 +219,15 @@ export function Compose() {
           })
         : [];
 
+      /**
+       * NIP-40. Computed here rather than when the dropdown changed, so a
+       * composer left open for twenty minutes does not publish a note that is
+       * already most of the way through its life.
+       */
+      const expiryTags = expirationTags(
+        EXPIRY_CHOICES.find((choice) => choice.id === expiry)?.seconds
+      );
+
       const tags = [
         ...uploadedImages.map((url) => [
           'imeta',
@@ -225,6 +239,7 @@ export function Compose() {
         ...hashtags.map((tag) => ['t', tag]),
         // NIP-36: readers approve before the note is shown
         ...warningTags,
+        ...expiryTags,
       ];
 
       if (pollEnabled) {
@@ -242,6 +257,7 @@ export function Compose() {
             ...quoted,
             ...hashtags.map((tag) => ['t', tag]),
             ...warningTags,
+            ...expiryTags,
           ],
         });
       } else {
@@ -528,6 +544,13 @@ export function Compose() {
               </div>
             )}
           </div>
+
+          {/* NIP-40: relays are asked to drop the note after a while */}
+          <ExpiryField
+            value={expiry}
+            onChange={setExpiry}
+            unsupportedRelays={unsupportedExpiryRelays}
+          />
 
           {/* NIP-36 content warning */}
           <ContentWarningField

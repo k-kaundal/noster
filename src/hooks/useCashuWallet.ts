@@ -9,6 +9,7 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import {
   CASHU_MINT_URL,
+  CASHU_UNIT,
   consumedProofs,
   dropSpentProofs,
   encodeToken,
@@ -32,8 +33,12 @@ import {
   type PendingQuote,
 } from '@/lib/cashuStore';
 import {
+  HISTORY_KIND,
   TOKEN_KIND,
   WALLET_KIND,
+  buildHistoryContent,
+  buildHistoryTags,
+  tokensInUnit,
   buildTokenContent,
   buildWalletContent,
   currentTokenEvents,
@@ -123,7 +128,13 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
             !!record && record.mint === mintUrl
         );
 
-        const live = currentTokenEvents(records);
+        /**
+         * Same mint is not enough — the same mint can issue in several units,
+         * and a proof worth one dollar carries the integer 1 exactly like a
+         * proof worth one sat. Counting both into one number would be silent
+         * and wrong in whichever direction the exchange rate happens to sit.
+         */
+        const live = currentTokenEvents(tokensInUnit(records, CASHU_UNIT));
         remote = mergeProofs(...live.map((record) => record.proofs));
         eventIds = live.map((record) => record.event.id);
       } catch {
@@ -207,6 +218,10 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
         );
       }
 
+      // Read before the write below replaces it: the difference is what the
+      // history entry reports, and after `writeProofs` it is zero
+      const before = proofsToSats(currentProofs());
+
       writeProofs(pubkey, mintUrl, next);
       addUsedSecrets(
         pubkey,
@@ -228,7 +243,8 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
           pubkey,
           mintUrl,
           next,
-          previous
+          previous,
+          CASHU_UNIT
         );
 
         const event = await publishEvent({
@@ -254,6 +270,38 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
           proofs: next,
           eventIds: [event.id],
         });
+
+        /**
+         * The transaction log, which NIP-60 asks clients to keep when the
+         * balance changes. Informational and explicitly optional, so its
+         * failure is swallowed: a history entry that did not publish is worth
+         * strictly less than the money that just moved successfully, and
+         * throwing here would report a working spend as a failure.
+         */
+        const delta = proofsToSats(next) - before;
+
+        if (delta !== 0) {
+          const content = await buildHistoryContent(
+            user.signer as Nip44Signer,
+            pubkey,
+            {
+              direction: delta > 0 ? 'in' : 'out',
+              amount: Math.abs(delta),
+              unit: CASHU_UNIT,
+              created: event.id,
+              destroyed: previous,
+            }
+          );
+
+          await publishEvent({
+            kind: HISTORY_KIND,
+            content,
+            tags: buildHistoryTags({
+              direction: delta > 0 ? 'in' : 'out',
+              amount: Math.abs(delta),
+            }),
+          }).catch(() => undefined);
+        }
       } catch {
         toast({
           title: 'Backup failed',
@@ -263,7 +311,17 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
         });
       }
     },
-    [user, pubkey, readOnly, mintUrl, queryClient, publishEvent, toast, queryKey]
+    [
+      user,
+      pubkey,
+      readOnly,
+      mintUrl,
+      queryClient,
+      publishEvent,
+      toast,
+      queryKey,
+      currentProofs,
+    ]
   );
 
   /**

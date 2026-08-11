@@ -17,6 +17,8 @@ import { useMuteList } from '@/hooks/useMuteList';
 import { useAdultContent } from '@/hooks/useAdultContent';
 import { filterMuted } from '@/lib/mute';
 import { filterAdultContent } from '@/lib/nsfw';
+import { filterMachineEvents } from '@/lib/machineEvents';
+import { useMachineEvents } from '@/hooks/useMachineEvents';
 import { countUnseen, markerFor, type FeedMarker } from '@/lib/feedPosition';
 import { cn } from '@/lib/utils';
 
@@ -49,6 +51,7 @@ export function Feed() {
   const { list: muteList } = useMuteList();
   const { filters } = useAdvancedFilters();
   const { showAdult } = useAdultContent();
+  const { showMachine } = useMachineEvents();
 
   // Muted authors, words and hashtags never reach the timeline
   const posts = useMemo(() => {
@@ -57,6 +60,14 @@ export function Feed() {
     // Before anything optional: adult content is filtered whether or not the
     // advanced filters have ever been opened
     let filtered = filterAdultContent(filterMuted(rawPosts, muteList), showAdult);
+
+    /**
+     * Machine payloads next. A service publishing status as kind 1 is doing
+     * nothing wrong, but one beaconing every few seconds is the whole feed
+     * within the hour — and this is the shared timeline, where a reader is
+     * asking for posts. Their own profile still shows everything.
+     */
+    filtered = filterMachineEvents(filtered, showMachine);
 
     // Apply advanced filters if enabled
     if (filters.enabled) {
@@ -112,7 +123,7 @@ export function Feed() {
     }
 
     return filtered;
-  }, [rawPosts, muteList, filters, showAdult]);
+  }, [rawPosts, muteList, filters, showAdult, showMachine]);
 
   // Track the newest note the reader has actually seen, so the "new posts"
   // pill only counts notes that arrived after they arrived on the page.

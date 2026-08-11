@@ -1,14 +1,25 @@
 import { useState } from 'react';
-import { Braces, Check, ChevronDown, ChevronUp, Copy } from 'lucide-react';
+import { Braces, Check, ChevronDown, ChevronUp, Clock, Copy } from 'lucide-react';
+import type { NostrEvent } from '@nostrify/nostrify';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatScalar, humanizeKey } from '@/lib/eventKinds';
+import {
+  beaconFreshness,
+  describeFreshness,
+  readMachinePayload,
+} from '@/lib/machineEvents';
 import { cn } from '@/lib/utils';
 
 interface StructuredPayloadProps {
   data: unknown;
   /** Shown as a chip, e.g. the event kind label. */
   label?: string;
+  /**
+   * The event this payload came from, when there is one. Used only to read a
+   * declared `ttl`, so a reading that has lapsed does not read as current.
+   */
+  event?: NostrEvent;
   className?: string;
 }
 
@@ -25,6 +36,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 export function StructuredPayload({
   data,
   label,
+  event,
   className,
 }: StructuredPayloadProps) {
   const [showRaw, setShowRaw] = useState(false);
@@ -49,6 +61,19 @@ export function StructuredPayload({
       )
     : undefined;
 
+  /**
+   * A beacon that declared how long it stays true.
+   *
+   * Worth surfacing above everything else in the card: "0 clients, 46% CPU"
+   * is a claim about right now, and read three days later it is simply false.
+   * The numbers stay visible — they are what was measured — but they are
+   * labelled as no longer current rather than presented as the state of
+   * something.
+   */
+  const payload = event ? readMachinePayload(event) : null;
+  const freshness = payload ? beaconFreshness(payload) : 'unknown';
+  const validity = payload ? describeFreshness(payload) : null;
+
   return (
     <div className={cn('overflow-hidden rounded-lg border bg-muted/30', className)}>
       <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
@@ -63,6 +88,18 @@ export function StructuredPayload({
         {label && (
           <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
             {label}
+          </Badge>
+        )}
+        {validity && (
+          <Badge
+            variant={freshness === 'stale' ? 'outline' : 'secondary'}
+            className={cn(
+              'h-5 gap-1 px-1.5 text-[10px] font-normal',
+              freshness === 'stale' && 'text-warning-strong'
+            )}
+          >
+            <Clock className="h-3 w-3" />
+            {validity}
           </Badge>
         )}
 
