@@ -2,6 +2,7 @@ import { useState, forwardRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Wallet, Plus, Trash2, Zap, Globe, Loader2, WalletMinimal, CheckCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ConnectedWalletActions } from '@/components/wallet/ConnectedWalletActions';
 import {
   Dialog,
   DialogContent,
@@ -213,7 +214,8 @@ const WalletContent = forwardRef<HTMLDivElement, {
             const info = connectionInfo[connection.connectionString];
             const isActive = activeConnection === connection.connectionString;
             return (
-              <div key={connection.connectionString} className={`flex items-center justify-between p-3 border rounded-lg ${isActive ? 'ring-2 ring-primary' : ''}`}>
+              <div key={connection.connectionString} className={`space-y-3 p-3 border rounded-lg ${isActive ? 'ring-2 ring-primary' : ''}`}>
+                <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <WalletMinimal className="h-4 w-4 text-muted-foreground" />
                   <div>
@@ -244,6 +246,12 @@ const WalletContent = forwardRef<HTMLDivElement, {
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
+                </div>
+
+                {/* A connected wallet could show a balance and nothing else,
+                    so every payment went through the custodial wallet here
+                    instead of the one somebody chose to connect. */}
+                <ConnectedWalletActions connection={connection} />
               </div>
             );
           })}

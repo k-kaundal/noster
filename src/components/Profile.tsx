@@ -29,6 +29,7 @@ import { NoteContent } from '@/components/NoteContent';
 import { EmptyState } from '@/components/EmptyState';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { FollowButton } from '@/components/FollowButton';
+import { ZapDialog } from '@/components/ZapDialog';
 import { EditProfileForm } from '@/components/EditProfileForm';
 import {
   ArticleCard,
@@ -193,6 +194,17 @@ export function Profile({ pubkey }: ProfileProps) {
               </Dialog>
             ) : (
               <>
+                {/* Zapping a person rather than a note. Hidden by the dialog
+                    itself when they have no lightning address, so it never
+                    offers to pay somebody who cannot be paid. */}
+                {user && author.data?.event && (
+                  <ZapDialog target={author.data.event}>
+                    <Button variant="outline" size="sm">
+                      <Zap className="mr-2 h-4 w-4 text-zap" />
+                      Zap
+                    </Button>
+                  </ZapDialog>
+                )}
                 {user && (
                   <Button asChild variant="outline" size="sm">
                     <Link to={`/chat/${npub}`}>
