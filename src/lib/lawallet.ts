@@ -242,3 +242,67 @@ export function isLive(address: WalletAddress): boolean {
   }
   return false;
 }
+
+/** A pay-then-act invoice, as returned by `POST /api/invoices`. */
+export interface ServiceInvoice {
+  id: string;
+  purpose: 'registration' | 'wallet-address';
+  /** BOLT11. */
+  pr: string;
+  paymentHash: string;
+  settled: boolean;
+}
+
+/**
+ * Whether a refusal means "pay first" rather than "no".
+ *
+ * The service charges for names on some instances and not on others, and the
+ * API has no endpoint that says which — the price only shows up as a refusal
+ * when a name is claimed. So the refusal has to be read.
+ *
+ * Deliberately narrow. Treating any failure as payable would send someone to
+ * a payment screen because a name was taken, which is worse than the error it
+ * replaced: they would pay for nothing.
+ */
+export function requiresPayment(error: unknown): boolean {
+  if (error instanceof LaWalletError) {
+    // 402 is the unambiguous one; 403 is what an instance returns when the
+    // route exists but this account has not paid for it
+    if (error.status === 402) return true;
+    if (error.code === 'PAYMENT_REQUIRED') return true;
+
+    return (
+      (error.status === 400 || error.status === 403) &&
+      /pay|invoice|purchase|payment/i.test(error.message)
+    );
+  }
+
+  return false;
+}
+
+/** Sats in a BOLT11, for showing a price before someone commits to it. */
+export function invoiceAmountSats(bolt11: string): number | null {
+  /**
+   * The amount lives in the human-readable part, between the currency prefix
+   * and the bech32 separator: digits and an optional multiplier letter. Read
+   * here rather than with a decoder because the whole need is to show a
+   * number next to a button, and a BOLT11 parser is a lot of bytes for one
+   * label.
+   *
+   * The trailing `1` is that separator and is required by the match. Without
+   * it, an amountless invoice — `lnbc1p3x...`, where the `1` *is* the
+   * separator — parses as an amount of one whole bitcoin, and the button next
+   * to it offers to pay 100,000,000 sats.
+   */
+  const match = /^ln(?:bcrt|bc|tb)(?:(\d+)([munp])?)?1/i.exec(bolt11.trim());
+  if (!match || !match[1]) return null;
+
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+
+  // BTC, then the multiplier, then to sats
+  const scale: Record<string, number> = { m: 1e-3, u: 1e-6, n: 1e-9, p: 1e-12 };
+  const btc = value * (match[2] ? scale[match[2].toLowerCase()] : 1);
+
+  return Math.round(btc * 100_000_000);
+}

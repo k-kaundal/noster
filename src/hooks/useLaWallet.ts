@@ -2,11 +2,14 @@ import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useToast } from '@/hooks/useToast';
+import { usePayAnyWallet } from '@/hooks/usePayAnyWallet';
 import {
   laWalletRequest,
+  requiresPayment,
   type AddressMode,
   type AliasProbe,
   type RemoteWallet,
+  type ServiceInvoice,
   type WalletAddress,
 } from '@/lib/lawallet';
 
@@ -24,6 +27,7 @@ export function useLaWallet() {
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { pay, preferredFor } = usePayAnyWallet();
 
   const signer = user && !user.readOnly ? user.signer : null;
 
@@ -97,6 +101,57 @@ export function useLaWallet() {
     [signer]
   );
 
+  /**
+   * Claims a name, paying for it when the instance charges.
+   *
+   * Whether a name costs anything is a per-instance decision the API does not
+   * expose anywhere — there is no price endpoint, and the charge only appears
+   * as a refusal when the name is claimed. So the free path is tried first
+   * and the refusal is read: if it means "pay first", an invoice is raised
+   * for exactly this username, paid from whichever wallet the person already
+   * has here, and claimed back with the preimage before the name is asked for
+   * again.
+   *
+   * Deliberately not the other way around. Raising an invoice up front would
+   * charge people on instances that give names away.
+   */
+  const claimName = async (username: string, mode: AddressMode) =>
+    await laWalletRequest<WalletAddress>('/api/wallet/addresses', {
+      method: 'POST',
+      body: { username, mode },
+      signer: signer!,
+    });
+
+  const payForName = async (username: string) => {
+    const invoice = await laWalletRequest<ServiceInvoice>('/api/invoices', {
+      method: 'POST',
+      body: { purpose: 'wallet-address', metadata: { username } },
+      signer: signer!,
+    });
+
+    const option = preferredFor(0);
+    const result = await pay({ bolt11: invoice.pr, optionId: option.id });
+
+    /**
+     * The preimage is what proves the payment happened, and only a wallet
+     * inside this app can hand it back. Paying by QR elsewhere leaves nothing
+     * here to claim with, so that is said rather than left as a claim that
+     * silently fails.
+     */
+    if (!result.preimage) {
+      throw new Error(
+        result.paid
+          ? 'That wallet paid but did not return a proof of payment, so the name could not be claimed. Contact support with the invoice.'
+          : 'This name has to be paid for from a wallet connected here — an invoice paid elsewhere cannot prove itself.'
+      );
+    }
+
+    await laWalletRequest<ServiceInvoice>(
+      `/api/invoices/${encodeURIComponent(invoice.id)}/claim`,
+      { method: 'POST', body: { preimage: result.preimage }, signer: signer! }
+    );
+  };
+
   const claim = useMutation({
     mutationFn: async ({
       username,
@@ -104,12 +159,16 @@ export function useLaWallet() {
     }: {
       username: string;
       mode?: AddressMode;
-    }) =>
-      await laWalletRequest<WalletAddress>('/api/wallet/addresses', {
-        method: 'POST',
-        body: { username, mode },
-        signer: signer!,
-      }),
+    }) => {
+      try {
+        return await claimName(username, mode);
+      } catch (error) {
+        if (!requiresPayment(error)) throw error;
+
+        await payForName(username);
+        return await claimName(username, mode);
+      }
+    },
     onSuccess: (created) => {
       invalidate();
       toast({
