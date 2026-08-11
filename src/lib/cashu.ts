@@ -70,6 +70,47 @@ export function fetchMintInfo(
   return new Mint(mintUrl).getInfo();
 }
 
+/**
+ * What this mint charges to spend a proof, in parts per thousand.
+ *
+ * NUT-02 lets a mint set `input_fee_ppk` per keyset, charged on every proof
+ * used as an input — so sending, receiving and paying an invoice all cost
+ * something, and a balance quietly shrinks as it is used. Whether that is
+ * happening is not visible anywhere else in the app, and a wallet that loses
+ * sats for reasons the person cannot see is indistinguishable from one that
+ * is broken.
+ *
+ * Read from the active keysets, since those are the ones new money is issued
+ * on. Zero, and the absent case, both mean free.
+ */
+export function activeInputFeePpk(keysets: KeysetSummary[]): number {
+  return keysets
+    .filter((keyset) => keyset.isActive && keyset.unit === CASHU_UNIT)
+    .reduce((highest, keyset) => Math.max(highest, keyset.fee || 0), 0);
+}
+
+/** The fields of a NUT-02 keyset this app reads. */
+export interface KeysetSummary {
+  unit: string;
+  isActive: boolean;
+  /** `input_fee_ppk`, as the library names it. */
+  fee: number;
+}
+
+/**
+ * The fee for spending `inputs` proofs, in sats.
+ *
+ * NUT-02: sum the per-input fee and round up to the next whole unit, so
+ * 100 ppk costs 1 sat for anything from 1 to 10 inputs. Integer arithmetic
+ * because the spec says so — floating point division here rounds unpredictably
+ * at the boundaries, and the boundary is where the mint's answer and ours have
+ * to agree.
+ */
+export function inputFeeSats(inputs: number, feePpk: number): number {
+  if (inputs <= 0 || feePpk <= 0) return 0;
+  return Math.floor((inputs * feePpk + 999) / 1000);
+}
+
 /** Total value of a set of proofs, in sats. */
 export function proofsToSats(proofs: Proof[]): number {
   if (!proofs.length) return 0;
@@ -123,26 +164,6 @@ export function withoutProofs(a: Proof[], b: Iterable<string>): Proof[] {
 }
 
 /**
- * Folds a reconciliation back together with whatever landed while it ran.
- *
- * Reading the balance is slow — a relay query, decrypting each backup, then
- * asking the mint which proofs are still money — and a deposit can complete in
- * the middle of it. The read then finished with a set computed before that
- * deposit existed and wrote it to storage, erasing proofs that had just been
- * minted. Money went in and the balance went down.
- *
- * So the read is folded rather than assigned. Anything in storage now is
- * included even though this pass never saw it, and anything recorded as spent
- * now is excluded even though this pass thought it was good. Both lists are
- * re-read at the end for exactly that reason: at the start they were a
- * different answer to a different question.
- *
- * The newcomers skip the mint's spent-check, which is safe in the direction
- * that matters — they were minted or received seconds ago, and the next pass
- * checks them anyway. Counting a spent proof for thirty seconds is a wrong
- * balance; dropping an unspent one is lost money.
- */
-/**
  * The proofs a swap consumed.
  *
  * `wallet.send` does not slice a set in two — it spends inputs at the mint and
@@ -162,6 +183,26 @@ export function consumedProofs(before: Proof[], ...survivors: Proof[][]): Proof[
   return before.filter((proof) => !kept.has(proof.secret));
 }
 
+/**
+ * Folds a reconciliation back together with whatever landed while it ran.
+ *
+ * Reading the balance is slow — a relay query, decrypting each backup, then
+ * asking the mint which proofs are still money — and a deposit can complete in
+ * the middle of it. The read then finished with a set computed before that
+ * deposit existed and wrote it to storage, erasing proofs that had just been
+ * minted. Money went in and the balance went down.
+ *
+ * So the read is folded rather than assigned. Anything in storage now is
+ * included even though this pass never saw it, and anything recorded as spent
+ * now is excluded even though this pass thought it was good. Both lists are
+ * re-read at the end for exactly that reason: at the start they were a
+ * different answer to a different question.
+ *
+ * The newcomers skip the mint's spent-check, which is safe in the direction
+ * that matters — they were minted or received seconds ago, and the next pass
+ * checks them anyway. Counting a spent proof for thirty seconds is a wrong
+ * balance; dropping an unspent one is lost money.
+ */
 export function foldConcurrentChanges(
   checked: Proof[],
   storedNow: Proof[],

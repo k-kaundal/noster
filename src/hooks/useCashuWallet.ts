@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { generateSecretKey } from 'nostr-tools';
@@ -26,6 +26,8 @@ import {
   readQuotes,
   readUsedSecrets,
   removeQuote,
+  rememberWalletPrivkey,
+  walletPrivkey,
   writeProofs,
   type PendingQuote,
 } from '@/lib/cashuStore';
@@ -36,6 +38,7 @@ import {
   buildWalletContent,
   currentTokenEvents,
   parseTokenEvent,
+  parseWalletEvent,
   type Nip44Signer,
 } from '@/lib/nip60';
 
@@ -262,12 +265,38 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
         { signal: AbortSignal.timeout(4000) }
       );
 
-      if (existing.length) return;
+      if (existing.length) {
+        /**
+         * Adopt the key that is already published rather than leaving a
+         * different one in storage to be republished later — the two would
+         * fight, and each round would orphan whatever was locked to the loser.
+         */
+        const record = await parseWalletEvent(
+          user.signer as Nip44Signer,
+          existing[0]
+        );
+
+        if (record?.privkey) {
+          rememberWalletPrivkey(pubkey, mintUrl, record.privkey);
+        }
+
+        return;
+      }
+
+      /**
+       * Generated once per identity and kept, so this is safe to reach twice.
+       * The wallet event is replaceable and an empty query result is not proof
+       * that no wallet exists — one slow relay is enough — so a fresh key here
+       * would retire the published one and orphan any nutzap locked to it.
+       */
+      const privkey = walletPrivkey(pubkey, mintUrl, () =>
+        bytesToHex(generateSecretKey())
+      );
 
       const content = await buildWalletContent(
         user.signer as Nip44Signer,
         pubkey,
-        { mints: [mintUrl], privkey: bytesToHex(generateSecretKey()) }
+        { mints: [mintUrl], privkey }
       );
 
       await publishEvent({ kind: WALLET_KIND, content, tags: [] });
@@ -435,28 +464,58 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       const reserve = quote.fee_reserve.toNumber();
       const needed = amount + reserve;
       const available = currentProofs();
+      const held = proofsToSats(available);
 
-      if (proofsToSats(available) < needed) {
+      if (held < needed) {
         throw new Error(
-          `That invoice needs ${needed.toLocaleString()} sats including the mint's fee reserve, and you have ${proofsToSats(available).toLocaleString()}.`
+          `That invoice needs ${needed.toLocaleString()} sats including the mint's fee reserve, and you have ${held.toLocaleString()}.`
         );
       }
 
-      const { keep, send: outgoing } = await wallet.send(needed, available, {
-        includeFees: true,
-      });
+      let keep: Proof[];
+      let outgoing: Proof[];
+
+      try {
+        ({ keep, send: outgoing } = await wallet.send(needed, available, {
+          includeFees: true,
+        }));
+      } catch (error) {
+        /**
+         * The check above is a floor, not the whole price. NUT-02 lets a mint
+         * charge `input_fee_ppk` for every proof spent as an input, and NUT-05
+         * requires the wallet to cover `amount + fee_reserve + that fee`. How
+         * many inputs it takes is only known once they are selected, which is
+         * here — so a balance that clears the floor can still fall short, and
+         * saying so beats passing the library's wording through.
+         */
+        if (held < needed + wallet.getFeesForProofs(available).toNumber()) {
+          throw new Error(
+            `That invoice needs ${needed.toLocaleString()} sats plus this mint's per-input fee, which is more than the ${held.toLocaleString()} you have.`
+          );
+        }
+
+        throw error;
+      }
 
       const consumed = consumedProofs(available, keep, outgoing);
 
       try {
         const result = await wallet.meltProofsBolt11(quote, outgoing);
         const change = result.change ?? [];
+        const next = mergeProofs(keep, change);
 
-        await commit(mergeProofs(keep, change), [...outgoing, ...consumed]);
+        await commit(next, [...outgoing, ...consumed]);
 
+        /**
+         * Measured rather than estimated. This used to report
+         * `reserve - change`, which is the unused part of the routing reserve
+         * and misses what the mint charged per input — so the figure shown was
+         * smaller than the amount that actually left. Taking it from the
+         * balance either side covers both, whatever the mint charges.
+         */
         return {
           amountSats: amount,
-          feeSats: Math.max(0, reserve - proofsToSats(change)),
+          feeSats: Math.max(0, held - proofsToSats(next) - amount),
         };
       } catch (error) {
         // The payment may or may not have gone through. Putting the proofs
@@ -514,18 +573,83 @@ export function useMintQuoteStatus(
   quoteId: string | undefined,
   mintUrl: string = CASHU_MINT_URL
 ) {
+  const queryClient = useQueryClient();
+  const [streaming, setStreaming] = useState(false);
+
+  const queryKey = useMemo(
+    () => ['cashu-quote', mintUrl, quoteId ?? ''],
+    [mintUrl, quoteId]
+  );
+
   const query = useQuery<MintQuoteBolt11Response>({
-    queryKey: ['cashu-quote', mintUrl, quoteId ?? ''],
+    queryKey,
     queryFn: async () => {
       const wallet = await loadWallet(mintUrl);
       return wallet.checkMintQuoteBolt11(quoteId!);
     },
     enabled: !!quoteId,
+    /**
+     * Polling is the fallback, not the mechanism. NUT-17 is optional and a
+     * websocket can be blocked by a proxy or dropped mid-invoice, so the poll
+     * stays — just slowly once the socket is carrying the news, and at the
+     * old rate when it is not.
+     */
     refetchInterval: (query) =>
-      query.state.data && query.state.data.state !== 'UNPAID' ? false : 3000,
+      query.state.data && query.state.data.state !== 'UNPAID'
+        ? false
+        : streaming
+          ? 15_000
+          : 3000,
     staleTime: 0,
     retry: false,
   });
+
+  /**
+   * The mint tells us the invoice was paid, rather than being asked every
+   * three seconds.
+   *
+   * Someone stares at this screen holding their phone, and the gap between
+   * paying and the screen admitting it is the whole experience of depositing.
+   * NUT-17 closes it: the mint pushes the state change down an open socket.
+   * It also replays the current state on subscribe, so nothing is missed by
+   * connecting late.
+   */
+  useEffect(() => {
+    if (!quoteId) return;
+
+    let cancel: (() => void) | undefined;
+    let live = true;
+
+    void (async () => {
+      try {
+        const wallet = await loadWallet(mintUrl);
+
+        const stop = await wallet.on.mintQuotePaid(
+          quoteId,
+          (payload) => queryClient.setQueryData(queryKey, payload),
+          () => setStreaming(false)
+        );
+
+        // Unmounted while connecting, so close what we just opened
+        if (!live) {
+          stop();
+          return;
+        }
+
+        cancel = stop;
+        setStreaming(true);
+      } catch {
+        // No websocket support, or it would not connect. The poll covers it.
+        setStreaming(false);
+      }
+    })();
+
+    return () => {
+      live = false;
+      setStreaming(false);
+      cancel?.();
+    };
+  }, [quoteId, mintUrl, queryClient, queryKey]);
 
   return {
     state: query.data?.state,

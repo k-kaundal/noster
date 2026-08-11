@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { deserializeProofs, type Proof } from '@cashu/cashu-ts';
 import {
+  activeInputFeePpk,
   consumedProofs,
+  inputFeeSats,
   foldConcurrentChanges,
   mergeProofs,
   parseProofs,
@@ -124,5 +126,52 @@ describe('mergeProofs', () => {
     // Local storage and the relay backup legitimately hold the same proofs
     const held = proofsFor(100);
     expect(proofsToSats(mergeProofs(held, held, held))).toBe(100);
+  });
+});
+
+describe('inputFeeSats', () => {
+  it('rounds a part-sat fee up to the next whole sat', () => {
+    // NUT-02's worked example: 100 ppk is 0.1 sat per input, so 3 inputs cost
+    // ceil(0.3) == 1 sat, and 1 through 10 inputs all cost the same 1 sat
+    expect(inputFeeSats(1, 100)).toBe(1);
+    expect(inputFeeSats(3, 100)).toBe(1);
+    expect(inputFeeSats(10, 100)).toBe(1);
+    expect(inputFeeSats(11, 100)).toBe(2);
+    expect(inputFeeSats(20, 100)).toBe(2);
+  });
+
+  it('is free when the mint charges nothing', () => {
+    expect(inputFeeSats(50, 0)).toBe(0);
+    expect(inputFeeSats(0, 100)).toBe(0);
+  });
+
+  it('matches the spec at exact multiples', () => {
+    // 1000 ppk is exactly 1 sat per input; rounding up must not add one more
+    expect(inputFeeSats(1, 1000)).toBe(1);
+    expect(inputFeeSats(5, 1000)).toBe(5);
+  });
+});
+
+describe('activeInputFeePpk', () => {
+  it('reads the fee off the active sat keyset', () => {
+    expect(
+      activeInputFeePpk([
+        { unit: 'sat', isActive: true, fee: 100 },
+        { unit: 'sat', isActive: false, fee: 0 },
+      ])
+    ).toBe(100);
+  });
+
+  it('ignores keysets in another unit', () => {
+    // A mint can run usd and sat keysets side by side, and a usd fee says
+    // nothing about what spending sats costs
+    expect(
+      activeInputFeePpk([{ unit: 'usd', isActive: true, fee: 500 }])
+    ).toBe(0);
+  });
+
+  it('is zero when the mint charges nothing or says nothing', () => {
+    expect(activeInputFeePpk([])).toBe(0);
+    expect(activeInputFeePpk([{ unit: 'sat', isActive: true, fee: 0 }])).toBe(0);
   });
 });
