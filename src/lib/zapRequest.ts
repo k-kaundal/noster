@@ -60,12 +60,22 @@ export interface ZapRequestInput {
   amountMsat: number;
   /** Where the recipient's server should publish the receipt. */
   relays: string[];
+  /**
+   * Relays that must appear whatever the cap says — a zap goal's `relays`
+   * tag, which is where its tally is read from.
+   */
+  requiredRelays?: string[];
   /** The zapper's message. NIP-57 carries it as the request's content. */
   comment?: string;
   /** The note being zapped. Omitted when zapping a profile. */
   eventId?: string;
   /** Coordinates of an addressable event — an article, say — instead of `e`. */
   addressPointer?: string;
+  /**
+   * A NIP-75 goal this zap should count toward, from the target's `goal` tag.
+   * Tagged in addition to the target, not instead of it.
+   */
+  goalEventId?: string;
   /** The recipient's bech32 LNURL, when it is known. */
   lnurl?: string;
   createdAt?: number;
@@ -73,9 +83,23 @@ export interface ZapRequestInput {
 
 /** The unsigned kind 9734 the sender signs. */
 export function buildZapRequest(input: ZapRequestInput) {
-  const relays = input.relays
-    .filter((url) => url.startsWith('wss://') || url.startsWith('ws://'))
-    .slice(0, MAX_ZAP_RELAYS);
+  const usable = input.relays.filter(
+    (url) => url.startsWith('wss://') || url.startsWith('ws://')
+  );
+
+  /**
+   * NIP-75 makes naming a goal's relays a MUST, and the cap above would
+   * quietly break it — the reader's own relays come first in the list, so a
+   * goal naming three would lose them to a wallet's worth of general relays.
+   * Anything required is kept whole and the cap applies to the rest.
+   */
+  const required = (input.requiredRelays ?? []).filter(
+    (url) => url.startsWith('wss://') || url.startsWith('ws://')
+  );
+
+  const relays = [
+    ...new Set([...required, ...usable.slice(0, MAX_ZAP_RELAYS)]),
+  ];
 
   const tags: string[][] = [
     ['relays', ...relays],
@@ -91,6 +115,17 @@ export function buildZapRequest(input: ZapRequestInput) {
     tags.push(['a', input.addressPointer]);
   } else if (input.eventId) {
     tags.push(['e', input.eventId]);
+  }
+
+  /**
+   * The one case where both are right. NIP-75: "When zapping an addressable
+   * event with a `goal` tag, clients SHOULD tag the goal event id in the `e`
+   * tag of the zap request." The `a` attaches the receipt to the article; the
+   * `e` is what the goal's tally queries on, and without it the zap funds
+   * nothing even though it was sent to fund something.
+   */
+  if (input.goalEventId && input.goalEventId !== input.eventId) {
+    tags.push(['e', input.goalEventId]);
   }
 
   return {

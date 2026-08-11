@@ -16,6 +16,7 @@ import { ZapButton } from '@/components/ZapButton';
 import { CommentsSection } from '@/components/comments/CommentsSection';
 import { Markdown } from '@/components/articles/Markdown';
 import { MaybeWarned } from '@/components/ContentWarning';
+import { LinkedZapGoal } from '@/components/ZapGoalCard';
 import { readContentWarning } from '@/lib/contentWarning';
 import { ArticleEditor } from '@/components/articles/ArticleEditor';
 import { markdownToText } from '@/lib/markdown';
@@ -151,6 +152,9 @@ export function ArticleView({ article }: { article: Article }) {
         <MaybeWarned event={article.event} warning={warning}>
           <Markdown source={article.content} />
         </MaybeWarned>
+
+        {/* NIP-75: the goal this article is raising for, if it names one */}
+        <LinkedZapGoal event={article.event} />
 
         {article.hashtags.length > 0 && (
           <div className="flex flex-wrap gap-2 border-t pt-5">

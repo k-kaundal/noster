@@ -34,10 +34,14 @@ import {
 } from '@/lib/cashuStore';
 import {
   HISTORY_KIND,
+  QUOTE_KIND,
   TOKEN_KIND,
   WALLET_KIND,
   buildHistoryContent,
   buildHistoryTags,
+  buildQuoteContent,
+  buildQuoteTags,
+  parseQuoteEvent,
   tokensInUnit,
   buildTokenContent,
   buildWalletContent,
@@ -408,6 +412,36 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       addQuote(pubkey, mintUrl, pending);
       void ensureWalletEvent();
 
+      /**
+       * Published because this is the window NIP-60's quote event exists for.
+       * Between paying the invoice and claiming the proofs the money is only
+       * a quote id in this browser; losing the tab there loses a real payment
+       * with nothing anywhere recording that it is owed. One event makes the
+       * deposit finishable from another device.
+       *
+       * Best-effort, and after the local write: relays failing must not stop
+       * someone being shown the invoice they asked for.
+       */
+      const signer = user?.signer;
+
+      void (async () => {
+        if (!signer) return;
+
+        try {
+          await publishEvent({
+            kind: QUOTE_KIND,
+            content: await buildQuoteContent(
+              signer as Nip44Signer,
+              pubkey,
+              quote.quote
+            ),
+            tags: buildQuoteTags(mintUrl),
+          });
+        } catch {
+          // The local record is the one that matters for this device
+        }
+      })();
+
       return { quote, pending };
     },
     onError: (error: Error) => {
@@ -417,6 +451,91 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
         variant: 'destructive',
       });
     },
+  });
+
+  /**
+   * Retires a published quote event.
+   *
+   * NIP-09 rather than waiting for the NIP-40 expiration: two weeks is a long
+   * time to keep offering a deposit that has already been collected.
+   */
+  const retireQuoteEvent = useCallback(
+    async (quoteId: string) => {
+      if (!user || !pubkey) return;
+
+      try {
+        const events = await nostr.query(
+          [{ kinds: [QUOTE_KIND], authors: [pubkey], limit: 50 }],
+          { signal: AbortSignal.timeout(4000) }
+        );
+
+        const records = await Promise.all(
+          events.map((event) =>
+            parseQuoteEvent(user.signer as Nip44Signer, event)
+          )
+        );
+
+        const mine = records.filter(
+          (record) => record?.quoteId === quoteId
+        );
+
+        if (!mine.length) return;
+
+        await publishEvent({
+          kind: 5,
+          content: 'claimed',
+          tags: [
+            ...mine.map((record) => ['e', record!.event.id]),
+            ['k', String(QUOTE_KIND)],
+          ],
+        });
+      } catch {
+        // The expiration tag retires it either way, two weeks later
+      }
+    },
+    [user, pubkey, nostr, publishEvent]
+  );
+
+  /**
+   * Deposits started on another device.
+   *
+   * Read from the published quote events, which is the only reason to publish
+   * them: a quote in this browser's storage is already known, and one that is
+   * not is a payment that would otherwise be invisible here.
+   */
+  const publishedQuotes = useQuery({
+    queryKey: ['cashu-published-quotes', pubkey ?? '', mintUrl],
+    queryFn: async ({ signal }) => {
+      if (!user || !pubkey) return [] as string[];
+
+      const events = await nostr.query(
+        [{ kinds: [QUOTE_KIND], authors: [pubkey], limit: 50 }],
+        { signal: AbortSignal.any([signal, AbortSignal.timeout(4000)]) }
+      );
+
+      const now = Math.floor(Date.now() / 1000);
+      const known = new Set(
+        readQuotes(pubkey, mintUrl).map((quote) => quote.quote)
+      );
+
+      const records = await Promise.all(
+        events.map((event) =>
+          parseQuoteEvent(user.signer as Nip44Signer, event)
+        )
+      );
+
+      return records
+        .filter(
+          (record): record is NonNullable<typeof record> =>
+            !!record &&
+            record.mint === mintUrl &&
+            !known.has(record.quoteId) &&
+            (record.expiresAt === undefined || record.expiresAt > now)
+        )
+        .map((record) => record.quoteId);
+    },
+    enabled: !!user && !!pubkey && !readOnly,
+    staleTime: 60_000,
   });
 
   /**
@@ -437,6 +556,14 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
 
       removeQuote(pubkey, mintUrl, pending.quote);
       await commit(mergeProofs(currentProofs(), minted), []);
+
+      /**
+       * The quote is spent, so its event is retired. Without this, another
+       * device reading the published quotes offers to claim a deposit the
+       * mint will refuse — which reads as money lost rather than money
+       * already collected.
+       */
+      void retireQuoteEvent(pending.quote);
 
       return proofsToSats(minted);
     },
@@ -625,6 +752,12 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
     error: state.error as Error | null,
     /** Deposits that were quoted but never claimed. */
     pendingQuotes: pubkey ? readQuotes(pubkey, mintUrl) : [],
+    /**
+     * Quote ids published from another device that this one has never seen.
+     * A deposit paid elsewhere and not yet claimed shows up here rather than
+     * nowhere.
+     */
+    unclaimedElsewhere: publishedQuotes.data ?? [],
     requestDeposit: requestDeposit.mutateAsync,
     isRequestingDeposit: requestDeposit.isPending,
     claimDeposit: claimDeposit.mutateAsync,

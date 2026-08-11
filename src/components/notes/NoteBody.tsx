@@ -3,6 +3,8 @@ import type { NostrEvent } from '@nostrify/nostrify';
 import { nip19 } from 'nostr-tools';
 import { FileQuestion, FileText, Film, Clock, Ban } from 'lucide-react';
 import { NoteContent } from '@/components/NoteContent';
+import { ZapGoalCard } from '@/components/ZapGoalCard';
+import { GOAL_KIND } from '@/lib/nip75';
 import { StructuredPayload } from '@/components/notes/StructuredPayload';
 import { PollContent } from '@/components/notes/PollContent';
 import { parsePoll } from '@/lib/poll';
@@ -34,6 +36,15 @@ export function NoteBody({ event, className }: NoteBodyProps) {
   // An empty body would otherwise render as a blank card with no explanation
   if (!isRenderableEvent(event)) {
     return <EmptyNote className={className} />;
+  }
+
+  /**
+   * A goal before anything else. Its `content` is prose and its numbers live
+   * in tags, so every other branch here would render it as a plain note with
+   * the fundraising silently missing.
+   */
+  if (event.kind === GOAL_KIND) {
+    return <ZapGoalCard event={event} className={className} />;
   }
 
   switch (renderKind) {
