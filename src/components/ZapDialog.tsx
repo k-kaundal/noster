@@ -151,10 +151,8 @@ function ZapFlow({
   onDone: () => void;
 }) {
   const { toast } = useToast();
-  const { requestInvoice, confirmPaid, isZapping, resetInvoice } = useZaps(
-    target,
-    onDone
-  );
+  const { requestInvoice, confirmPaid, isZapping, resetInvoice, splits, resolveSplit } =
+    useZaps(target, onDone);
 
   const [amount, setAmount] = useState<number | string>(100);
   const [comment, setComment] = useState('');
@@ -174,9 +172,30 @@ function ZapFlow({
   const sats = typeof amount === 'string' ? parseInt(amount, 10) : amount;
   const valid = Number.isFinite(sats) && sats > 0;
 
+  const shares = valid ? resolveSplit(sats) : [];
+
   const start = async () => {
     if (!valid) return;
-    setPrepared(await requestInvoice(sats, comment));
+
+    /**
+     * NIP-57 Appendix G: an event can route its zaps to people other than its
+     * author. Each share is its own invoice, so they are paid one at a time —
+     * the first is prepared here and the rest follow as each is settled.
+     *
+     * The alternative, ignoring the tags, does not fail visibly. It pays the
+     * author the whole amount and everybody the event named gets nothing.
+     */
+    const first = shares[0];
+
+    setPrepared(
+      first
+        ? await requestInvoice(
+            Math.round(first.amountMsat / 1000),
+            comment,
+            { pubkey: first.pubkey }
+          )
+        : await requestInvoice(sats, comment)
+    );
   };
 
   if (prepared) {
@@ -203,6 +222,38 @@ function ZapFlow({
 
   return (
     <div className="space-y-5">
+      {/*
+        Shown before the amount, because it changes who is being paid. A note
+        with `zap` tags does not pay its author at all, and finding that out
+        afterwards is finding out too late.
+      */}
+      {splits.length > 0 && (
+        <div className="space-y-1.5 rounded-lg border border-dashed p-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Split between
+          </p>
+          {shares.length ? (
+            shares.map((share) => (
+              <SplitRow
+                key={share.pubkey}
+                pubkey={share.pubkey}
+                sats={Math.round(share.amountMsat / 1000)}
+                percent={share.percent}
+              />
+            ))
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Enter an amount to see how it divides.
+            </p>
+          )}
+          {shares.length > 1 && (
+            <p className="pt-1 text-xs text-muted-foreground">
+              Each share is a separate payment.
+            </p>
+          )}
+        </div>
+      )}
+
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
           Amount
@@ -443,3 +494,28 @@ function PayStep({
 }
 
 export default ZapDialog;
+
+/** One recipient of a zap split, named rather than left as a key. */
+function SplitRow({
+  pubkey,
+  sats,
+  percent,
+}: {
+  pubkey: string;
+  sats: number;
+  percent: number;
+}) {
+  const author = useAuthor(pubkey);
+  const metadata = author.data?.metadata;
+
+  return (
+    <div className="flex items-center justify-between gap-2 text-sm">
+      <span className="truncate">
+        {metadata?.name || metadata?.display_name || genUserName(pubkey)}
+      </span>
+      <span className="shrink-0 tabular-nums text-muted-foreground">
+        {formatSats(sats)} · {percent}%
+      </span>
+    </div>
+  );
+}

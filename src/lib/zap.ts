@@ -1,5 +1,6 @@
 import type { NostrEvent } from '@nostrify/nostrify';
-import { nip57 } from 'nostr-tools';
+import { nip57, verifyEvent } from 'nostr-tools';
+import { ZAP_REQUEST_KIND } from '@/lib/zapRequest';
 
 /** NIP-57 zap receipt. */
 export const ZAP_RECEIPT_KIND = 9735;
@@ -101,4 +102,97 @@ export function formatSats(sats: number): string {
   }
   const millions = sats / 1_000_000;
   return `${millions < 10 ? millions.toFixed(1).replace(/\.0$/, '') : Math.round(millions)}M`;
+}
+
+
+export interface ReceiptCheck {
+  /** The recipient the receipt claims to pay. */
+  recipientPubkey?: string;
+  /** The event it claims to be about, when zapping a note. */
+  eventId?: string;
+  /** The coordinate, when zapping an addressable event. */
+  address?: string;
+  /**
+   * The `nostrPubkey` from the recipient's lnurl provider.
+   *
+   * The only thing that makes a receipt trustworthy: a zap receipt is signed
+   * by the recipient's lightning server, and any other key signing one is
+   * making it up. Optional here because it costs a request to the recipient's
+   * lnurl endpoint, and a total computed without it is still worth more than
+   * no total — but it is checked whenever it is known.
+   */
+  providerPubkey?: string;
+}
+
+/**
+ * Whether a zap receipt should be believed.
+ *
+ * Appendix F, plus the checks that follow from a receipt being an ordinary
+ * event anybody can publish. Without them a kind 9735 naming any note and any
+ * amount is counted, so a stranger can make a post appear to have earned
+ * millions of sats — which is exactly what a zap total is used to judge by.
+ *
+ * The receipt is not proof of payment even when it passes; the NIP is explicit
+ * that it only proves somebody fetched an invoice. What these checks buy is
+ * that the somebody is the recipient's own lightning server, and that the
+ * amount and the target were not altered afterwards.
+ */
+export function validateZapReceipt(
+  event: NostrEvent,
+  check: ReceiptCheck = {}
+): boolean {
+  if (event.kind !== ZAP_RECEIPT_KIND) return false;
+
+  /**
+   * "The zap receipt event's pubkey MUST be the same as the recipient's lnurl
+   * provider's nostrPubkey." The one check that actually prevents forgery.
+   */
+  if (check.providerPubkey && event.pubkey !== check.providerPubkey) {
+    return false;
+  }
+
+  const bolt11 = tagValue(event, 'bolt11');
+  const description = tagValue(event, 'description');
+
+  // Both are MUSTs; a receipt without them carries no evidence of anything
+  if (!bolt11 || !description) return false;
+
+  const request = parseZapRequest(event);
+  if (!request || request.kind !== ZAP_REQUEST_KIND) return false;
+
+  /**
+   * The request inside the description is signed by the sender, and that
+   * signature is what attributes the zap to them. An invalid one means the
+   * receipt names a sender who never asked for it.
+   */
+  if (!verifyEvent(request as Parameters<typeof verifyEvent>[0])) return false;
+
+  const requestTag = (name: string) =>
+    request.tags.find(([tagName]) => tagName === name)?.[1];
+
+  /**
+   * "The invoiceAmount contained in the bolt11 tag MUST equal the amount tag
+   * of the zap request (if present)." Otherwise a receipt can advertise a
+   * large amount while its invoice was for a handful of sats.
+   */
+  const claimed = Number(requestTag('amount'));
+
+  if (Number.isFinite(claimed) && claimed > 0) {
+    const invoiceSats = satsFromBolt11(bolt11);
+    if (invoiceSats === null) return false;
+    if (Math.round(claimed / 1000) !== invoiceSats) return false;
+  }
+
+  // The request must be about the thing this receipt is being counted against
+  if (check.recipientPubkey && requestTag('p') !== check.recipientPubkey) {
+    return false;
+  }
+
+  if (check.address) {
+    if (requestTag('a') !== check.address) return false;
+  } else if (check.eventId && requestTag('e') !== check.eventId) {
+    return false;
+  }
+
+  return true;
 }

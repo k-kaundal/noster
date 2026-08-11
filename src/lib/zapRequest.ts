@@ -71,6 +71,8 @@ export interface ZapRequestInput {
   eventId?: string;
   /** Coordinates of an addressable event — an article, say — instead of `e`. */
   addressPointer?: string;
+  /** Kind of the thing being zapped, for the `k` tag. */
+  targetKind?: number;
   /**
    * A NIP-75 goal this zap should count toward, from the target's `goal` tag.
    * Tagged in addition to the target, not instead of it.
@@ -115,6 +117,15 @@ export function buildZapRequest(input: ZapRequestInput) {
     tags.push(['a', input.addressPointer]);
   } else if (input.eventId) {
     tags.push(['e', input.eventId]);
+  }
+
+  /**
+   * "`k` is the stringified kind of the target event." Lets a recipient's
+   * server and anyone reading the receipt tell what was zapped without
+   * fetching it — a note, an article, a goal.
+   */
+  if (input.targetKind !== undefined && (input.addressPointer || input.eventId)) {
+    tags.push(['k', String(input.targetKind)]);
   }
 
   /**
