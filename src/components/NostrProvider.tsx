@@ -1,8 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { NostrEvent, NPool, NRelay1 } from '@nostrify/nostrify';
 import { NostrContext } from '@nostrify/react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/hooks/useAppContext';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import type { RelayInfo } from '@/hooks/useRelayInfo';
+import { NIP40, expirationOf, isExpired } from '@/lib/expiration';
+import { createAuthHandler, type AuthPolicy } from '@/lib/nip42';
 import { readRelays, writeRelays } from '@/lib/relay';
 import {
   INDEXER_RELAYS,
@@ -11,6 +15,55 @@ import {
   withPrimaryFirst,
 } from '@/lib/relayRouting';
 import { getRelayHealthMonitor } from '@/lib/relayHealth';
+
+/**
+ * A pool that drops events whose moment has passed.
+ *
+ * NIP-40 asks clients to ignore expired events, and relays MAY keep serving
+ * them — "MAY NOT delete expired messages immediately and MAY persist them
+ * indefinitely" — so this cannot be left to the relays. Done at the pool
+ * rather than in each hook because there are dozens of hooks and one of them
+ * would eventually be written without it; here, an expired event never
+ * reaches the application at all.
+ *
+ * Subclassed rather than wrapped so the result is still an `NPool`, and every
+ * consumer that expects one keeps working.
+ */
+class ExpiryFilteringPool extends NPool {
+  async query(
+    ...args: Parameters<NPool['query']>
+  ): Promise<NostrEvent[]> {
+    const events = await super.query(...args);
+    return events.filter((event) => !isExpired(event));
+  }
+
+  async *req(...args: Parameters<NPool['req']>) {
+    for await (const message of super.req(...args)) {
+      // ["EVENT", <subscription id>, <event>]
+      if (message[0] === 'EVENT' && isExpired(message[2] as NostrEvent)) {
+        continue;
+      }
+
+      yield message;
+    }
+  }
+}
+
+/**
+ * Whether a relay is known to refuse expiring events.
+ *
+ * Read from whatever NIP-11 documents are already cached rather than fetched:
+ * publishing must not wait on a request to every write relay, and many relays
+ * serve their document without CORS headers so the answer often never arrives.
+ * Unknown counts as supporting — declining to publish because a document could
+ * not be read would block posting to most of the network.
+ */
+function refusesExpiry(queryClient: QueryClient, url: string): boolean {
+  const info = queryClient.getQueryData<RelayInfo | null>(['relay-info', url]);
+  const nips = info?.supported_nips;
+
+  return Array.isArray(nips) && !nips.includes(NIP40);
+}
 
 interface NostrProviderProps {
   children: React.ReactNode;
@@ -28,6 +81,17 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
 
   // Create NPool instance only once
   const pool = useRef<NPool | undefined>(undefined);
+
+  /**
+   * Who to authenticate as, kept in a ref rather than closed over.
+   *
+   * The pool is built once and a relay may challenge at any moment after
+   * that, including hours later — so the handler has to read the session as
+   * it is when asked, not as it was when the pool was made. Filled in by
+   * `AuthPolicyBridge` below, which can reach `useCurrentUser` because it
+   * renders inside this provider.
+   */
+  const authPolicy = useRef<AuthPolicy>({ allowed: [], signer: null });
 
   // Refs keep the routers reading current config without rebuilding the pool
   const relayUrl = useRef<string>(config.relayUrl);
@@ -60,13 +124,19 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
   if (!pool.current) {
     const healthMonitor = getRelayHealthMonitor();
 
-    pool.current = new NPool({
+    pool.current = new ExpiryFilteringPool({
       open(url: string) {
         return new NRelay1(url, {
           // Configure reconnection with exponential backoff
           reconnectTimeout: 5000,   // Start with 5 second delay
           maxReconnectTime: 60000,  // Cap at 60 seconds
           requestTimeout: 3000,     // Timeout individual requests after 3 seconds
+          /**
+           * NIP-42. Nostrify drives the protocol; this decides whether to
+           * answer at all, which it does only for relays the reader chose —
+           * see `lib/nip42`.
+           */
+          auth: createAuthHandler(url, () => authPolicy.current),
         });
       },
       /**
@@ -113,7 +183,7 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
        * Publish to the relays the user marked as write targets.
        * Prefers healthy relays for better publish reliability.
        */
-      eventRouter(_event: NostrEvent) {
+      eventRouter(event: NostrEvent) {
         const allWriteRelays = canonicalTargets(writeRelays(relays.current));
         const primary = relayUrl.current;
 
@@ -126,17 +196,62 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
 
         // Filter out relays with open circuit breakers
         const available = targets.filter((url) => healthMonitor.canQuery(url));
+        const reachable = available.length > 0 ? available : targets.slice(0, 3);
 
-        return available.length > 0 ? available : targets.slice(0, 3);
+        /**
+         * "Clients SHOULD NOT send expiration events to relays that do not
+         * support this NIP." Such a relay keeps and serves the event forever,
+         * so the author would be promised a deletion that never happens.
+         *
+         * Only when the event actually expires, and never down to nothing: a
+         * post held back entirely is worse than one held a while too long, so
+         * if every write relay is known to refuse expiry, it goes anyway and
+         * the composer is what warns about it.
+         */
+        if (expirationOf(event) === null) return reachable;
+
+        const honouring = reachable.filter(
+          (url) => !refusesExpiry(queryClient, url)
+        );
+
+        return honouring.length > 0 ? honouring : reachable;
       },
     });
   }
 
   return (
     <NostrContext.Provider value={{ nostr: pool.current }}>
+      <AuthPolicyBridge policy={authPolicy} />
       {children}
     </NostrContext.Provider>
   );
 };
+
+/**
+ * Copies the current session into the ref the AUTH handler reads.
+ *
+ * Renders nothing. It exists because `useCurrentUser` needs the pool — a
+ * bunker signer talks over it — so the provider cannot call it directly
+ * without a cycle. A child can, and a ref carries the answer back up.
+ */
+function AuthPolicyBridge({
+  policy,
+}: {
+  policy: React.MutableRefObject<AuthPolicy>;
+}) {
+  const { user } = useCurrentUser();
+  const { config } = useAppContext();
+
+  policy.current = {
+    allowed: config.relays.map((relay) => relay.url),
+    /**
+     * A borrowed key cannot sign, and asking it to would surface a failure
+     * from somewhere the reader never chose to act.
+     */
+    signer: user && !user.readOnly ? user.signer : null,
+  };
+
+  return null;
+}
 
 export default NostrProvider;

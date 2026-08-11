@@ -33,6 +33,8 @@ import { ZapDialog } from '@/components/ZapDialog';
 import { VerificationMark } from '@/components/VerificationBadge';
 import { tierOf } from '@/lib/tiers';
 import { EditProfileForm } from '@/components/EditProfileForm';
+import { LinkedAccounts } from '@/components/identity/LinkedAccounts';
+import { LinkedAccountsEditor } from '@/components/identity/LinkedAccountsEditor';
 import {
   ArticleCard,
   ArticleCardSkeleton,
@@ -200,6 +202,10 @@ export function Profile({ pubkey }: ProfileProps) {
                     <DialogTitle>Edit profile</DialogTitle>
                   </DialogHeader>
                   <EditProfileForm onSuccess={() => setIsEditProfileOpen(false)} />
+
+                  {/* Kind 10011 is its own replaceable event, so it saves
+                      separately from the kind 0 profile above. */}
+                  <LinkedAccountsEditor />
                 </DialogContent>
               </Dialog>
             ) : (
@@ -309,6 +315,10 @@ export function Profile({ pubkey }: ProfileProps) {
               </span>
             )}
           </div>
+
+          {/* NIP-39: accounts this profile claims elsewhere. Claims, not
+              verifications — see the component. */}
+          <LinkedAccounts pubkey={pubkey} />
 
           <div className="flex gap-5 text-sm">
             <Stat label="Notes" value={posts.length} />
