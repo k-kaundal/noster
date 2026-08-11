@@ -23,6 +23,7 @@ import {
   suggestLaWalletName,
   validateLaWalletName,
   type AddressMode,
+  type HeldAddress,
 } from '@/lib/lawallet';
 import type { NamePrice } from '@/hooks/useLaWallet';
 
@@ -48,22 +49,21 @@ export function PortableAddress() {
     <div className="space-y-3">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          A name that moves with you
+          Your addresses at {lawallet.domain}
         </p>
+        {/* A different service from the one above, with its own account and
+            its own connected wallets. Both write an address the same way,
+            which is exactly why each says whose it is. */}
         <p className="mt-1 text-xs text-muted-foreground">
-          An address at {lawallet.domain} that you point wherever you like — at
-          a wallet you connect, or on to another address. Change the
-          destination whenever; the name stays the same.
+          A separate service. These point wherever you tell them — at a wallet
+          you connect, or on to another address — and the name stays the same
+          when you change your mind.
         </p>
       </div>
 
-      {lawallet.held.map((held) =>
-        held.settings ? (
-          <AddressRow key={held.username} username={held.username} />
-        ) : (
-          <LinkedAddress key={held.username} address={held.address} />
-        )
-      )}
+      <HeldAddresses />
+
+      <ConnectedWallets />
 
       {/* Only when they hold nothing here at all. Offering a claim form to
           somebody who already has an address — including one the directory
@@ -75,6 +75,144 @@ export function PortableAddress() {
 }
 
 /**
+ * The wallets the service can spend from on this person's behalf.
+ *
+ * Each one is an NWC connection string held on someone else's server, and it
+ * keeps working until it is revoked. There was no way to see them here, let
+ * alone withdraw one — which is the wrong way round for a credential that
+ * spends money.
+ */
+function ConnectedWallets() {
+  const lawallet = useLaWallet();
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const wallets = lawallet.wallets;
+  if (!wallets.length) return null;
+
+  // Which addresses stop receiving if a given wallet goes away
+  const dependents = (id: string) =>
+    lawallet.held.filter((entry) => entry.settings?.remoteWalletId === id);
+
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Wallets this service can spend from
+      </p>
+
+      {wallets.map((wallet) => {
+        const affected = dependents(wallet.id);
+
+        return (
+          <div key={wallet.id} className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm">{wallet.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {affected.length
+                  ? `${affected.length} address${affected.length === 1 ? '' : 'es'} paid by this`
+                  : 'Nothing points at it'}
+                {wallet.isDefault && ' · default'}
+              </p>
+            </div>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-destructive"
+              disabled={lawallet.isRevoking}
+              onClick={() => setConfirming(wallet.id)}
+            >
+              Disconnect
+            </Button>
+          </div>
+        );
+      })}
+
+      {confirming && (
+        <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-xs leading-relaxed">
+            {/* Said before the click. The connection stops being able to spend,
+                which is the point, and anything pointed at it stops receiving,
+                which is not and would otherwise be discovered as silence. */}
+            It stops being able to spend from your wallet.{' '}
+            {dependents(confirming).length > 0 &&
+              `${dependents(confirming).length} address${
+                dependents(confirming).length === 1 ? '' : 'es'
+              } paid by it stop receiving until you point them somewhere else. `}
+            You can connect it again afterwards.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={lawallet.isRevoking}
+              onClick={() => {
+                void lawallet
+                  .revokeWallet(confirming)
+                  .catch(() => {})
+                  .finally(() => setConfirming(null));
+              }}
+            >
+              {lawallet.isRevoking && (
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              )}
+              Disconnect it
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(null)}>
+              Keep it
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** How many to show before the rest go behind a button. */
+const VISIBLE = 4;
+
+/**
+ * Everything they hold, without rendering all of it.
+ *
+ * People collect these — one account on the test instance holds seventy — and
+ * each row is a full editor with its own queries. Rendering the lot cost that
+ * many times over and buried the address their money actually arrives at
+ * somewhere in the middle of a very long page. The primary one sorts first and
+ * the tail waits behind a button.
+ */
+function HeldAddresses() {
+  const lawallet = useLaWallet();
+  const [expanded, setExpanded] = useState(false);
+
+  const held = lawallet.held;
+  const shown = expanded ? held : held.slice(0, VISIBLE);
+  const hidden = held.length - shown.length;
+
+  return (
+    <>
+      {shown.map((entry) =>
+        entry.settings ? (
+          <AddressRow key={entry.username} held={entry} />
+        ) : (
+          <LinkedAddress key={entry.username} held={entry} />
+        )
+      )}
+
+      {hidden > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full text-xs"
+          onClick={() => setExpanded(true)}
+        >
+          Show {hidden.toLocaleString()} more{' '}
+          {hidden === 1 ? 'address' : 'addresses'}
+        </Button>
+      )}
+    </>
+  );
+}
+
+/**
  * An address the directory says is theirs, which their account does not list.
  *
  * Made under a different account on the same platform, most likely. It
@@ -82,10 +220,11 @@ export function PortableAddress() {
  * nothing here knows where it points, and an editor whose every save fails is
  * worse than no editor.
  */
-function LinkedAddress({ address }: { address: string }) {
+function LinkedAddress({ held }: { held: HeldAddress }) {
   const { lightning } = useIdentity();
   const { toast } = useToast();
 
+  const address = held.address;
   const onProfile = lightning.profileAddress === address;
 
   return (
@@ -93,8 +232,7 @@ function LinkedAddress({ address }: { address: string }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{address}</p>
         <p className="text-xs text-muted-foreground">
-          Already linked to your key. Manage where it points where you set it
-          up.
+          {held.refusal ?? 'Already linked to your key. Manage where it points where you set it up.'}
         </p>
       </div>
 
@@ -263,20 +401,24 @@ function ClaimForm() {
   );
 }
 
-function AddressRow({ username }: { username: string }) {
+function AddressRow({ held }: { held: HeldAddress }) {
   const lawallet = useLaWallet();
   const { lightning } = useIdentity();
   const { toast } = useToast();
   const nwc = useNWC();
 
-  const address = lawallet.addresses.find((entry) => entry.username === username);
-  const [redirect, setRedirect] = useState(address?.redirect ?? '');
+  /**
+   * Taken from the merged entry rather than looked up in the account's own
+   * list. The directory returns full records too, so an address that exists
+   * only there is still editable — searching the shorter list for it found
+   * nothing and rendered a blank space where an address should be.
+   */
+  const address = held.settings!;
+  const [redirect, setRedirect] = useState(address.redirect ?? '');
   const [busy, setBusy] = useState(false);
 
-  if (!address) return null;
-
-  const full = laWalletAddress(address.username, lawallet.domain);
-  const live = isLive(address);
+  const full = held.address;
+  const live = isLive(address) && !held.refusal;
 
   const setMode = async (mode: AddressMode) => {
     if (mode === 'CUSTOM_NWC') {
@@ -344,16 +486,27 @@ function AddressRow({ username }: { username: string }) {
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{full}</p>
-          <p className="text-xs text-muted-foreground">{describeMode(address)}</p>
+          {/* The service's own verdict wins over ours: it is the machine
+              that answers the payment, and an address that resolves and then
+              refuses looks identical to a working one from outside. */}
+          <p className="text-xs text-muted-foreground">
+            {held.refusal ?? describeMode(address)}
+          </p>
         </div>
 
         {/* An address that resolves and then refuses looks identical to a
             working one until somebody tries to pay it */}
         <Badge
           variant={live ? 'secondary' : 'outline'}
-          className={live ? 'bg-success/15 text-success' : ''}
+          className={
+            live
+              ? 'bg-success/15 text-success'
+              : held.refusal
+                ? 'bg-destructive/15 text-destructive'
+                : ''
+          }
         >
-          {live ? 'Receiving' : 'Not pointed'}
+          {live ? 'Receiving' : held.refusal ? 'Rejects payments' : 'Not pointed'}
         </Badge>
 
         {/* No delete button: the name would go back into the pool and the

@@ -65,11 +65,46 @@ describe('foldConcurrentChanges', () => {
 
     const folded = foldConcurrentChanges(
       beforeRead,
+      beforeRead,
       mergeProofs(beforeRead, depositedMeanwhile),
       []
     );
 
     expect(proofsToSats(folded)).toBe(600);
+  });
+
+  it('does not resurrect what the mint reported spent', () => {
+    // Storage still holds everything the read started from, spent proofs
+    // included, so folding all of it back in undoes the spent-check entirely:
+    // the balance counts money that is gone, the next read drops it again,
+    // and the number swings between the two
+    const started = proofsFor(100, 'held');
+    const gone = started.slice(0, 1);
+    const survived = started.slice(1);
+
+    const folded = foldConcurrentChanges(survived, started, started, []);
+
+    expect(proofsToSats(folded)).toBe(
+      100 - Number(gone[0].amount.toNumber())
+    );
+  });
+
+  it('keeps a deposit even while dropping a spent proof', () => {
+    // Both at once, which is the case the two rules have to agree on
+    const started = proofsFor(100, 'held');
+    const survived = started.slice(1);
+    const deposited = proofsFor(500, 'new');
+
+    const folded = foldConcurrentChanges(
+      survived,
+      started,
+      mergeProofs(started, deposited),
+      []
+    );
+
+    expect(proofsToSats(folded)).toBe(
+      100 - Number(started[0].amount.toNumber()) + 500
+    );
   });
 
   it('does not resurrect proofs spent while the balance was being read', () => {
@@ -80,6 +115,7 @@ describe('foldConcurrentChanges', () => {
 
     const folded = foldConcurrentChanges(
       held,
+      held,
       withoutProofs(held, spent.map((proof) => proof.secret)),
       spent.map((proof) => proof.secret)
     );
@@ -89,7 +125,7 @@ describe('foldConcurrentChanges', () => {
 
   it('counts a proof once when both copies have it', () => {
     const held = proofsFor(100);
-    expect(proofsToSats(foldConcurrentChanges(held, held, []))).toBe(100);
+    expect(proofsToSats(foldConcurrentChanges(held, held, held, []))).toBe(100);
   });
 });
 

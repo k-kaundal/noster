@@ -27,12 +27,14 @@ import {
   type PendingNip5,
 } from '@/hooks/useNip5';
 import { useToast } from '@/hooks/useToast';
+import { cn } from '@/lib/utils';
 import {
   DEFAULT_MAX_YEARS,
   daysUntilExpiry,
   describeLocalPartProblem,
   describePrice,
   formatNip5,
+  expiresAt,
   nip5State,
   normalizeLocalPart,
   validateLocalPart,
@@ -98,6 +100,11 @@ function OwnedName() {
             Reserved
           </p>
           <p className="font-mono font-semibold truncate text-base">{identifier}</p>
+          {/* Always, not only inside the badge's thirty-day window. This is a
+              name rented by the year and the date it runs out is the single
+              fact about it worth knowing early — the badge appears far too
+              late to plan around. */}
+          <RentedUntil address={address} />
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <ExpiryBadge address={address} />
@@ -114,6 +121,8 @@ function OwnedName() {
           </Button>
         </div>
       </div>
+
+      <LapseWarning address={address} zappable={zappable} />
 
       {!matchesCurrentKey && (
         <div className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm backdrop-blur-sm">
@@ -143,6 +152,64 @@ function OwnedName() {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** When the rental runs out, in plain words. */
+function RentedUntil({ address }: { address: Nip5Address }) {
+  const expiry = expiresAt(address);
+  if (expiry === null) return null;
+
+  return (
+    <p className="mt-0.5 text-xs text-muted-foreground">
+      Rented until {new Date(expiry).toLocaleDateString()}
+    </p>
+  );
+}
+
+/**
+ * What lapsing actually costs.
+ *
+ * Two things go at once and only one of them is obvious. The checkmark stops,
+ * which people expect of a name that expired — and the lightning address
+ * attached to it stops with it, so zaps aimed at the name start failing. That
+ * second half is worth saying before it happens rather than being worked out
+ * afterwards from payments that no longer arrive.
+ */
+function LapseWarning({
+  address,
+  zappable,
+}: {
+  address: Nip5Address;
+  zappable: boolean;
+}) {
+  const state = nip5State(address);
+  if (state !== 'expiring' && state !== 'expired') return null;
+
+  const days = daysUntilExpiry(address);
+  const gone = state === 'expired';
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border p-3 text-sm',
+        gone
+          ? 'border-destructive/30 bg-destructive/5'
+          : 'border-warning/30 bg-warning/8'
+      )}
+    >
+      <p className={gone ? 'text-destructive' : 'text-warning-foreground'}>
+        {gone
+          ? `${formatNip5(address.local_part)} has expired.`
+          : `${formatNip5(address.local_part)} runs out in ${days} ${
+              days === 1 ? 'day' : 'days'
+            }.`}{' '}
+        {zappable
+          ? 'The ✓ and the lightning address on this name both stop with it, so zaps sent here will fail.'
+          : 'The ✓ on your posts stops with it.'}{' '}
+        Reserve it again below to keep it.
+      </p>
     </div>
   );
 }

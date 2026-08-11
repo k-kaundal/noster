@@ -323,7 +323,15 @@ function RedeemPanel({ onDone }: { onDone: () => void }) {
   const valid = looksLikeToken(token);
 
   const redeem = async () => {
-    const sats = await receive(token);
+    /**
+     * The failure is reported by the mutation, and the token stays in the box
+     * rather than being cleared. It is money: a redeem that failed because the
+     * mint blinked must not also lose the string that would have worked on the
+     * next try.
+     */
+    const sats = await receive(token).catch(() => null);
+    if (sats === null) return;
+
     toast({
       title: 'Redeemed',
       description: `${sats.toLocaleString()} sats added to your ecash.`,

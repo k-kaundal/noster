@@ -205,10 +205,23 @@ export function consumedProofs(before: Proof[], ...survivors: Proof[][]): Proof[
  */
 export function foldConcurrentChanges(
   checked: Proof[],
+  before: Proof[],
   storedNow: Proof[],
   usedNow: Iterable<string>
 ): Proof[] {
-  return withoutProofs(mergeProofs(checked, storedNow), usedNow);
+  /**
+   * Only what appeared since the read began.
+   *
+   * Merging all of storage back in looks equivalent and is not: storage still
+   * holds everything the read started from, including the proofs the mint has
+   * just reported spent, so the merge puts them straight back and the
+   * spent-check achieves nothing. The balance then counts money that is gone,
+   * the next read drops it again, and the number swings between the two.
+   */
+  const known = new Set(before.map((proof) => proof.secret));
+  const newcomers = storedNow.filter((proof) => !known.has(proof.secret));
+
+  return withoutProofs(mergeProofs(checked, newcomers), usedNow);
 }
 
 /** A proof as everyone else writes it down: amount as a plain number. */

@@ -3,6 +3,7 @@ import { BadgeCheck, Copy, Loader2, Lock, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useIdentity } from '@/hooks/useIdentity';
+import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
 import { useToast } from '@/hooks/useToast';
 
 /**
@@ -34,9 +35,20 @@ export function AddressList() {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {addresses.length === 1 ? 'Your address' : 'Your addresses'}
-      </p>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {addresses.length === 1
+            ? `Your address at ${ADDRESS_DOMAIN}`
+            : `Your addresses at ${ADDRESS_DOMAIN}`}
+        </p>
+        {/* Two separate services issue addresses here and they are easy to
+            confuse, being written the same way. These are the ones paid into
+            the lightning wallet on the next page; the getzap.me ones below
+            come from somewhere else and point wherever you tell them. */}
+        <p className="mt-1 text-xs text-muted-foreground">
+          Paid straight into your lightning wallet.
+        </p>
+      </div>
 
       <ul className="space-y-2">
         {addresses.map((entry) => (

@@ -57,16 +57,72 @@ export interface WalletAddress {
 }
 
 /**
- * A row in the service's public address directory.
+ * Whether an address can actually be paid, and by what.
  *
- * Thinner than `WalletAddress` — no mode, no destination — but it carries the
- * two things the caller's own address list does not: which key an address is
- * linked to, and the domain it is issued under.
+ * `source: "unavailable"` with a `reason` is the case worth surfacing: the
+ * address resolves, so it looks fine, and then refuses every payment sent to
+ * it. Someone who published it has no way to tell from the outside.
  */
-export interface DirectoryAddress {
+export interface AddressProtocols {
+  protocols?: {
+    lud16?: boolean;
+    nip05?: boolean;
+    lud21?: boolean;
+    nip57?: boolean;
+    lud12?: boolean;
+  };
+  source?: string;
+  reason?: string | null;
+  provider?: string | null;
+}
+
+/**
+ * A row in the service's address directory.
+ *
+ * Documented as a thin record — username, pubkey, domain — and in practice a
+ * full one: mode, destination, primary flag and protocol support all come
+ * back. Both are modelled, because the fields the schema promises are the ones
+ * that can be missing and the extras are the ones worth using.
+ */
+export interface DirectoryAddress extends Partial<WalletAddress> {
   username: string;
   pubkey?: string | null;
   domain?: string;
+  protocols?: AddressProtocols;
+}
+
+/**
+ * Reads a list response whichever shape it arrives in.
+ *
+ * The schema says these endpoints answer `{ data: [...] }`. The service
+ * answers with a bare array. Reading only the documented shape meant every
+ * lookup found nothing and reported it as "you have no addresses" — which is
+ * indistinguishable from the truth and so went unnoticed.
+ */
+export function unwrapList<T>(body: unknown): T[] {
+  if (Array.isArray(body)) return body as T[];
+
+  if (body && typeof body === 'object' && 'data' in body) {
+    const data = (body as { data?: unknown }).data;
+    if (Array.isArray(data)) return data as T[];
+  }
+
+  return [];
+}
+
+/** Whether the service says this address currently accepts payments. */
+export function acceptsPayments(address: DirectoryAddress): boolean {
+  const info = address.protocols;
+  if (!info) return true;
+
+  if (info.source === 'unavailable') return false;
+  return info.protocols?.lud16 !== false;
+}
+
+/** Why it does not, in the service's own words. */
+export function refusalReason(address: DirectoryAddress): string | null {
+  if (acceptsPayments(address)) return null;
+  return address.protocols?.reason?.trim() || 'This address rejects payments.';
 }
 
 /**
@@ -84,6 +140,10 @@ export interface HeldAddress {
   domain: string;
   address: string;
   settings: WalletAddress | null;
+  /** The one the service treats as this person's main address. */
+  isPrimary: boolean;
+  /** Null when it takes payments; the service's own words when it does not. */
+  refusal: string | null;
 }
 
 export interface RemoteWallet {
@@ -321,26 +381,50 @@ export function mergeHeldAddresses(
   const domain = resolveIssuedDomain(linked, fallbackDomain);
   const held = new Map<string, HeldAddress>();
 
-  const add = (username: string, settings: WalletAddress | null) => {
-    const name = username.trim().toLowerCase();
+  const add = (entry: DirectoryAddress) => {
+    const name = entry.username?.trim().toLowerCase();
     if (!name) return;
 
-    // The managed record wins, and arrives first — a later directory row for
-    // the same name must not overwrite it with a settings-less one
-    if (held.has(name) && !settings) return;
+    /**
+     * The directory turns out to carry mode, destination and primary flag as
+     * well as the key it is linked to, so an address found only there is
+     * fully manageable rather than a name with nothing behind it.
+     */
+    const settings: WalletAddress | null = entry.mode
+      ? {
+          username: name,
+          mode: entry.mode,
+          redirect: entry.redirect ?? null,
+          remoteWalletId: entry.remoteWalletId ?? null,
+          isPrimary: entry.isPrimary,
+        }
+      : null;
+
+    const existing = held.get(name);
 
     held.set(name, {
       username: name,
       domain,
       address: laWalletAddress(name, domain),
-      settings,
+      // Never trade known settings for an entry that has none
+      settings: settings ?? existing?.settings ?? null,
+      isPrimary: entry.isPrimary ?? existing?.isPrimary ?? false,
+      refusal: refusalReason(entry) ?? existing?.refusal ?? null,
     });
   };
 
-  for (const entry of managed) add(entry.username, entry);
-  for (const entry of linked) add(entry.username, null);
+  for (const entry of managed) add(entry);
+  for (const entry of linked) add(entry);
 
-  return [...held.values()];
+  /**
+   * Primary first, then alphabetically. Someone can hold dozens of these and
+   * creation order is not an order anyone reads in — the address their money
+   * actually arrives at belongs at the top.
+   */
+  return [...held.values()].sort((a, b) => {
+    if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
+    return a.username.localeCompare(b.username);
+  });
 }
 
 /** A sentence for what an address currently does. */

@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   LAWALLET_MAX_USERNAME,
   LaWalletError,
+  acceptsPayments,
   addressesForPubkey,
+  refusalReason,
+  unwrapList,
   invoiceAmountSats,
   mergeHeldAddresses,
   requiresPayment,
@@ -282,5 +285,108 @@ describe('invoiceAmountSats', () => {
     expect(invoiceAmountSats('lntb1p3xyz')).toBeNull();
     expect(invoiceAmountSats('not an invoice')).toBeNull();
     expect(invoiceAmountSats('')).toBeNull();
+  });
+});
+
+describe('unwrapList', () => {
+  it('reads the bare array the service actually returns', () => {
+    // The schema documents `{ data: [...] }` and the service answers with a
+    // plain array. Reading only the documented shape found nothing every time
+    // and reported it as "you have no addresses", which is indistinguishable
+    // from the truth and so went unnoticed
+    expect(unwrapList<number>([1, 2, 3])).toEqual([1, 2, 3]);
+  });
+
+  it('still reads the documented envelope', () => {
+    expect(unwrapList<number>({ data: [1, 2] })).toEqual([1, 2]);
+  });
+
+  it('gives an empty list for anything else', () => {
+    expect(unwrapList(null)).toEqual([]);
+    expect(unwrapList(undefined)).toEqual([]);
+    expect(unwrapList({})).toEqual([]);
+    expect(unwrapList({ data: 'nope' })).toEqual([]);
+  });
+});
+
+describe('acceptsPayments', () => {
+  it('believes an address that reports no trouble', () => {
+    expect(acceptsPayments({ username: 'kk' })).toBe(true);
+    expect(
+      acceptsPayments({
+        username: 'kk',
+        protocols: { source: 'wallet', protocols: { lud16: true } },
+      })
+    ).toBe(true);
+  });
+
+  it('catches one that resolves and then refuses', () => {
+    // From outside this is indistinguishable from a working address right up
+    // until somebody sends money to it
+    const disabled = {
+      username: 'admin',
+      protocols: {
+        source: 'unavailable',
+        reason: 'This address is disabled and rejects payments.',
+        protocols: { lud16: false },
+      },
+    };
+
+    expect(acceptsPayments(disabled)).toBe(false);
+    expect(refusalReason(disabled)).toMatch(/disabled/i);
+  });
+
+  it('has something to say even when the service gives no reason', () => {
+    expect(
+      refusalReason({ username: 'x', protocols: { source: 'unavailable' } })
+    ).toBeTruthy();
+  });
+
+  it('says nothing about an address that works', () => {
+    expect(refusalReason({ username: 'kk' })).toBeNull();
+  });
+});
+
+describe('mergeHeldAddresses with real directory records', () => {
+  it('manages an address the account list never mentioned', () => {
+    // The directory returns mode, destination and primary flag as well as the
+    // key, so one found only there is fully editable rather than a dead name
+    const [held] = mergeHeldAddresses([], [
+      {
+        username: 'kk',
+        pubkey: 'abc',
+        mode: 'CUSTOM_NWC',
+        remoteWalletId: 'w1',
+        isPrimary: true,
+      },
+    ]);
+
+    expect(held.settings?.mode).toBe('CUSTOM_NWC');
+    expect(held.settings?.remoteWalletId).toBe('w1');
+    expect(held.isPrimary).toBe(true);
+  });
+
+  it('puts the primary address first', () => {
+    // Someone can hold dozens; the one their money arrives at belongs on top
+    const held = mergeHeldAddresses([], [
+      { username: 'zap', pubkey: 'abc', mode: 'IDLE' },
+      { username: 'kk', pubkey: 'abc', mode: 'IDLE', isPrimary: true },
+      { username: 'admin', pubkey: 'abc', mode: 'IDLE' },
+    ]);
+
+    expect(held.map((entry) => entry.username)).toEqual(['kk', 'admin', 'zap']);
+  });
+
+  it('carries the refusal through', () => {
+    const [held] = mergeHeldAddresses([], [
+      {
+        username: 'admin',
+        pubkey: 'abc',
+        mode: 'IDLE',
+        protocols: { source: 'unavailable', reason: 'Disabled.' },
+      },
+    ]);
+
+    expect(held.refusal).toBe('Disabled.');
   });
 });
