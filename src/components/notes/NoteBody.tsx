@@ -7,6 +7,8 @@ import { ZapGoalCard } from '@/components/ZapGoalCard';
 import { HighlightCard } from '@/components/HighlightCard';
 import { CodeSnippetCard } from '@/components/CodeSnippetCard';
 import { SNIPPET_KIND } from '@/lib/nipc0';
+import { ListingCard } from '@/components/market/ListingCard';
+import { LISTING_DRAFT_KIND, LISTING_KIND, parseListing } from '@/lib/nip99';
 import { HIGHLIGHT_KIND } from '@/lib/nip84';
 import { GOAL_KIND } from '@/lib/nip75';
 import { StructuredPayload } from '@/components/notes/StructuredPayload';
@@ -67,6 +69,17 @@ export function NoteBody({ event, className }: NoteBodyProps) {
    */
   if (event.kind === SNIPPET_KIND) {
     return <CodeSnippetCard event={event} className={className} />;
+  }
+
+  /**
+   * A listing's price and title are tags, so the article branch below would
+   * render one as a headline and a wall of markdown with no price on it.
+   */
+  if (event.kind === LISTING_KIND || event.kind === LISTING_DRAFT_KIND) {
+    const listing = parseListing(event);
+    if (listing) {
+      return <ListingCard listing={listing} className={className} />;
+    }
   }
 
   switch (renderKind) {

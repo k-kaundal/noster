@@ -26,6 +26,7 @@ const WritePage = lazy(() => importChunk(() => import("./pages/WritePage")));
 const CommunitiesPage = lazy(() => importChunk(() => import("./pages/CommunitiesPage")));
 const GroupsPage = lazy(() => importChunk(() => import("./pages/GroupsPage")));
 const ListsPage = lazy(() => importChunk(() => import("./pages/ListsPage")));
+const MarketPage = lazy(() => importChunk(() => import("./pages/MarketPage")));
 const NotificationsPage = lazy(() => importChunk(() => import("./pages/NotificationsPage")));
 const IdentityVaultPage = lazy(() => importChunk(() => import("./pages/IdentityVaultPage")));
 const CommunityTreasuryPage = lazy(() => importChunk(() => import("./pages/CommunityTreasuryPage")));
@@ -104,6 +105,8 @@ export function AppRouter() {
           <Route path="/groups" element={<GroupsPage />} />
           {/* NIP-51 follow sets and starter packs */}
           <Route path="/lists" element={<ListsPage />} />
+
+          <Route path="/market" element={<MarketPage />} />
           {/* Custodial lightning wallet, authenticated with the Nostr key */}
           <Route path="/wallet" element={<WalletPage />} />
           {/* NIP-60 Cashu ecash, held in the browser and backed up to relays */}
