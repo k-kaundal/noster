@@ -16,6 +16,7 @@ import { parseProofs, toWireProofs } from '@/lib/cashu';
 const PROOFS_KEY = 'cashu:proofs';
 const USED_KEY = 'cashu:used';
 const QUOTES_KEY = 'cashu:quotes';
+const PRIVKEY_KEY = 'cashu:nutzap-key';
 
 /** How many spent secrets to remember. Enough to outlive any relay's copy. */
 const USED_LIMIT = 2000;
@@ -140,9 +141,56 @@ export function removeQuote(
   write(QUOTES_KEY, all);
 }
 
+/**
+ * The key nutzaps to this wallet are locked to (NIP-60 `privkey`).
+ *
+ * Kept here, per identity, because it must never change once published. The
+ * wallet event is replaceable, so publishing a second one with a freshly
+ * generated key silently retires the first — and any nutzap already locked to
+ * the old key becomes money this wallet can no longer claim.
+ *
+ * That was reachable. The event is only created when a relay query comes back
+ * with no existing one, and an empty result is not proof of absence: one relay,
+ * a four second timeout, and a wallet that does exist reads as a wallet that
+ * does not. Generating the key here instead makes the republish harmless,
+ * because it republishes the same key.
+ */
+export function walletPrivkey(
+  pubkey: string,
+  mintUrl: string,
+  generate: () => string
+): string {
+  const all = read<string>(PRIVKEY_KEY);
+  const key = slot(pubkey, mintUrl);
+
+  const existing = all[key];
+  if (typeof existing === 'string' && /^[0-9a-f]{64}$/.test(existing)) {
+    return existing;
+  }
+
+  const created = generate();
+  all[key] = created;
+  write(PRIVKEY_KEY, all);
+
+  return created;
+}
+
+/** Adopts the key from a wallet event that already exists on the relays. */
+export function rememberWalletPrivkey(
+  pubkey: string,
+  mintUrl: string,
+  privkey: string
+): void {
+  if (!/^[0-9a-f]{64}$/.test(privkey)) return;
+
+  const all = read<string>(PRIVKEY_KEY);
+  all[slot(pubkey, mintUrl)] = privkey;
+  write(PRIVKEY_KEY, all);
+}
+
 /** Forgets everything about one identity's ecash. Used when signing out. */
 export function clearCashu(pubkey: string): void {
-  for (const key of [PROOFS_KEY, USED_KEY, QUOTES_KEY]) {
+  for (const key of [PROOFS_KEY, USED_KEY, QUOTES_KEY, PRIVKEY_KEY]) {
     const all = read<unknown>(key);
     let changed = false;
 
