@@ -27,6 +27,7 @@ const CommunitiesPage = lazy(() => importChunk(() => import("./pages/Communities
 const GroupsPage = lazy(() => importChunk(() => import("./pages/GroupsPage")));
 const ListsPage = lazy(() => importChunk(() => import("./pages/ListsPage")));
 const MarketPage = lazy(() => importChunk(() => import("./pages/MarketPage")));
+const P2PPage = lazy(() => importChunk(() => import("./pages/P2PPage")));
 const NotificationsPage = lazy(() => importChunk(() => import("./pages/NotificationsPage")));
 const IdentityVaultPage = lazy(() => importChunk(() => import("./pages/IdentityVaultPage")));
 const CommunityTreasuryPage = lazy(() => importChunk(() => import("./pages/CommunityTreasuryPage")));
@@ -107,6 +108,8 @@ export function AppRouter() {
           <Route path="/lists" element={<ListsPage />} />
 
           <Route path="/market" element={<MarketPage />} />
+
+          <Route path="/p2p" element={<P2PPage />} />
           {/* Custodial lightning wallet, authenticated with the Nostr key */}
           <Route path="/wallet" element={<WalletPage />} />
           {/* NIP-60 Cashu ecash, held in the browser and backed up to relays */}
