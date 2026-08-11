@@ -122,6 +122,54 @@ export function withoutProofs(a: Proof[], b: Iterable<string>): Proof[] {
   return a.filter((proof) => !drop.has(proof.secret));
 }
 
+/**
+ * Folds a reconciliation back together with whatever landed while it ran.
+ *
+ * Reading the balance is slow — a relay query, decrypting each backup, then
+ * asking the mint which proofs are still money — and a deposit can complete in
+ * the middle of it. The read then finished with a set computed before that
+ * deposit existed and wrote it to storage, erasing proofs that had just been
+ * minted. Money went in and the balance went down.
+ *
+ * So the read is folded rather than assigned. Anything in storage now is
+ * included even though this pass never saw it, and anything recorded as spent
+ * now is excluded even though this pass thought it was good. Both lists are
+ * re-read at the end for exactly that reason: at the start they were a
+ * different answer to a different question.
+ *
+ * The newcomers skip the mint's spent-check, which is safe in the direction
+ * that matters — they were minted or received seconds ago, and the next pass
+ * checks them anyway. Counting a spent proof for thirty seconds is a wrong
+ * balance; dropping an unspent one is lost money.
+ */
+/**
+ * The proofs a swap consumed.
+ *
+ * `wallet.send` does not slice a set in two — it spends inputs at the mint and
+ * gets fresh proofs back, and it decides for itself which inputs it needed. So
+ * the originals it used are gone, spent, and nothing this wallet can do will
+ * bring them back, but they are neither in `keep` nor in what was sent.
+ *
+ * They have to be recorded as used or they come back. Relays still hold the
+ * backup they were part of, and a backup is restored by counting its proofs —
+ * so on the next device, or after the next reload, a balance that was already
+ * spent gets added to the one that replaced it. The mint's spent-check catches
+ * it eventually, which is why this looked like a balance that wobbled rather
+ * than one that was wrong.
+ */
+export function consumedProofs(before: Proof[], ...survivors: Proof[][]): Proof[] {
+  const kept = new Set(survivors.flat().map((proof) => proof.secret));
+  return before.filter((proof) => !kept.has(proof.secret));
+}
+
+export function foldConcurrentChanges(
+  checked: Proof[],
+  storedNow: Proof[],
+  usedNow: Iterable<string>
+): Proof[] {
+  return withoutProofs(mergeProofs(checked, storedNow), usedNow);
+}
+
 /** A proof as everyone else writes it down: amount as a plain number. */
 export interface WireProof {
   id: string;
