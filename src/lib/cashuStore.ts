@@ -235,6 +235,18 @@ export interface CashuMovement {
   /** NUT-04 mint quote or NUT-05 melt quote, whichever applies. */
   quoteId?: string;
   invoice?: string;
+  /**
+   * The `cashuB…` string, for a token this wallet cut.
+   *
+   * Kept because the string is the money until somebody redeems it. Without a
+   * copy, closing the tab after creating one strands the sats in a token
+   * nobody holds — the mint still has them and no wallet can claim them.
+   * Keeping it also makes the token re-showable, and re-claimable when the
+   * person it was meant for never took it.
+   */
+  token?: string;
+  /** What the token was for, when one was given. */
+  memo?: string;
   createdAt: number;
   settledAt?: number;
 }

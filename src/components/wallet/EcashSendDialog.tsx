@@ -146,8 +146,17 @@ function TokenPanel({ balanceSats }: { balanceSats: number }) {
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
           <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
             This string is the money, and it has already left your balance —
-            that is what making a token does. Give it to someone, or take it
-            back below. Lose it and the sats are gone.
+            that is what making a token does. Anyone holding it can claim it,
+            so the first wallet to paste it wins.
+          </p>
+          {/*
+            This used to end "lose it and the sats are gone", which stopped
+            being true once tokens were kept. Saying it anyway would frighten
+            people into copying a string they no longer need to guard.
+          */}
+          <p className="mt-2 text-xs leading-relaxed text-amber-700/80 dark:text-amber-400/80">
+            A copy is saved under “Tokens you've made”, where you can show it
+            again or take it back if nobody claims it.
           </p>
         </div>
 
