@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useToast } from '@/hooks/useToast';
@@ -7,10 +7,10 @@ import {
   invoiceAmountSats,
   isExpectedDenial,
   unwrapList,
+  LAWALLET_DOMAIN,
   laWalletRequest,
   mergeHeldAddresses,
   requiresPayment,
-  resolveIssuedDomain,
   type AddressMode,
   type AliasProbe,
   type RemoteWallet,
@@ -417,7 +417,28 @@ export function useLaWallet() {
    * your name.
    */
 
-  return {
+  /**
+   * Derived lists, computed once per change rather than once per render.
+   *
+   * `mergeHeldAddresses` and the wallet filter both build new arrays. Handing
+   * a fresh array out of a hook that seven components call means every one of
+   * them re-renders on every render of any parent, and anything downstream
+   * keyed on those arrays — effects, other queries, `useMemo` chains — runs
+   * again each time. That is how a single failing request turned into a
+   * request every few hundred milliseconds: not retries, but a query being
+   * re-subscribed by components that had no reason to re-render.
+   */
+  const held = useMemo(
+    () => mergeHeldAddresses(addresses.data ?? [], []),
+    [addresses.data]
+  );
+
+  const activeWallets = useMemo(
+    () => (wallets.data ?? []).filter((entry) => entry.status === 'ACTIVE'),
+    [wallets.data]
+  );
+
+  return useMemo(() => ({
     /** Null when signed out or browsing read-only; nothing here can be signed. */
     available: !!signer,
     /** The caller's own records, with the settings on them. */
@@ -426,11 +447,14 @@ export function useLaWallet() {
      * Everything they hold here, including whatever the directory turned up
      * that their own list did not mention.
      */
-    held: mergeHeldAddresses(addresses.data ?? [], []),
-    /** Configuration, now that the route which reported it is out of reach. */
-    domain: resolveIssuedDomain([]),
+    held,
+    /**
+     * Configuration, now that the route which reported it is out of reach.
+     * A module constant, so it is the same string every render.
+     */
+    domain: LAWALLET_DOMAIN,
     isLoading: addresses.isLoading,
-    wallets: (wallets.data ?? []).filter((entry) => entry.status === 'ACTIVE'),
+    wallets: activeWallets,
     checkName,
     probeAlias,
     claim: claim.mutateAsync,
@@ -443,5 +467,23 @@ export function useLaWallet() {
     isConnecting: connectWallet.isPending,
     revokeWallet: revokeWallet.mutateAsync,
     isRevoking: revokeWallet.isPending,
-  };
+  }), [
+    signer,
+    addresses.data,
+    addresses.isLoading,
+    held,
+    activeWallets,
+    checkName,
+    probeAlias,
+    claim.mutateAsync,
+    claim.isPending,
+    buy.mutateAsync,
+    buy.isPending,
+    point.mutateAsync,
+    point.isPending,
+    connectWallet.mutateAsync,
+    connectWallet.isPending,
+    revokeWallet.mutateAsync,
+    revokeWallet.isPending,
+  ]);
 }

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -137,8 +138,12 @@ export function useNip5() {
   });
 
   // An account can hold names on several domains; only ours belong on this page
-  const mine = (addresses.data ?? []).filter(
-    (address) => address.domain_id === NIP5_DOMAIN_ID
+  const mine = useMemo(
+    () =>
+      (addresses.data ?? []).filter(
+        (address) => address.domain_id === NIP5_DOMAIN_ID
+      ),
+    [addresses.data]
   );
 
   const primary =
@@ -314,7 +319,7 @@ export function useNip5() {
     },
   });
 
-  return {
+  return useMemo(() => ({
     isConfigured: isNip5Configured(),
     domain: NIP5_DOMAIN,
     addresses: mine,
@@ -342,5 +347,25 @@ export function useNip5() {
     publishToProfile: publishToProfile.mutateAsync,
     isPublishing: publishToProfile.isPending,
     suggestedFrom: metadata?.name || metadata?.display_name || '',
-  };
+  }), [
+    mine,
+    primary,
+    identifier,
+    metadata?.nip05,
+    metadata?.name,
+    metadata?.display_name,
+    user,
+    addresses.isLoading,
+    addresses.error,
+    claim.mutateAsync,
+    claim.isPending,
+    pay.mutateAsync,
+    pay.isPending,
+    isPaying,
+    payOptions,
+    attachLightning.mutateAsync,
+    attachLightning.isPending,
+    publishToProfile.mutateAsync,
+    publishToProfile.isPending,
+  ]);
 }

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuthor } from '@/hooks/useAuthor';
@@ -81,7 +82,10 @@ export function useLightningAddress({
    * with a username" would let an abandoned name outrank the one just bought.
    * The verified name wins when there is a link for it.
    */
-  const link = pickPrimaryLink(links.data ?? [], preferredUsername);
+  const link = useMemo(
+    () => pickPrimaryLink(links.data ?? [], preferredUsername),
+    [links.data, preferredUsername]
+  );
   const address = link?.username ? formatAddress(link.username) : null;
 
   /**
@@ -91,11 +95,15 @@ export function useLightningAddress({
    * deliberate act, not something claiming a new one does for you — so the
    * list is what someone needs to see to know where their money can arrive.
    */
-  const addresses = listAddresses(links.data ?? [], {
-    format: formatAddress,
-    profileLud16: metadata?.lud16,
-    preferredUsername,
-  });
+  const addresses = useMemo(
+    () =>
+      listAddresses(links.data ?? [], {
+        format: formatAddress,
+        profileLud16: metadata?.lud16,
+        preferredUsername,
+      }),
+    [links.data, metadata?.lud16, preferredUsername]
+  );
 
   const claim = useMutation({
     mutationFn: async (username: string) => {
@@ -232,7 +240,18 @@ export function useLightningAddress({
     },
   });
 
-  return {
+  /**
+   * Stable across renders that changed nothing.
+   *
+   * This hook is read by the wallet page, the composer, the profile and
+   * `useIdentity`, and it hands back two computed arrays and two closures. A
+   * fresh identity for any of them re-renders all of those and re-subscribes
+   * whatever queries they own — which, for a query that is failing and so has
+   * no data to go stale, means another request each time round.
+   */
+  const setProfileAddress = publishToProfile.mutateAsync;
+
+  return useMemo(() => ({
     address,
     link,
     /** Every address on this wallet, not only the one shown as primary. */
@@ -244,10 +263,21 @@ export function useLightningAddress({
     claim: claim.mutateAsync,
     isClaiming: claim.isPending,
     /** Publishes the primary address; `setProfileAddress` picks another. */
-    publishToProfile: () => publishToProfile.mutateAsync(undefined),
-    setProfileAddress: (chosen: string) =>
-      publishToProfile.mutateAsync(chosen),
+    publishToProfile: () => setProfileAddress(undefined),
+    setProfileAddress,
     isPublishing: publishToProfile.isPending,
     suggestedFrom: metadata?.name || metadata?.display_name || '',
-  };
+  }), [
+    address,
+    link,
+    addresses,
+    links.isLoading,
+    metadata?.lud16,
+    metadata?.name,
+    metadata?.display_name,
+    claim.mutateAsync,
+    claim.isPending,
+    setProfileAddress,
+    publishToProfile.isPending,
+  ]);
 }
