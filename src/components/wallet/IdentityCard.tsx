@@ -1,24 +1,17 @@
-import { useState } from 'react';
 import { AtSign, BadgeCheck, Check, Copy, Loader2, Wand2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AddressList } from '@/components/wallet/AddressList';
 import { ExternalAddress } from '@/components/wallet/ExternalAddress';
+import { PortableAddress } from '@/components/wallet/PortableAddress';
 import { Nip5Section } from '@/components/wallet/Nip5Section';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
-import {
-  ADDRESS_DOMAIN,
-  describeUsernameProblem,
-  formatAddress,
-  suggestUsername,
-  validateUsername,
-} from '@/lib/lightningAddress';
+import { ADDRESS_DOMAIN, formatAddress } from '@/lib/lightningAddress';
 
 /**
  * Someone's name here, in one place.
@@ -68,6 +61,12 @@ export function IdentityCard() {
         {/* Offered whether or not they have one of ours: someone who arrived
             with an address already should not have to claim one here first */}
         <ExternalAddress />
+
+        <Separator className="my-4" />
+
+        {/* The third kind: a name whose destination is a setting rather than
+            a consequence of who issued it */}
+        <PortableAddress />
 
         <Separator className="my-4" />
 
@@ -189,86 +188,74 @@ function CurrentIdentity() {
 }
 
 /**
- * Claiming the free address, for someone with no name at all yet.
+ * The free address, for someone with no name at all yet.
  *
- * Pre-filled, because the point is that this takes one tap. The suggestion
- * comes from their profile name, or from their key when they have no profile —
- * either way it is stable, so it doesn't change between two looks at the page.
+ * No name field, because the name is not what is being given away. A free
+ * address is assigned from the key: it receives zaps from every client and
+ * always will, and it says nothing about who owns it. Choosing what it says
+ * is the thing that costs money, and the offer to do that sits underneath
+ * rather than being dangled in a disabled input.
+ *
+ * Stated plainly rather than framed as a limitation discovered later. Someone
+ * who reads this and takes the free one has not been tricked; someone who
+ * wanted their own name learns the price before they have typed it in.
  */
 function ClaimForm() {
-  const { lightning, suggestion, status } = useIdentity();
+  const { freeName, claimFree, isClaimingFree, status } = useIdentity();
   const elsewhere = status.tier === 'external';
-
-  const [username, setUsername] = useState(suggestion);
-  const [touched, setTouched] = useState(false);
-
-  const problem = validateUsername(username);
-  const showProblem = touched && !!problem;
-  const isValid = !problem && username.length > 0;
 
   return (
     <div className="space-y-4">
       <div className="rounded-lg bg-gradient-to-br from-blue-50 to-blue-50/50 p-4 dark:from-blue-950/30 dark:to-blue-950/10">
         <p className="text-sm">
           <span className="font-medium">
-            {elsewhere ? 'Want one here as well?' : 'Start receiving zaps.'}
+            {elsewhere ? 'Want an address here as well?' : 'Start receiving zaps.'}
           </span>{' '}
           <span className="text-muted-foreground">
             {elsewhere
-              ? 'Your zaps already arrive elsewhere. An address here is free, yours for good, and can be switched to whenever you like.'
-              : 'Pick a name, and anyone on Nostr can pay you. Free and yours for good.'}
+              ? 'Your zaps already arrive elsewhere. A free address here works alongside it.'
+              : 'A free address, ready now. Anyone on Nostr can pay you at it.'}
           </span>
         </p>
       </div>
 
-      <div className="space-y-3">
-        <Label htmlFor="ln-username" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Your address
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Your free address
         </Label>
-        <div className="flex items-center gap-2">
-          <Input
-            id="ln-username"
-            value={username}
-            onChange={(event) => {
-              setUsername(suggestUsername(event.target.value));
-              if (!touched) setTouched(true);
-            }}
-            onBlur={() => setTouched(true)}
-            placeholder="satoshi"
-            aria-invalid={showProblem}
-            className="max-w-[10rem] transition-all"
-          />
-          <span className="flex-1 truncate text-sm font-medium text-foreground">
-            @{ADDRESS_DOMAIN}
-          </span>
-        </div>
 
-        {showProblem ? (
-          <p className="flex items-start gap-1.5 text-xs text-destructive">
-            <span className="shrink-0 mt-0.5">⚠</span>
-            {describeUsernameProblem(problem)}
+        <div className="rounded-lg border bg-muted/40 p-3">
+          <p className="break-all font-mono text-sm">
+            {freeName ? formatAddress(freeName) : `…@${ADDRESS_DOMAIN}`}
           </p>
-        ) : username ? (
-          <p className="text-xs text-success flex items-center gap-1">
-            <Check className="h-3 w-3" />
-            {formatAddress(username)} is ready
+          {/* The trade said out loud: it works, it just is not a name */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            Assigned from your key, so it is yours for good and never taken.
+            It receives zaps exactly like a bought name — it just doesn't say
+            who you are.
           </p>
-        ) : null}
+        </div>
       </div>
 
       <Button
-        onClick={() => void lightning.claim(username).catch(() => {})}
-        disabled={!isValid || lightning.isClaiming}
+        onClick={() => void claimFree().catch(() => {})}
+        disabled={!freeName || isClaimingFree}
         className="w-full"
         size="lg"
       >
-        {lightning.isClaiming ? (
+        {isClaimingFree ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : (
           <Wand2 className="mr-2 h-4 w-4" />
         )}
-        {lightning.isClaiming ? 'Claiming...' : 'Claim my address'}
+        {isClaimingFree ? 'Setting it up…' : 'Get my free address'}
       </Button>
+
+      <p className="text-center text-xs text-muted-foreground">
+        Want <span className="font-medium text-foreground">your own name</span>{' '}
+        instead? A verified name gives you {`name@${ADDRESS_DOMAIN}`} for both
+        zaps and identity — see below.
+      </p>
     </div>
   );
 }

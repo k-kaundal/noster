@@ -13,6 +13,7 @@ import {
   withIdentity,
 } from '@/lib/identity';
 import { suggestUsername } from '@/lib/lightningAddress';
+import { generateFreeName, hasChosenName } from '@/lib/freeAddress';
 
 /**
  * Someone's name here, both halves of it.
@@ -33,10 +34,18 @@ export function useIdentity() {
   const metadata = author.data?.metadata;
 
   const nip5 = useNip5();
-  // The pay link that matches the bought name outranks any older one
-  const lightning = useLightningAddress(
-    localPartOf(nip5.identifier) ?? undefined
-  );
+  const lightning = useLightningAddress({
+    // The pay link that matches the bought name outranks any older one
+    preferredUsername: localPartOf(nip5.identifier) ?? undefined,
+    /**
+     * Only live names. A reservation is created before its invoice is paid,
+     * and an unpaid one must not entitle anybody to the address that goes
+     * with it — that is the thing being sold.
+     */
+    paidNames: nip5.addresses
+      .filter((address) => address.active)
+      .map((address) => address.local_part),
+  });
 
   const status = describeIdentity({
     verifiedName: nip5.identifier,
@@ -55,6 +64,9 @@ export function useIdentity() {
    * Their profile name if they have one; otherwise the name their key already
    * displays as, which is stable — a random suggestion that changes between
    * two looks at the same page reads as a bug.
+   *
+   * Only reachable through the paid flow now: a chosen name is what is being
+   * sold. This is the value that pre-fills that form.
    */
   const suggestion = suggestUsername(
     suggestIdentityName(
@@ -62,6 +74,39 @@ export function useIdentity() {
       user ? genUserName(user.pubkey) : ''
     )
   );
+
+  /**
+   * The address given away.
+   *
+   * Assigned from the key rather than chosen, which is the whole difference
+   * between the tiers: it receives zaps exactly as well as a bought name and
+   * says nothing about who owns it.
+   */
+  const freeName = user ? generateFreeName(user.pubkey) : '';
+
+  /** Whether they are still on the assigned name, and so have an upgrade to buy. */
+  const onFreeName = !!lightning.link?.username && !hasChosenName(lightning.link.username);
+
+  /**
+   * Claims the free address.
+   *
+   * Takes no name, because there is none to take. Idempotent by construction —
+   * the name comes from the key, so pressing it twice returns the pay link
+   * that already exists rather than making a second one.
+   */
+  const claimFree = useMutation({
+    mutationFn: async () => {
+      if (!freeName) throw new Error('Log in first');
+      return await lightning.claim(freeName);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Could not set up your address',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
 
   /**
    * Writes both fields into the profile in one event.
@@ -137,6 +182,12 @@ export function useIdentity() {
 
   return {
     status,
+    /** The name assigned to this key, free and unchosen. */
+    freeName,
+    /** True while they hold only the assigned name — the upgrade applies. */
+    onFreeName,
+    claimFree: claimFree.mutateAsync,
+    isClaimingFree: claimFree.isPending,
     /** The verified half. */
     nip5,
     /** The free half. */

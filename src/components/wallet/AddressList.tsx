@@ -1,49 +1,30 @@
 import { useState } from 'react';
-import { BadgeCheck, Check, Copy, Loader2, Plus, Trash2, Zap } from 'lucide-react';
+import { BadgeCheck, Copy, Loader2, Lock, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
-import {
-  ADDRESS_DOMAIN,
-  describeUsernameProblem,
-  suggestUsername,
-  validateUsername,
-} from '@/lib/lightningAddress';
 
 /**
  * Every address the wallet receives at.
  *
  * One wallet can answer to several names, and it usually ends up doing so —
- * a name claimed on the way in, a nicer one bought later, one handed out to a
- * particular audience. All of them keep working, which is the useful part and
- * also the dangerous part: the app used to show exactly one and silently drop
- * the rest, so an address someone had given people was invisible here and
- * there was no way to retire it.
+ * the name assigned on the way in, a bought one later, one handed out to a
+ * particular audience. All of them keep working, which is the useful part: the
+ * app used to show exactly one and silently drop the rest, so an address
+ * somebody had given out was invisible here.
  *
  * Two things are separable and were previously conflated: which addresses
  * exist, and which one the profile tells the rest of Nostr to zap. Both are
  * shown, and the second is a choice rather than a consequence of ordering.
+ *
+ * Nothing on this list can be deleted, and nothing new can be claimed from it.
+ * Both used to be here and both were wrong — see the notes at each.
  */
 export function AddressList() {
-  const { lightning, nip5 } = useIdentity();
+  const { lightning, nip5, onFreeName } = useIdentity();
   const { toast } = useToast();
 
-  const [adding, setAdding] = useState(false);
-  const [username, setUsername] = useState('');
-  const [touched, setTouched] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   // Which row is mid-publish, so one click does not spin every button on the
   // list — the mutation is shared, the intent is not
   const [publishing, setPublishing] = useState<string | null>(null);
@@ -51,37 +32,11 @@ export function AddressList() {
   const addresses = lightning.addresses;
   if (!addresses.length) return null;
 
-  const problem = validateUsername(username);
-  const showProblem = touched && !!problem;
-  const taken = addresses.some((entry) => entry.username === username);
-
-  const add = async () => {
-    await lightning.claim(username).catch(() => {});
-    setUsername('');
-    setTouched(false);
-    setAdding(false);
-  };
-
-  const pending = addresses.find((entry) => entry.link.id === confirmRemove);
-
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {addresses.length === 1 ? 'Your address' : 'Your addresses'}
-        </p>
-        {!adding && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 px-2 text-xs"
-            onClick={() => setAdding(true)}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add another
-          </Button>
-        )}
-      </div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {addresses.length === 1 ? 'Your address' : 'Your addresses'}
+      </p>
 
       <ul className="space-y-2">
         {addresses.map((entry) => (
@@ -146,119 +101,38 @@ export function AddressList() {
                 <Copy className="h-3.5 w-3.5" />
               </Button>
 
-              {/* The address the profile advertises has no delete button:
-                  removing it would leave every zap in the network pointed at
-                  a name that no longer resolves. Point them somewhere else
-                  first, and it becomes deletable like any other. */}
-              {!entry.onProfile && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                  aria-label={`Remove ${entry.address}`}
-                  onClick={() => setConfirmRemove(entry.link.id)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
+              {/* There was a delete button here. Deleting a pay link does not
+                  just stop a name resolving — it puts the name back in the
+                  pool, so the next person to claim it receives the zaps aimed
+                  at this one. Profiles, saved contacts and printed codes all
+                  outlive the link and none of them find out. Publishing a
+                  different address is the reversible way to stop receiving
+                  here, and it costs nobody their name. */}
             </div>
           </li>
         ))}
       </ul>
 
-      {adding && (
-        <div className="space-y-2 rounded-lg border border-dashed p-3">
-          <div className="flex items-center gap-2">
-            <Input
-              value={username}
-              onChange={(event) => {
-                setUsername(suggestUsername(event.target.value));
-                if (!touched) setTouched(true);
-              }}
-              onBlur={() => setTouched(true)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !problem && !taken) void add();
-              }}
-              placeholder="another-name"
-              aria-invalid={showProblem}
-              aria-label="New address name"
-              className="max-w-[10rem]"
-              autoFocus
-            />
-            <span className="flex-1 truncate text-sm text-muted-foreground">
-              @{ADDRESS_DOMAIN}
-            </span>
-          </div>
+      <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+        <Lock className="mt-0.5 h-3 w-3 shrink-0" />
+        <span>
+          {addresses.length === 1 ? 'This address is' : 'These are'} yours for
+          good. Names are never released or reassigned, so anything you hand
+          out keeps working.
+        </span>
+      </p>
 
-          {showProblem ? (
-            <p className="text-xs text-destructive">
-              {describeUsernameProblem(problem)}
-            </p>
-          ) : taken ? (
-            <p className="text-xs text-muted-foreground">
-              You already have that one.
-            </p>
-          ) : username ? (
-            <p className="flex items-center gap-1 text-xs text-success">
-              <Check className="h-3 w-3" />
-              Available to claim
-            </p>
-          ) : null}
-
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => void add()}
-              disabled={!username || !!problem || taken || lightning.isClaiming}
-            >
-              {lightning.isClaiming && (
-                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              )}
-              Claim
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setAdding(false);
-                setUsername('');
-                setTouched(false);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
+      {/* There was an "add another" box here that claimed any free name on the
+          spot, which gave away the exact thing the verified-name flow charges
+          for. A chosen name is bought below, and buying one issues the address
+          to match — so this says where that happens instead of duplicating it
+          badly. */}
+      {onFreeName && (
+        <p className="text-xs text-muted-foreground">
+          Want an address that says your name? Reserve a verified name below and
+          it comes with a matching one — this one keeps working alongside it.
+        </p>
       )}
-
-      <AlertDialog
-        open={!!confirmRemove}
-        onOpenChange={(open) => !open && setConfirmRemove(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove {pending?.address}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Anyone who saved this address will stop being able to pay you at
-              it, and the name goes back into the pool for someone else to
-              claim. Payments already sent have arrived.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (confirmRemove) {
-                  void lightning.remove(confirmRemove).catch(() => {});
-                }
-                setConfirmRemove(null);
-              }}
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

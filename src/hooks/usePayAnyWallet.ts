@@ -41,6 +41,14 @@ export const MANUAL_OPTION: PayOption = {
  * of those is a first-class way to pay, and "copy the invoice" always works
  * even when none of them are present.
  */
+/** What a payment attempt produced, when it produced anything. */
+export interface PayResult {
+  /** False for the manual option, where payment happens out of our sight. */
+  paid: boolean;
+  /** Proof of payment, when the paying wallet reported one. */
+  preimage?: string;
+}
+
 export function usePayAnyWallet() {
   const { wallet, balanceSats, payInvoice } = useLnbitsWallet();
   const { hasWebLN, webln } = useWallet();
@@ -117,15 +125,26 @@ export function usePayAnyWallet() {
     [options, balanceSats]
   );
 
-  const pay = useMutation({
+  /**
+   * Pays, and hands back the preimage where the wallet gives one.
+   *
+   * The preimage is the proof that a payment happened — it is what a
+   * pay-then-act API wants back before it will do the thing that was paid
+   * for. This used to be discarded, so those flows could pay and then had
+   * nothing to show for it.
+   *
+   * Absent for the manual option, where the payment happens in somebody
+   * else's wallet and there is nothing here to learn it from.
+   */
+  const pay = useMutation<PayResult, Error, {
+    bolt11: string;
+    optionId: string;
+    amountSats?: number;
+  }>({
     mutationFn: async ({
       bolt11,
       optionId,
       amountSats,
-    }: {
-      bolt11: string;
-      optionId: string;
-      amountSats?: number;
     }) => {
       const option = options.find((entry) => entry.id === optionId);
       if (!option) throw new Error('That wallet is no longer connected');
@@ -138,8 +157,8 @@ export function usePayAnyWallet() {
               `Not enough sats. You have ${balanceSats}, this costs ${amountSats}.`
             );
           }
-          await payInvoice(bolt11);
-          return;
+          const payment = await payInvoice(bolt11);
+          return { paid: true, preimage: payment?.preimage };
         }
 
         case 'nwc': {
@@ -152,21 +171,24 @@ export function usePayAnyWallet() {
           // Through the hook, which builds a client for the connection. The
           // stored connection has no client on it — reading one off it was
           // why paying by NWC failed every time
-          await sendPayment(connection, bolt11);
-          return;
+          const result = await sendPayment(connection, bolt11);
+          return { paid: true, preimage: result?.preimage };
         }
 
         case 'webln': {
           if (!webln) throw new Error('No browser wallet available');
           await webln.enable();
-          await webln.sendPayment(bolt11);
-          return;
+          const result = await webln.sendPayment(bolt11);
+          return {
+            paid: true,
+            preimage: (result as { preimage?: string } | undefined)?.preimage,
+          };
         }
 
         case 'manual':
           // Nothing to do — the caller shows the invoice and the person pays
           // it elsewhere, so there is no result to wait for here
-          return;
+          return { paid: false };
       }
     },
   });

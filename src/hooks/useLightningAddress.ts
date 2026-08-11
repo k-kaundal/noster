@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/useToast';
 import { LnbitsError, lnbitsRequest, withExtension } from '@/lib/lnbits';
 import { buildPayLinkBody, formatAddress } from '@/lib/lightningAddress';
 import { listAddresses, pickPrimaryLink } from '@/lib/identity';
+import { generateFreeName, mayClaim } from '@/lib/freeAddress';
 
 /** A pay link as returned by the lnurlp extension. */
 export interface PayLink {
@@ -22,6 +23,24 @@ export interface PayLink {
   comment_chars: number;
 }
 
+export interface LightningAddressOptions {
+  /**
+   * The bought name, used to rank which pay link counts as primary. Passed
+   * even while the purchase is unpaid, since ranking is only about display.
+   */
+  preferredUsername?: string;
+  /**
+   * Names this person has actually paid for and which are live.
+   *
+   * Kept separate from `preferredUsername` on purpose. A reservation exists
+   * from the moment somebody types a name, before any invoice is settled, and
+   * `useNip5` falls back to showing an inactive one — so treating "the name
+   * being displayed" as "a name they bought" would hand out the paid tier to
+   * anyone who started the checkout and closed the tab.
+   */
+  paidNames?: string[];
+}
+
 /**
  * The user's lightning address, backed by an LNbits pay link.
  *
@@ -29,7 +48,10 @@ export interface PayLink {
  * user's own session — it is their wallet, so there is no shared secret here
  * and nothing is written to storage.
  */
-export function useLightningAddress(preferredUsername?: string) {
+export function useLightningAddress({
+  preferredUsername,
+  paidNames = [],
+}: LightningAddressOptions = {}) {
   const { user } = useCurrentUser();
   const { token } = useLnbitsAuth();
   const { wallet } = useLnbitsWallet();
@@ -92,6 +114,23 @@ export function useLightningAddress(preferredUsername?: string) {
       );
       if (existing) return existing;
 
+      /**
+       * Which names this person is entitled to, checked here rather than only
+       * where the buttons are. A chosen name is the thing being sold, and this
+       * function is what every path to a new address goes through.
+       */
+      if (
+        !mayClaim(username, {
+          freeName: user ? generateFreeName(user.pubkey) : '',
+          paidNames,
+          ownedNames: (links.data ?? []).map((entry) => entry.username),
+        })
+      ) {
+        throw new Error(
+          'That name has to be bought. Reserve it as a verified name and the matching address comes with it.'
+        );
+      }
+
       const created = await withExtension('lnurlp', token, () =>
         lnbitsRequest<PayLink>('/lnurlp/api/v1/links', {
           method: 'POST',
@@ -129,37 +168,20 @@ export function useLightningAddress(preferredUsername?: string) {
     },
   });
 
-  /**
-   * Retires an address.
+  /* There is deliberately no way to delete an address.
    *
-   * The pay link is deleted at LNbits, so the name stops resolving and becomes
-   * claimable again. Anything already sent to it has long since arrived — a
-   * pay link is not an invoice — but a wallet app that saved the address will
-   * start failing, which is the point of removing it.
+   * `DELETE /lnurlp/api/v1/links/{id}` does not merely stop a name resolving —
+   * it returns the name to the pool, and the next person to claim it starts
+   * receiving the money aimed at the person who gave it out. Nostr profiles,
+   * saved contacts and printed QR codes all outlive the pay link, and none of
+   * them find out. The failure is silent and it moves somebody's money to a
+   * stranger, which is not a thing worth a confirm dialog.
+   *
+   * So a name, once issued, stays issued. Stopping payments is a separate and
+   * reversible act: publish a different address and zaps stop arriving here.
+   * The old one keeps working for whoever already had it, which is what the
+   * person handing it out was entitled to assume.
    */
-  const remove = useMutation({
-    mutationFn: async (linkId: string) => {
-      if (!wallet) throw new Error('Connect your wallet first');
-
-      await withExtension('lnurlp', token, () =>
-        lnbitsRequest<void>(`/lnurlp/api/v1/links/${linkId}`, {
-          method: 'DELETE',
-          apiKey: wallet.adminkey,
-        })
-      );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['lnurlp-links'] });
-      toast({ title: 'Address removed' });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Could not remove that address',
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
 
   /**
    * Publishes an address into the user's profile as `lud16`.
@@ -221,8 +243,6 @@ export function useLightningAddress(preferredUsername?: string) {
     profileAddress: metadata?.lud16,
     claim: claim.mutateAsync,
     isClaiming: claim.isPending,
-    remove: remove.mutateAsync,
-    isRemoving: remove.isPending,
     /** Publishes the primary address; `setProfileAddress` picks another. */
     publishToProfile: () => publishToProfile.mutateAsync(undefined),
     setProfileAddress: (chosen: string) =>
