@@ -17,7 +17,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useProfile } from '@/hooks/useProfile';
-import { useAuthor } from '@/hooks/useAuthor';
+import { readAuthorEvent, useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useFollows } from '@/hooks/useFollows';
 import { useFollowers } from '@/hooks/useFollowers';
@@ -71,7 +71,17 @@ export function Profile({ pubkey }: ProfileProps) {
   const { toast } = useToast();
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
 
-  const metadata = author.data?.metadata;
+  /**
+   * The profile page asks the relays for a kind 0 of its own, and used to
+   * discard it — the header read only the shared author cache, so a profile
+   * that cache had never found stayed blank on the one page that had just
+   * fetched it. Preferring the cache keeps names consistent with the rest of
+   * the app; falling back to this fills in the case it could not answer.
+   */
+  const metadata =
+    author.data?.metadata ??
+    (profileData?.metadata ? readAuthorEvent(profileData.metadata).metadata : undefined);
+
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(pubkey);
   const username = metadata?.name || genUserName(pubkey);
@@ -123,18 +133,20 @@ export function Profile({ pubkey }: ProfileProps) {
     type: 'profile',
   });
 
-  if (error) {
-    return (
-      <EmptyState
-        icon={UserRound}
-        title="Couldn't load this profile"
-        description="The relay didn't return anything for this key."
-        showRelaySelector
-      />
-    );
-  }
-
-  if (isLoading) {
+  /**
+   * Both gates below used to be page-wide, and both were reading the wrong
+   * query. `isLoading` and `error` come from the *notes* request, so a relay
+   * that was slow to return someone's posts — or returned none, or timed out —
+   * replaced their entire profile with a spinner or with "couldn't load this
+   * profile". For a new account with nothing published yet, that is every
+   * visit: the person clicks through to their own profile and finds no name,
+   * no avatar and an error about a key that is perfectly fine.
+   *
+   * Whether the notes arrived says nothing about who this is. So the identity
+   * block renders as soon as anything is known about them, and the notes
+   * report their own trouble in the tab where the notes would have been.
+   */
+  if (isLoading && !metadata && !author.isFetched) {
     return <ProfileSkeleton />;
   }
 
@@ -306,6 +318,8 @@ export function Profile({ pubkey }: ProfileProps) {
         <TabsContent value="notes" className="space-y-4">
           <PostGroup
             posts={notes}
+            isLoading={isLoading}
+            failed={!!error}
             emptyTitle={
               isCurrentUser ? "You haven't posted yet" : 'No notes found'
             }
@@ -314,7 +328,12 @@ export function Profile({ pubkey }: ProfileProps) {
         </TabsContent>
 
         <TabsContent value="replies" className="space-y-4">
-          <PostGroup posts={replies} emptyTitle="No replies found" />
+          <PostGroup
+            posts={replies}
+            isLoading={isLoading}
+            failed={!!error}
+            emptyTitle="No replies found"
+          />
         </TabsContent>
 
         <TabsContent value="articles" className="space-y-4">
@@ -322,7 +341,12 @@ export function Profile({ pubkey }: ProfileProps) {
         </TabsContent>
 
         <TabsContent value="media" className="space-y-4">
-          <PostGroup posts={media} emptyTitle="No media found" />
+          <PostGroup
+            posts={media}
+            isLoading={isLoading}
+            failed={!!error}
+            emptyTitle="No media found"
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -358,11 +382,35 @@ function PostGroup({
   posts,
   emptyTitle,
   showCompose = false,
+  isLoading = false,
+  failed = false,
 }: {
   posts: NostrEvent[];
   emptyTitle: string;
   showCompose?: boolean;
+  isLoading?: boolean;
+  failed?: boolean;
 }) {
+  if (isLoading && posts.length === 0) {
+    return <PostSkeletonList count={3} />;
+  }
+
+  /**
+   * Said here rather than over the whole page. The notes not arriving is a
+   * fact about the relay, and it is worth reporting — but only about the
+   * notes, and not by hiding whose profile this is.
+   */
+  if (failed && posts.length === 0) {
+    return (
+      <EmptyState
+        icon={UserRound}
+        title="Couldn't load these notes"
+        description="The relay didn't answer for this key. Another one may have them."
+        showRelaySelector
+      />
+    );
+  }
+
   if (posts.length === 0) {
     return (
       <EmptyState
