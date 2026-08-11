@@ -65,7 +65,19 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const pubkey = user?.pubkey;
+  /**
+   * Browsing somebody else's timeline with only their npub.
+   *
+   * Ecash cannot work here and should not pretend to. The backup is encrypted
+   * to the holder's own key, so a read-only session can neither decrypt what
+   * is on the relays nor write a new copy — every operation would succeed at
+   * the mint, because proofs are bearer tokens and need no signature, and then
+   * fail to record itself anywhere. That is the shape of a wallet that loses
+   * money quietly.
+   */
+  const readOnly = !!user?.readOnly;
+  const pubkey = readOnly ? undefined : user?.pubkey;
+
   const queryKey = useMemo(
     () => ['cashu-proofs', pubkey ?? '', mintUrl],
     [pubkey, mintUrl]
@@ -82,7 +94,7 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
   const state = useQuery<EcashState>({
     queryKey,
     queryFn: async ({ signal }) => {
-      if (!user || !pubkey) return EMPTY;
+      if (!user || !pubkey || readOnly) return EMPTY;
 
       const local = readProofs(pubkey, mintUrl);
       let remote: Proof[] = [];
@@ -153,7 +165,7 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
         eventIds: [...new Set([...eventIds, ...(cached ?? [])])],
       };
     },
-    enabled: !!user,
+    enabled: !!user && !readOnly,
     staleTime: 30 * 1000,
     retry: false,
   });
@@ -189,7 +201,11 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
    */
   const commit = useCallback(
     async (next: Proof[], spent: Proof[]) => {
-      if (!user || !pubkey) return;
+      if (!user || !pubkey || readOnly) {
+        throw new Error(
+          'Log in with your own key to hold ecash. This session can only read.'
+        );
+      }
 
       writeProofs(pubkey, mintUrl, next);
       addUsedSecrets(
@@ -247,7 +263,7 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
         });
       }
     },
-    [user, pubkey, mintUrl, queryClient, publishEvent, toast, queryKey]
+    [user, pubkey, readOnly, mintUrl, queryClient, publishEvent, toast, queryKey]
   );
 
   /**
@@ -258,7 +274,7 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
    * never has an unexplained event on their profile.
    */
   const ensureWalletEvent = useCallback(async () => {
-    if (!user || !pubkey) return;
+    if (!user || !pubkey || readOnly) return;
 
     try {
       const existing = await nostr.query(
@@ -304,7 +320,7 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
     } catch {
       // Nice to have, not required to hold ecash
     }
-  }, [user, pubkey, mintUrl, nostr, publishEvent]);
+  }, [user, pubkey, readOnly, mintUrl, nostr, publishEvent]);
 
   /**
    * Step one of a deposit: ask the mint for an invoice.
@@ -543,6 +559,8 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
 
   return {
     mintUrl,
+    /** False while browsing read-only: nothing here can be signed or backed up. */
+    available: !!user && !readOnly,
     proofs,
     balanceSats,
     isLoading: state.isLoading,

@@ -85,6 +85,7 @@ export function EcashPage() {
 function Ecash() {
   const { mint } = useCashuMint();
   const {
+    available,
     balanceSats,
     isLoading,
     mintUrl,
@@ -94,6 +95,24 @@ function Ecash() {
 
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
+
+  /**
+   * Browsing on someone else's npub.
+   *
+   * Ecash needs a key that can sign: the backup is encrypted to its holder, so
+   * this session could neither read one nor write one. Every button would work
+   * at the mint — proofs are bearer tokens and need no signature — and then
+   * record itself nowhere, which is how a wallet loses money without saying so.
+   */
+  if (!available) {
+    return (
+      <EmptyState
+        icon={Banknote}
+        title="Log in to hold ecash"
+        description="You're browsing read-only. Ecash lives in your browser and is backed up encrypted to your own key, so it needs one you can sign with."
+      />
+    );
+  }
 
   return (
     <div className="space-y-5">
