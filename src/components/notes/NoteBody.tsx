@@ -4,6 +4,8 @@ import { nip19 } from 'nostr-tools';
 import { FileQuestion, FileText, Film, Clock, Ban } from 'lucide-react';
 import { NoteContent } from '@/components/NoteContent';
 import { ZapGoalCard } from '@/components/ZapGoalCard';
+import { HighlightCard } from '@/components/HighlightCard';
+import { HIGHLIGHT_KIND } from '@/lib/nip84';
 import { GOAL_KIND } from '@/lib/nip75';
 import { StructuredPayload } from '@/components/notes/StructuredPayload';
 import { PollContent } from '@/components/notes/PollContent';
@@ -45,6 +47,14 @@ export function NoteBody({ event, className }: NoteBodyProps) {
    */
   if (event.kind === GOAL_KIND) {
     return <ZapGoalCard event={event} className={className} />;
+  }
+
+  /**
+   * A highlight's `.content` is somebody else's words, and its own meaning is
+   * in the tags. Rendered as prose it would read as the highlighter's post.
+   */
+  if (event.kind === HIGHLIGHT_KIND) {
+    return <HighlightCard event={event} className={className} />;
   }
 
   switch (renderKind) {
