@@ -1,16 +1,14 @@
-import { AtSign, BadgeCheck, Check, Copy, Loader2, Wand2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { AtSign, Check, Loader2, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AddressList } from '@/components/wallet/AddressList';
+import { NameTiers } from '@/components/wallet/NameTiers';
 import { ExternalAddress } from '@/components/wallet/ExternalAddress';
 import { PortableAddress } from '@/components/wallet/PortableAddress';
 import { Nip5Section } from '@/components/wallet/Nip5Section';
 import { useIdentity } from '@/hooks/useIdentity';
-import { useToast } from '@/hooks/useToast';
 import { ADDRESS_DOMAIN, formatAddress } from '@/lib/lightningAddress';
 
 /**
@@ -52,7 +50,10 @@ export function IdentityCard() {
           <>
             <CurrentIdentity />
             <Separator className="my-4" />
-            <AddressList />
+            {/* Ranked, best first. `AddressList` showed them in the order they
+                were issued, which put the free one somebody arrived with above
+                the name they later paid for. */}
+            <NameTiers />
           </>
         )}
 
@@ -86,7 +87,6 @@ function CurrentIdentity() {
     alignLightningAddress,
     isAligning,
   } = useIdentity();
-  const { toast } = useToast();
 
   if (!status.primary) return null;
 
@@ -94,41 +94,8 @@ function CurrentIdentity() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 rounded-xl border bg-gradient-to-br from-primary/5 to-transparent p-4 transition-all hover:border-primary/40">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
-            {verified ? 'Verified identity' : 'Your address'}
-          </p>
-          <p className="text-lg font-semibold truncate">{status.primary}</p>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          {verified ? (
-            <Badge className="gap-1 bg-success/15 text-success hover:bg-success/20">
-              <BadgeCheck className="h-3 w-3" />
-              <span className="hidden sm:inline">Verified</span>
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="bg-blue-500/15 text-blue-600 hover:bg-blue-500/25">
-              Free
-            </Badge>
-          )}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={async () => {
-              await navigator.clipboard.writeText(status.primary!);
-              toast({ title: 'Copied to clipboard' });
-            }}
-            aria-label="Copy"
-            className="hover:bg-primary/10"
-          >
-            <Copy className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
+      {/* The address itself is listed below, ranked. This block is only what
+          the list cannot say: whether the profile agrees with any of it. */}
       {status.unpublished.length > 0 && (
         <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/8 p-4 backdrop-blur-sm">
           <p className="text-sm text-warning-foreground">
