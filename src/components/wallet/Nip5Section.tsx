@@ -4,6 +4,7 @@ import {
   Check,
   Clock,
   Copy,
+  ExternalLink,
   Loader2,
   Search,
   Zap,
@@ -26,6 +27,7 @@ import {
   useNip5Search,
   type PendingNip5,
 } from '@/hooks/useNip5';
+import { QrCode } from '@/components/wallet/QrCode';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
 import {
@@ -124,6 +126,8 @@ function OwnedName() {
 
       <LapseWarning address={address} zappable={zappable} />
 
+      <UnpaidName address={address} />
+
       {!matchesCurrentKey && (
         <div className="rounded-lg border border-warning/30 bg-warning/8 p-3 text-sm backdrop-blur-sm">
           <p className="text-warning-foreground">
@@ -152,6 +156,67 @@ function OwnedName() {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A name reserved but never paid for.
+ *
+ * The badge said "Awaiting payment" and that was the end of it: the invoice
+ * lived in component state, so a reload — or simply coming back tomorrow —
+ * left a name nobody could pay and no way to reach the payment screen. It
+ * looked like a bug in the purchase rather than a purchase left half done.
+ *
+ * Asking for the name again is what recovers it. The extension answers a
+ * repeat claim for a name already reserved to this key with the same record
+ * and its outstanding invoice, so nothing is bought twice and nothing new is
+ * reserved.
+ */
+function UnpaidName({ address }: { address: Nip5Address }) {
+  const { claim, isClaiming, pay, isPaying } = useNip5();
+  const [pending, setPending] = useState<PendingNip5 | null>(null);
+  const paid = useNip5Payment(pending?.paymentHash);
+
+  if (nip5State(address) !== 'inactive') return null;
+
+  if (pending && !paid.data) {
+    return (
+      <PendingPayment
+        pending={pending}
+        onPay={(optionId) => void pay({ pending, optionId }).catch(() => {})}
+        isPaying={isPaying}
+        onCancel={() => setPending(null)}
+      />
+    );
+  }
+
+  const years = address.extra?.years ?? 1;
+  const sats = address.extra?.price_in_sats;
+
+  return (
+    <div className="space-y-3 rounded-lg border border-warning/30 bg-warning/8 p-4">
+      <p className="text-sm text-warning-foreground">
+        {formatNip5(address.local_part)} is reserved for you and not live yet.
+        {sats ? ` It costs ${sats.toLocaleString()} sats.` : ''} Nobody else can
+        take it in the meantime.
+      </p>
+
+      <Button
+        size="sm"
+        className="w-full"
+        disabled={isClaiming}
+        onClick={() =>
+          void claim({ localPart: address.local_part, years })
+            .then((result) => {
+              if (result.bolt11) setPending(result);
+            })
+            .catch(() => {})
+        }
+      >
+        {isClaiming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Pay for it
+      </Button>
     </div>
   );
 }
@@ -272,7 +337,7 @@ function BuyName() {
         pending={pending}
         // The mutations report their own failures; these catches only stop
         // an unhandled rejection reaching the console
-        onPay={() => void pay(pending).catch(() => {})}
+        onPay={(optionId) => void pay({ pending, optionId }).catch(() => {})}
         isPaying={isPaying}
         onCancel={() => setPending(null)}
       />
@@ -414,31 +479,61 @@ function PendingPayment({
   onCancel,
 }: {
   pending: PendingNip5;
-  onPay: () => void;
+  onPay: (optionId?: string) => void;
   isPaying: boolean;
   onCancel: () => void;
 }) {
   const { toast } = useToast();
+  const { payOptions } = useNip5();
+
   const sats = pending.address?.extra?.price_in_sats;
+  const usable = payOptions.filter((option) => !option.unavailable);
 
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
         <p className="font-medium text-sm">
           {pending.address?.local_part
-            ? `${formatNip5(pending.address.local_part)} is yours`
+            ? `${formatNip5(pending.address.local_part)} is reserved`
             : 'Your name is reserved'}
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          Pay the invoice to make it live.
+          It goes live once {sats ? `${sats.toLocaleString()} sats are` : 'the invoice is'}{' '}
+          paid. Nobody else can take it meanwhile.
         </p>
       </div>
 
+      {/* The QR was missing, and it is the only way to pay from a phone that
+          is not this browser — which is where most people keep their sats */}
+      <QrCode
+        value={`lightning:${pending.bolt11}`}
+        label="QR code for the invoice"
+        size={192}
+      />
+
       <div className="flex flex-col gap-2">
-        <Button onClick={onPay} disabled={isPaying} size="lg" className="w-full">
-          {isPaying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Pay {sats && `${sats.toLocaleString()} sats `}now
-        </Button>
+        {/* One button per wallet rather than one button that insists on ours.
+            The custodial wallet here is empty for most people at the moment
+            they first want to buy something, so a single "Pay now" wired to it
+            failed for the most common case. */}
+        {usable.map((option) => (
+          <Button
+            key={option.id}
+            onClick={() => onPay(option.id)}
+            disabled={isPaying}
+            size="lg"
+            className="w-full justify-between"
+            variant={option.id === usable[0]?.id ? 'default' : 'outline'}
+          >
+            <span className="flex items-center gap-2">
+              {isPaying && <Loader2 className="h-4 w-4 animate-spin" />}
+              Pay with {option.label}
+            </span>
+            {option.detail && (
+              <span className="text-xs opacity-80">{option.detail}</span>
+            )}
+          </Button>
+        ))}
 
         <Button
           variant="outline"
@@ -452,6 +547,13 @@ function PendingPayment({
           Copy invoice
         </Button>
 
+        <Button variant="outline" asChild className="w-full">
+          <a href={`lightning:${pending.bolt11}`}>
+            <ExternalLink className="mr-2 h-3.5 w-3.5" />
+            Open in another wallet
+          </a>
+        </Button>
+
         <Button variant="ghost" onClick={onCancel} className="w-full">
           Back
         </Button>
@@ -460,7 +562,7 @@ function PendingPayment({
       <div className="flex items-center justify-center gap-2 rounded-lg bg-muted/50 p-3">
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         <p className="text-xs text-muted-foreground">
-          Waiting for payment…
+          Waiting for payment — however you pay it
         </p>
       </div>
     </div>

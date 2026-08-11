@@ -4,6 +4,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
 import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
+import { usePayAnyWallet } from '@/hooks/usePayAnyWallet';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import {
@@ -106,7 +107,14 @@ export function useNip5Payment(paymentHash: string | undefined) {
 export function useNip5() {
   const { user } = useCurrentUser();
   const { token, isConnected } = useLnbitsAuth();
-  const { wallet, payInvoice, isPaying } = useLnbitsWallet();
+  // `wallet` is still needed to attach a lightning address to a bought name,
+  // which writes into a specific LNbits wallet by id
+  const { wallet, isPaying } = useLnbitsWallet();
+  const {
+    pay: payAnyWallet,
+    options: payOptions,
+    preferredFor,
+  } = usePayAnyWallet();
   const { mutateAsync: createEvent } = useNostrPublish();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -193,13 +201,32 @@ export function useNip5() {
     },
   });
 
-  /** Pays a claim's invoice out of the user's own wallet. */
+  /**
+   * Pays a claim's invoice from whichever wallet the person actually has.
+   *
+   * It used to insist on the custodial wallet here, which is empty for most
+   * people at the moment they first want to buy something — so the only
+   * button on the screen failed for the most common case. Every connected
+   * wallet can pay it now, and "copy the invoice" always works even when none
+   * of them can.
+   */
   const pay = useMutation({
-    mutationFn: async (pending: PendingNip5) => {
+    mutationFn: async ({
+      pending,
+      optionId,
+    }: {
+      pending: PendingNip5;
+      optionId?: string;
+    }) => {
       if (!pending.bolt11) throw new Error('Nothing to pay');
-      if (!wallet) throw new Error('Connect your wallet first');
 
-      await payInvoice(pending.bolt11);
+      const amount = pending.address?.extra?.price_in_sats ?? 0;
+      const option = optionId
+        ? payOptions.find((entry) => entry.id === optionId) ??
+          preferredFor(amount)
+        : preferredFor(amount);
+
+      await payAnyWallet({ bolt11: pending.bolt11, optionId: option.id });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nip5-addresses'] });
@@ -308,6 +335,8 @@ export function useNip5() {
     isClaiming: claim.isPending,
     pay: pay.mutateAsync,
     isPaying: isPaying || pay.isPending,
+    /** Every wallet that could settle a name's invoice, for the caller to offer. */
+    payOptions,
     attachLightning: attachLightning.mutateAsync,
     isAttaching: attachLightning.isPending,
     publishToProfile: publishToProfile.mutateAsync,

@@ -6,6 +6,7 @@ import { usePayAnyWallet } from '@/hooks/usePayAnyWallet';
 import {
   addressesForPubkey,
   invoiceAmountSats,
+  isMissingAccount,
   unwrapList,
   laWalletRequest,
   mergeHeldAddresses,
@@ -66,23 +67,29 @@ export function useLaWallet() {
     queryClient.invalidateQueries({ queryKey: ['lawallet-directory'] });
   }, [queryClient]);
 
+  /**
+   * Every read here answers `NOT_FOUND` until somebody first uses the service,
+   * which is the normal state and not a failure. Returned as an empty result
+   * so React Query treats it as an answer rather than an error to retry and
+   * refetch — the difference between one request and a stream of them.
+   */
+  const emptyWhenMissing = <T>(fallback: T) => (error: unknown): T => {
+    if (isMissingAccount(error)) return fallback;
+    throw error;
+  };
+
   const addresses = useQuery({
     queryKey: ['lawallet-addresses', user?.pubkey ?? ''],
     queryFn: async ({ signal }) => {
       const body = await laWalletRequest<unknown>('/api/wallet/addresses', {
         signer: signer!,
         signal,
-      });
+      }).catch(emptyWhenMissing<unknown>([]));
 
       return unwrapList<WalletAddress>(body);
     },
     enabled: !!signer,
-    staleTime: 30_000,
-    /**
-     * A person with no account there yet is the normal case, not an error
-     * worth retrying three times over — the service answers 404 until they
-     * first do something.
-     */
+    staleTime: 5 * 60_000,
     retry: false,
   });
 
@@ -106,7 +113,7 @@ export function useLaWallet() {
       const body = await laWalletRequest<unknown>('/api/lightning-addresses', {
         signer: signer!,
         signal,
-      });
+      }).catch(emptyWhenMissing<unknown>([]));
 
       /**
        * The directory is global — it lists every address on the platform with
@@ -116,7 +123,7 @@ export function useLaWallet() {
       return addressesForPubkey(unwrapList<DirectoryAddress>(body), user?.pubkey);
     },
     enabled: !!signer,
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
     retry: false,
   });
 
@@ -127,12 +134,12 @@ export function useLaWallet() {
       const body = await laWalletRequest<unknown>('/api/remote-wallets', {
         signer: signer!,
         signal,
-      });
+      }).catch(emptyWhenMissing<unknown>([]));
 
       return unwrapList<RemoteWallet>(body);
     },
     enabled: !!signer,
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
     retry: false,
   });
 

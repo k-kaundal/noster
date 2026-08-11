@@ -4,7 +4,6 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Banknote,
-  ExternalLink,
   KeyRound,
   Link2,
   Loader2,
@@ -37,11 +36,7 @@ import { useSeo } from '@/hooks/useSeo';
 import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
 import { msatToSat, paymentTimeMs } from '@/lib/lnbits';
 import { formatSats } from '@/lib/zap';
-import { serviceById } from '@/lib/services';
 import { cn } from '@/lib/utils';
-
-/** The standalone wallet site, promoted from the wallet people already use. */
-const WALLET_SITE = serviceById('wallet');
 
 /**
  * The wallet, as a place rather than a settings tab.
@@ -323,18 +318,19 @@ function ConnectedWallet() {
             <span className="ml-auto">→</span>
           </Link>
 
-          {/* The same wallet with nothing around it — useful on a phone, and
-              the one of the three services with no version inside this app */}
-          <a
-            href={WALLET_SITE.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded-lg border p-3 text-sm font-medium transition-colors hover:bg-accent/60"
+          {/* This used to send people to another site to "open the wallet on
+              its own", which is a link out of the product at the moment they
+              are most likely to buy something. What is actually behind that
+              domain is the top tier of name, so it says that instead — and
+              points at the place in this app where it is bought. */}
+          <Link
+            to="/wallet#names"
+            className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-500/10 dark:text-amber-400"
           >
-            <ExternalLink className="h-4 w-4 text-muted-foreground" />
-            <span>Open this wallet on its own at {WALLET_SITE.host}</span>
-            <span className="ml-auto text-muted-foreground">↗</span>
-          </a>
+            <Sparkles className="h-4 w-4" />
+            <span>Get a portable name — check one, then pay to keep it</span>
+            <span className="ml-auto">→</span>
+          </Link>
 
           {/* The other wallet. Worth naming here rather than only in the nav,
               because "the balance is held by whoever runs the server" is the
