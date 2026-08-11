@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Check, Loader2, Plug, Zap } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  ArrowRight,
+  Check,
+  Loader2,
+  Plug,
+  Zap,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { AddressReceiveDialog } from '@/components/wallet/AddressReceiveDialog';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useLaWallet } from '@/hooks/useLaWallet';
@@ -223,6 +231,7 @@ function HeldAddresses() {
 function LinkedAddress({ held }: { held: HeldAddress }) {
   const { lightning } = useIdentity();
   const { toast } = useToast();
+  const [receiving, setReceiving] = useState(false);
 
   const address = held.address;
   const onProfile = lightning.profileAddress === address;
@@ -236,27 +245,47 @@ function LinkedAddress({ held }: { held: HeldAddress }) {
         </p>
       </div>
 
-      {onProfile ? (
-        <Badge variant="secondary" className="gap-1 bg-success/15 text-success">
-          <Zap className="h-3 w-3" />
-          Zaps land here
-        </Badge>
-      ) : (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-xs"
-          disabled={lightning.isPublishing}
-          onClick={() => {
-            void lightning
-              .setProfileAddress(address)
-              .then(() => toast({ title: `Zaps now go to ${address}` }))
-              .catch(() => {});
-          }}
-        >
-          Use for zaps
-        </Button>
-      )}
+      <div className="flex shrink-0 items-center gap-1">
+        {!held.refusal && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setReceiving(true)}
+          >
+            <ArrowDownLeft className="mr-1 h-3 w-3" />
+            Receive
+          </Button>
+        )}
+
+        {onProfile ? (
+          <Badge variant="secondary" className="gap-1 bg-success/15 text-success">
+            <Zap className="h-3 w-3" />
+            Zaps land here
+          </Badge>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={lightning.isPublishing}
+            onClick={() => {
+              void lightning
+                .setProfileAddress(address)
+                .then(() => toast({ title: `Zaps now go to ${address}` }))
+                .catch(() => {});
+            }}
+          >
+            Use for zaps
+          </Button>
+        )}
+      </div>
+
+      <AddressReceiveDialog
+        address={address}
+        open={receiving}
+        onOpenChange={setReceiving}
+      />
     </div>
   );
 }
@@ -416,6 +445,7 @@ function AddressRow({ held }: { held: HeldAddress }) {
   const address = held.settings!;
   const [redirect, setRedirect] = useState(address.redirect ?? '');
   const [busy, setBusy] = useState(false);
+  const [receiving, setReceiving] = useState(false);
 
   const full = held.address;
   const live = isLive(address) && !held.refusal;
@@ -509,11 +539,32 @@ function AddressRow({ held }: { held: HeldAddress }) {
           {live ? 'Receiving' : held.refusal ? 'Rejects payments' : 'Not pointed'}
         </Badge>
 
+        {/* Only once it actually points somewhere. Offering to make an
+            invoice for an address that resolves and refuses hands somebody a
+            QR code that cannot be paid. */}
+        {live && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 px-2 text-xs"
+            onClick={() => setReceiving(true)}
+          >
+            <ArrowDownLeft className="mr-1 h-3 w-3" />
+            Receive
+          </Button>
+        )}
+
         {/* No delete button: the name would go back into the pool and the
             next claimant would quietly receive payments meant for this
             person. "Not pointed anywhere" below stops it receiving, and is
             reversible. */}
       </div>
+
+      <AddressReceiveDialog
+        address={full}
+        open={receiving}
+        onOpenChange={setReceiving}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <Select

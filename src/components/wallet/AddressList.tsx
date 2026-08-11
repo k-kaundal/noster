@@ -1,7 +1,15 @@
 import { useState } from 'react';
-import { BadgeCheck, Copy, Loader2, Lock, Zap } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  BadgeCheck,
+  Copy,
+  Loader2,
+  Lock,
+  Zap,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AddressReceiveDialog } from '@/components/wallet/AddressReceiveDialog';
 import { useIdentity } from '@/hooks/useIdentity';
 import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
 import { useToast } from '@/hooks/useToast';
@@ -29,6 +37,8 @@ export function AddressList() {
   // Which row is mid-publish, so one click does not spin every button on the
   // list — the mutation is shared, the intent is not
   const [publishing, setPublishing] = useState<string | null>(null);
+  // Which address the receive dialog is asking on behalf of
+  const [receivingAt, setReceivingAt] = useState<string | null>(null);
 
   const addresses = lightning.addresses;
   if (!addresses.length) return null;
@@ -78,6 +88,20 @@ export function AddressList() {
             </div>
 
             <div className="flex shrink-0 items-center gap-1">
+              {/* An address alone is enough to be paid; this is for when a
+                  figure has to be fixed in advance, which an address cannot
+                  express. Asked of the address over LNURL-pay, so the invoice
+                  comes from the machine that will actually be paid. */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setReceivingAt(entry.address)}
+              >
+                <ArrowDownLeft className="mr-1 h-3 w-3" />
+                Receive
+              </Button>
+
               {!entry.onProfile && (
                 <Button
                   variant="outline"
@@ -133,6 +157,12 @@ export function AddressList() {
           out keeps working.
         </span>
       </p>
+
+      <AddressReceiveDialog
+        address={receivingAt ?? ''}
+        open={!!receivingAt}
+        onOpenChange={(open) => !open && setReceivingAt(null)}
+      />
 
       {/* There was an "add another" box here that claimed any free name on the
           spot, which gave away the exact thing the verified-name flow charges
