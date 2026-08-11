@@ -31,6 +31,7 @@ import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useMuteList } from '@/hooks/useMuteList';
 import { useAdultContent } from '@/hooks/useAdultContent';
+import { useMachineEvents } from '@/hooks/useMachineEvents';
 import { useDmRelayList } from '@/hooks/useDmRelayList';
 import { useRelays } from '@/hooks/useRelays';
 import { useSeo } from '@/hooks/useSeo';
@@ -177,6 +178,7 @@ function AppearanceSettings() {
  */
 function ContentSettings() {
   const { showAdult, setShowAdult } = useAdultContent();
+  const { showMachine, setShowMachine } = useMachineEvents();
 
   return (
     <Card>
@@ -198,6 +200,23 @@ function ContentSettings() {
             checked={showAdult}
             onCheckedChange={setShowAdult}
             aria-label="Show adult content"
+          />
+        </div>
+
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Machine posts</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Services and devices publish status as ordinary notes — presence
+              beacons, build results, sensor readings. One of them can post
+              every few seconds, so they are kept out of the shared timeline.
+              Their own profiles always show them.
+            </p>
+          </div>
+          <Switch
+            checked={showMachine}
+            onCheckedChange={setShowMachine}
+            aria-label="Show machine posts in the timeline"
           />
         </div>
 

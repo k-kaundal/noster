@@ -45,6 +45,7 @@ export function NoteBody({ event, className }: NoteBodyProps) {
         <StructuredPayload
           data={parseJsonContent(event.content)}
           label={kindLabel(event.kind)}
+          event={event}
           className={className}
         />
       );
