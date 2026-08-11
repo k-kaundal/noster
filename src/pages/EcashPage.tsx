@@ -33,6 +33,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EcashReceiveDialog } from '@/components/wallet/EcashReceiveDialog';
 import { EcashSendDialog } from '@/components/wallet/EcashSendDialog';
 import { MintInfoCard } from '@/components/wallet/MintInfoCard';
+import {
+  MintDiscovery,
+  RecommendMint,
+} from '@/components/wallet/MintDiscovery';
 import { useCashuMint } from '@/hooks/useCashuMint';
 import { useCashuWallet } from '@/hooks/useCashuWallet';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -174,6 +178,11 @@ function Ecash() {
       {pendingQuotes.length > 0 && <PendingDeposits quotes={pendingQuotes} />}
 
       <MintInfoCard />
+
+      {/* NIP-87: who among the people you follow keeps money where */}
+      <MintDiscovery currentMintUrl={mintUrl} />
+
+      <RecommendMint mintUrl={mintUrl} />
 
       <HowItWorks />
 
