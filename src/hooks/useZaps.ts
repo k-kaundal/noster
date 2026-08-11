@@ -275,7 +275,17 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
           amountMsat,
           relays,
           comment,
-          eventId: addressPointerFor(actualTarget) ? undefined : actualTarget.id,
+          /**
+           * A profile zap carries neither `e` nor `a`. NIP-57 attaches the
+           * receipt to a note when there is one, and zapping somebody's kind 0
+           * is zapping the person — tagging their metadata event would file
+           * the receipt against a document nobody reads instead of against
+           * them.
+           */
+          eventId:
+            actualTarget.kind === 0 || addressPointerFor(actualTarget)
+              ? undefined
+              : actualTarget.id,
           addressPointer: addressPointerFor(actualTarget) ?? undefined,
         });
 

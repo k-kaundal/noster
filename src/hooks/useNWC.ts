@@ -22,6 +22,22 @@ function loadSdk() {
   return sdk;
 }
 
+/** Bounds a wallet round trip, which has no timeout of its own. */
+async function withNwcTimeout<T>(work: Promise<T>, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), 15000);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export interface NWCConnection {
   connectionString: string;
   alias?: string;
@@ -278,6 +294,66 @@ export function useNWCInternal() {
     }
   }, []);
 
+  /**
+   * Asks a connected wallet for an invoice.
+   *
+   * The other half of NWC, and the half this app never used: `pay_invoice`
+   * was wired up and `make_invoice` was not, so a wallet somebody connected
+   * could spend but not receive. Being paid is most of what a wallet is for,
+   * and the omission meant every incoming payment had to route through the
+   * custodial wallet here instead of the one they chose.
+   */
+  const receivePayment = useCallback(async (
+    connection: NWCConnection,
+    amountSats: number,
+    description?: string
+  ): Promise<{ bolt11: string }> => {
+    if (!connection.connectionString) {
+      throw new Error('Invalid connection: missing connection string');
+    }
+
+    const { LN, SATS } = await loadSdk();
+    const client = new LN(connection.connectionString);
+
+    try {
+      const request = await withNwcTimeout(
+        client.requestPayment(SATS(amountSats), description ? { description } : undefined),
+        'Timed out waiting for your wallet to make an invoice.'
+      );
+
+      /**
+       * The SDK wraps the invoice in an object whose shape has moved between
+       * versions. Both spellings are read rather than one being assumed —
+       * getting this wrong hands somebody `[object Object]` to be paid.
+       */
+      const invoice = request.invoice as unknown as {
+        invoice?: string;
+        paymentRequest?: string;
+      };
+
+      const bolt11 = invoice?.invoice ?? invoice?.paymentRequest;
+      if (!bolt11) {
+        throw new Error('That wallet returned no invoice.');
+      }
+
+      return { bolt11 };
+    } catch (error) {
+      if (error instanceof Error) {
+        // A wallet can be connected with send permission only, which is a
+        // setting on their side rather than anything to retry here
+        if (/not (supported|permitted)|unauthorized|method/i.test(error.message)) {
+          throw new Error(
+            'That wallet did not allow an invoice to be made. Its connection may be send-only.'
+          );
+        }
+
+        throw error;
+      }
+
+      throw new Error('Could not get an invoice from that wallet.');
+    }
+  }, []);
+
   return {
     connections,
     activeConnection,
@@ -287,5 +363,6 @@ export function useNWCInternal() {
     setActiveConnection,
     getActiveConnection,
     sendPayment,
+    receivePayment,
   };
 }
