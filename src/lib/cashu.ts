@@ -340,3 +340,11 @@ export async function dropSpentProofs(
     return proofs;
   }
 }
+
+/**
+ * What has become of a token that was handed out.
+ *
+ * `pending` means its proofs are in flight in somebody's melt — taken, but not
+ * finished. Distinct from `unknown`, which means the mint could not be asked.
+ */
+export type TokenState = 'unclaimed' | 'pending' | 'redeemed' | 'unknown';

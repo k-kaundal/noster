@@ -17,9 +17,11 @@ import {
   loadWallet,
   mergeProofs,
   mintHost,
+  parseProofs,
   previewToken,
   proofsToSats,
   type TokenPreview,
+  type TokenState,
   withoutProofs,
 } from '@/lib/cashu';
 import {
@@ -629,17 +631,26 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       // The swap spent inputs to make both sides; those originals are gone
       await commit(keep, [...outgoing, ...consumedProofs(available, keep, outgoing)]);
 
+      const token = encodeToken(outgoing, mintUrl, memo);
+
       if (pubkey) {
+        /**
+         * Recorded as pending rather than settled. Cutting a token moves the
+         * sats out of the balance but nobody has them yet — it is settled when
+         * the mint reports the proofs spent, which is the only thing that
+         * means somebody actually took it.
+         */
         recordMovement(pubkey, {
           type: 'cashu_send',
           mint: mintUrl,
           amountSats: proofsToSats(outgoing),
-          status: 'settled',
-          settledAt: Math.floor(Date.now() / 1000),
+          status: 'pending',
+          token,
+          memo: memo?.trim() || undefined,
         });
       }
 
-      return encodeToken(outgoing, mintUrl, memo);
+      return token;
     },
     onError: (error: Error) => {
       toast({
@@ -649,6 +660,40 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       });
     },
   });
+
+  /**
+   * Whether a token this wallet cut has been taken yet.
+   *
+   * Asked of the mint, because the mint is the only thing that knows. A token
+   * is a bearer string: nothing tells the sender it was redeemed except the
+   * proofs behind it turning up spent, and until then it is money sitting in
+   * somebody's chat window.
+   *
+   * `unknown` on any failure rather than a guess in either direction. Saying
+   * "redeemed" about a live token invites throwing it away; saying
+   * "unclaimed" about a spent one invites trying to reclaim it and being
+   * refused.
+   */
+  const checkToken = useCallback(
+    async (token: string): Promise<TokenState> => {
+      try {
+        const wallet = await loadWallet(mintUrl);
+        const decoded = wallet.decodeToken(token.trim());
+        const proofs = parseProofs(decoded.proofs);
+
+        if (!proofs.length) return 'unknown';
+
+        const { unspent, pending } = await wallet.groupProofsByState(proofs);
+
+        // Pending is in flight in somebody's melt — taken, not still offered
+        if (unspent.length) return 'unclaimed';
+        return pending.length ? 'pending' : 'redeemed';
+      } catch {
+        return 'unknown';
+      }
+    },
+    [mintUrl]
+  );
 
   /**
    * Reads a pasted token without redeeming it.
@@ -845,6 +890,8 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
     isReceiving: receive.isPending,
     /** Reads a token's mint and value without redeeming it. */
     inspect,
+    /** Asks the mint whether a token has been taken. */
+    checkToken,
     payInvoice: payInvoice.mutateAsync,
     isPaying: payInvoice.isPending,
     refresh,

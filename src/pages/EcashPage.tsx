@@ -32,6 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EcashReceiveDialog } from '@/components/wallet/EcashReceiveDialog';
 import { EcashSendDialog } from '@/components/wallet/EcashSendDialog';
+import { SentTokens } from '@/components/wallet/SentTokens';
 import { TransactionList } from '@/components/wallet/TransactionList';
 import { MintInfoCard } from '@/components/wallet/MintInfoCard';
 import {
@@ -177,6 +178,9 @@ function Ecash() {
       </Card>
 
       {pendingQuotes.length > 0 && <PendingDeposits quotes={pendingQuotes} />}
+
+      {/* Tokens still out there, with whether anyone has claimed them */}
+      <SentTokens />
 
       <TransactionList />
 
