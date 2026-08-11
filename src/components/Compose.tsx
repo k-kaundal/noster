@@ -41,6 +41,7 @@ import { POLL_KIND, buildPollTags } from '@/lib/poll';
 import { NoteContent } from '@/components/NoteContent';
 import { ContentWarningField } from '@/components/notes/ContentWarningField';
 import { ExpiryField } from '@/components/notes/ExpiryField';
+import { SnippetComposer } from '@/components/notes/SnippetComposer';
 import { useExpirySupport } from '@/hooks/useExpirySupport';
 import { EXPIRY_CHOICES, expirationTags } from '@/lib/expiration';
 import { contentWarningTags } from '@/lib/contentWarning';
@@ -543,6 +544,14 @@ export function Compose() {
                 )}
               </div>
             )}
+          </div>
+
+          {/*
+            NIP-C0: code goes out as a kind 1337 rather than a fenced block in
+            a note, so its language and filename are facts about the event.
+          */}
+          <div className="flex justify-start">
+            <SnippetComposer />
           </div>
 
           {/* NIP-40: relays are asked to drop the note after a while */}

@@ -138,7 +138,17 @@ export function useGroup(relayUrl: string | undefined, groupId: string | undefin
   };
 }
 
-/** Messages in a group, oldest first. */
+/**
+ * Messages in a group, oldest first.
+ *
+ * Kind 9 only. This used to ask for kind 11 as well and render both as one
+ * ordered stream, which NIP-C7 forbids for exactly the reason it gives:
+ * "Clients that render a 'chat view' as a stream of ordered events MUST only
+ * fetch `kind 9` events in order to prevent missing context across
+ * implementations." A thread is a different thing with its own replies, and
+ * folding its root into the chat log shows people a message whose answers
+ * live somewhere they cannot see.
+ */
 export function useGroupMessages(
   relayUrl: string | undefined,
   groupId: string | undefined,
@@ -149,7 +159,7 @@ export function useGroupMessages(
     queryFn: async ({ signal }) => {
       const events = await queryGroupRelay(
         relayUrl!,
-        [{ kinds: [GROUP_CHAT, GROUP_THREAD], '#h': [groupId!], limit }],
+        [{ kinds: [GROUP_CHAT], '#h': [groupId!], limit }],
         AbortSignal.any([signal, AbortSignal.timeout(6000)])
       );
 
@@ -162,6 +172,39 @@ export function useGroupMessages(
 
   return {
     messages: query.data ?? [],
+    isLoading: query.isLoading,
+  };
+}
+
+/**
+ * Threads in a group, newest first.
+ *
+ * Split out of the chat stream rather than dropped. Kind 11 is how groups
+ * carry longer posts, and a client that stopped fetching them entirely would
+ * be hiding content rather than separating it.
+ */
+export function useGroupThreads(
+  relayUrl: string | undefined,
+  groupId: string | undefined,
+  limit = 50
+) {
+  const query = useQuery({
+    queryKey: ['nip29-threads', relayUrl ?? '', groupId ?? '', limit],
+    queryFn: async ({ signal }) => {
+      const events = await queryGroupRelay(
+        relayUrl!,
+        [{ kinds: [GROUP_THREAD], '#h': [groupId!], limit }],
+        AbortSignal.any([signal, AbortSignal.timeout(6000)])
+      );
+
+      return events.sort((a, b) => b.created_at - a.created_at);
+    },
+    enabled: !!relayUrl && !!groupId,
+    staleTime: 30_000,
+  });
+
+  return {
+    threads: query.data ?? [],
     isLoading: query.isLoading,
   };
 }

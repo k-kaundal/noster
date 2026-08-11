@@ -5,6 +5,8 @@ import { FileQuestion, FileText, Film, Clock, Ban } from 'lucide-react';
 import { NoteContent } from '@/components/NoteContent';
 import { ZapGoalCard } from '@/components/ZapGoalCard';
 import { HighlightCard } from '@/components/HighlightCard';
+import { CodeSnippetCard } from '@/components/CodeSnippetCard';
+import { SNIPPET_KIND } from '@/lib/nipc0';
 import { HIGHLIGHT_KIND } from '@/lib/nip84';
 import { GOAL_KIND } from '@/lib/nip75';
 import { StructuredPayload } from '@/components/notes/StructuredPayload';
@@ -55,6 +57,16 @@ export function NoteBody({ event, className }: NoteBodyProps) {
    */
   if (event.kind === HIGHLIGHT_KIND) {
     return <HighlightCard event={event} className={className} />;
+  }
+
+  /**
+   * A snippet's content is source code, and its language lives in a tag. The
+   * structured branch below would treat a JSON snippet as a payload to
+   * summarise, and the text branch would run it through link and mention
+   * detection — which mangles code that contains a `#` or an `@`.
+   */
+  if (event.kind === SNIPPET_KIND) {
+    return <CodeSnippetCard event={event} className={className} />;
   }
 
   switch (renderKind) {
