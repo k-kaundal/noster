@@ -1,7 +1,12 @@
 import { useNostr } from "@nostrify/react";
-import { useMutation, type UseMutationResult } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  type UseMutationResult,
+} from "@tanstack/react-query";
 
 import { useCurrentUser } from "./useCurrentUser";
+import { cacheAuthorEvent } from "./useAuthor";
 import { enqueue } from "@/lib/outbox";
 import { describeSignerError } from "@/lib/signerErrors";
 import { clearSignerFailure, recordSignerFailure } from "@/lib/signerStatus";
@@ -45,6 +50,7 @@ function withTimeout(signing: Promise<NostrEvent>): Promise<NostrEvent> {
 export function useNostrPublish(): UseMutationResult<NostrEvent> {
   const { nostr } = useNostr();
   const { user } = useCurrentUser();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (t: Omit<NostrEvent, 'id' | 'pubkey' | 'sig'>) => {
@@ -105,6 +111,19 @@ export function useNostrPublish(): UseMutationResult<NostrEvent> {
            */
           enqueue(event, error as Error);
         }
+
+        /**
+         * A profile someone publishes is theirs to see immediately.
+         *
+         * Done here rather than at each call site because it was being done at
+         * each call site: four of them remembered and signup did not, so a new
+         * account filled in a name and picture and then looked at a generated
+         * name and a grey circle. This runs even when the relay push failed
+         * above and the event went to the outbox — it is signed either way,
+         * and showing someone their own profile does not require a relay to
+         * have acknowledged it.
+         */
+        cacheAuthorEvent(queryClient, event);
 
         return event;
       } else {

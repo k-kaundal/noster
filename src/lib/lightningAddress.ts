@@ -2,17 +2,24 @@
  * Lightning addresses (LUD-16) issued to our users by the LNbits `lnurlp`
  * extension.
  *
- * The domain is configurable because the address domain and the LNbits host do
- * not have to be the same. `alice@ln.nostrfeed.com` works with no extra
- * infrastructure, since LNbits serves its own well-known route. `alice@
- * nostrfeed.com` is nicer but needs the apex domain to proxy
- * `/.well-known/lnurlp/*` to LNbits — see docs/lightning-addresses.md.
+ * These are the `@ln.nostrfeed.com` ones, and they are a different product
+ * from the `@getzap.me` addresses in `lawallet.ts` — different issuer,
+ * different backend, different rules. Both are real, both belong to the same
+ * person, and the app shows both; what it must never do is print one domain
+ * over the other's name, because an address that reads right and resolves
+ * nowhere is worse than no address at all.
+ *
+ * Still configurable, and still not derived from the LNbits host: serving
+ * these under a nicer domain only needs that domain to proxy
+ * `/.well-known/lnurlp/*` through to LNbits, which answers the well-known
+ * route on its own origin only. See docs/lightning-addresses.md.
  */
-export const ADDRESS_DOMAIN =
-  import.meta.env.VITE_LIGHTNING_ADDRESS_DOMAIN ||
-  (import.meta.env.VITE_LNBITS_URL || 'https://ln.nostrfeed.com')
-    .replace(/^https?:\/\//, '')
-    .replace(/\/+$/, '');
+export const ADDRESS_DOMAIN = (
+  import.meta.env.VITE_LIGHTNING_ADDRESS_DOMAIN || 'ln.nostrfeed.com'
+)
+  .replace(/^@/, '')
+  .replace(/^https?:\/\//, '')
+  .replace(/\/+$/, '');
 
 /** Longest local part we will issue. Kept short enough to stay memorable. */
 export const MAX_USERNAME_LENGTH = 32;

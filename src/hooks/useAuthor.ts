@@ -1,12 +1,59 @@
 import { useMemo } from 'react';
 import { type NostrEvent, type NostrMetadata, NSchema as n } from '@nostrify/nostrify';
 import { useNostr } from '@nostrify/react';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import {
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { createBatchLoader, type BatchLoader } from '@/lib/batchLoader';
+import { reconcileAuthor, shouldReplaceProfile } from '@/lib/authorCache';
 
 export interface AuthorData {
   event?: NostrEvent;
   metadata?: NostrMetadata;
+}
+
+/** The cache entry a profile lives at, in one place so writers agree with readers. */
+export function authorQueryKey(pubkey: string | undefined) {
+  return ['author', pubkey ?? ''] as const;
+}
+
+/** A kind 0 event turned into what the rest of the app reads. */
+export function readAuthorEvent(event: NostrEvent): AuthorData {
+  try {
+    return { metadata: n.json().pipe(n.metadata()).parse(event.content), event };
+  } catch {
+    return { event };
+  }
+}
+
+/**
+ * Puts a profile someone just published into the cache.
+ *
+ * Without this, publishing a kind 0 changed nothing on screen. The cache is
+ * written when a profile is first *read*, which for a new account happens the
+ * moment they log in — before they have published anything, so what gets
+ * stored is "this key has no profile", and it is stored as a fact for the next
+ * half hour. Signing up then filling in a name left that entry untouched, so
+ * the new account's own profile page showed a generated name and a grey circle
+ * until the entry expired.
+ *
+ * Seeded from the signed event rather than invalidated, deliberately.
+ * Invalidating asks the relays, and the relay has usually not indexed the
+ * event yet — the answer comes back empty and overwrites the truth with the
+ * same nothing. The event in hand is signed and is what the relays will serve
+ * once they catch up.
+ */
+export function cacheAuthorEvent(client: QueryClient, event: NostrEvent): void {
+  if (event.kind !== 0) return;
+
+  client.setQueryData<AuthorData>(authorQueryKey(event.pubkey), (existing) =>
+    shouldReplaceProfile(event, existing?.event)
+      ? readAuthorEvent(event)
+      : existing
+  );
 }
 
 type Relay = ReturnType<typeof useNostr>['nostr'];
@@ -39,12 +86,7 @@ function getLoader(nostr: Relay): BatchLoader<string, AuthorData> {
           continue;
         }
 
-        try {
-          const metadata = n.json().pipe(n.metadata()).parse(event.content);
-          results.set(event.pubkey, { metadata, event });
-        } catch {
-          results.set(event.pubkey, { event });
-        }
+        results.set(event.pubkey, readAuthorEvent(event));
       }
 
       return results;
@@ -88,12 +130,17 @@ const PROFILE_REFETCH_ON_MOUNT = true;
 
 export function useAuthors(pubkeys: string[], enabled = true) {
   const { nostr } = useNostr();
+  const client = useQueryClient();
   const loader = useMemo(() => getLoader(nostr), [nostr]);
 
   const results = useQueries({
     queries: pubkeys.map((pubkey) => ({
-      queryKey: ['author', pubkey],
-      queryFn: () => loader.load(pubkey),
+      queryKey: authorQueryKey(pubkey),
+      queryFn: async () =>
+        reconcileAuthor(
+          await loader.load(pubkey),
+          client.getQueryData<AuthorData>(authorQueryKey(pubkey))
+        ),
       enabled,
       staleTime: PROFILE_STALE_TIME,
       gcTime: PROFILE_GC_TIME,
@@ -114,13 +161,18 @@ export function useAuthors(pubkeys: string[], enabled = true) {
 
 export function useAuthor(pubkey: string | undefined) {
   const { nostr } = useNostr();
+  const client = useQueryClient();
   const loader = useMemo(() => getLoader(nostr), [nostr]);
 
   return useQuery<AuthorData>({
-    queryKey: ['author', pubkey ?? ''],
+    queryKey: authorQueryKey(pubkey),
     queryFn: async () => {
       if (!pubkey) return {};
-      return loader.load(pubkey);
+
+      return reconcileAuthor(
+        await loader.load(pubkey),
+        client.getQueryData<AuthorData>(authorQueryKey(pubkey))
+      );
     },
     staleTime: PROFILE_STALE_TIME,
     gcTime: PROFILE_GC_TIME,

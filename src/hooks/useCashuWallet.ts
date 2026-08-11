@@ -9,8 +9,10 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import {
   CASHU_MINT_URL,
+  consumedProofs,
   dropSpentProofs,
   encodeToken,
+  foldConcurrentChanges,
   loadWallet,
   mergeProofs,
   mintHost,
@@ -116,11 +118,36 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
 
       const used = readUsedSecrets(pubkey, mintUrl);
       const claimed = withoutProofs(mergeProofs(local, remote), used);
-      const proofs = await dropSpentProofs(claimed, mintUrl);
+      const checked = await dropSpentProofs(claimed, mintUrl);
+
+      /**
+       * Everything above describes the wallet as it was when this read
+       * started, and the read is slow enough — a relay query, a decrypt per
+       * backup, then a round trip to the mint — for a deposit to land inside
+       * it. Writing the result as computed would erase those proofs: money in,
+       * balance down. Re-reading here folds them back in.
+       */
+      const proofs = foldConcurrentChanges(
+        checked,
+        readProofs(pubkey, mintUrl),
+        readUsedSecrets(pubkey, mintUrl)
+      );
 
       writeProofs(pubkey, mintUrl, proofs);
 
-      return { proofs, eventIds };
+      /**
+       * Union rather than replacement, for the same reason. These name the
+       * events the next backup supersedes, and a commit that happened while
+       * this ran has an id this fetch never saw. Naming an already-superseded
+       * event costs nothing; missing a live one leaves a backup on the relays
+       * whose proofs get counted again on the next device.
+       */
+      const cached = queryClient.getQueryData<EcashState>(queryKey)?.eventIds;
+
+      return {
+        proofs,
+        eventIds: [...new Set([...eventIds, ...(cached ?? [])])],
+      };
     },
     enabled: !!user,
     staleTime: 30 * 1000,
@@ -130,11 +157,23 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
   const proofs = state.data?.proofs ?? [];
   const balanceSats = proofsToSats(proofs);
 
-  /** The freshest proof set, read past any stale render. */
-  const currentProofs = useCallback(
-    () => queryClient.getQueryData<EcashState>(queryKey)?.proofs ?? [],
-    [queryClient, queryKey]
-  );
+  /**
+   * The freshest proof set, read past any stale render.
+   *
+   * Falls back to storage rather than to nothing. Every mutation builds the
+   * new balance on top of what this returns, so an empty answer does not mean
+   * "add to nothing" — it writes a balance consisting only of what just
+   * happened, and `writeProofs` then overwrites the rest away. Depositing
+   * before the balance query had settled was enough to trigger it: the cache
+   * is cold for the first few seconds of every visit, and that is exactly when
+   * someone opens the wallet and adds money.
+   */
+  const currentProofs = useCallback(() => {
+    const cached = queryClient.getQueryData<EcashState>(queryKey)?.proofs;
+    if (cached?.length) return cached;
+
+    return pubkey ? readProofs(pubkey, mintUrl) : [];
+  }, [queryClient, queryKey, pubkey, mintUrl]);
 
   /**
    * Writes the new balance everywhere it has to go.
@@ -330,7 +369,8 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
         { includeFees: true }
       );
 
-      await commit(keep, outgoing);
+      // The swap spent inputs to make both sides; those originals are gone
+      await commit(keep, [...outgoing, ...consumedProofs(available, keep, outgoing)]);
 
       return encodeToken(outgoing, mintUrl, memo);
     },
@@ -406,11 +446,13 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
         includeFees: true,
       });
 
+      const consumed = consumedProofs(available, keep, outgoing);
+
       try {
         const result = await wallet.meltProofsBolt11(quote, outgoing);
         const change = result.change ?? [];
 
-        await commit(mergeProofs(keep, change), outgoing);
+        await commit(mergeProofs(keep, change), [...outgoing, ...consumed]);
 
         return {
           amountSats: amount,
@@ -419,8 +461,10 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
       } catch (error) {
         // The payment may or may not have gone through. Putting the proofs
         // back is safe either way: the next load asks the mint which of them
-        // it has already spent and drops those.
-        await commit(mergeProofs(keep, outgoing), []);
+        // it has already spent and drops those. The inputs the swap consumed
+        // are not in that category — those were spent to create `outgoing`
+        // and are gone whatever the melt did.
+        await commit(mergeProofs(keep, outgoing), consumed);
         throw error;
       }
     },

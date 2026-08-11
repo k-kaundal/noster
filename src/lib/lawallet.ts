@@ -14,12 +14,27 @@ import { nip98Header } from './lnbits';
  * keeping one name while changing what is behind it.
  */
 
+/** Where the API lives. Administration, not identity. */
 export const LAWALLET_URL =
   import.meta.env.VITE_LAWALLET_URL?.replace(/\/+$/, '') ||
   'https://wallet.nostrfeed.com';
 
-/** The domain addresses issued here live at. */
-export const LAWALLET_DOMAIN = LAWALLET_URL.replace(/^https?:\/\//, '');
+/**
+ * The domain addresses read as — `kk@getzap.me`, not `kk@wallet.nostrfeed.com`.
+ *
+ * Deliberately not derived from `LAWALLET_URL`, which it used to be. The host
+ * the service is administered on and the domain it issues names under are two
+ * separate decisions, and here they differ: the platform is at
+ * `wallet.nostrfeed.com` and hands out `@getzap.me`. Deriving one from the
+ * other printed the wrong address on screen and in the profile, which is the
+ * one thing an address must not get wrong.
+ *
+ * A fallback rather than the truth, though. The service reports the domain on
+ * every directory record, so `resolveIssuedDomain` prefers what it says and
+ * this is what stands in until the answer arrives.
+ */
+export const LAWALLET_DOMAIN =
+  import.meta.env.VITE_LAWALLET_ADDRESS_DOMAIN?.replace(/^@/, '') || 'getzap.me';
 
 /**
  * What an address does when someone pays it.
@@ -39,6 +54,36 @@ export interface WalletAddress {
   redirect?: string | null;
   remoteWalletId?: string | null;
   isPrimary?: boolean;
+}
+
+/**
+ * A row in the service's public address directory.
+ *
+ * Thinner than `WalletAddress` — no mode, no destination — but it carries the
+ * two things the caller's own address list does not: which key an address is
+ * linked to, and the domain it is issued under.
+ */
+export interface DirectoryAddress {
+  username: string;
+  pubkey?: string | null;
+  domain?: string;
+}
+
+/**
+ * An address this person holds, however it got here.
+ *
+ * `settings` is present for the ones the service returns as the caller's own,
+ * and absent for one found only by its link to their key — which happens when
+ * the address was made under a different account on the same platform. The
+ * difference is worth keeping rather than flattening: an address with no
+ * settings can be shown and published, but not pointed anywhere, and claiming
+ * otherwise would put an editor on screen whose every save fails.
+ */
+export interface HeldAddress {
+  username: string;
+  domain: string;
+  address: string;
+  settings: WalletAddress | null;
 }
 
 export interface RemoteWallet {
@@ -212,8 +257,90 @@ export function suggestLaWalletName(input: string): string {
 }
 
 /** The full address a name resolves to. */
-export function laWalletAddress(username: string): string {
-  return `${username}@${LAWALLET_DOMAIN}`;
+export function laWalletAddress(
+  username: string,
+  domain: string = LAWALLET_DOMAIN
+): string {
+  return `${username}@${domain}`;
+}
+
+/**
+ * The directory rows belonging to one key.
+ *
+ * `pubkey` is nullable in the schema — an address can exist with no key
+ * attached — so a missing one must never match, or a signed-in person would
+ * be handed every unclaimed address on the platform.
+ */
+export function addressesForPubkey(
+  records: DirectoryAddress[],
+  pubkey: string | undefined
+): DirectoryAddress[] {
+  if (!pubkey) return [];
+  const key = pubkey.trim().toLowerCase();
+  if (!key) return [];
+
+  return records.filter(
+    (record) => record.pubkey?.trim().toLowerCase() === key
+  );
+}
+
+/**
+ * What domain the service actually issues under, according to the service.
+ *
+ * Preferred over the configured fallback because an address printed with the
+ * wrong domain is worse than no address: it looks right, it gets published to
+ * a profile, and it silently resolves nowhere. Configuration drifts; this does
+ * not.
+ */
+export function resolveIssuedDomain(
+  records: DirectoryAddress[],
+  fallback: string = LAWALLET_DOMAIN
+): string {
+  for (const record of records) {
+    const domain = record.domain?.trim().replace(/^@/, '');
+    if (domain) return domain;
+  }
+
+  return fallback;
+}
+
+/**
+ * Everything this person holds on the platform, from both sources.
+ *
+ * The caller's own list is authoritative where the two overlap, since it is
+ * the one carrying the settings. The directory contributes the addresses that
+ * list does not know about — which is the whole point of consulting it, and
+ * the reason someone who already had an address here stops being offered a
+ * fresh one as though they had none.
+ */
+export function mergeHeldAddresses(
+  managed: WalletAddress[],
+  linked: DirectoryAddress[],
+  fallbackDomain: string = LAWALLET_DOMAIN
+): HeldAddress[] {
+  const domain = resolveIssuedDomain(linked, fallbackDomain);
+  const held = new Map<string, HeldAddress>();
+
+  const add = (username: string, settings: WalletAddress | null) => {
+    const name = username.trim().toLowerCase();
+    if (!name) return;
+
+    // The managed record wins, and arrives first — a later directory row for
+    // the same name must not overwrite it with a settings-less one
+    if (held.has(name) && !settings) return;
+
+    held.set(name, {
+      username: name,
+      domain,
+      address: laWalletAddress(name, domain),
+      settings,
+    });
+  };
+
+  for (const entry of managed) add(entry.username, entry);
+  for (const entry of linked) add(entry.username, null);
+
+  return [...held.values()];
 }
 
 /** A sentence for what an address currently does. */

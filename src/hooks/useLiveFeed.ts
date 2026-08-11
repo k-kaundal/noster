@@ -82,12 +82,22 @@ export function useLiveFeed(
                 return current;
               }
 
-              // Capped: a busy global feed left open all day would otherwise
-              // grow the first page without limit, and everything above what
-              // the reader has seen is held back rather than rendered anyway
-              const grown = [event, ...first].slice(0, MAX_LIVE_PAGE);
+              /**
+               * Capped, because a busy global feed left open all day would
+               * otherwise grow the first page without limit.
+               *
+               * The cap stops accepting rather than dropping the tail, which
+               * is what it used to do. The tail of this page is the oldest
+               * notes on it — the ones the reader has scrolled to and is
+               * reading — and page two continues below where this page
+               * originally ended, so evicting them removed notes from under
+               * the reader and left a hole nothing would fill. Refusing new
+               * arrivals only understates a pill; the reader loses nothing
+               * they were looking at, and the next refetch catches up.
+               */
+              if (first.length >= MAX_LIVE_PAGE) return current;
 
-              return { ...current, pages: [grown, ...rest] };
+              return { ...current, pages: [[event, ...first], ...rest] };
             }
           );
         }

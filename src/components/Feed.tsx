@@ -17,6 +17,7 @@ import { useMuteList } from '@/hooks/useMuteList';
 import { useAdultContent } from '@/hooks/useAdultContent';
 import { filterMuted } from '@/lib/mute';
 import { filterAdultContent } from '@/lib/nsfw';
+import { countUnseen, markerFor, type FeedMarker } from '@/lib/feedPosition';
 import { cn } from '@/lib/utils';
 
 export function Feed() {
@@ -115,7 +116,7 @@ export function Feed() {
 
   // Track the newest note the reader has actually seen, so the "new posts"
   // pill only counts notes that arrived after they arrived on the page.
-  const [seenTopId, setSeenTopId] = useState<string | null>(null);
+  const [seenTop, setSeenTop] = useState<FeedMarker | null>(null);
 
   /**
    * Where the timeline the reader is looking at starts.
@@ -126,15 +127,7 @@ export function Feed() {
    * the paragraph someone is halfway through reading, and does it again every
    * time another one lands.
    */
-  const firstUnseen = useMemo(() => {
-    if (!posts?.length || !seenTopId) return 0;
-
-    const index = posts.findIndex((post) => post.id === seenTopId);
-
-    // Gone from the list entirely — a refetch that reached back past it — so
-    // there is no held-back section to speak of
-    return index > 0 ? index : 0;
-  }, [posts, seenTopId]);
+  const firstUnseen = useMemo(() => countUnseen(posts, seenTop), [posts, seenTop]);
 
   const newCount = firstUnseen;
 
@@ -145,17 +138,17 @@ export function Feed() {
   );
 
   useEffect(() => {
-    if (posts?.length && !seenTopId) setSeenTopId(posts[0].id);
-  }, [posts, seenTopId]);
+    if (posts?.length && !seenTop) setSeenTop(markerFor(posts[0]));
+  }, [posts, seenTop]);
 
   const showNewPosts = () => {
-    if (posts?.length) setSeenTopId(posts[0].id);
+    if (posts?.length) setSeenTop(markerFor(posts[0]));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleRefresh = async () => {
     await refetch();
-    setSeenTopId(null);
+    setSeenTop(null);
   };
 
   // Auto-load the next page as the sentinel scrolls into view
@@ -182,7 +175,7 @@ export function Feed() {
           value={scope}
           onValueChange={(value) => {
             setScope(value as FeedScope);
-            setSeenTopId(null);
+            setSeenTop(null);
           }}
         >
           <TabsList>
