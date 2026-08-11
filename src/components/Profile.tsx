@@ -30,6 +30,8 @@ import { EmptyState } from '@/components/EmptyState';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { FollowButton } from '@/components/FollowButton';
 import { ZapDialog } from '@/components/ZapDialog';
+import { VerificationMark } from '@/components/VerificationBadge';
+import { tierOf } from '@/lib/tiers';
 import { EditProfileForm } from '@/components/EditProfileForm';
 import {
   ArticleCard,
@@ -87,6 +89,14 @@ export function Profile({ pubkey }: ProfileProps) {
     metadata?.display_name || metadata?.name || genUserName(pubkey);
   const username = metadata?.name || genUserName(pubkey);
   const lightningAddress = metadata?.lud16 || metadata?.lud06;
+  /**
+   * Which of our tiers the address on their profile belongs to, if any.
+   *
+   * Null for somebody paid at a wallet from elsewhere, which is deliberate:
+   * that address is real and works, and badging it as one of ours would claim
+   * a relationship that does not exist.
+   */
+  const payTier = lightningAddress ? tierOf(lightningAddress) : null;
   const isCurrentUser = user?.pubkey === pubkey;
   const npub = nip19.npubEncode(pubkey);
 
@@ -229,6 +239,11 @@ export function Profile({ pubkey }: ProfileProps) {
           <div className="space-y-1 pt-6 sm:pt-4">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold sm:text-2xl">{displayName}</h1>
+
+              {/* A ✓ for a nip05 anyone can self-host, and separately the tier
+                  of the address they are paid at. Two different claims, so two
+                  different marks — one mark doing both jobs would tell a
+                  reader neither. */}
               {metadata?.nip05 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -240,6 +255,8 @@ export function Profile({ pubkey }: ProfileProps) {
                   <TooltipContent>{metadata.nip05}</TooltipContent>
                 </Tooltip>
               )}
+
+              {payTier && <VerificationMark tier={payTier} className="h-5 w-5" />}
             </div>
             <p className="text-sm text-muted-foreground">@{username}</p>
           </div>

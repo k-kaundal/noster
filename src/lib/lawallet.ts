@@ -178,6 +178,20 @@ export class LaWalletError extends Error {
 }
 
 /**
+ * Whether the service is saying this person has no account there yet.
+ *
+ * The normal state for most people, and not an error. Treating it as one meant
+ * three failing requests per mount of anything that reads identity — which is
+ * most of the app — each retried and refetched, all answering `NOT_FOUND`
+ * forever. A person who has never touched the wallet service produced a steady
+ * stream of failures against it.
+ */
+export function isMissingAccount(error: unknown): boolean {
+  if (!(error instanceof LaWalletError)) return false;
+  return error.status === 404 || error.code === 'NOT_FOUND';
+}
+
+/**
  * Reads the service's error envelope.
  *
  * Every route answers failures as `{success: false, error: {message, code}}`,
