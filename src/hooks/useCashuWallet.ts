@@ -132,6 +132,7 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
        */
       const proofs = foldConcurrentChanges(
         checked,
+        local,
         readProofs(pubkey, mintUrl),
         readUsedSecrets(pubkey, mintUrl)
       );

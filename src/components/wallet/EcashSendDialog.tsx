@@ -98,7 +98,7 @@ export function EcashSendDialog({
  * understood one.
  */
 function TokenPanel({ balanceSats }: { balanceSats: number }) {
-  const { send, isSending } = useCashuWallet();
+  const { send, isSending, receive, isReceiving } = useCashuWallet();
   const { toast } = useToast();
 
   const [amount, setAmount] = useState('');
@@ -145,11 +145,39 @@ function TokenPanel({ balanceSats }: { balanceSats: number }) {
 
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
           <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
-            This string is the money. It has already left your balance — send it
-            to someone, or paste it back into Receive to take it back. Lose it
-            and the sats are gone.
+            This string is the money, and it has already left your balance —
+            that is what making a token does. Give it to someone, or take it
+            back below. Lose it and the sats are gone.
           </p>
         </div>
+
+        {/* The line above used to end at "paste it back into Receive", which
+            is a recovery path that requires copying a string out of one dialog
+            and into another while the balance sits visibly short. It is the
+            same call the paste would make, so it may as well be a button. */}
+        <Button
+          variant="outline"
+          className="w-full"
+          disabled={isReceiving}
+          onClick={() => {
+            void receive(token)
+              .then((sats) => {
+                setToken('');
+                setAmount('');
+                toast({
+                  title: 'Back in your balance',
+                  description: `${sats.toLocaleString()} sats returned.`,
+                });
+              })
+              .catch(() => {
+                // Reported by the mutation. The token is still on screen,
+                // which is the thing that matters.
+              });
+          }}
+        >
+          {isReceiving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Put it back in my balance
+        </Button>
 
         <Button variant="ghost" className="w-full" onClick={() => setToken('')}>
           Send another
