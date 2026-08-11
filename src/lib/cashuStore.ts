@@ -17,6 +17,7 @@ const PROOFS_KEY = 'cashu:proofs';
 const USED_KEY = 'cashu:used';
 const QUOTES_KEY = 'cashu:quotes';
 const PRIVKEY_KEY = 'cashu:nutzap-key';
+const LOG_KEY = 'cashu:movements';
 
 /** How many spent secrets to remember. Enough to outlive any relay's copy. */
 const USED_LIMIT = 2000;
@@ -203,4 +204,89 @@ export function clearCashu(pubkey: string): void {
 
     if (changed) write(key, all);
   }
+}
+
+/**
+ * What each movement of ecash actually was.
+ *
+ * A NIP-60 kind 7376 records a direction and an amount and nothing else, which
+ * is why the history could say "+10,000 sats" and not "minted at
+ * mint.nostrfeed.com". Minting, melting, sending a token and receiving one all
+ * look identical in it.
+ *
+ * So the type is written down here at the moment the action is taken, by the
+ * code that is taking it and therefore knows. Local to the device — a movement
+ * made elsewhere shows up from the Nostr history as unlabelled rather than
+ * being guessed at.
+ */
+export type MovementType =
+  | 'cashu_mint'
+  | 'cashu_melt'
+  | 'cashu_send'
+  | 'cashu_receive';
+
+export interface CashuMovement {
+  id: string;
+  type: MovementType;
+  mint: string;
+  amountSats: number;
+  feeSats?: number;
+  status: 'pending' | 'settled' | 'failed';
+  /** NUT-04 mint quote or NUT-05 melt quote, whichever applies. */
+  quoteId?: string;
+  invoice?: string;
+  createdAt: number;
+  settledAt?: number;
+}
+
+/** How many movements to keep per identity. */
+const LOG_LIMIT = 300;
+
+export function readMovements(pubkey: string): CashuMovement[] {
+  return read<CashuMovement[]>(LOG_KEY)[pubkey] ?? [];
+}
+
+export function recordMovement(
+  pubkey: string,
+  movement: Omit<CashuMovement, 'id' | 'createdAt'> & {
+    id?: string;
+    createdAt?: number;
+  }
+): CashuMovement {
+  const all = read<CashuMovement[]>(LOG_KEY);
+
+  const entry: CashuMovement = {
+    ...movement,
+    id: movement.id ?? `cashu_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: movement.createdAt ?? Math.floor(Date.now() / 1000),
+  };
+
+  /**
+   * Replaced by id rather than appended, so settling a deposit updates the row
+   * it started as instead of leaving a pending twin above it forever.
+   */
+  const rest = (all[pubkey] ?? []).filter((item) => item.id !== entry.id);
+
+  all[pubkey] = [entry, ...rest].slice(0, LOG_LIMIT);
+  write(LOG_KEY, all);
+
+  return entry;
+}
+
+/** Marks a recorded movement settled, keeping everything already known. */
+export function settleMovement(
+  pubkey: string,
+  id: string,
+  patch: Partial<Pick<CashuMovement, 'amountSats' | 'feeSats' | 'quoteId'>> = {}
+): void {
+  const all = read<CashuMovement[]>(LOG_KEY);
+  const existing = (all[pubkey] ?? []).find((item) => item.id === id);
+  if (!existing) return;
+
+  recordMovement(pubkey, {
+    ...existing,
+    ...patch,
+    status: 'settled',
+    settledAt: Math.floor(Date.now() / 1000),
+  });
 }
