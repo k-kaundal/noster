@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import type { NostrEvent } from '@nostrify/nostrify';
+import { nip19 } from 'nostr-tools';
 import { MaybeWarned } from '@/components/ContentWarning';
 import { getContentWarning } from '@/lib/note';
 import { PageHeader } from '@/components/PageHeader';
@@ -428,7 +429,10 @@ function Message({ event }: { event: NostrEvent }) {
 
       <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">
-          <Link to={`/${event.pubkey}`} className="font-medium text-foreground hover:underline">
+          <Link
+            to={`/${nip19.npubEncode(event.pubkey)}`}
+            className="font-medium text-foreground hover:underline"
+          >
             {name}
           </Link>{' '}
           · {relativeTime(event.created_at * 1000)}

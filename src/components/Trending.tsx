@@ -128,10 +128,11 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
           isLoading={hashtagsLoading}
           renderItem={(item) => (
             <Link
-              to={`/search?q=${encodeURIComponent(item.title)}`}
+              /* There is no `/search` route; hashtags live at `/t/:tag`. */
+              to={`/t/${encodeURIComponent(item.id.replace(/^#/, ''))}`}
               className="block truncate hover:text-primary hover:underline font-medium"
             >
-              {item.title}
+              #{item.title.replace(/^#/, '')}
             </Link>
           )}
         />
@@ -144,7 +145,12 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
           isLoading={usersLoading}
           renderItem={(item) => (
             <Link
-              to={`/${item.id}`}
+              /*
+                `item.id` is a raw hex pubkey. The `/:nip19` route decodes what
+                it is given, so a bare key threw and produced a 404 on every
+                name in this list.
+              */
+              to={`/${nip19.npubEncode(item.id)}`}
               className="block truncate hover:text-primary hover:underline"
             >
               {item.title}
@@ -160,7 +166,12 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
           isLoading={communitiesLoading}
           renderItem={(item) => (
             <Link
-              to={`/community/${item.id}`}
+              /*
+                `item.id` is `pubkey:slug`, and there is no `/community/`
+                route. A community is an addressable event, so it is reached
+                by its `naddr` like every other one.
+              */
+              to={communityPath(item.id)}
               className="block truncate hover:text-primary hover:underline"
             >
               {item.title}
@@ -170,6 +181,25 @@ export function Trending({ timeRange = '24h', limit = 10 }: TrendingProps) {
       </div>
     </div>
   );
+}
+
+/**
+ * The `naddr` for a `pubkey:slug` pair from the trending query.
+ *
+ * Falls back to the communities index rather than throwing: a malformed id
+ * should cost a less specific destination, not a blank page.
+ */
+function communityPath(id: string): string {
+  const [pubkey, ...rest] = id.split(':');
+  const identifier = rest.join(':');
+
+  if (!/^[0-9a-f]{64}$/i.test(pubkey ?? '') || !identifier) return '/communities';
+
+  try {
+    return `/${nip19.naddrEncode({ kind: 34550, pubkey, identifier })}`;
+  } catch {
+    return '/communities';
+  }
 }
 
 interface TrendingCardProps {
