@@ -269,24 +269,16 @@ export function useLaWallet() {
     },
   });
 
-  const remove = useMutation({
-    mutationFn: async (username: string) =>
-      await laWalletRequest<void>(
-        `/api/wallet/addresses/${encodeURIComponent(username)}`,
-        { method: 'DELETE', signer: signer! }
-      ),
-    onSuccess: () => {
-      invalidate();
-      toast({ title: 'Address removed' });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Could not remove that address',
-        description: error.message,
-        variant: 'destructive',
-      });
-    },
-  });
+  /* `DELETE /api/wallet/addresses/{username}` is not called from here, for the
+   * same reason it is not called against our own pay links: the service's own
+   * `/api/lightning-addresses/check` reports a deleted name as available
+   * again, so releasing one hands it to whoever asks next — along with every
+   * payment still aimed at it.
+   *
+   * Nothing is lost by leaving it alone. `IDLE` already means "receives
+   * nothing", it is reversible, and it does it without giving somebody else
+   * your name.
+   */
 
   return {
     /** Null when signed out or browsing read-only; nothing here can be signed. */
@@ -302,7 +294,5 @@ export function useLaWallet() {
     isPointing: point.isPending,
     connectWallet: connectWallet.mutateAsync,
     isConnecting: connectWallet.isPending,
-    remove: remove.mutateAsync,
-    isRemoving: remove.isPending,
   };
 }

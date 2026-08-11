@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Check, Loader2, Plug, Trash2, Zap } from 'lucide-react';
+import { ArrowRight, Check, Loader2, Plug, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -241,16 +241,10 @@ function AddressRow({ username }: { username: string }) {
           {live ? 'Receiving' : 'Not pointed'}
         </Badge>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-          aria-label={`Remove ${full}`}
-          disabled={lawallet.isRemoving}
-          onClick={() => void lawallet.remove(address.username).catch(() => {})}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        {/* No delete button: the name would go back into the pool and the
+            next claimant would quietly receive payments meant for this
+            person. "Not pointed anywhere" below stops it receiving, and is
+            reversible. */}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
