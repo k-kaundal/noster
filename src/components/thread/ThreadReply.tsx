@@ -12,7 +12,7 @@ import { genUserName } from '@/lib/genUserName';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserHoverCard } from '@/components/UserHoverCard';
 import { NoteBody } from '@/components/notes/NoteBody';
-import { ContentWarning } from '@/components/ContentWarning';
+import { MaybeWarned } from '@/components/ContentWarning';
 import { ThreadComposer } from '@/components/thread/ThreadComposer';
 import { getContentWarning } from '@/lib/note';
 import {
@@ -158,13 +158,9 @@ export function ThreadReply({ node, depth }: ThreadReplyProps) {
           ) : (
             <>
               <div className="mt-1 text-[15px]">
-                {contentWarning ? (
-                  <ContentWarning reason={contentWarning.reason}>
-                    <NoteBody event={event} />
-                  </ContentWarning>
-                ) : (
+                <MaybeWarned event={event} warning={contentWarning}>
                   <NoteBody event={event} />
-                )}
+                </MaybeWarned>
               </div>
 
               <div className="-ml-1.5 mt-1.5 flex items-center gap-1">

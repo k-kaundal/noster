@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Film, Loader2, Send, Upload, X } from 'lucide-react';
+import { Film, Loader2, Send, Upload, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { ContentWarningField } from '@/components/notes/ContentWarningField';
+import { contentWarningTags } from '@/lib/contentWarning';
 import { Textarea } from '@/components/ui/textarea';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUploadFile } from '@/hooks/useUploadFile';
@@ -71,6 +72,7 @@ export function ReelComposer({ open, onOpenChange }: ReelComposerProps) {
   const [hashtags, setHashtags] = useState('');
   const [warningEnabled, setWarningEnabled] = useState(false);
   const [warningReason, setWarningReason] = useState('');
+  const [warningCategories, setWarningCategories] = useState<string[]>([]);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -164,7 +166,12 @@ export function ReelComposer({ open, onOpenChange }: ReelComposerProps) {
           .map((tag) => tag.replace(/^#/, '').trim().toLowerCase())
           .filter(Boolean)
           .map((tag) => ['t', tag]),
-        ...(warningEnabled ? [['content-warning', warningReason.trim()]] : []),
+        ...(warningEnabled
+          ? contentWarningTags({
+              reason: warningReason,
+              categories: warningCategories,
+            })
+          : []),
       ];
 
       await createEvent({
@@ -316,30 +323,15 @@ export function ReelComposer({ open, onOpenChange }: ReelComposerProps) {
               />
             </div>
 
-            <div className="space-y-2 rounded-lg border p-3">
-              <div className="flex items-center justify-between gap-3">
-                <Label
-                  htmlFor="reel-warning"
-                  className="flex cursor-pointer items-center gap-2 text-sm font-normal"
-                >
-                  <AlertTriangle className="h-4 w-4 text-warning" />
-                  Mark as sensitive
-                </Label>
-                <Switch
-                  id="reel-warning"
-                  checked={warningEnabled}
-                  onCheckedChange={setWarningEnabled}
-                />
-              </div>
-              {warningEnabled && (
-                <Input
-                  value={warningReason}
-                  onChange={(e) => setWarningReason(e.target.value)}
-                  placeholder="Reason (optional)"
-                  className="text-sm"
-                />
-              )}
-            </div>
+            <ContentWarningField
+              id="reel-warning"
+              enabled={warningEnabled}
+              onEnabledChange={setWarningEnabled}
+              reason={warningReason}
+              onReasonChange={setWarningReason}
+              categories={warningCategories}
+              onCategoriesChange={setWarningCategories}
+            />
 
             <div className="flex justify-end gap-2">
               <Button

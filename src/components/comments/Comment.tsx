@@ -6,6 +6,8 @@ import { useAuthor } from '@/hooks/useAuthor';
 import { useComments } from '@/hooks/useComments';
 import { CommentForm } from './CommentForm';
 import { NoteContent } from '@/components/NoteContent';
+import { MaybeWarned } from '@/components/ContentWarning';
+import { getContentWarning } from '@/lib/note';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -68,7 +70,9 @@ export function Comment({ root, comment, depth = 0, maxDepth = 3, limit }: Comme
 
             {/* Comment Content */}
             <div className="text-sm">
-              <NoteContent event={comment} className="text-sm" />
+              <MaybeWarned event={comment} warning={getContentWarning(comment)}>
+                <NoteContent event={comment} className="text-sm" />
+              </MaybeWarned>
             </div>
 
             {/* Comment Actions */}

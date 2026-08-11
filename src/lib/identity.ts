@@ -20,6 +20,8 @@
  * is left to do about it, which is the part worth testing.
  */
 
+import { tierOf } from '@/lib/tiers';
+
 export type IdentityTier = 'none' | 'external' | 'free' | 'verified';
 
 /** Which profile field is behind, if either. */
@@ -102,8 +104,23 @@ export function describeIdentity(snapshot: IdentitySnapshot): IdentityStatus {
   );
 
   const profileLud16 = snapshot.profileLud16?.trim() || '';
+
+  /**
+   * An address on the profile that is none of ours.
+   *
+   * Recognised by domain as well as by the list of what this app issued,
+   * because the list costs network and the domain does not. Knowing whether
+   * `kk@getzap.me` is ours required asking the wallet service, which meant
+   * every screen that reads identity — the composer included — signing a
+   * request to it merely to decide whether to show a nag. The domain answers
+   * the same question for free.
+   */
   const external =
-    profileLud16 && !owned.has(profileLud16.toLowerCase()) ? profileLud16 : null;
+    profileLud16 &&
+    !owned.has(profileLud16.toLowerCase()) &&
+    !tierOf(profileLud16)
+      ? profileLud16
+      : null;
 
   const unpublished: ProfileField[] = [];
   if (verified && snapshot.profileNip05 !== verified) unpublished.push('nip05');

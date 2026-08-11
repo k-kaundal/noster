@@ -193,7 +193,7 @@ export function usePayAnyWallet() {
     },
   });
 
-  return {
+  return useMemo(() => ({
     options,
     /** Every option that can actually pay, i.e. not "copy the invoice". */
     wallets: options.filter((option) => option.method !== 'manual'),
@@ -202,5 +202,12 @@ export function usePayAnyWallet() {
     isPaying: pay.isPending,
     balanceSats,
     hasNostrFeedWallet: !!wallet,
-  };
+  }), [
+    options,
+    preferredFor,
+    pay.mutateAsync,
+    pay.isPending,
+    balanceSats,
+    wallet,
+  ]);
 }

@@ -6,6 +6,8 @@ import { useEvent } from '@/hooks/useEvent';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
 import { NoteBody } from '@/components/notes/NoteBody';
+import { MaybeWarned } from '@/components/ContentWarning';
+import { getContentWarning } from '@/lib/note';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -107,7 +109,9 @@ function QuotedNoteCard({
 
       {/* Clipped so a long quote can't dominate the note quoting it */}
       <div className="mt-1.5 max-h-40 overflow-hidden text-sm">
-        <NoteBody event={event} />
+        <MaybeWarned event={event} warning={getContentWarning(event)}>
+          <NoteBody event={event} />
+        </MaybeWarned>
       </div>
     </Link>
   );

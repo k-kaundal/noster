@@ -10,6 +10,8 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { markdownToText } from '@/lib/markdown';
 import { readingMinutes, type Article } from '@/lib/article';
+import { MaybeWarned } from '@/components/ContentWarning';
+import { readContentWarning } from '@/lib/contentWarning';
 import { cn } from '@/lib/utils';
 
 /** One article in a list: cover, title, and enough to decide whether to read it. */
@@ -22,6 +24,13 @@ export function ArticleCard({
 }) {
   const author = useAuthor(article.event.pubkey);
   const metadata = author.data?.metadata;
+
+  /**
+   * The title stays legible either way — it is the article's own summary of
+   * itself, and hiding it leaves a card nobody can decide about. The cover
+   * image and the extract are what get covered, since those are the article.
+   */
+  const warning = readContentWarning(article.event);
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(article.event.pubkey);
@@ -40,12 +49,14 @@ export function ArticleCard({
     <Card className={cn('content-auto overflow-hidden hover-lift', className)}>
       <Link to={`/${naddr}`} className="block">
         {article.image && (
-          <img
-            src={article.image}
-            alt=""
-            loading="lazy"
-            className="h-40 w-full object-cover sm:h-48"
-          />
+          <MaybeWarned event={article.event} warning={warning} opaque>
+            <img
+              src={article.image}
+              alt=""
+              loading="lazy"
+              className="h-40 w-full object-cover sm:h-48"
+            />
+          </MaybeWarned>
         )}
 
         <div className="space-y-3 p-5">
@@ -72,7 +83,7 @@ export function ArticleCard({
             <h3 className="text-lg font-semibold leading-snug tracking-tight">
               {article.title}
             </h3>
-            {preview && (
+            {preview && !warning && (
               <p className="line-clamp-3 text-sm text-muted-foreground">
                 {preview}
               </p>

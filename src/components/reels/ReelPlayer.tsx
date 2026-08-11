@@ -14,6 +14,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
+import { useAdultContent } from '@/hooks/useAdultContent';
+import { isAdultContent } from '@/lib/nsfw';
 import { useReactions } from '@/hooks/useReactions';
 import { useReposts } from '@/hooks/useReposts';
 import { useReplies } from '@/hooks/useReplies';
@@ -51,6 +53,7 @@ export function ReelPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const { showAdult } = useAdultContent();
   const [replyOpen, setReplyOpen] = useState(false);
   const [zapOpen, setZapOpen] = useState(false);
 
@@ -72,7 +75,13 @@ export function ReelPlayer({
   const canZap = !!(metadata?.lud06 || metadata?.lud16) &&
     user?.pubkey !== event.pubkey;
 
-  const gated = video.contentWarning !== null && !revealed;
+  /**
+   * Same rule as the timeline gate: a reader who turned adult content on has
+   * already answered, and being asked again on every reel is the setting being
+   * ignored. Other warnings — violence, spoilers — still ask.
+   */
+  const preApproved = showAdult && isAdultContent(event);
+  const gated = video.contentWarning !== null && !revealed && !preApproved;
 
   // Play only while this reel is the one on screen
   useEffect(() => {
@@ -168,7 +177,11 @@ export function ReelPlayer({
 
       {gated && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 p-6 text-center">
-          <p className="font-medium text-white">Sensitive content</p>
+          <p className="font-medium text-white">
+            {video.warningSeverity === 'explicit'
+              ? 'Explicit content'
+              : 'Sensitive content'}
+          </p>
           {video.contentWarning && (
             <p className="text-sm text-white/70">{video.contentWarning}</p>
           )}
@@ -277,7 +290,12 @@ export function ReelPlayer({
               {video.title}
             </p>
           )}
-          {event.content && (
+          {/*
+            The caption renders above the cover, so it has to hide with the
+            video — otherwise the one part of a warned reel written in words
+            is the part that stays on screen.
+          */}
+          {event.content && !gated && (
             <p className="line-clamp-2 text-sm text-white/80">{event.content}</p>
           )}
 

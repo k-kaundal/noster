@@ -98,7 +98,7 @@ function CurrentIdentity() {
           the list cannot say: whether the profile agrees with any of it. */}
       {status.unpublished.length > 0 && (
         <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/8 p-4 backdrop-blur-sm">
-          <p className="text-sm text-warning-foreground">
+          <p className="text-sm text-warning-strong">
             {/* Which half is behind changes what is actually broken, so it is
                 worth saying rather than "your profile is out of date" */}
             {status.unpublished.length === 2
@@ -120,7 +120,7 @@ function CurrentIdentity() {
       )}
 
       {status.unpublished.length === 0 && (
-        <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success">
+        <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success-strong">
           <Check className="h-4 w-4 shrink-0" />
           <span>
             {verified

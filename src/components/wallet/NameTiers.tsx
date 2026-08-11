@@ -82,7 +82,7 @@ export function NameTiers() {
 
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 {onProfile ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success-strong">
                     <Check className="h-3 w-3" />
                     Zaps land here
                   </span>

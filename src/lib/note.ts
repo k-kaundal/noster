@@ -1,17 +1,13 @@
 import type { NostrEvent } from '@nostrify/nostrify';
 import { nip19 } from 'nostr-tools';
 
-/** A NIP-36 content warning, if the author set one. */
-export interface ContentWarning {
-  reason?: string;
-}
-
-/** Reads the NIP-36 `content-warning` tag. */
-export function getContentWarning(event: NostrEvent): ContentWarning | null {
-  const tag = event.tags.find(([name]) => name === 'content-warning');
-  if (!tag) return null;
-  return { reason: tag[1]?.trim() || undefined };
-}
+/**
+ * Re-exported so the many callers that only want "is this warned" keep a short
+ * import. The parsing lives in `lib/contentWarning`, which also reads the
+ * NIP-32 labels this used to ignore.
+ */
+export { readContentWarning as getContentWarning } from '@/lib/contentWarning';
+export type { ContentWarning } from '@/lib/contentWarning';
 
 /**
  * Reads the NIP-18 `q` tag of a quote repost. Unlike an `e` tag this does not

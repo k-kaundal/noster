@@ -1,8 +1,8 @@
+import { useMemo } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLightningAddress } from '@/hooks/useLightningAddress';
-import { useLaWallet } from '@/hooks/useLaWallet';
 import { useNip5 } from '@/hooks/useNip5';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
@@ -35,41 +35,64 @@ export function useIdentity() {
   const metadata = author.data?.metadata;
 
   const nip5 = useNip5();
-  const lawallet = useLaWallet();
+
+  /**
+   * Only live names. A reservation is created before its invoice is paid, and
+   * an unpaid one must not entitle anybody to the address that goes with it —
+   * that is the thing being sold.
+   *
+   * Memoised because it is an argument to another hook. A fresh array on every
+   * render is a fresh argument, and a hook that treats its arguments as inputs
+   * has to assume they changed.
+   */
+  const paidNames = useMemo(
+    () =>
+      nip5.addresses
+        .filter((address) => address.active)
+        .map((address) => address.local_part),
+    [nip5.addresses]
+  );
+
   const lightning = useLightningAddress({
     // The pay link that matches the bought name outranks any older one
     preferredUsername: localPartOf(nip5.identifier) ?? undefined,
-    /**
-     * Only live names. A reservation is created before its invoice is paid,
-     * and an unpaid one must not entitle anybody to the address that goes
-     * with it — that is the thing being sold.
-     */
-    paidNames: nip5.addresses
-      .filter((address) => address.active)
-      .map((address) => address.local_part),
+    paidNames,
   });
 
-  const status = describeIdentity({
-    verifiedName: nip5.identifier,
-    verifiedActive: nip5.address?.active,
-    lightningAddress: lightning.address,
-    profileNip05: metadata?.nip05,
-    profileLud16: metadata?.lud16,
-    /**
-     * Every address of theirs, so a profile pointing at their own second one
-     * is not mistaken for a profile pointing somewhere else entirely.
-     *
-     * Includes what the platform reports as linked to this key, not only what
-     * this app issued. Someone whose profile already zaps an address they set
-     * up before finding this app was being told, on every visit, that their
-     * zaps go somewhere foreign and offered a replacement — which is both
-     * wrong and the most annoying thing the page could say to them.
-     */
-    ownedAddresses: [
-      ...lightning.addresses.map((entry) => entry.address),
-      ...lawallet.held.map((entry) => entry.address),
-    ],
-  });
+  /**
+   * Every address of theirs, so a profile pointing at their own second one is
+   * not mistaken for a profile pointing somewhere else entirely.
+   *
+   * Only what this app issued. Addresses at the other services we run are
+   * recognised by their domain inside `describeIdentity`, which is the same
+   * answer without a request — this hook is read by the composer and the
+   * profile, and it should not put either of them on the network to find out
+   * whether to show a nag.
+   */
+  const ownedAddresses = useMemo(
+    () => lightning.addresses.map((entry) => entry.address),
+    [lightning.addresses]
+  );
+
+  const status = useMemo(
+    () =>
+      describeIdentity({
+        verifiedName: nip5.identifier,
+        verifiedActive: nip5.address?.active,
+        lightningAddress: lightning.address,
+        profileNip05: metadata?.nip05,
+        profileLud16: metadata?.lud16,
+        ownedAddresses,
+      }),
+    [
+      nip5.identifier,
+      nip5.address?.active,
+      lightning.address,
+      metadata?.nip05,
+      metadata?.lud16,
+      ownedAddresses,
+    ]
+  );
 
   /**
    * A name to offer someone who has none.
@@ -193,7 +216,7 @@ export function useIdentity() {
     },
   });
 
-  return {
+  return useMemo(() => ({
     status,
     /** The name assigned to this key, free and unchosen. */
     freeName,
@@ -211,5 +234,18 @@ export function useIdentity() {
     isPublishing: publish.isPending,
     alignLightningAddress: alignLightningAddress.mutateAsync,
     isAligning: alignLightningAddress.isPending,
-  };
+  }), [
+    status,
+    freeName,
+    onFreeName,
+    claimFree.mutateAsync,
+    claimFree.isPending,
+    nip5,
+    lightning,
+    suggestion,
+    publish.mutateAsync,
+    publish.isPending,
+    alignLightningAddress.mutateAsync,
+    alignLightningAddress.isPending,
+  ]);
 }

@@ -1,4 +1,5 @@
 import type { NostrEvent } from '@nostrify/nostrify';
+import { readContentWarning } from '@/lib/contentWarning';
 
 /**
  * Keeping adult content out of a feed nobody asked to see it in.
@@ -58,22 +59,46 @@ export interface NsfwVerdict {
   reason?: string;
 }
 
-export function classifyNsfw(event: NostrEvent): NsfwVerdict {
-  for (const [name, value] of event.tags) {
-    if (name === 'content-warning') {
-      // A bare warning with no reason is not necessarily adult, so it is left
-      // alone — a spoiler tag should not be filtered as pornography
-      if (value && ADULT_REASONS.test(value)) {
-        return { adult: true, reason: value };
-      }
-      continue;
-    }
+/**
+ * Warning categories that mean sex, as opposed to the several that do not.
+ *
+ * A warning is not an adult-content flag — violence and spoilers use the same
+ * tag — so only these two switch this filter on.
+ */
+const ADULT_CATEGORIES = new Set(['nudity', 'sexual']);
 
+export function classifyNsfw(event: NostrEvent): NsfwVerdict {
+  /**
+   * The NIP-36 warning first, read properly: a category in an `l` tag is a
+   * stated fact about the post, where the reason is prose that has to be
+   * pattern-matched. Preferring the stated one means a note labelled
+   * `["l", "nudity", "content-warning"]` is caught even when its author wrote
+   * no reason at all.
+   */
+  const warning = readContentWarning(event);
+  if (warning) {
+    const category = warning.categories.find((id) => ADULT_CATEGORIES.has(id));
+    if (category) return { adult: true, reason: category };
+
+    // A bare warning with no reason is not necessarily adult, so it is left
+    // alone — a spoiler tag should not be filtered as pornography
+    if (warning.reason && ADULT_REASONS.test(warning.reason)) {
+      return { adult: true, reason: warning.reason };
+    }
+  }
+
+  for (const [name, value] of event.tags) {
     if (name === 't' && value && ADULT_TAGS.has(value.toLowerCase())) {
       return { adult: true, reason: `#${value.toLowerCase()}` };
     }
 
-    // Some clients label the whole event rather than tagging it (NIP-32)
+    /**
+     * Some clients label the whole event rather than tagging it (NIP-32).
+     * Matched without regard to namespace, unlike a content warning, because
+     * this is a closed list of words that mean one thing in any vocabulary —
+     * and unlike a warning, guessing wrong here only affects someone who
+     * turned this filter on.
+     */
     if (name === 'l' && value && ADULT_TAGS.has(value.toLowerCase())) {
       return { adult: true, reason: value.toLowerCase() };
     }
