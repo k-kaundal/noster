@@ -15,6 +15,8 @@ import { UserHoverCard } from '@/components/UserHoverCard';
 import { ZapButton } from '@/components/ZapButton';
 import { CommentsSection } from '@/components/comments/CommentsSection';
 import { Markdown } from '@/components/articles/Markdown';
+import { MaybeWarned } from '@/components/ContentWarning';
+import { readContentWarning } from '@/lib/contentWarning';
 import { ArticleEditor } from '@/components/articles/ArticleEditor';
 import { markdownToText } from '@/lib/markdown';
 import { readingMinutes, type Article } from '@/lib/article';
@@ -31,6 +33,14 @@ export function ArticleView({ article }: { article: Article }) {
     metadata?.display_name || metadata?.name || genUserName(article.event.pubkey);
   const npub = nip19.npubEncode(article.event.pubkey);
   const isMine = user?.pubkey === article.event.pubkey;
+
+  /**
+   * Gated in two places rather than around the whole page: the title, author
+   * and date are how a reader decides whether to open it, and covering those
+   * leaves nothing to make the decision from. The cover image and the body are
+   * the article itself.
+   */
+  const warning = readContentWarning(article.event);
 
   useSeo({
     title: article.title,
@@ -50,11 +60,13 @@ export function ArticleView({ article }: { article: Article }) {
     <div className="space-y-6">
       <article className="space-y-6">
         {article.image && (
-          <img
-            src={article.image}
-            alt=""
-            className="max-h-[420px] w-full rounded-2xl border object-cover"
-          />
+          <MaybeWarned event={article.event} warning={warning} opaque>
+            <img
+              src={article.image}
+              alt=""
+              className="max-h-[420px] w-full rounded-2xl border object-cover"
+            />
+          </MaybeWarned>
         )}
 
         <header className="space-y-4">
@@ -136,7 +148,9 @@ export function ArticleView({ article }: { article: Article }) {
           </p>
         )}
 
-        <Markdown source={article.content} />
+        <MaybeWarned event={article.event} warning={warning}>
+          <Markdown source={article.content} />
+        </MaybeWarned>
 
         {article.hashtags.length > 0 && (
           <div className="flex flex-wrap gap-2 border-t pt-5">

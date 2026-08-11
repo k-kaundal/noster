@@ -9,6 +9,9 @@ import {
   Users,
 } from 'lucide-react';
 import { Layout } from '@/components/Layout';
+import type { NostrEvent } from '@nostrify/nostrify';
+import { MaybeWarned } from '@/components/ContentWarning';
+import { getContentWarning } from '@/lib/note';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { LoginArea } from '@/components/auth/LoginArea';
@@ -405,7 +408,11 @@ function GroupView({
   );
 }
 
-function Message({ event }: { event: { id: string; pubkey: string; content: string; created_at: number } }) {
+/**
+ * Takes the whole event rather than the four fields it prints, because the
+ * tags are where a message says it needs covering.
+ */
+function Message({ event }: { event: NostrEvent }) {
   const author = useAuthor(event.pubkey);
   const metadata = author.data?.metadata;
   const name = metadata?.name || genUserName(event.pubkey);
@@ -426,9 +433,11 @@ function Message({ event }: { event: { id: string; pubkey: string; content: stri
           </Link>{' '}
           · {relativeTime(event.created_at * 1000)}
         </p>
-        <p className="whitespace-pre-wrap break-words text-sm">
-          {event.content}
-        </p>
+        <MaybeWarned event={event} warning={getContentWarning(event)}>
+          <p className="whitespace-pre-wrap break-words text-sm">
+            {event.content}
+          </p>
+        </MaybeWarned>
       </div>
     </li>
   );

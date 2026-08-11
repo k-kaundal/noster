@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle,
   BarChart3,
   Eye,
   Image,
@@ -40,6 +39,8 @@ import { useRelays } from '@/hooks/useRelays';
 import { relayDisplayName } from '@/lib/relay';
 import { POLL_KIND, buildPollTags } from '@/lib/poll';
 import { NoteContent } from '@/components/NoteContent';
+import { ContentWarningField } from '@/components/notes/ContentWarningField';
+import { contentWarningTags } from '@/lib/contentWarning';
 import { cn } from '@/lib/utils';
 
 const MAX_IMAGES = 4;
@@ -83,6 +84,7 @@ export function Compose() {
   const [isDragging, setIsDragging] = useState(false);
   const [warningEnabled, setWarningEnabled] = useState(false);
   const [warningReason, setWarningReason] = useState('');
+  const [warningCategories, setWarningCategories] = useState<string[]>([]);
   const [pollEnabled, setPollEnabled] = useState(false);
   const [pollChoices, setPollChoices] = useState<string[]>(['', '']);
   const [multipleChoice, setMultipleChoice] = useState(false);
@@ -201,6 +203,17 @@ export function Compose() {
         extractQuotedEvents(postContent, nip19.decode)
       );
 
+      /**
+       * The warning, as both a marker and labels. Empty when the switch is
+       * off, so it costs nothing to splice in unconditionally.
+       */
+      const warningTags = warningEnabled
+        ? contentWarningTags({
+            reason: warningReason,
+            categories: warningCategories,
+          })
+        : [];
+
       const tags = [
         ...uploadedImages.map((url) => [
           'imeta',
@@ -211,9 +224,7 @@ export function Compose() {
         ...quoted,
         ...hashtags.map((tag) => ['t', tag]),
         // NIP-36: readers approve before the note is shown
-        ...(warningEnabled
-          ? [['content-warning', warningReason.trim()]]
-          : []),
+        ...warningTags,
       ];
 
       if (pollEnabled) {
@@ -230,7 +241,7 @@ export function Compose() {
             ...mentioned.map((pubkey) => ['p', pubkey]),
             ...quoted,
             ...hashtags.map((tag) => ['t', tag]),
-            ...(warningEnabled ? [['content-warning', warningReason.trim()]] : []),
+            ...warningTags,
           ],
         });
       } else {
@@ -519,31 +530,14 @@ export function Compose() {
           </div>
 
           {/* NIP-36 content warning */}
-          <div className="space-y-2 rounded-lg border p-3">
-            <div className="flex items-center justify-between gap-3">
-              <Label
-                htmlFor="content-warning"
-                className="flex cursor-pointer items-center gap-2 text-sm font-normal"
-              >
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                Mark as sensitive
-              </Label>
-              <Switch
-                id="content-warning"
-                checked={warningEnabled}
-                onCheckedChange={setWarningEnabled}
-              />
-            </div>
-
-            {warningEnabled && (
-              <Input
-                value={warningReason}
-                onChange={(e) => setWarningReason(e.target.value)}
-                placeholder="Reason (optional) — shown before the note is revealed"
-                className="text-sm"
-              />
-            )}
-          </div>
+          <ContentWarningField
+            enabled={warningEnabled}
+            onEnabledChange={setWarningEnabled}
+            reason={warningReason}
+            onReasonChange={setWarningReason}
+            categories={warningCategories}
+            onCategoriesChange={setWarningCategories}
+          />
 
           {/* Where this note will land */}
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">

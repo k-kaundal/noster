@@ -1,4 +1,9 @@
 import type { NostrEvent } from '@nostrify/nostrify';
+import {
+  describeWarning,
+  readContentWarning,
+  type WarningSeverity,
+} from '@/lib/contentWarning';
 
 /** NIP-71 video event kinds. */
 export const SHORT_VIDEO_KIND = 22;
@@ -34,6 +39,8 @@ export interface ParsedVideo {
   publishedAt?: number;
   hashtags: string[];
   contentWarning?: string | null;
+  /** How much of the frame to cover; absent when there is no warning. */
+  warningSeverity?: WarningSeverity;
 }
 
 /**
@@ -95,7 +102,13 @@ export function parseVideoEvent(event: NostrEvent): ParsedVideo {
 
   const duration = tagValue('duration');
   const publishedAt = tagValue('published_at');
-  const warningTag = event.tags.find(([name]) => name === 'content-warning');
+  /**
+   * Read through the NIP-36 parser rather than off the tag directly, so a
+   * reel labelled with `l` tags and no prose is still covered — video is the
+   * format where an ungated warning is least recoverable, since it starts
+   * playing on its own.
+   */
+  const warning = readContentWarning(event);
 
   return {
     variants,
@@ -107,7 +120,8 @@ export function parseVideoEvent(event: NostrEvent): ParsedVideo {
       .filter(([name]) => name === 't')
       .map(([, value]) => value)
       .filter(Boolean),
-    contentWarning: warningTag ? (warningTag[1]?.trim() || '') : null,
+    contentWarning: warning ? (describeWarning(warning) ?? '') : null,
+    warningSeverity: warning?.severity,
   };
 }
 

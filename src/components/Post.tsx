@@ -52,7 +52,7 @@ const ReportDialog = lazy(() =>
 );
 import { RepliesSection } from '@/components/RepliesSection';
 import { QuotedNote } from '@/components/QuotedNote';
-import { ContentWarning } from '@/components/ContentWarning';
+import { MaybeWarned } from '@/components/ContentWarning';
 import { ReactionChips, ReactionPicker } from '@/components/ReactionPicker';
 import {
   AlertDialog,
@@ -423,12 +423,10 @@ export function Post({
               The reposted note could not be loaded.
             </p>
           )
-        ) : contentWarning ? (
-          <ContentWarning reason={contentWarning.reason}>
-            <NoteBody event={event} />
-          </ContentWarning>
         ) : (
-          <NoteBody event={event} />
+          <MaybeWarned event={event} warning={contentWarning}>
+            <NoteBody event={event} />
+          </MaybeWarned>
         )}
 
         {quotedId && !isRepost && (
