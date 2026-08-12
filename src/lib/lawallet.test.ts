@@ -1,11 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   LAWALLET_MAX_USERNAME,
   LaWalletError,
   acceptsPayments,
   addressesForPubkey,
   isExpectedDenial,
+  isDuplicateInvoice,
   isMissingUser,
+  isQuoteStale,
+  recallQuote,
+  rememberQuote,
+  forgetQuote,
+  QUOTE_FRESH_MS,
   refusalReason,
   sessionLifetimeMs,
   unwrapList,
@@ -503,5 +509,124 @@ describe('sessionLifetimeMs', () => {
     expect(
       sessionLifetimeMs({ token: 't', expiresAt: '2025-01-01T00:00:00Z' }, now)
     ).toBe(0);
+  });
+});
+
+describe('isDuplicateInvoice', () => {
+  /** The exact body the service answers a second invoice request with. */
+  const collision = new LaWalletError(
+    'The wallet service hit an error on its side.',
+    500,
+    'INTERNAL_SERVER_ERROR',
+    '\nInvalid `prisma.invoice.create()` invocation:\n\n\nUnique constraint failed on the fields: (`paymentHash`)'
+  );
+
+  it('recognises the collision behind the generic 500', () => {
+    /**
+     * The code is the same INTERNAL_SERVER_ERROR every unhandled failure
+     * carries, so the detail is the only thing that tells this apart — and
+     * the detail is precisely what must not be shown to anyone.
+     */
+    expect(isDuplicateInvoice(collision)).toBe(true);
+  });
+
+  it('does not fire on other server failures', () => {
+    expect(
+      isDuplicateInvoice(
+        new LaWalletError('...', 500, 'INTERNAL_SERVER_ERROR', 'ECONNREFUSED')
+      )
+    ).toBe(false);
+
+    // A unique-constraint failure on something else is a different problem
+    expect(
+      isDuplicateInvoice(
+        new LaWalletError(
+          '...',
+          500,
+          'INTERNAL_SERVER_ERROR',
+          'Unique constraint failed on the fields: (`username`)'
+        )
+      )
+    ).toBe(false);
+  });
+
+  it('ignores errors carrying no detail at all', () => {
+    expect(isDuplicateInvoice(new LaWalletError('boom', 500))).toBe(false);
+    expect(isDuplicateInvoice(new Error('boom'))).toBe(false);
+  });
+});
+
+describe('the held-invoice store', () => {
+  const invoice = {
+    id: 'inv_1',
+    purpose: 'wallet-address' as const,
+    pr: 'lnbc10u1p...',
+    paymentHash: 'abc',
+    settled: false,
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('gives back the invoice it was handed', () => {
+    rememberQuote('pub', 'alice', invoice, 1000);
+
+    expect(recallQuote('pub', 'alice')).toEqual({ invoice, issuedAt: 1000 });
+  });
+
+  it('keeps one key\'s invoices away from another\'s', () => {
+    rememberQuote('pub', 'alice', invoice);
+
+    expect(recallQuote('other', 'alice')).toBeNull();
+  });
+
+  it('matches the name however it was capitalised', () => {
+    rememberQuote('pub', 'Alice', invoice);
+
+    expect(recallQuote('pub', 'alice')?.invoice).toEqual(invoice);
+  });
+
+  it('forgets one without disturbing the rest', () => {
+    rememberQuote('pub', 'alice', invoice);
+    rememberQuote('pub', 'bob', invoice);
+
+    forgetQuote('pub', 'alice');
+
+    expect(recallQuote('pub', 'alice')).toBeNull();
+    expect(recallQuote('pub', 'bob')).not.toBeNull();
+  });
+
+  it('survives storage holding something that is not JSON', () => {
+    localStorage.setItem('lawallet:quotes', 'not json');
+
+    expect(recallQuote('pub', 'alice')).toBeNull();
+  });
+});
+
+describe('isQuoteStale', () => {
+  const quote = {
+    invoice: {
+      id: 'inv_1',
+      purpose: 'wallet-address' as const,
+      pr: 'lnbc',
+      paymentHash: 'abc',
+      settled: false,
+    },
+    issuedAt: 1_000_000,
+  };
+
+  it('is fresh well inside the window', () => {
+    expect(isQuoteStale(quote, quote.issuedAt + 60_000)).toBe(false);
+  });
+
+  it('goes stale before a BOLT11 would normally expire', () => {
+    /**
+     * Early on purpose. Being early costs one request; being late offers an
+     * invoice the wallet rejects, which reads as the payment failing rather
+     * than as the bill being old.
+     */
+    expect(QUOTE_FRESH_MS).toBeLessThan(60 * 60_000);
+    expect(isQuoteStale(quote, quote.issuedAt + QUOTE_FRESH_MS + 1)).toBe(true);
   });
 });
