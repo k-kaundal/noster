@@ -93,8 +93,14 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
 
       <div className="container flex gap-8 pb-24 pt-6 lg:gap-12 lg:pb-16 lg:pt-8">
         <aside className="hidden w-52 shrink-0 lg:block">
-          <div className="sticky top-[calc(var(--header-height)+1.5rem)]">
-            <SideNav />
+          {/*
+            Bounded to the viewport, like the discovery rail opposite. Without
+            it the links simply ran past the bottom of the screen on a laptop
+            and the last of them — settings among them — could not be reached
+            at all, since a sticky box does not scroll.
+          */}
+          <div className="sticky top-[calc(var(--header-height)+1.5rem)] flex max-h-[calc(100vh-var(--header-height)-3rem)] flex-col">
+            <SideNav className="flex-1" />
           </div>
         </aside>
 

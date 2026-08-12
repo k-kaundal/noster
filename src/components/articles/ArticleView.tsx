@@ -45,18 +45,28 @@ export function ArticleView({ article }: { article: Article }) {
    */
   const warning = readContentWarning(article.event);
 
+  const naddr = nip19.naddrEncode({
+    kind: article.event.kind,
+    pubkey: article.event.pubkey,
+    identifier: article.slug,
+  });
+
   useSeo({
     title: article.title,
     description: article.summary || markdownToText(article.content).slice(0, 200),
     image: article.image,
-    path: `/${nip19.naddrEncode({
-      kind: article.event.kind,
-      pubkey: article.event.pubkey,
-      identifier: article.slug,
-    })}`,
+    path: `/${naddr}`,
     type: 'article',
     publishedTime: new Date(article.publishedAt * 1000).toISOString(),
     author: displayName,
+    /**
+     * The same article, as the event rather than as this page — NIP-21's
+     * `rel="alternate"`, which is precisely the case it describes: content
+     * served over both mediums.
+     */
+    nostrEntity: naddr,
+    // Authorship, not identity: the page is the article, not the author
+    nostrAuthor: nip19.npubEncode(article.event.pubkey),
   });
 
   return (

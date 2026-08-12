@@ -9,6 +9,7 @@ import { useCurrentUser } from "./useCurrentUser";
 import { cacheAuthorEvent } from "./useAuthor";
 import { enqueue } from "@/lib/outbox";
 import { describeSignerError } from "@/lib/signerErrors";
+import { mineEvent, NONCE_TAG } from "@/lib/nip13";
 import { clearSignerFailure, recordSignerFailure } from "@/lib/signerStatus";
 
 import type { NostrEvent } from "@nostrify/nostrify";
@@ -53,7 +54,12 @@ export function useNostrPublish(): UseMutationResult<NostrEvent> {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (t: Omit<NostrEvent, 'id' | 'pubkey' | 'sig'>) => {
+    mutationFn: async (
+      t: Omit<NostrEvent, 'id' | 'pubkey' | 'sig'> & {
+        /** NIP-13 target difficulty. Mined before signing when set. */
+        pow?: number;
+      }
+    ) => {
       if (user) {
         const tags = t.tags ?? [];
 
@@ -62,17 +68,35 @@ export function useNostrPublish(): UseMutationResult<NostrEvent> {
           tags.push(["client", location.hostname]);
         }
 
+        let template = {
+          kind: t.kind,
+          content: t.content ?? "",
+          tags,
+          created_at: t.created_at ?? Math.floor(Date.now() / 1000),
+        };
+
+        /**
+         * Mined before signing, never after.
+         *
+         * The id does not commit to the signature — which is what lets NIP-13
+         * mining be delegated at all — but it does commit to the tags and the
+         * timestamp, both of which mining rewrites. Signing first would leave
+         * a valid-looking event whose signature covers an id it no longer has.
+         */
+        if (t.pow && t.pow > 0 && !tags.some(([name]) => name === NONCE_TAG)) {
+          const mined = await mineEvent({ ...template, pubkey: user.pubkey }, t.pow);
+          template = {
+            kind: mined.event.kind,
+            content: mined.event.content,
+            tags: mined.event.tags,
+            created_at: mined.event.created_at,
+          };
+        }
+
         let event: NostrEvent;
 
         try {
-          event = await withTimeout(
-            user.signer.signEvent({
-              kind: t.kind,
-              content: t.content ?? "",
-              tags,
-              created_at: t.created_at ?? Math.floor(Date.now() / 1000),
-            })
-          );
+          event = await withTimeout(user.signer.signEvent(template));
         } catch (error) {
           /**
            * Signing happens somewhere this app cannot see, so what comes back

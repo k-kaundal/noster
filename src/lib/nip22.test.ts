@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { NostrEvent } from '@nostrify/nostrify';
 import {
+  acceptsComments,
   addressOf,
   buildCommentTags,
   isTopLevel,
@@ -303,5 +304,62 @@ describe('isTopLevel', () => {
     const comment = event({ kind: 1111, tags: buildCommentTags({ root: url }) });
 
     expect(isTopLevel(comment, url)).toBe(true);
+  });
+});
+
+describe('the kind 1 prohibition', () => {
+  const note: NostrEvent = {
+    id: 'n'.repeat(64),
+    pubkey: 'a'.repeat(64),
+    kind: 1,
+    created_at: 0,
+    content: 'hi',
+    tags: [],
+    sig: '',
+  };
+
+  it('refuses to scope a comment to a note', () => {
+    expect(acceptsComments(note)).toBe(false);
+
+    // Silent when it goes wrong: the event publishes, and no client shows it
+    expect(() => buildCommentTags({ root: targetFromEvent(note) })).toThrow(
+      /NIP-10/
+    );
+  });
+
+  it('allows every other kind', () => {
+    for (const kind of [1063, 30023, 30402, 31923, 1111]) {
+      expect(acceptsComments({ ...note, kind })).toBe(true);
+    }
+  });
+
+  it('rejects a kind-1-scoped comment written by another client', () => {
+    expect(
+      isValidComment({
+        ...note,
+        kind: 1111,
+        tags: [
+          ['E', 'n'.repeat(64)],
+          ['K', '1'],
+          ['e', 'n'.repeat(64)],
+          ['k', '1'],
+        ],
+      })
+    ).toBe(false);
+  });
+
+  it('still accepts a comment whose parent is a comment on a note-free root', () => {
+    expect(
+      isValidComment({
+        ...note,
+        kind: 1111,
+        tags: [
+          ['A', '30023:x:y'],
+          ['K', '30023'],
+          ['e', 'c'.repeat(64)],
+          ['k', '1111'],
+        ],
+      })
+    ).toBe(true);
   });
 });

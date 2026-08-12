@@ -47,6 +47,21 @@ export type CommentTarget =
       hint?: string;
     };
 
+/**
+ * Kinds a comment may not be scoped to.
+ *
+ * "Comments MUST NOT be used to reply to kind 1 notes. NIP-10 should instead
+ * be followed." A kind 1111 under a note is not a slightly-wrong reply — it is
+ * invisible, because every client showing that thread queries `e` tags the
+ * NIP-10 way and never asks for 1111s.
+ */
+const FORBIDDEN_ROOT_KINDS = new Set([1]);
+
+/** Whether a comment thread is allowed to hang off this event at all. */
+export function acceptsComments(event: NostrEvent): boolean {
+  return !FORBIDDEN_ROOT_KINDS.has(event.kind);
+}
+
 export function targetFromEvent(
   event: NostrEvent,
   relay?: string
@@ -149,6 +164,18 @@ export interface CommentInput {
  * document should not have to hunt.
  */
 export function buildCommentTags(input: CommentInput): string[][] {
+  /**
+   * Enforced here rather than left to call sites, because this is the one
+   * mistake that fails silently: the event publishes, the relay stores it, and
+   * nobody ever sees it — including the person who wrote it, in any client but
+   * the one that made the error.
+   */
+  if (input.root.type === 'event' && FORBIDDEN_ROOT_KINDS.has(input.root.kind)) {
+    throw new Error(
+      'Kind 1 notes take NIP-10 replies, not comments. A kind 1111 under a note is invisible to every client that reads the thread.'
+    );
+  }
+
   const parent = input.parent ?? input.root;
 
   const tags = [...rootTags(input.root), ...parentTags(parent)];
@@ -190,7 +217,17 @@ export function isValidComment(event: NostrEvent): boolean {
   const hasRootScope = has('A') || has('E') || has('I');
   const hasParent = has('a') || has('e') || has('i');
 
-  return hasRootScope && hasParent && has('K') && has('k');
+  if (!hasRootScope || !hasParent || !has('K') || !has('k')) return false;
+
+  /**
+   * A comment scoped to a kind 1 is the thing the spec forbids. Rejected on
+   * read as well as on write: somebody else's client may have made it, and
+   * rendering it here would put a reply in a thread where the note's actual
+   * readers cannot see it or answer it.
+   */
+  const rootKind = event.tags.find(([name]) => name === 'K')?.[1];
+
+  return !FORBIDDEN_ROOT_KINDS.has(Number(rootKind));
 }
 
 /**

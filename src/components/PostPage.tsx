@@ -40,14 +40,19 @@ function NoteSeo({ event }: { event: NostrEvent }) {
     getTagValue(event, 'alt') ||
     `A note by ${displayName} on Nostr.`;
 
+  const note = nip19.noteEncode(event.id);
+
   useSeo({
     title: `${displayName} on Nostr`,
     description: summary,
     image: metadata?.picture,
-    path: `/${nip19.noteEncode(event.id)}`,
+    path: `/${note}`,
     type: 'article',
     publishedTime: new Date(event.created_at * 1000).toISOString(),
     author: displayName,
+    // The note itself, for anyone arriving at the HTML rendering of it
+    nostrEntity: note,
+    nostrAuthor: nip19.npubEncode(event.pubkey),
   });
 
   return null;

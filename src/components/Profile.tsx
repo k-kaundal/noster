@@ -148,6 +148,13 @@ export function Profile({ pubkey }: ProfileProps) {
     image: metadata?.picture,
     path: `/${npub}`,
     type: 'profile',
+    /**
+     * A profile page is both claims at once: `rel="me"` because the page is
+     * that identity, and `rel="author"` because that identity wrote it.
+     */
+    nostrEntity: npub,
+    nostrAuthor: npub,
+    authorIsSelf: true,
   });
 
   /**
@@ -181,8 +188,12 @@ export function Profile({ pubkey }: ProfileProps) {
             )}
           </div>
 
-          <div className="absolute -bottom-12 left-4 sm:left-6">
-            <Avatar className="h-24 w-24 border-4 border-card shadow-md">
+          {/*
+            Smaller on a phone, where a 96px avatar overhanging a 128px banner
+            leaves the name squeezed against the action buttons.
+          */}
+          <div className="absolute -bottom-10 left-4 sm:-bottom-12 sm:left-6">
+            <Avatar className="h-20 w-20 border-4 border-card shadow-md sm:h-24 sm:w-24">
               <AvatarImage src={metadata?.picture} alt="" className="object-cover" />
               <AvatarFallback className="text-xl">
                 {displayName.slice(0, 2).toUpperCase()}
@@ -192,7 +203,13 @@ export function Profile({ pubkey }: ProfileProps) {
         </div>
 
         <CardContent className="space-y-4 px-4 pb-5 pt-4 sm:px-6">
-          <div className="flex justify-end gap-2">
+          {/*
+            Wraps, and the buttons share the row rather than overflowing it.
+            Four of them — zap, message, follow, share — do not fit across a
+            360px screen, and `justify-end` with no wrap pushed the last one
+            off the edge instead of moving it down.
+          */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {isCurrentUser ? (
               <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
                 <DialogTrigger asChild>
@@ -249,9 +266,11 @@ export function Profile({ pubkey }: ProfileProps) {
           </div>
 
           {/* Identity block sits below the avatar overhang */}
-          <div className="space-y-1 pt-6 sm:pt-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-bold sm:text-2xl">{displayName}</h1>
+          <div className="space-y-1 pt-4 sm:pt-4">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h1 className="min-w-0 break-words text-xl font-bold sm:text-2xl">
+                {displayName}
+              </h1>
 
               {/* A ✓ for a nip05 anyone can self-host, and separately the tier
                   of the address they are paid at. Two different claims, so two
@@ -303,9 +322,11 @@ export function Profile({ pubkey }: ProfileProps) {
           <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
             {typeof (metadata as Record<string, unknown>)?.location ===
               'string' && (
-              <span className="flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5" />
-                {(metadata as Record<string, unknown>).location as string}
+              <span className="flex min-w-0 items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  {(metadata as Record<string, unknown>).location as string}
+                </span>
               </span>
             )}
             {metadata?.website && (
@@ -313,16 +334,18 @@ export function Profile({ pubkey }: ProfileProps) {
                 href={metadata.website}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-primary hover:underline"
+                className="flex min-w-0 items-center gap-1.5 text-primary hover:underline"
               >
-                <LinkIcon className="h-3.5 w-3.5" />
-                {metadata.website.replace(/^https?:\/\//, '')}
+                <LinkIcon className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  {metadata.website.replace(/^https?:\/\//, '')}
+                </span>
               </a>
             )}
             {lightningAddress && (
-              <span className="flex items-center gap-1.5">
-                <Zap className="h-3.5 w-3.5 text-zap" />
-                {lightningAddress}
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5 shrink-0 text-zap" />
+                <span className="truncate">{lightningAddress}</span>
               </span>
             )}
             {joinedDate && (

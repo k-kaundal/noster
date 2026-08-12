@@ -87,7 +87,17 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
                 <Settings2 className="h-[1.2rem] w-[1.2rem]" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-[85vw] max-w-sm">
+            <SheetContent
+              side="right"
+              /*
+               * Scrollable, because the sheet is `h-full` and the menu inside
+               * it is not: nineteen destinations plus the relay picker, the
+               * appearance controls and the footer run well past the bottom of
+               * a phone screen, and without this the end of the list simply
+               * could not be reached.
+               */
+              className="flex w-[85vw] max-w-sm flex-col overflow-y-auto"
+            >
               <SheetHeader className="text-left">
                 <SheetTitle>
                   <Logo />
@@ -95,9 +105,16 @@ export function AppHeader({ onSearch }: AppHeaderProps) {
               </SheetHeader>
 
               <div className="mt-6 space-y-6">
-                <div onClick={() => setSettingsOpen(false)} role="presentation">
-                  <SideNav />
-                </div>
+                {/*
+                  Compact: no keyboard hints, which mean nothing on a phone,
+                  and no compose button, which the floating one already is.
+                  Closing on navigation rather than on any click in the box —
+                  a tap that misses a link used to shut the sheet.
+                */}
+                <SideNav
+                  compact
+                  onNavigate={() => setSettingsOpen(false)}
+                />
 
                 <Separator />
 

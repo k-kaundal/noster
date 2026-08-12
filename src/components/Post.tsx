@@ -54,6 +54,7 @@ const ReportDialog = lazy(() =>
 import { RepliesSection } from '@/components/RepliesSection';
 import { QuotedNote } from '@/components/QuotedNote';
 import { MaybeWarned } from '@/components/ContentWarning';
+import { PowBadge } from '@/components/PowBadge';
 import { formatTimeLeft, secondsUntilExpiry } from '@/lib/expiration';
 import { ReactionChips, ReactionPicker } from '@/components/ReactionPicker';
 import {
@@ -316,6 +317,9 @@ export function Post({
             >
               {timeAgo}
             </Link>
+
+            {/* Only appears on notes that carry meaningful proof of work */}
+            <PowBadge event={event} className="shrink-0 text-[10px]" />
           </div>
 
           {isReply && <ReplyingTo event={event} noteId={noteId} />}
