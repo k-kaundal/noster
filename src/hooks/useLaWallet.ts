@@ -11,9 +11,12 @@ import {
   LAWALLET_DOMAIN,
   laWalletRequest,
   mergeHeldAddresses,
+  openSession,
   requiresPayment,
+  sessionLifetimeMs,
   type AddressMode,
   type AliasProbe,
+  type LaWalletSession,
   type LaWalletUser,
   type RemoteWallet,
   type ServiceInvoice,
@@ -67,28 +70,60 @@ export function useLaWallet() {
   }, [queryClient]);
 
   /**
-   * Makes sure the service holds a user record for this key.
+   * Registers this key with the service, so that everything else will talk to
+   * it.
    *
-   * A NIP-98 signature proves who somebody is; it does not give the service a
-   * row to hang an address off. `GET /api/users/me` is documented as "load or
-   * create" and is the only route that creates one, so a key that has never
-   * called it can authenticate perfectly and still be refused everything with
-   * `{"code":"NOT_FOUND","message":"User not found"}` — a sentence that, on
-   * the screen where somebody has just typed a name they want, reads as if
-   * the *name* were the thing not found.
+   * Two calls, in this order, and the order is the whole point.
    *
-   * Cached forever once it succeeds: the record does not stop existing, and
-   * the point of caching is to spend one signature per session rather than
-   * one per click.
+   * The schema says every authenticated request runs through
+   * `resolveRole(pubkey)`, whose first step is to look up the `User` row. A
+   * key with no row is therefore turned away from every route as though it had
+   * not signed at all — including `GET /api/users/me`, which is role `USER`
+   * and yet is the only route documented to "load or create" a user. Signing
+   * harder does not help: the door that creates the record is behind the lock
+   * the record opens.
+   *
+   * `POST /api/jwt` is the way in. It is the only route in the schema that is
+   * both `PUBLIC` and NIP-98 signed, so its chain never asks for the row, and
+   * the token it returns carries the pubkey and role onward. `users/me` is
+   * then called with that token rather than a fresh signature, so it arrives
+   * as an authenticated session instead of an unknown key.
+   *
+   * Cached for the life of the token: the record does not stop existing, and
+   * the point of caching is one prompt per session rather than one per click.
    */
   const ensureUser = useCallback(async () => {
     if (!signer) throw new Error('Log in to use wallet addresses.');
 
-    return await queryClient.fetchQuery<LaWalletUser>({
-      queryKey: ['lawallet-user', user?.pubkey ?? ''],
-      queryFn: () => laWalletRequest<LaWalletUser>('/api/users/me', { signer }),
-      staleTime: Infinity,
+    const session = await queryClient.fetchQuery<LaWalletSession>({
+      queryKey: ['lawallet-session', user?.pubkey ?? ''],
+      queryFn: () => openSession(signer),
+      staleTime: 55 * 60_000,
     });
+
+    try {
+      return await queryClient.fetchQuery<LaWalletUser>({
+        queryKey: ['lawallet-user', user?.pubkey ?? ''],
+        queryFn: () =>
+          laWalletRequest<LaWalletUser>('/api/users/me', {
+            token: session.token,
+          }),
+        staleTime: sessionLifetimeMs(session),
+      });
+    } catch (error) {
+      /**
+       * The one refusal worth rewriting. Reaching here means the session was
+       * issued and the route that creates accounts still says there is no
+       * account — which is not something the person can act on, and "User not
+       * found" invites them to go looking for a mistake in the name they
+       * typed.
+       */
+      if (!isMissingUser(error)) throw error;
+
+      throw new Error(
+        'The wallet service issued a session but would not open an account for your key. Nothing to fix on your end — try again shortly.'
+      );
+    }
   }, [queryClient, signer, user?.pubkey]);
 
   /**
@@ -118,10 +153,17 @@ export function useLaWallet() {
       } catch (error) {
         if (!isMissingUser(error)) throw error;
 
-        // Any cached record is demonstrably wrong, since the service just
-        // said it has none
+        /*
+         * Both cached values are demonstrably wrong, since the service just
+         * said it has no such user — the session token included, because a
+         * token issued for a record that has since gone is exactly as useless
+         * as no token.
+         */
         queryClient.removeQueries({
           queryKey: ['lawallet-user', user?.pubkey ?? ''],
+        });
+        queryClient.removeQueries({
+          queryKey: ['lawallet-session', user?.pubkey ?? ''],
         });
 
         await ensureUser();
