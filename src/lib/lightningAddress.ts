@@ -15,6 +15,8 @@
  * the other domains renders as somebody else's.
  */
 
+import { LNBITS_URL } from '@/lib/lnbits';
+
 /** Trims off the things people paste around a domain but never mean. */
 export function normalizeDomain(value: string): string {
   return value
@@ -26,6 +28,22 @@ export function normalizeDomain(value: string): string {
 }
 
 /**
+ * The LNbits host, which always answers for the addresses it issues.
+ *
+ * This is the one domain that needs no configuration and no proxy rule:
+ * LNbits serves `/.well-known/lnurlp/*` on its own origin, so an address at
+ * this host works the moment a pay link exists. Everything else is a nicer
+ * name pointed at it.
+ */
+function lnbitsHost(): string {
+  try {
+    return new URL(LNBITS_URL).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Every domain this app issues addresses under, best first.
  *
  * Read from two settings so an existing deployment does not have to change:
@@ -33,6 +51,12 @@ export function normalizeDomain(value: string): string {
  * `VITE_LIGHTNING_ADDRESS_DOMAINS` adds the rest. Order matters — the first is
  * what a new address gets unless somebody picks otherwise — so the singular
  * setting is read first and duplicates are dropped rather than reordered.
+ *
+ * Configured neither way, this falls back to the LNbits host rather than to a
+ * hostname written down here. A literal default is a second place the truth
+ * lives: remove the setting from a deployment pointed somewhere else and every
+ * address in the app is suddenly named at a domain that has never heard of it,
+ * while the host actually serving them is sitting right there in `LNBITS_URL`.
  */
 export const ADDRESS_DOMAINS: string[] = (() => {
   const configured = [
@@ -46,7 +70,10 @@ export const ADDRESS_DOMAINS: string[] = (() => {
     .filter(Boolean);
 
   const unique = [...new Set(configured)];
-  return unique.length ? unique : ['ln.nostrfeed.com'];
+  if (unique.length) return unique;
+
+  const host = lnbitsHost();
+  return host ? [host] : ['ln.nostrfeed.com'];
 })();
 
 /**

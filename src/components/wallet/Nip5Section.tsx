@@ -30,6 +30,7 @@ import {
 } from '@/hooks/useNip5';
 import { QrCode } from '@/components/wallet/QrCode';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useLightningAddress } from '@/hooks/useLightningAddress';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
 import {
@@ -50,6 +51,7 @@ import {
   yearOptions,
   type Nip5Address,
   type Nip5AddressStatus,
+  type Nip5Domain,
 } from '@/lib/nip5';
 
 /**
@@ -233,6 +235,65 @@ function OwnedName({ address }: { address: Nip5Address }) {
       )}
 
       <LightningDestination address={address} identifier={identifier} />
+
+      <ZapsHere address={address} identifier={identifier} />
+    </div>
+  );
+}
+
+/**
+ * Pointing the profile's zap address at this name.
+ *
+ * The card could say "kk@getzap.me receives payments" and offer no way to tell
+ * anyone: `nip05` and `lud16` are two separate profile fields, and publishing
+ * the name as one of them says nothing about the other. So a name could be
+ * verified, attached to a wallet, and still not be where zaps went — with
+ * nothing on screen to fix it.
+ *
+ * The list of addresses further up cannot cover this. It reads pay links, and
+ * the link the extension makes for a name carries no domain, so it shows up
+ * there under the *lightning* domain rather than the one the name is actually
+ * bought at — a different address, and not the one to publish.
+ */
+function ZapsHere({
+  address,
+  identifier,
+}: {
+  address: Nip5Address;
+  identifier: string;
+}) {
+  const { profileAddress, setProfileAddress, isPublishing } =
+    useLightningAddress();
+
+  // Nothing to publish until payments actually land somewhere
+  if (!isZappable(address) || nip5State(address) === 'inactive') return null;
+
+  if (profileAddress?.trim().toLowerCase() === identifier.toLowerCase()) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-success-strong">
+        <Check className="h-3.5 w-3.5" />
+        Zaps land here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        {profileAddress
+          ? `Your profile still sends zaps to ${profileAddress}.`
+          : 'Your profile does not advertise a zap address yet.'}
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 px-2 text-xs"
+        disabled={isPublishing}
+        onClick={() => void setProfileAddress(identifier).catch(() => {})}
+      >
+        {isPublishing && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+        Send my zaps here
+      </Button>
     </div>
   );
 }
@@ -532,6 +593,7 @@ function BuyName({
   // suggestion doesn't greet you with a validation error
   const [touched, setTouched] = useState(false);
 
+  const featured = domains[0];
   const domain = nip5Host(domainId);
 
   const search = useNip5Search(localPart, years, domainId);
@@ -574,7 +636,12 @@ function BuyName({
       {pitch && (
         <div className="rounded-lg bg-gradient-to-br from-success/8 to-success/5 p-3 dark:from-success/10 dark:to-success/5">
           <p className="text-sm text-foreground">
-            A verified name shows a <span className="inline font-mono">✓</span> on your posts. Rented by the year.
+            {/* Named, because "a verified name" is an abstraction and
+                `you@getzap.me` is the thing somebody actually wants */}
+            A verified name at{' '}
+            <span className="font-medium">{featured?.domain}</span> shows a{' '}
+            <span className="inline font-mono">✓</span> on your posts. Rented by
+            the year.
           </p>
         </div>
       )}
@@ -597,30 +664,9 @@ function BuyName({
             className="max-w-[10rem] transition-all"
           />
 
-          {/* A picker only when there is something to pick. One domain is not
-              a choice, and it reads better as part of the name than as a
-              control that does nothing. */}
-          {domains.length > 1 ? (
-            <Select value={domainId} onValueChange={setDomainId}>
-              <SelectTrigger
-                className="w-auto min-w-[9rem] flex-1"
-                aria-label="Domain"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {domains.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    @{entry.domain}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <span className="flex-1 truncate text-sm font-medium text-foreground">
-              @{domain}
-            </span>
-          )}
+          <span className="flex-1 truncate text-sm font-medium text-foreground">
+            @{domain}
+          </span>
 
           {options.length > 1 && (
             <Select
@@ -650,6 +696,16 @@ function BuyName({
           years={years}
           touched={touched}
         />
+
+        {domains.length > 1 && (
+          <DomainChoice
+            domains={domains}
+            value={domainId}
+            onChange={setDomainId}
+            localPart={localPart}
+            years={years}
+          />
+        )}
       </div>
 
       {/*
@@ -705,6 +761,115 @@ function BuyName({
         Reserve {localPart ? formatNip5(localPart, domain) : 'this name'}
       </Button>
     </div>
+  );
+}
+
+/**
+ * Which domain to buy the name at.
+ *
+ * A dropdown was the wrong control for this. It hides every option but one
+ * behind a click, which is fine for a setting and wrong for the decision that
+ * changes both what the name reads as and what it costs — the same local part
+ * is priced separately per domain and can be free on one and taken on another.
+ * Laid out, each option answers "can I have it, and for how much" without
+ * being opened.
+ *
+ * The first configured domain leads and is marked. Somebody with no opinion
+ * takes the recommendation, which is the operator's to make: it is their best
+ * domain, the one worth putting in front of people, and the order in the
+ * config is how they say so.
+ */
+function DomainChoice({
+  domains,
+  value,
+  onChange,
+  localPart,
+  years,
+}: {
+  domains: Nip5Domain[];
+  value: string;
+  onChange: (id: string) => void;
+  localPart: string;
+  years: number;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Domain
+      </Label>
+
+      <div className="grid gap-2">
+        {domains.map((entry, index) => (
+          <DomainOption
+            key={entry.id}
+            domain={entry}
+            featured={index === 0}
+            selected={entry.id === value}
+            onSelect={() => onChange(entry.id)}
+            localPart={localPart}
+            years={years}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DomainOption({
+  domain,
+  featured,
+  selected,
+  onSelect,
+  localPart,
+  years,
+}: {
+  domain: Nip5Domain;
+  featured: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  localPart: string;
+  years: number;
+}) {
+  /*
+   * Its own search, so each option can price itself. Cheap: the query is
+   * debounced and keyed per domain, so a row that nobody is typing at holds
+   * its answer instead of asking again.
+   */
+  const status = useNip5Search(localPart, years, domain.id).data;
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+        selected
+          ? 'border-primary bg-primary/5'
+          : 'hover:border-primary/40 hover:bg-muted/40',
+        featured && !selected && 'border-primary/30'
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">
+          {localPart ? `${localPart}@${domain.domain}` : `@${domain.domain}`}
+        </p>
+        <p className="truncate text-xs text-muted-foreground">
+          {!status
+            ? 'Type a name to see the price'
+            : status.available
+              ? describePrice(status, years)
+              : 'Taken here'}
+        </p>
+      </div>
+
+      {featured && (
+        <Badge variant="secondary" className="shrink-0">
+          Recommended
+        </Badge>
+      )}
+      {selected && <Check className="h-4 w-4 shrink-0 text-primary" />}
+    </button>
   );
 }
 

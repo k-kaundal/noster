@@ -5,6 +5,7 @@ import { VerificationBadge, VerificationMark } from '@/components/VerificationBa
 import { AddressReceiveDialog } from '@/components/wallet/AddressReceiveDialog';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
+import { NIP5_DOMAIN, isNip5Configured } from '@/lib/nip5';
 import { describeTier, leadAddress, nextTier, rankAddresses } from '@/lib/tiers';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +29,22 @@ export function NameTiers() {
   const held = lightning.addresses.map((entry) => entry.address);
 
   /**
+   * The domains these addresses are actually at.
+   *
+   * Every one of them came off a pay link on this account, which is a stronger
+   * statement than any setting can make: the server issued it, so it is ours
+   * whatever the configuration currently says. Ranking against configuration
+   * alone means an operator who edits or removes a domain setting deletes
+   * people's addresses from the page listing what they own — the address keeps
+   * working and simply stops being shown, which is the worst of both.
+   */
+  const domains = {
+    named: [...new Set(lightning.addresses.map((entry) => entry.domain))].filter(
+      Boolean
+    ),
+  };
+
+  /**
    * Which wallet each address pays into.
    *
    * Only worth showing once there are several. With one wallet the answer is
@@ -45,11 +62,11 @@ export function NameTiers() {
     ])
   );
 
-  const ranked = rankAddresses(held);
+  const ranked = rankAddresses(held, domains);
   if (!ranked.length) return null;
 
   // What the profile says, so the ranking never overrules a real decision
-  const lead = leadAddress(held, lightning.profileAddress);
+  const lead = leadAddress(held, lightning.profileAddress, domains);
   const upsell = nextTier(ranked[0]?.tier ?? null);
 
   return (
@@ -160,9 +177,12 @@ export function NameTiers() {
       {/* Only when there is something above what they hold. An upsell shown to
           somebody already on the top tier reads as the app not knowing what
           they bought. */}
-      {upsell && (
+      {upsell && isNip5Configured() && (
         <p className="text-xs text-muted-foreground">
-          A verified name gets you your own name and a ✓ on every post — below.
+          {/* The domain named rather than implied: "a verified name" is an
+              abstraction, and `you@getzap.me` is the thing being sold. */}
+          A name at <span className="font-medium">{NIP5_DOMAIN}</span> is yours
+          alone, and puts a ✓ on every post — below.
         </p>
       )}
 

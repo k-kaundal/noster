@@ -21,6 +21,7 @@ import {
   ADDRESS_DOMAINS,
   formatAddress,
 } from '@/lib/lightningAddress';
+import { NIP5_DOMAIN, isNip5Configured } from '@/lib/nip5';
 
 /**
  * Someone's name here, in one place.
@@ -263,11 +264,16 @@ function ClaimForm() {
         {isClaimingFree ? 'Setting it up…' : 'Get my free address'}
       </Button>
 
-      <p className="text-center text-xs text-muted-foreground">
-        Want <span className="font-medium text-foreground">your own name</span>{' '}
-        instead? A verified name gives you {`name@${domain}`} for both zaps and
-        identity — see below.
-      </p>
+      {/* Only when there is something to point at. `Nip5Section` renders
+          nothing on a deployment without the extension, so "see below" would
+          send somebody to an empty space. */}
+      {isNip5Configured() && (
+        <p className="text-center text-xs text-muted-foreground">
+          Want <span className="font-medium text-foreground">your own name</span>{' '}
+          instead? A verified name gives you {`name@${NIP5_DOMAIN}`} for both
+          zaps and identity — see below.
+        </p>
+      )}
     </div>
   );
 }
