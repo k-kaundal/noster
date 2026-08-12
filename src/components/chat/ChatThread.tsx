@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import { formatDate, formatTime, isSameDay } from '@/lib/time';
-import { BadgeCheck, Loader2, Send, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Loader2, Send, ShieldCheck } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import {
@@ -68,6 +68,23 @@ export function ChatThread({ peerPubkey }: ChatThreadProps) {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b p-3">
+        {/*
+          The only way back on a phone. Below `lg` the conversation list is
+          hidden while a thread is open, so without this the browser's own
+          back gesture was the sole exit — and in an installed app there
+          isn't one.
+        */}
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="-ml-1 h-8 w-8 shrink-0 lg:hidden"
+        >
+          <Link to="/chat" aria-label="Back to conversations">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+
         <Link to={`/${npub}`} className="shrink-0">
           <Avatar className="h-9 w-9">
             <AvatarImage src={metadata?.picture} alt="" />

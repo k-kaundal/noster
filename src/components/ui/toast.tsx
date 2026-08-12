@@ -13,8 +13,20 @@ const ToastViewport = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Viewport
     ref={ref}
+    /* Marks the viewport for the outside-tap dismissal in `toaster.tsx`.
+       Radix exposes no attribute of its own for this. */
+    data-toast-viewport=""
     className={cn(
-      "fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
+      /*
+       * Below the header on small screens, not over it.
+       *
+       * This was `top-0` and full width, at z-[100], while the header is
+       * `top-0 z-50` and 56px tall — so every toast covered the logo, the
+       * search button, the bell and the menu. Tapping any of them hit the
+       * toast instead, and since a toast is not dismissed by an outside click
+       * it simply blocked navigation until it timed out.
+       */
+      "fixed top-14 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
       className
     )}
     {...props}

@@ -67,7 +67,17 @@ export function ChatPage() {
         />
 
         {/* Below lg the list and thread swap places rather than sharing a row */}
-        <Card className="grid h-[calc(100dvh-14rem)] overflow-hidden lg:grid-cols-[20rem_1fr]">
+        <Card
+          /*
+           * Two heights, because the chrome around this differs by more than
+           * the old single value allowed for. On a phone there is a 56px
+           * header, the page title, and a 96px bottom gap for the tab bar —
+           * about 276px in total against the 224px this assumed, so the card
+           * ran 52px past the bottom and took the message box with it. The
+           * composer was under the tab bar and could not be reached.
+           */
+          className="grid h-[calc(100dvh-18rem)] overflow-hidden sm:h-[calc(100dvh-16rem)] lg:h-[calc(100dvh-15rem)] lg:grid-cols-[20rem_1fr]"
+        >
           <div
             className={cn(
               'overflow-y-auto border-r scrollbar-thin',
@@ -91,7 +101,7 @@ export function ChatPage() {
             )}
           </div>
 
-          <div className={cn(!peerPubkey && 'hidden lg:block')}>
+          <div className={cn('min-h-0', !peerPubkey && 'hidden lg:block')}>
             {peerPubkey ? (
               <ChatThread peerPubkey={peerPubkey} />
             ) : (
