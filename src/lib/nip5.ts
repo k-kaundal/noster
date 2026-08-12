@@ -253,6 +253,62 @@ export function describePrice(
     : `${fiat} / ${per}`;
 }
 
+/** The floor and ceiling a new attachment gets, matching the extension's own. */
+export const DEFAULT_LN_MIN_SATS = 1;
+export const DEFAULT_LN_MAX_SATS = 10_000_000;
+
+/**
+ * The body for attaching a lightning address to a NIP-05 name.
+ *
+ * `PUT .../address/{id}/lnaddress` creates or updates in one call, so the same
+ * body both switches a name on and moves it to a different wallet later.
+ *
+ * `wallet` is the whole point and the thing worth being deliberate about: it
+ * decides where the money lands. An account can hold several wallets, and
+ * defaulting to whichever one happens to be selected sends zaps somewhere the
+ * person did not choose and will not think to look.
+ */
+export function buildLnAddressBody(input: {
+  walletId: string;
+  minSats?: number;
+  maxSats?: number;
+}): Nip5LnAddressConfig {
+  return {
+    wallet: input.walletId,
+    /*
+     * Both clamped to something payable. A zero minimum is rejected by the
+     * extension, and a maximum below the minimum produces an address that
+     * refuses every payment — which resolves and looks fine from the outside.
+     */
+    min: Math.max(1, Math.round(input.minSats ?? DEFAULT_LN_MIN_SATS)),
+    max: Math.max(
+      Math.max(1, Math.round(input.minSats ?? DEFAULT_LN_MIN_SATS)),
+      Math.round(input.maxSats ?? DEFAULT_LN_MAX_SATS)
+    ),
+  };
+}
+
+/**
+ * The lightning address attached to a name, when one is.
+ *
+ * Keyed off `wallet` rather than off the object existing, because the
+ * extension stores a `ln_address` shape with an empty wallet on every address
+ * whether or not one was ever set up — so the object's presence says nothing.
+ */
+export function lnAddressConfig(
+  address: Pick<Nip5Address, 'extra'> | null | undefined
+): Nip5LnAddressConfig | null {
+  const config = address?.extra?.ln_address;
+  return config?.wallet ? config : null;
+}
+
+/** Whether a name receives payments as well as verifying a key. */
+export function isZappable(
+  address: Pick<Nip5Address, 'extra'> | null | undefined
+): boolean {
+  return !!lnAddressConfig(address);
+}
+
 /**
  * Cleans up a promo code the way somebody will actually type one.
  *

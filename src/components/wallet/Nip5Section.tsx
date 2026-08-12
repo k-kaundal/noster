@@ -38,6 +38,8 @@ import {
   formatNip5,
   expiresAt,
   nip5State,
+  isZappable,
+  lnAddressConfig,
   normalizeLocalPart,
   promoOutcome,
   validateLocalPart,
@@ -88,13 +90,12 @@ export function Nip5Section() {
 function OwnedName() {
   // Publishing to the profile is deliberately not here: the identity card
   // above owns it, and writes the name and the lightning address in one event
-  const { address, identifier, matchesCurrentKey, attachLightning, isAttaching } =
-    useNip5();
+  const { address, identifier, matchesCurrentKey } = useNip5();
   const { toast } = useToast();
 
   if (!address || !identifier) return null;
 
-  const zappable = !!address.extra?.ln_address?.wallet;
+  const zappable = isZappable(address);
 
   return (
     <div className="space-y-4">
@@ -138,26 +139,114 @@ function OwnedName() {
         </div>
       )}
 
-      {!zappable && (
-        <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
-          <p className="mb-3 text-sm">
-            Add a lightning address to receive zaps at this name.
-          </p>
-          <Button
-            size="sm"
-            onClick={() => void attachLightning(address).catch(() => {})}
-            disabled={isAttaching}
-            className="w-full"
+      <LightningDestination address={address} identifier={identifier} />
+    </div>
+  );
+}
+
+/**
+ * Which wallet a verified name pays into.
+ *
+ * This used to be one button that silently used whichever wallet happened to
+ * be selected, and there was no way to change it afterwards — so an account
+ * with a spending wallet and a savings wallet could point its public address
+ * at the wrong one permanently, and the money would arrive somewhere nobody
+ * thought to look.
+ *
+ * The endpoint creates or updates in one call, so the same form does both.
+ */
+function LightningDestination({
+  address,
+  identifier,
+}: {
+  address: Nip5Address;
+  identifier: string;
+}) {
+  const { attachLightning, isAttaching, wallets } = useNip5();
+
+  const current = lnAddressConfig(address);
+
+  /**
+   * Only what somebody picked, so the default can still move under it.
+   *
+   * Initialising state from the wallet list would freeze whatever was there on
+   * the first render — which is nothing, because the wallets arrive from a
+   * query — leaving the form permanently pointed at an empty id.
+   */
+  const [picked, setPicked] = useState<string | null>(null);
+  const walletId = picked ?? current?.wallet ?? wallets[0]?.id ?? '';
+
+  const named = wallets.find((entry) => entry.id === current?.wallet);
+  const changed = !!current && walletId !== current.wallet;
+
+  if (!wallets.length) return null;
+
+  const submit = () =>
+    void attachLightning({ address, walletId }).catch(() => {});
+
+  if (current && wallets.length < 2) {
+    /*
+     * One wallet and already attached: there is no decision left to make, so
+     * this is a statement rather than a form.
+     */
+    return (
+      <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success-strong">
+        <Zap className="h-4 w-4 shrink-0" />
+        {identifier} receives payments.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
+      <p className="text-sm">
+        {current
+          ? `${identifier} receives payments. Choose where they land.`
+          : `Add a lightning address so ${identifier} receives zaps as well as verifying you.`}
+      </p>
+
+      {/* Only asked when there is something to ask. A select with one option
+          is a decision put in front of somebody for no reason. */}
+      {wallets.length > 1 && (
+        <div className="space-y-1.5">
+          <Label
+            htmlFor="nip5-wallet"
+            className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
           >
-            {isAttaching ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Zap className="mr-2 h-4 w-4" />
-            )}
-            Enable zaps
-          </Button>
+            Pays into
+          </Label>
+          <Select value={walletId} onValueChange={setPicked}>
+            <SelectTrigger id="nip5-wallet" className="bg-background">
+              <SelectValue placeholder="Choose a wallet" />
+            </SelectTrigger>
+            <SelectContent>
+              {wallets.map((entry) => (
+                <SelectItem key={entry.id} value={entry.id}>
+                  {entry.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
+
+      <Button
+        size="sm"
+        onClick={submit}
+        disabled={isAttaching || !walletId || (!!current && !changed)}
+        className="w-full"
+      >
+        {isAttaching ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Zap className="mr-2 h-4 w-4" />
+        )}
+        {current
+          ? changed
+            ? 'Move payments here'
+            : `Paying into ${named?.name ?? 'a wallet'}`
+          : 'Enable zaps'}
+      </Button>
     </div>
   );
 }

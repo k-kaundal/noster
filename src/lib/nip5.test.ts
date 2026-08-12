@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildLnAddressBody,
   daysUntilExpiry,
   describePrice,
   expiresAt,
   formatNip5,
+  isZappable,
+  lnAddressConfig,
   nip5State,
   nip5WellKnownUrl,
   normalizeLocalPart,
@@ -276,5 +279,56 @@ describe('promoOutcome', () => {
     expect(promoOutcome(null, { price_in_sats: 100 }).applied).toBe(false);
     expect(promoOutcome({ price_in_sats: 100 }, null).applied).toBe(false);
     expect(promoOutcome({}, {}).applied).toBe(false);
+  });
+});
+
+describe('buildLnAddressBody', () => {
+  it('names the wallet it was given', () => {
+    expect(buildLnAddressBody({ walletId: 'wallet-2' }).wallet).toBe('wallet-2');
+  });
+
+  it('fills in limits that let a payment through', () => {
+    expect(buildLnAddressBody({ walletId: 'w' })).toEqual({
+      wallet: 'w',
+      min: 1,
+      max: 10_000_000,
+    });
+  });
+
+  it('never builds an address that refuses everything', () => {
+    // A maximum under the minimum resolves and looks healthy from the
+    // outside, then rejects every payment sent to it
+    const body = buildLnAddressBody({ walletId: 'w', minSats: 500, maxSats: 10 });
+    expect(body.min).toBe(500);
+    expect(body.max).toBe(500);
+  });
+
+  it('refuses a zero or fractional floor', () => {
+    expect(buildLnAddressBody({ walletId: 'w', minSats: 0 }).min).toBe(1);
+    expect(buildLnAddressBody({ walletId: 'w', minSats: 2.4 }).min).toBe(2);
+  });
+});
+
+describe('lnAddressConfig', () => {
+  it('reads the wallet a name pays into', () => {
+    expect(
+      lnAddressConfig({ extra: { ln_address: { wallet: 'w1', min: 1, max: 10 } } })
+    ).toEqual({ wallet: 'w1', min: 1, max: 10 });
+  });
+
+  it('treats an empty wallet as no address at all', () => {
+    // The extension stores the shape on every address whether or not one was
+    // ever set up, so its presence proves nothing
+    expect(lnAddressConfig({ extra: { ln_address: { wallet: '' } } })).toBeNull();
+    expect(lnAddressConfig({ extra: {} })).toBeNull();
+    expect(lnAddressConfig(null)).toBeNull();
+  });
+});
+
+describe('isZappable', () => {
+  it('is true only when payments actually have somewhere to land', () => {
+    expect(isZappable({ extra: { ln_address: { wallet: 'w1' } } })).toBe(true);
+    expect(isZappable({ extra: { ln_address: { wallet: '' } } })).toBe(false);
+    expect(isZappable(undefined)).toBe(false);
   });
 });

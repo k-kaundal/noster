@@ -18,7 +18,10 @@ import {
   NIP5_DOMAIN,
   NIP5_DOMAIN_ID,
   formatNip5,
+  buildLnAddressBody,
   isNip5Configured,
+  isZappable,
+  lnAddressConfig,
   normalizePromoCode,
   readClaimedAddress,
   readPaymentHash,
@@ -111,7 +114,7 @@ export function useNip5() {
   const { token, isConnected } = useLnbitsAuth();
   // `wallet` is still needed to attach a lightning address to a bought name,
   // which writes into a specific LNbits wallet by id
-  const { wallet, isPaying } = useLnbitsWallet();
+  const { wallet, wallets, isPaying } = useLnbitsWallet();
   const {
     pay: payAnyWallet,
     options: payOptions,
@@ -258,9 +261,35 @@ export function useNip5() {
    * someone is, a lightning address takes money, and the extension will do
    * both under one name only if asked.
    */
+  /**
+   * Points a name at a wallet, so it receives payments as well as verifying a
+   * key.
+   *
+   * The endpoint creates or updates, which is what makes moving an existing
+   * one possible — and moving one matters, because the wallet a name pays into
+   * was previously whichever happened to be active when the button was
+   * pressed, with no way to correct it afterwards.
+   *
+   * Runs against the session rather than a wallet key: this is the `/user/`
+   * half of the extension, authorised as the person rather than as one of
+   * their wallets, which is what lets it name a different wallet than the one
+   * the request came from.
+   */
   const attachLightning = useMutation({
-    mutationFn: async (address: Nip5Address) => {
-      if (!wallet) throw new Error('Connect your wallet first');
+    mutationFn: async ({
+      address,
+      walletId,
+      minSats,
+      maxSats,
+    }: {
+      address: Nip5Address;
+      /** Where payments land. Defaults to the wallet on screen. */
+      walletId?: string;
+      minSats?: number;
+      maxSats?: number;
+    }) => {
+      const target = walletId || wallet?.id;
+      if (!target) throw new Error('Connect your wallet first');
 
       await withExtension(EXTENSION, token, () =>
         lnbitsRequest(
@@ -268,16 +297,28 @@ export function useNip5() {
           {
             method: 'PUT',
             token,
-            body: { wallet: wallet.id, min: 1, max: 10_000_000 },
+            body: buildLnAddressBody({
+              walletId: target,
+              minSats,
+              maxSats,
+            }),
           }
         )
       );
+
+      return { address, walletId: target };
     },
-    onSuccess: () => {
+    onSuccess: ({ address }) => {
       queryClient.invalidateQueries({ queryKey: ['nip5-addresses'] });
+      // A fresh attachment creates a pay link, so the lightning side has to
+      // re-read too or the new address stays invisible on the page beside it
+      queryClient.invalidateQueries({ queryKey: ['lnurlp-links'] });
+
       toast({
-        title: 'Zaps enabled',
-        description: 'That name now receives payments as well as verifying you.',
+        title: isZappable(address) ? 'Payments moved' : 'Zaps enabled',
+        description: isZappable(address)
+          ? 'That name now pays into the wallet you chose.'
+          : 'That name now receives payments as well as verifying you.',
       });
     },
     onError: (error: Error) => {
@@ -356,6 +397,10 @@ export function useNip5() {
     payOptions,
     attachLightning: attachLightning.mutateAsync,
     isAttaching: attachLightning.isPending,
+    /** Where the primary name currently sends payments, when it sends any. */
+    lnAddress: lnAddressConfig(primary),
+    /** Every wallet on the account, so the caller can offer a destination. */
+    wallets,
     publishToProfile: publishToProfile.mutateAsync,
     isPublishing: publishToProfile.isPending,
     suggestedFrom: metadata?.name || metadata?.display_name || '',
@@ -377,6 +422,7 @@ export function useNip5() {
     payOptions,
     attachLightning.mutateAsync,
     attachLightning.isPending,
+    wallets,
     publishToProfile.mutateAsync,
     publishToProfile.isPending,
   ]);
