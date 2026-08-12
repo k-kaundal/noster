@@ -2,6 +2,7 @@
 // It is important that all functionality in this file is preserved, and should only be modified if explicitly requested.
 
 import React, { useRef, useState, useEffect } from 'react';
+import { describeProblem, isBunkerUri, parseBunkerUri } from '@/lib/nip46';
 import { Shield, Upload, AlertTriangle, Eye, UserPlus, KeyRound, Sparkles, Cloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,9 +25,14 @@ const validateNsec = (nsec: string) => {
   return /^nsec1[a-zA-Z0-9]{58}$/.test(nsec);
 };
 
-const validateBunkerUri = (uri: string) => {
-  return uri.startsWith('bunker://');
-};
+/**
+ * A full NIP-46 check rather than a prefix test.
+ *
+ * `bunker://` alone used to pass, as did `bunker://anything` — both then
+ * failed as a connection timeout blaming the signer. A bunker URI needs the
+ * signer's hex pubkey as its authority and at least one relay to reach it on.
+ */
+const validateBunkerUri = (uri: string) => isBunkerUri(uri);
 
 const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onSignup }) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -157,12 +163,15 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
 
   const handleBunkerLogin = async () => {
     if (!bunkerUri.trim()) {
-      setErrors(prev => ({ ...prev, bunker: 'Please enter a bunker URI' }));
+      setErrors(prev => ({ ...prev, bunker: describeProblem('empty') }));
       return;
     }
 
     if (!validateBunkerUri(bunkerUri)) {
-      setErrors(prev => ({ ...prev, bunker: 'Invalid bunker URI format. Must start with bunker://' }));
+      setErrors(prev => ({
+        ...prev,
+        bunker: describeProblem(parseBunkerUri(bunkerUri).problem!),
+      }));
       return;
     }
 
