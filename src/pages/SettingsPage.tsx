@@ -34,6 +34,8 @@ import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useMuteList } from '@/hooks/useMuteList';
 import { useMutePrivacy } from '@/hooks/useMutePrivacy';
+import { NotificationSettings } from '@/components/NotificationSettings';
+import { InstallCard } from '@/components/InstallCard';
 import { useAdultContent } from '@/hooks/useAdultContent';
 import { useMachineEvents } from '@/hooks/useMachineEvents';
 import { TrustProviderSettings } from '@/components/trust/TrustProviderSettings';
@@ -72,6 +74,9 @@ export function SettingsPage() {
             <TabsTrigger value="ui" className="flex-1 sm:flex-none">
               UI
             </TabsTrigger>
+            <TabsTrigger value="alerts" className="flex-1 sm:flex-none">
+              Alerts
+            </TabsTrigger>
             <TabsTrigger value="muted" className="flex-1 sm:flex-none">
               Muted
             </TabsTrigger>
@@ -90,6 +95,16 @@ export function SettingsPage() {
           </TabsContent>
           <TabsContent value="ui">
             <UISettings />
+          </TabsContent>
+          <TabsContent value="alerts">
+            {user ? (
+              <div className="space-y-4">
+                <NotificationSettings />
+                <InstallCard />
+              </div>
+            ) : (
+              <SignedOutNotice what="notification settings" />
+            )}
           </TabsContent>
           <TabsContent value="muted">
             {user ? <MuteSettings /> : <SignedOutNotice what="mute list" />}

@@ -12,6 +12,7 @@ import { KeyboardShortcutsDialog } from '@/components/KeyboardShortcutsDialog';
 import { useIdlePrefetch, useOnceOpened } from '@/hooks/useDeferredDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useOutboxDrain } from '@/hooks/useOutbox';
+import { useSystemNotifications } from '@/hooks/useSystemNotifications';
 import { cn } from '@/lib/utils';
 
 /**
@@ -68,6 +69,12 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
   // Here rather than on one page, so anything queued goes out as soon as
   // sending works again — whichever page the reader happens to be on
   useOutboxDrain();
+
+  /**
+   * Once, for the whole app. Two copies would announce everything twice, and
+   * it has to keep working whichever page the reader is on.
+   */
+  useSystemNotifications();
 
   useKeyboardShortcuts({
     onSearch: openPalette,
