@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { CommentForm } from './CommentForm';
 import { Comment } from './Comment';
+import { acceptsComments } from '@/lib/nip22';
 
 interface CommentsSectionProps {
   root: NostrEvent | URL;
@@ -26,6 +27,13 @@ export function CommentsSection({
 }: CommentsSectionProps) {
   const { data: commentsData, isLoading, error } = useComments(root, limit);
   const comments = commentsData?.topLevelComments || [];
+
+  /**
+   * Notes take NIP-10 replies, not comments, and NIP-22 says so as a MUST.
+   * Rendering nothing beats rendering a composer that would publish an event
+   * no other client ever shows — including to the person who wrote it.
+   */
+  if (!(root instanceof URL) && !acceptsComments(root)) return null;
 
   if (error) {
     return (
