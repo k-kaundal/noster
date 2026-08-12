@@ -148,6 +148,13 @@ export function Profile({ pubkey }: ProfileProps) {
     image: metadata?.picture,
     path: `/${npub}`,
     type: 'profile',
+    /**
+     * A profile page is both claims at once: `rel="me"` because the page is
+     * that identity, and `rel="author"` because that identity wrote it.
+     */
+    nostrEntity: npub,
+    nostrAuthor: npub,
+    authorIsSelf: true,
   });
 
   /**

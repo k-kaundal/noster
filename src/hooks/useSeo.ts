@@ -20,6 +20,29 @@ export interface SeoOptions {
   /** ISO timestamps used for article previews. */
   publishedTime?: string;
   author?: string;
+  /**
+   * The Nostr entity this page is another rendering of.
+   *
+   * NIP-21: `<link rel="alternate">` associates a web page with the event it
+   * serves, "in cases where the same content is served via the two mediums".
+   * An article page here is exactly that — the same kind 30023 as HTML — and
+   * without the link a reader who arrives by search has no way back to the
+   * event, which is the copy that is portable.
+   *
+   * A bare NIP-19 identifier; the `nostr:` prefix is added when written.
+   */
+  nostrEntity?: string;
+  /**
+   * The Nostr profile this page belongs to.
+   *
+   * `rel="me"` and `rel="author"` are what NIP-21 names for assigning
+   * authorship, and they are different claims: `me` says this page *is* that
+   * identity, `author` says that identity wrote it. A profile page is both;
+   * an article page is only the second.
+   */
+  nostrAuthor?: string;
+  /** Whether `nostrAuthor` also identifies the page itself. */
+  authorIsSelf?: boolean;
 }
 
 function absolute(url: string | undefined): string {
@@ -42,6 +65,9 @@ export function useSeo({
   noindex = false,
   publishedTime,
   author,
+  nostrEntity,
+  nostrAuthor,
+  authorIsSelf = false,
 }: SeoOptions) {
   const location = useLocation();
   const canonical = `${SITE_URL}${path ?? location.pathname}`;
@@ -75,9 +101,27 @@ export function useSeo({
     articleAuthor: author ? [author] : undefined,
   });
 
-  useHead({
-    link: [{ rel: 'canonical', href: canonical }],
-  });
+  /**
+   * Built rather than written inline so the empty cases drop out. A `link`
+   * with an undefined `href` renders as an attribute-less tag, which is worse
+   * than no tag: a crawler reads it as a broken alternate.
+   */
+  const links: { rel: string; href: string }[] = [
+    { rel: 'canonical', href: canonical },
+  ];
+
+  if (nostrEntity) {
+    links.push({ rel: 'alternate', href: `nostr:${nostrEntity}` });
+  }
+
+  if (nostrAuthor) {
+    const href = `nostr:${nostrAuthor}`;
+
+    links.push({ rel: 'author', href });
+    if (authorIsSelf) links.push({ rel: 'me', href });
+  }
+
+  useHead({ link: links });
 }
 
 /**

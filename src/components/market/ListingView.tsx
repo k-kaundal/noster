@@ -36,16 +36,21 @@ export function ListingView({ listing }: { listing: Listing }) {
   const isMine = user?.pubkey === listing.event.pubkey;
   const warning = readContentWarning(listing.event);
 
+  const naddr = nip19.naddrEncode({
+    kind: listing.event.kind,
+    pubkey: listing.event.pubkey,
+    identifier: listing.slug,
+  });
+
   useSeo({
     title: listing.title,
     description:
       listing.summary || markdownToText(listing.content).slice(0, 200),
     image: listing.images[0]?.url,
-    path: `/${nip19.naddrEncode({
-      kind: listing.event.kind,
-      pubkey: listing.event.pubkey,
-      identifier: listing.slug,
-    })}`,
+    path: `/${naddr}`,
+    // The same listing as the event it is a rendering of (NIP-21)
+    nostrEntity: naddr,
+    nostrAuthor: npub,
   });
 
   const cover = listing.images[shown];

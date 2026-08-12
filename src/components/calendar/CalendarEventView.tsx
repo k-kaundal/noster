@@ -19,6 +19,7 @@ import { CommentsSection } from '@/components/comments/CommentsSection';
 import { RsvpControls } from '@/components/calendar/RsvpControls';
 import { AddToCalendar } from '@/components/calendar/AddToCalendar';
 import { useAuthor } from '@/hooks/useAuthor';
+import { useSeo } from '@/hooks/useSeo';
 import { readContentWarning } from '@/lib/contentWarning';
 import { genUserName } from '@/lib/genUserName';
 import {
@@ -48,6 +49,27 @@ export function CalendarEventView({
 
   const address = `${event.kind}:${event.pubkey}:${calendarEvent.slug}`;
   const hostNpub = nip19.npubEncode(event.pubkey);
+
+  const naddr = nip19.naddrEncode({
+    kind: event.kind,
+    pubkey: event.pubkey,
+    identifier: calendarEvent.slug,
+  });
+
+  useSeo({
+    title: calendarEvent.title,
+    description:
+      calendarEvent.summary ||
+      `${formatWhen(calendarEvent)}${
+        calendarEvent.locations[0] ? ` · ${calendarEvent.locations[0]}` : ''
+      }`,
+    image: calendarEvent.image,
+    path: `/${naddr}`,
+    type: 'article',
+    // The event as a Nostr event, which is the copy that travels (NIP-21)
+    nostrEntity: naddr,
+    nostrAuthor: hostNpub,
+  });
 
   /**
    * The host's own timezone, named only when it differs from the reader's.
