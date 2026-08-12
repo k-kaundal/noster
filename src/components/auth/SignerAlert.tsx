@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNostrLogin } from '@nostrify/react/login';
 import { CloudOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { describeProblem, describeTimeout, parseBunkerUri } from '@/lib/nip46';
 import {
   Dialog,
   DialogContent,
@@ -44,8 +45,16 @@ export function SignerAlert() {
   if (!isUnreachable || !user) return null;
 
   const reconnect = async () => {
-    if (!uri.startsWith('bunker://')) {
-      setError('A bunker URI starts with bunker://');
+    /**
+     * Checked before connecting rather than after failing. Every way a URI can
+     * be wrong is knowable from the text, and the alternative is a thirty
+     * second wait ending in "the bunker did not answer" — which blames the
+     * signer for a typo.
+     */
+    const parsed = parseBunkerUri(uri);
+
+    if (!parsed.uri) {
+      setError(describeProblem(parsed.problem!));
       return;
     }
 
@@ -78,10 +87,11 @@ export function SignerAlert() {
         description: 'You can post again.',
       });
     } catch (e) {
-      setError(
-        (e as Error)?.message ||
-          'That bunker did not answer. Check the URI and that the signer app is open.'
-      );
+      /**
+       * The URI parsed, so the remaining causes are few — and a spent
+       * single-use secret is the one people hit and never guess.
+       */
+      setError((e as Error)?.message || describeTimeout(parsed.uri));
     } finally {
       setConnecting(false);
     }
