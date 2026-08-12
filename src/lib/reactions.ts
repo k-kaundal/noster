@@ -5,8 +5,6 @@ import { addressOf } from './eventKinds';
 export const REACTION_KIND = 7;
 /** NIP-09 deletion request. */
 export const DELETION_KIND = 5;
-/** NIP-56 report. */
-export const REPORT_KIND = 1984;
 
 /**
  * A reaction's display form.
@@ -148,72 +146,6 @@ export function groupReactions(
 
 /** Quick-pick reactions offered before the full picker. */
 export const QUICK_REACTIONS = ['❤️', '🔥', '😂', '🤙', '👀', '🫂', '⚡'];
-
-/** NIP-56 report categories, with wording a reader can actually choose between. */
-export const REPORT_TYPES = [
-  {
-    value: 'spam',
-    label: 'Spam',
-    description: 'Unsolicited, repetitive or automated posting.',
-  },
-  {
-    value: 'nudity',
-    label: 'Nudity or sexual content',
-    description: 'Explicit imagery posted without a content warning.',
-  },
-  {
-    value: 'profanity',
-    label: 'Profanity or hateful speech',
-    description: 'Slurs, harassment or abuse directed at someone.',
-  },
-  {
-    value: 'illegal',
-    label: 'Illegal content',
-    description: 'Content that is unlawful where it was published.',
-  },
-  {
-    value: 'impersonation',
-    label: 'Impersonation',
-    description: 'Pretending to be someone else.',
-  },
-  {
-    value: 'malware',
-    label: 'Malware',
-    description: 'Links that install or run hostile software.',
-  },
-  {
-    value: 'other',
-    label: 'Something else',
-    description: "Doesn't fit any of the above.",
-  },
-] as const;
-
-export type ReportType = (typeof REPORT_TYPES)[number]['value'];
-
-/**
- * Tags for a NIP-56 report.
- *
- * The reported author is always tagged, and the note as well when one is
- * named. A moderator seeing only a `p` tag can act on the account; seeing an
- * `e` tag too tells them which post prompted it.
- */
-export function buildReportTags(input: {
-  pubkey: string;
-  eventId?: string;
-  kind?: number;
-  type: ReportType;
-}): string[][] {
-  const tags: string[][] = [['p', input.pubkey, input.type]];
-
-  if (input.eventId) {
-    tags.push(['e', input.eventId, input.type]);
-    if (typeof input.kind === 'number') {
-      tags.push(['k', String(input.kind)]);
-    }
-  }
-
-  return tags;
-}
 
 /**
  * Tags for a NIP-09 deletion request.
