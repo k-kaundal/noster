@@ -249,6 +249,29 @@ export interface HistoryEntry {
   destroyed: string[];
   /** Nutzaps redeemed, from the unencrypted tags. */
   redeemed: string[];
+  /**
+   * The token string this entry handed out, when it handed one out.
+   *
+   * An extension to NIP-60, documented in `NIP.md`. Without it a token
+   * survives only in the browser that cut it: the proofs behind it are gone
+   * from the balance, so nothing in kind 7375 mentions them any more, and the
+   * spec's history entry records only a direction and an amount. Log in
+   * somewhere else and the money is missing with no string to show for it.
+   */
+  token?: string;
+  /** The note written on that token. */
+  memo?: string;
+  /** Which mint honours it — a token is worthless without knowing. */
+  mint?: string;
+  /**
+   * This entry exists only to carry a token, not to record a movement.
+   *
+   * Written when an older send is backfilled: the balance change was already
+   * published at the time, so counting this one too would show the money
+   * leaving twice. The transaction list skips these; the token list reads
+   * them.
+   */
+  isBackup: boolean;
   createdAt: number;
   event: NostrEvent;
 }
@@ -261,6 +284,12 @@ export interface HistoryInput {
   destroyed?: string[];
   /** NIP-61 nutzaps this change redeemed. */
   redeemed?: string[];
+  /** The token handed out, for a send. See `HistoryEntry.token`. */
+  token?: string;
+  memo?: string;
+  mint?: string;
+  /** Carries a token for an already-recorded send. See `HistoryEntry.isBackup`. */
+  backupOnly?: boolean;
 }
 
 /**
@@ -287,6 +316,26 @@ export async function buildHistoryContent(
   for (const id of input.destroyed ?? []) {
     entries.push(['e', id, '', 'destroyed']);
   }
+
+  /**
+   * The token itself, sealed with everything else.
+   *
+   * This is bearer money written to relays, which deserves saying out loud —
+   * but it is the same money already backed up as proofs in kind 7375 under
+   * the same encryption to the same key. A wallet that backs up its balance
+   * and not the tokens it has handed out is inconsistent, not safer, and the
+   * inconsistency is what loses somebody their unclaimed sats.
+   */
+  if (input.token) entries.push(['token', input.token]);
+  if (input.memo) entries.push(['memo', input.memo]);
+  if (input.mint) entries.push(['mint', input.mint]);
+
+  /**
+   * Marks an entry that is only carrying a token for a send already recorded.
+   * Without it a backfilled token reads as a second withdrawal of the same
+   * sats — which in a wallet is not a cosmetic bug.
+   */
+  if (input.backupOnly) entries.push(['backup', 'token']);
 
   return sealToSelf(signer, pubkey, entries);
 }
@@ -344,6 +393,7 @@ export async function parseHistoryEvent(
           unit: DEFAULT_UNIT,
           destroyed: [],
           redeemed,
+          isBackup: false,
           createdAt: event.created_at,
           event,
         }
@@ -362,6 +412,10 @@ export async function parseHistoryEvent(
     created: marked('created')[0],
     destroyed: marked('destroyed'),
     redeemed,
+    token: value('token'),
+    memo: value('memo'),
+    mint: value('mint'),
+    isBackup: value('backup') === 'token',
     createdAt: event.created_at,
     event,
   };

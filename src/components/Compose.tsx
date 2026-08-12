@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BarChart3,
   Eye,
+  FileText,
   Image,
   Loader2,
   PenSquare,
@@ -18,6 +19,7 @@ import { useAuthor } from '@/hooks/useAuthor';
 import { useAccountStored } from '@/hooks/useStore';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
+import { looksLikeMarkdown } from '@/lib/markdown';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -116,6 +118,25 @@ export function Compose() {
   const pollReady = !pollEnabled || (!!content.trim() && filledChoices.length >= 2);
   const canSubmit =
     (!!content.trim() || uploadedImages.length > 0) && pollReady;
+
+  /**
+   * Whether the box currently holds Markdown.
+   *
+   * Recomputed only when the text changes, since this runs a handful of
+   * regexes and the composer re-renders on every keystroke for other reasons.
+   */
+  const isMarkdown = useMemo(() => looksLikeMarkdown(content), [content]);
+
+  /**
+   * Hands what has been typed to the article editor.
+   *
+   * Passed through router state rather than the query string: an article body
+   * is longer than a URL should be, and putting somebody's unfinished writing
+   * into the address bar leaves it in history and in any link they share.
+   */
+  const openArticle = (body?: string) => {
+    navigate('/write', body?.trim() ? { state: { body } } : undefined);
+  };
 
   const uploadImage = async (file: File) => {
     if (uploadedImages.length >= MAX_IMAGES) {
@@ -324,11 +345,56 @@ export function Compose() {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg">New note</CardTitle>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-lg">New note</CardTitle>
+
+          {/*
+            The way out to long-form. A note is plain text on every client that
+            reads it, so somebody with a piece to write needs a different kind
+            of event rather than a bigger box — and needs to find it before
+            they have typed the whole thing into this one.
+          */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-muted-foreground"
+            onClick={() => openArticle()}
+          >
+            <FileText className="h-4 w-4" />
+            Write an article
+          </Button>
+        </div>
       </CardHeader>
 
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/*
+            Offered, never applied. NIP-23 says clients dealing in kind 1
+            "should not be expected to implement this NIP" — so this does not
+            quietly format the note, which would make it render here unlike
+            everywhere else. It moves the text somewhere the formatting is
+            real.
+          */}
+          {isMarkdown && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed bg-muted/40 p-3">
+              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+                That looks like Markdown. A note posts it as plain text —
+                asterisks and all.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="shrink-0"
+                onClick={() => openArticle(content)}
+              >
+                Continue as an article
+              </Button>
+            </div>
+          )}
+
           <div className="flex items-start gap-3">
             <Avatar className="h-10 w-10 shrink-0">
               <AvatarImage src={metadata?.picture} alt="" />

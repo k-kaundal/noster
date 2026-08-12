@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isSafeHref,
+  looksLikeMarkdown,
   markdownToText,
   parseInline,
   parseMarkdown,
@@ -172,5 +173,70 @@ describe('markdownToText', () => {
     expect(markdownToText('![alt](https://x/y.png)\n\n---\n\nreal text')).toBe(
       'real text'
     );
+  });
+});
+
+describe('looksLikeMarkdown', () => {
+  it('spots the unambiguous signals on their own', () => {
+    expect(
+      looksLikeMarkdown('```js\nconst a = 1;\n```\nThat is the whole example here.')
+    ).toBe(true);
+    expect(
+      looksLikeMarkdown(
+        'Read this: [the article](https://example.com/a) — worth your time today.'
+      )
+    ).toBe(true);
+  });
+
+  it('needs two weaker signals to agree', () => {
+    // One emphasis alone is not enough
+    expect(
+      looksLikeMarkdown(
+        'He said "wait" and then _left_ — one emphasis alone is not markdown.'
+      )
+    ).toBe(false);
+
+    expect(
+      looksLikeMarkdown(
+        '# My title\n\nSome text here that goes on a while with **bold** in it.'
+      )
+    ).toBe(true);
+  });
+
+  it('does not mistake a hashtag for a heading', () => {
+    expect(
+      looksLikeMarkdown(
+        'Check out #bitcoin and #nostr — both are pretty interesting right now.'
+      )
+    ).toBe(false);
+  });
+
+  it('does not mistake dashes in prose for a list', () => {
+    expect(
+      looksLikeMarkdown(
+        'Prices: 100 - 200 sats\nDelivery - next week\nContact - dm me anytime'
+      )
+    ).toBe(false);
+
+    expect(
+      looksLikeMarkdown(
+        '- just one dash starting this line, nothing else markdown-ish here'
+      )
+    ).toBe(false);
+  });
+
+  it('does not fire on an ordinary note', () => {
+    expect(
+      looksLikeMarkdown(
+        'gm nostr, hope everyone is having a great morning out there today'
+      )
+    ).toBe(false);
+    expect(
+      looksLikeMarkdown('I paid 5 * 3 = 15 sats for it, which felt fair enough')
+    ).toBe(false);
+  });
+
+  it('ignores anything too short to be an article', () => {
+    expect(looksLikeMarkdown('# hi')).toBe(false);
   });
 });

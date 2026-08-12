@@ -80,6 +80,12 @@ export function cashuTransactions(
   const local = movements.map(movementToTransaction);
 
   const unmatched = history
+    /**
+     * Backfill entries carry a token for a send that was already recorded at
+     * the time. They are not movements, and counting them would show the same
+     * sats leaving twice.
+     */
+    .filter((entry) => !entry.isBackup)
     .map(historyToTransaction)
     .filter(
       (entry) =>

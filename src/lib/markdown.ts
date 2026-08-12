@@ -214,3 +214,50 @@ export function markdownToText(source: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/**
+ * Whether some text was probably written as Markdown.
+ *
+ * Used to offer the article editor to somebody typing a post, not to change
+ * how the post renders. NIP-23 is explicit that clients dealing in kind 1
+ * notes "should not be expected to implement this NIP" — a note is plain text,
+ * and quietly formatting one would make this app show something different from
+ * every other client reading the same event.
+ *
+ * The bar is deliberately high, because the cost of the two mistakes is not
+ * the same. Missing some Markdown costs nothing: the note posts as written.
+ * Firing on ordinary prose puts a "write an article?" prompt in front of
+ * somebody typing a sentence, every time.
+ *
+ * So the signals are split. A few are unambiguous enough to fire alone; the
+ * rest have to agree with each other. `#bitcoin` is not a heading — a heading
+ * needs the space — and one dash at the start of a line is a dash.
+ */
+export function looksLikeMarkdown(text: string): boolean {
+  const source = text.replace(/\r\n?/g, '\n');
+  if (source.trim().length < 40) return false;
+
+  /** Anything inside a code fence would confuse the weaker tests below. */
+  const fenced = /^```/m.test(source);
+  if (fenced) return true;
+
+  // A link with a URL in brackets is not something people type by accident
+  if (/\[[^\]\n]+\]\([^)\s]+\)/.test(source)) return true;
+
+  const weak = [
+    // A heading needs the space, which is what tells it apart from a hashtag
+    /^#{1,6}\s+\S/m,
+    // Two or more list items, since a single leading dash is just a dash
+    /^[-*+]\s+\S[\s\S]*^[-*+]\s+\S/m,
+    /^\d+[.)]\s+\S[\s\S]*^\d+[.)]\s+\S/m,
+    // Emphasis, requiring a closing pair on the same line
+    /\*\*[^*\n]+\*\*/,
+    /(?:^|\s)_[^_\n]+_(?:$|\s)/m,
+    // Inline code
+    /`[^`\n]+`/,
+    // A quote line
+    /^>\s+\S/m,
+  ].filter((pattern) => pattern.test(source)).length;
+
+  return weak >= 2;
+}

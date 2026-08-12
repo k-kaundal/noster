@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BadgeCheck,
   Eye,
@@ -151,6 +151,19 @@ interface LocalDraft {
 function Editor() {
   const { user } = useCurrentUser();
   const [params] = useSearchParams();
+  const location = useLocation();
+
+  /**
+   * Text handed over from the note composer.
+   *
+   * Arrives in router state rather than the URL, so a half-written article
+   * does not end up in the address bar, the history, or a shared link.
+   */
+  const handedOver =
+    typeof (location.state as { body?: unknown } | null)?.body === 'string'
+      ? ((location.state as { body: string }).body)
+      : undefined;
+
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -208,6 +221,28 @@ function Editor() {
 
   const [restored, setRestored] = useState(false);
   const dismissedRestore = useRef(false);
+
+  /**
+   * Fills the body from the composer, once.
+   *
+   * Guarded on the ref rather than on `content` being empty: without that,
+   * clearing the box to start again would immediately paste the handed-over
+   * text back in.
+   */
+  const seeded = useRef(false);
+
+  useEffect(() => {
+    if (seeded.current || !handedOver || editingSlug) return;
+
+    seeded.current = true;
+    setContent(handedOver);
+
+    /**
+     * Dropped from history so a refresh or a back-and-forward does not
+     * re-seed an article the author has since rewritten.
+     */
+    navigate(location.pathname, { replace: true, state: null });
+  }, [handedOver, editingSlug, navigate, location.pathname]);
 
   // Fill the form once the article being edited arrives, and only once —
   // refetches must not overwrite what is being typed
