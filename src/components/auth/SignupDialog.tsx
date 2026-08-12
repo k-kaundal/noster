@@ -2,6 +2,7 @@
 // It is important that all functionality in this file is preserved, and should only be modified if explicitly requested.
 
 import React, { useState, useEffect, useRef } from 'react';
+import { saveFile } from '@/lib/saveFile';
 import { Download, Key, UserPlus, FileText, Shield, User, Sparkles, LogIn, Lock, CheckCircle, Copy, Upload, Globe, FileSignature, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -76,41 +77,39 @@ const SignupDialog: React.FC<SignupDialogProps> = ({ isOpen, onClose, onComplete
     }, 2000);
   };
 
-  const downloadKey = () => {
-    try {
-      // Create a blob with the key text
-      const blob = new Blob([nsec], { type: 'text/plain; charset=utf-8' });
-      const url = globalThis.URL.createObjectURL(blob);
+  /**
+   * Hands the key over as a file, and only claims success when it happened.
+   *
+   * The old version built an `<a download>` and marked the key secured
+   * immediately afterwards. In a WebView — an installed iOS PWA, say — that
+   * click does nothing and throws nothing, so somebody saw "Secret Key Saved!"
+   * and closed the dialog with no key anywhere. For a signup flow that is the
+   * entire account.
+   */
+  const downloadKey = async () => {
+    const outcome = await saveFile(nsec, sanitizeFilename('secret-key.txt'));
 
-      // Sanitize filename
-      const filename = sanitizeFilename('secret-key.txt');
-
-      // Create a temporary link element and trigger download
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-
-      // Clean up immediately
-      globalThis.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      // Mark as secured
+    if (outcome === 'saved' || outcome === 'shared') {
       setKeySecured('downloaded');
 
       toast({
-        title: 'Secret Key Saved!',
-        description: 'Your key has been safely stored.',
+        title: 'Secret key saved',
+        description:
+          outcome === 'shared'
+            ? 'Keep it somewhere only you can reach.'
+            : 'Check your downloads folder.',
       });
-    } catch {
-      toast({
-        title: 'Download failed',
-        description: 'Could not download the key file. Please copy it manually.',
-        variant: 'destructive',
-      });
+      return;
     }
+
+    // Cancelled is not a failure, and nothing was saved either way
+    if (outcome === 'cancelled') return;
+
+    toast({
+      title: 'This device cannot save files',
+      description: 'Copy the key instead — the button below puts it on your clipboard.',
+      variant: 'destructive',
+    });
   };
 
   const copyKey = () => {
