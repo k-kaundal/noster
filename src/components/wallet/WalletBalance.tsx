@@ -1,4 +1,5 @@
 import { Coins, Zap } from 'lucide-react';
+import { FiatValue } from '@/components/FiatValue';
 import { Skeleton } from '@/components/ui/skeleton';
 import { combineBalance } from '@/lib/walletTransaction';
 import { cn } from '@/lib/utils';
@@ -36,12 +37,15 @@ export function WalletBalance({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <p className="text-5xl font-bold tracking-tight tabular-nums">
-        {balance.total.toLocaleString()}
-        <span className="ml-3 text-lg font-normal text-muted-foreground">
-          sats
-        </span>
-      </p>
+      <div>
+        <p className="text-5xl font-bold tracking-tight tabular-nums">
+          {balance.total.toLocaleString()}
+          <span className="ml-3 text-lg font-normal text-muted-foreground">
+            sats
+          </span>
+        </p>
+        <FiatValue sats={balance.total} className="mt-1 block text-sm" />
+      </div>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
         <span className="flex items-center gap-1.5">

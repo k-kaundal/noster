@@ -32,6 +32,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { QrCode } from '@/components/wallet/QrCode';
+import { FiatValue } from '@/components/FiatValue';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -293,6 +294,11 @@ function ZapFlow({
             sats
           </span>
         </div>
+        {/*
+          The amount in money the sender thinks in, before they commit to it.
+          Five thousand sats is a number; a currency figure is a decision.
+        */}
+        {valid && <FiatValue sats={sats} className="mt-1.5 block text-xs" />}
       </div>
 
       <div>
@@ -384,6 +390,7 @@ function PayStep({
           <p className="text-2xl font-bold tabular text-primary">
             {formatSats(invoice.amountSats)}
           </p>
+          <FiatValue sats={invoice.amountSats} className="block text-xs" />
         </div>
       </div>
 

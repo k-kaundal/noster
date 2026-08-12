@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FiatValue } from '@/components/FiatValue';
 import { Label } from '@/components/ui/label';
 import { QrCode } from '@/components/wallet/QrCode';
 import { useInvoiceStatus, useLnbitsWallet } from '@/hooks/useLnbitsWallet';
@@ -221,6 +222,9 @@ export function ReceiveDialog({
                 inputMode="numeric"
                 className="text-xl font-bold tabular-nums"
               />
+              {validAmount && (
+                <FiatValue sats={sats} className="block text-xs" />
+              )}
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {PRESETS.map((preset) => (
                   <Button

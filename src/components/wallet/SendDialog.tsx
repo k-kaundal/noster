@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FiatValue } from '@/components/FiatValue';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
@@ -126,6 +127,7 @@ export function SendDialog({ open, onOpenChange, balanceSats }: SendDialogProps)
                 inputMode="numeric"
                 className="text-xl font-bold tabular-nums"
               />
+              {sats > 0 && <FiatValue sats={sats} className="block text-xs" />}
             </div>
           )}
 
@@ -148,8 +150,11 @@ export function SendDialog({ open, onOpenChange, balanceSats }: SendDialogProps)
               <Wallet className="h-4 w-4 text-muted-foreground" />
               Balance
             </span>
-            <span className="tabular-nums font-semibold">
-              {balanceSats.toLocaleString()} sats
+            <span className="text-right">
+              <span className="block tabular-nums font-semibold">
+                {balanceSats.toLocaleString()} sats
+              </span>
+              <FiatValue sats={balanceSats} className="block text-xs" />
             </span>
           </div>
 
