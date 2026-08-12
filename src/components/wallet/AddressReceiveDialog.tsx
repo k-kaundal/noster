@@ -24,9 +24,8 @@ import { lightningAddressUrl } from '@/lib/zapRequest';
  * An invoice for money to arrive at one of somebody's addresses.
  *
  * Asked of the address itself over LNURL-pay rather than of whichever backend
- * issued it, which is what makes one dialog enough: the LNbits addresses, the
- * getzap ones and anything linked from elsewhere all answer the same two
- * requests. It also means the invoice comes from the machine that will
+ * issued it, which is what makes one dialog enough: the LNbits addresses and
+ * anything linked from elsewhere all answer the same two requests. It also means the invoice comes from the machine that will
  * actually be paid, so it cannot disagree with where the money lands.
  *
  * Handing somebody an address is already enough to be paid. This is for the

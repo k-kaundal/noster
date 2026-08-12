@@ -109,11 +109,7 @@ export function describeIdentity(snapshot: IdentitySnapshot): IdentityStatus {
    * An address on the profile that is none of ours.
    *
    * Recognised by domain as well as by the list of what this app issued,
-   * because the list costs network and the domain does not. Knowing whether
-   * `kk@getzap.me` is ours required asking the wallet service, which meant
-   * every screen that reads identity — the composer included — signing a
-   * request to it merely to decide whether to show a nag. The domain answers
-   * the same question for free.
+   * because the list costs network and the domain does not.
    */
   const external =
     profileLud16 &&

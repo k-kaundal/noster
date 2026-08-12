@@ -2,12 +2,8 @@
  * Lightning addresses (LUD-16) issued to our users by the LNbits `lnurlp`
  * extension.
  *
- * These are the `@ln.nostrfeed.com` ones, and they are a different product
- * from the `@getzap.me` addresses in `lawallet.ts` — different issuer,
- * different backend, different rules. Both are real, both belong to the same
- * person, and the app shows both; what it must never do is print one domain
- * over the other's name, because an address that reads right and resolves
- * nowhere is worse than no address at all.
+ * These are the `@ln.nostrfeed.com` ones, and since the outside wallet service
+ * was dropped they are the only addresses this app issues.
  *
  * Still configurable, and still not derived from the LNbits host: serving
  * these under a nicer domain only needs that domain to proxy

@@ -9,13 +9,11 @@ import {
   ringFor,
 } from './avatarRing';
 import { ADDRESS_DOMAIN } from './lightningAddress';
-import { LAWALLET_DOMAIN } from './lawallet';
 
 /** An address of each tier, built from the domains `tierOf` actually reads. */
 /** `u` + 12 hex characters is the shape `isGeneratedName` recognises. */
 const FREE = `u0123456789ab@${ADDRESS_DOMAIN}`;
 const NAMED = `alice@${ADDRESS_DOMAIN}`;
-const PORTABLE = `alice@${LAWALLET_DOMAIN}`;
 const FOREIGN = 'alice@getalby.com';
 
 describe('canWear', () => {
@@ -29,13 +27,11 @@ describe('canWear', () => {
   it('gates the paid ones', () => {
     expect(canWear(style('orbit'), 'assigned')).toBe(false);
     expect(canWear(style('orbit'), 'named')).toBe(true);
-    expect(canWear(style('orbit'), 'portable')).toBe(true);
   });
 
-  it('reserves the top ring for the top tier', () => {
+  it('reserves the best rings for the bought tier', () => {
     expect(canWear(style('prism'), 'assigned')).toBe(false);
-    expect(canWear(style('prism'), 'named')).toBe(false);
-    expect(canWear(style('prism'), 'portable')).toBe(true);
+    expect(canWear(style('prism'), 'named')).toBe(true);
   });
 });
 
@@ -55,7 +51,7 @@ describe('readRingChoice', () => {
 describe('ringFor', () => {
   it('draws a ring the profile has earned', () => {
     expect(ringFor({ lud16: NAMED, [RING_FIELD]: 'orbit' })?.id).toBe('orbit');
-    expect(ringFor({ lud16: PORTABLE, [RING_FIELD]: 'prism' })?.id).toBe('prism');
+    expect(ringFor({ lud16: NAMED, [RING_FIELD]: 'prism' })?.id).toBe('prism');
   });
 
   it('refuses one it has not', () => {
@@ -65,8 +61,8 @@ describe('ringFor', () => {
      * hold gets you nothing on anybody's screen, including your own.
      */
     expect(ringFor({ lud16: FREE, [RING_FIELD]: 'prism' })).toBeNull();
-    expect(ringFor({ lud16: NAMED, [RING_FIELD]: 'prism' })).toBeNull();
     expect(ringFor({ lud16: FREE, [RING_FIELD]: 'orbit' })).toBeNull();
+    expect(ringFor({ lud16: FOREIGN, [RING_FIELD]: 'prism' })).toBeNull();
   });
 
   it('still allows the unrestricted ones without any address', () => {
@@ -80,8 +76,8 @@ describe('ringFor', () => {
   });
 
   it('draws nothing for none, or for junk', () => {
-    expect(ringFor({ lud16: PORTABLE, [RING_FIELD]: 'none' })).toBeNull();
-    expect(ringFor({ lud16: PORTABLE, [RING_FIELD]: 'nonsense' })).toBeNull();
+    expect(ringFor({ lud16: NAMED, [RING_FIELD]: 'none' })).toBeNull();
+    expect(ringFor({ lud16: NAMED, [RING_FIELD]: 'nonsense' })).toBeNull();
     expect(ringFor(undefined)).toBeNull();
   });
 
@@ -94,7 +90,7 @@ describe('ringFor', () => {
 
 describe('availableRings and lockedRings', () => {
   it('partition the catalogue with nothing lost or duplicated', () => {
-    for (const tier of [null, 'assigned', 'named', 'portable'] as const) {
+    for (const tier of [null, 'assigned', 'named'] as const) {
       const open = availableRings(tier);
       const shut = lockedRings(tier);
 
@@ -104,8 +100,8 @@ describe('availableRings and lockedRings', () => {
   });
 
   it('opens more as the tier rises', () => {
-    const counts = (['assigned', 'named', 'portable'] as const).map(
-      (tier) => availableRings(tier).length
+    const counts = [null, 'assigned', 'named'].map(
+      (tier) => availableRings(tier as 'assigned' | 'named' | null).length
     );
 
     expect(counts[0]).toBeLessThan(counts[1]);
@@ -113,6 +109,6 @@ describe('availableRings and lockedRings', () => {
   });
 
   it('leaves the top tier nothing locked', () => {
-    expect(lockedRings('portable')).toEqual([]);
+    expect(lockedRings('named')).toEqual([]);
   });
 });

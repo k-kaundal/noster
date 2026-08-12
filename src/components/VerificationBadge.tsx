@@ -1,4 +1,4 @@
-import { BadgeCheck, Sparkles, Zap } from 'lucide-react';
+import { BadgeCheck, Zap } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -15,15 +15,11 @@ import { describeTier, type NameTier } from '@/lib/tiers';
  * on the wallet page. A ✓ that appears next to two different things has told
  * the reader nothing.
  *
- * The free tier gets a mark too. It is the quietest of the three and it is
- * still a real statement: this person can be paid, which on most Nostr clients
- * a new account cannot.
+ * The free tier gets a mark too. It is the quieter of the two and it is still
+ * a real statement: this person can be paid, which on most Nostr clients a new
+ * account cannot.
  */
 const STYLES: Record<NameTier, { className: string; ring: string }> = {
-  portable: {
-    className: 'text-amber-600 dark:text-amber-400',
-    ring: 'bg-amber-500/15',
-  },
   named: {
     className: 'text-success',
     ring: 'bg-success/15',
@@ -35,7 +31,6 @@ const STYLES: Record<NameTier, { className: string; ring: string }> = {
 };
 
 const MARKS = {
-  star: Sparkles,
   check: BadgeCheck,
   dot: Zap,
 } as const;
