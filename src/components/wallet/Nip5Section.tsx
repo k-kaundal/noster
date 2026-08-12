@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   BadgeCheck,
   Check,
@@ -6,6 +6,7 @@ import {
   Copy,
   ExternalLink,
   Loader2,
+  Plus,
   Search,
   Zap,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import {
   type PendingNip5,
 } from '@/hooks/useNip5';
 import { QrCode } from '@/components/wallet/QrCode';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
 import {
@@ -37,6 +39,8 @@ import {
   describePrice,
   formatNip5,
   expiresAt,
+  nip5Host,
+  nip5Identifier,
   nip5State,
   isZappable,
   lnAddressConfig,
@@ -79,27 +83,90 @@ export function Nip5Section() {
         <div className="flex h-6 w-6 items-center justify-center rounded bg-success/10">
           <BadgeCheck className="h-3.5 w-3.5 text-success" />
         </div>
-        <h3 className="text-sm font-semibold">Verified name</h3>
+        <h3 className="text-sm font-semibold">
+          {nip5.addresses.length > 1 ? 'Verified names' : 'Verified name'}
+        </h3>
       </div>
 
-      {nip5.address ? <OwnedName /> : <BuyName />}
+      {nip5.addresses.length ? <OwnedNames /> : <BuyName />}
     </div>
   );
 }
 
-function OwnedName() {
-  // Publishing to the profile is deliberately not here: the identity card
-  // above owns it, and writes the name and the lightning address in one event
-  const { address, identifier, matchesCurrentKey } = useNip5();
-  const { toast } = useToast();
+/**
+ * Every name somebody holds, and the offer to buy another.
+ *
+ * This showed one name and then hid the shop, which made the first purchase
+ * the last one: an account can hold as many names as it pays for, on any of
+ * the domains on offer, and there was no way to reach a second. Names are also
+ * not interchangeable — each has its own expiry, its own wallet, and only one
+ * of them can be the one that verifies the key — so they are listed rather
+ * than summarised.
+ */
+function OwnedNames() {
+  const { addresses } = useNip5();
+  const [buying, setBuying] = useState(false);
 
-  if (!address || !identifier) return null;
-
-  const zappable = isZappable(address);
+  const done = useCallback(() => setBuying(false), []);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 rounded-xl border bg-gradient-to-br from-success/5 to-transparent p-4 transition-all hover:border-success/40">
+      <div className="space-y-3">
+        {addresses.map((address) => (
+          <OwnedName key={address.id} address={address} />
+        ))}
+      </div>
+
+      {buying ? (
+        <div className="space-y-3 rounded-xl border border-dashed p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium">Another name</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setBuying(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+          {/* No pitch: they have already bought one, so explaining what a
+              verified name is reads as not knowing who they are */}
+          <BuyName pitch={false} onBought={done} />
+        </div>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => setBuying(true)}
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Buy another name
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function OwnedName({ address }: { address: Nip5Address }) {
+  const { user } = useCurrentUser();
+  const { profileIdentifier, publishToProfile, isPublishing } = useNip5();
+  const { toast } = useToast();
+
+  const identifier = nip5Identifier(address);
+  if (!identifier) return null;
+
+  const zappable = isZappable(address);
+  const matchesCurrentKey = !user || address.pubkey === user.pubkey;
+  // Compared case-insensitively: a profile written by another client can carry
+  // the same name in a different case, and it verifies just the same
+  const onProfile =
+    profileIdentifier?.trim().toLowerCase() === identifier.toLowerCase();
+
+  return (
+    <div className="space-y-3 rounded-xl border p-4">
+      <div className="flex items-center gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
             Reserved
@@ -126,6 +193,32 @@ function OwnedName() {
           </Button>
         </div>
       </div>
+
+      {/*
+        Which one of them wears the ✓. A profile holds a single `nip05`, so
+        holding three names is holding three names and choosing one — and
+        without this the choice belongs to whichever the extension listed
+        first, which is not a choice anybody made.
+      */}
+      {matchesCurrentKey &&
+        nip5State(address) !== 'inactive' &&
+        (onProfile ? (
+          <p className="flex items-center gap-1.5 text-xs text-success-strong">
+            <Check className="h-3.5 w-3.5" />
+            This is the name on your profile.
+          </p>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={isPublishing}
+            onClick={() => void publishToProfile(address).catch(() => {})}
+          >
+            {isPublishing && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            Use this one for my ✓
+          </Button>
+        ))}
 
       <LapseWarning address={address} zappable={zappable} />
 
@@ -210,13 +303,16 @@ function LightningDestination({
       {wallets.length > 1 && (
         <div className="space-y-1.5">
           <Label
-            htmlFor="nip5-wallet"
+            htmlFor={`nip5-wallet-${address.id}`}
             className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
           >
             Pays into
           </Label>
           <Select value={walletId} onValueChange={setPicked}>
-            <SelectTrigger id="nip5-wallet" className="bg-background">
+            <SelectTrigger
+              id={`nip5-wallet-${address.id}`}
+              className="bg-background"
+            >
               <SelectValue placeholder="Choose a wallet" />
             </SelectTrigger>
             <SelectContent>
@@ -267,7 +363,7 @@ function LightningDestination({
 function UnpaidName({ address }: { address: Nip5Address }) {
   const { claim, isClaiming, pay, isPaying } = useNip5();
   const [pending, setPending] = useState<PendingNip5 | null>(null);
-  const paid = useNip5Payment(pending?.paymentHash);
+  const paid = useNip5Payment(pending?.paymentHash, pending?.domainId);
 
   if (nip5State(address) !== 'inactive') return null;
 
@@ -288,7 +384,7 @@ function UnpaidName({ address }: { address: Nip5Address }) {
   return (
     <div className="space-y-3 rounded-lg border border-warning/30 bg-warning/8 p-4">
       <p className="text-sm text-warning-strong">
-        {formatNip5(address.local_part)} is reserved for you and not live yet.
+        {nip5Identifier(address)} is reserved for you and not live yet.
         {sats ? ` It costs ${sats.toLocaleString()} sats.` : ''} Nobody else can
         take it in the meantime.
       </p>
@@ -298,7 +394,13 @@ function UnpaidName({ address }: { address: Nip5Address }) {
         className="w-full"
         disabled={isClaiming}
         onClick={() =>
-          void claim({ localPart: address.local_part, years })
+          void claim({
+            localPart: address.local_part,
+            years,
+            // The domain it was reserved under, not the default one — asking
+            // the wrong domain reserves a second name somewhere else
+            domainId: address.domain_id,
+          })
             .then((result) => {
               if (result.bolt11) setPending(result);
             })
@@ -357,8 +459,8 @@ function LapseWarning({
     >
       <p className={gone ? 'text-destructive' : 'text-warning-strong'}>
         {gone
-          ? `${formatNip5(address.local_part)} has expired.`
-          : `${formatNip5(address.local_part)} runs out in ${days} ${
+          ? `${nip5Identifier(address)} has expired.`
+          : `${nip5Identifier(address)} runs out in ${days} ${
               days === 1 ? 'day' : 'days'
             }.`}{' '}
         {zappable
@@ -402,8 +504,15 @@ function ExpiryBadge({ address }: { address: Nip5Address }) {
   return null;
 }
 
-function BuyName() {
-  const { domain, claim, isClaiming, pay, isPaying, suggestedFrom } = useNip5();
+function BuyName({
+  pitch = true,
+  onBought,
+}: {
+  pitch?: boolean;
+  /** Called once the name is live, so a caller showing this can put it away. */
+  onBought?: () => void;
+}) {
+  const { domains, claim, isClaiming, pay, isPaying, suggestedFrom } = useNip5();
 
   const [localPart, setLocalPart] = useState(() =>
     normalizeLocalPart(suggestedFrom)
@@ -411,12 +520,31 @@ function BuyName() {
   const [years, setYears] = useState(1);
   const [promoCode, setPromoCode] = useState('');
   const [pending, setPending] = useState<PendingNip5 | null>(null);
+  /**
+   * Which domain to buy under.
+   *
+   * A name is the pair, not the local part: `alice` on one domain and `alice`
+   * on another are two different names, priced separately, and either can be
+   * taken while the other is free.
+   */
+  const [domainId, setDomainId] = useState(() => domains[0]?.id ?? '');
   // Availability stays hidden until the field is used, so a prefilled
   // suggestion doesn't greet you with a validation error
   const [touched, setTouched] = useState(false);
 
-  const search = useNip5Search(localPart, years);
-  const paid = useNip5Payment(pending?.paymentHash);
+  const domain = nip5Host(domainId);
+
+  const search = useNip5Search(localPart, years, domainId);
+  const paid = useNip5Payment(pending?.paymentHash, pending?.domainId);
+
+  // The name appears in the list above the moment it settles, so leaving the
+  // form open underneath it invites somebody to buy the same thing twice
+  const settled = paid.data === true;
+  useEffect(() => {
+    if (!settled) return;
+    setPending(null);
+    onBought?.();
+  }, [settled, onBought]);
 
   const problem = validateLocalPart(localPart);
   const available = search.data?.available === true;
@@ -443,17 +571,19 @@ function BuyName() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg bg-gradient-to-br from-success/8 to-success/5 p-3 dark:from-success/10 dark:to-success/5">
-        <p className="text-sm text-foreground">
-          A verified name shows a <span className="inline font-mono">✓</span> on your posts. Rented by the year.
-        </p>
-      </div>
+      {pitch && (
+        <div className="rounded-lg bg-gradient-to-br from-success/8 to-success/5 p-3 dark:from-success/10 dark:to-success/5">
+          <p className="text-sm text-foreground">
+            A verified name shows a <span className="inline font-mono">✓</span> on your posts. Rented by the year.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-3">
         <Label htmlFor="nip5-name" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Your name
         </Label>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Input
             id="nip5-name"
             value={localPart}
@@ -466,9 +596,31 @@ function BuyName() {
             aria-invalid={!!localPart && !!problem}
             className="max-w-[10rem] transition-all"
           />
-          <span className="flex-1 truncate text-sm font-medium text-foreground">
-            @{domain}
-          </span>
+
+          {/* A picker only when there is something to pick. One domain is not
+              a choice, and it reads better as part of the name than as a
+              control that does nothing. */}
+          {domains.length > 1 ? (
+            <Select value={domainId} onValueChange={setDomainId}>
+              <SelectTrigger
+                className="w-auto min-w-[9rem] flex-1"
+                aria-label="Domain"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {domains.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    @{entry.domain}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <span className="flex-1 truncate text-sm font-medium text-foreground">
+              @{domain}
+            </span>
+          )}
 
           {options.length > 1 && (
             <Select
@@ -532,7 +684,12 @@ function BuyName() {
       <Button
         onClick={async () => {
           try {
-            const result = await claim({ localPart, years, promoCode });
+            const result = await claim({
+              localPart,
+              years,
+              domainId,
+              promoCode,
+            });
             // A free name comes back with no invoice — it is already reserved,
             // and a payment screen for nothing would strand the person
             if (result.bolt11) setPending(result);
@@ -622,7 +779,7 @@ function PendingPayment({
       <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
         <p className="font-medium text-sm">
           {pending.address?.local_part
-            ? `${formatNip5(pending.address.local_part)} is reserved`
+            ? `${nip5Identifier(pending.address)} is reserved`
             : 'Your name is reserved'}
         </p>
         <p className="text-xs text-muted-foreground mt-1">

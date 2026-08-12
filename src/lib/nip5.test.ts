@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  NIP5_DOMAIN,
   buildLnAddressBody,
   daysUntilExpiry,
   describePrice,
@@ -7,8 +8,10 @@ import {
   formatNip5,
   isZappable,
   lnAddressConfig,
+  nip5Identifier,
   nip5State,
   nip5WellKnownUrl,
+  parseNip5Domains,
   normalizeLocalPart,
   normalizePromoCode,
   promoOutcome,
@@ -330,5 +333,67 @@ describe('isZappable', () => {
     expect(isZappable({ extra: { ln_address: { wallet: 'w1' } } })).toBe(true);
     expect(isZappable({ extra: { ln_address: { wallet: '' } } })).toBe(false);
     expect(isZappable(undefined)).toBe(false);
+  });
+});
+
+describe('parseNip5Domains', () => {
+  it('reads id and hostname pairs', () => {
+    expect(parseNip5Domains('abc123:nostrfeed.com, def456:zap.example')).toEqual([
+      { id: 'abc123', domain: 'nostrfeed.com' },
+      { id: 'def456', domain: 'zap.example' },
+    ]);
+  });
+
+  it('reads a pair written the other way round', () => {
+    // The half with a dot is the hostname; a domain id never has one
+    expect(parseNip5Domains('nostrfeed.com:abc123')).toEqual([
+      { id: 'abc123', domain: 'nostrfeed.com' },
+    ]);
+  });
+
+  it('accepts either separator, and whitespace between entries', () => {
+    expect(parseNip5Domains('a1=one.example  b2:two.example')).toEqual([
+      { id: 'a1', domain: 'one.example' },
+      { id: 'b2', domain: 'two.example' },
+    ]);
+  });
+
+  it('lower-cases the hostname, which is compared against profile fields', () => {
+    expect(parseNip5Domains('a1:NostrFeed.com')[0].domain).toBe('nostrfeed.com');
+  });
+
+  it('drops an entry missing either half', () => {
+    // An id alone cannot be named on screen and a hostname alone cannot be
+    // queried, so neither is a domain we can sell under
+    expect(parseNip5Domains('abc123')).toEqual([]);
+    expect(parseNip5Domains('one.example')).toEqual([]);
+    expect(parseNip5Domains('')).toEqual([]);
+    expect(parseNip5Domains(undefined)).toEqual([]);
+  });
+
+  it('keeps the first of a repeated id, so ordering cannot be hijacked', () => {
+    expect(parseNip5Domains('a1:one.example,a1:two.example')).toEqual([
+      { id: 'a1', domain: 'one.example' },
+    ]);
+  });
+});
+
+describe('nip5Identifier', () => {
+  /**
+   * The domain a name is bought under is the domain it has to be named at: a
+   * `nip05` pointing at the wrong host fails verification silently, so the ✓
+   * simply never appears. Which host each id maps to comes from configuration,
+   * so that half is covered by `parseNip5Domains` above — these cover what
+   * happens either side of a successful lookup.
+   */
+  it('falls back to the default domain for an unknown one', () => {
+    expect(nip5Identifier({ local_part: 'alice', domain_id: 'nope' })).toBe(
+      `alice@${NIP5_DOMAIN}`
+    );
+  });
+
+  it('has nothing to say about a missing address', () => {
+    expect(nip5Identifier(null)).toBeNull();
+    expect(nip5Identifier(undefined)).toBeNull();
   });
 });

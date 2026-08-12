@@ -116,14 +116,32 @@ different things and the extension only does both when asked.
 ## Configuration
 
 ```
-VITE_NIP5_DOMAIN_ID=   # the domain's id in the nostrnip5 extension
+VITE_NIP5_DOMAIN_ID=   # the first domain's id in the nostrnip5 extension
 VITE_NIP5_DOMAIN=      # defaults to VITE_LIGHTNING_ADDRESS_DOMAIN
+VITE_NIP5_DOMAINS=     # any others, as `id:hostname` pairs
 ```
 
-The id has to be configured because there is no public endpoint that lists
-domains — `GET /nostrnip5/api/v1/domains` wants an admin API key, and this app
-is a static bundle with nowhere to hide one. Take the id from the URL of the
-domain's page in the extension.
+Both halves have to be configured because neither can be discovered.
+`GET /nostrnip5/api/v1/domains` and `GET /nostrnip5/api/v1/domain/{id}` both
+want a wallet key — and a visitor's own key answers for their account, not the
+operator's, so it would list nothing. The one public route, `search`, returns
+the local part alone with no hostname in the reply. Take the id from the URL of
+the domain's page in the extension.
+
+Several domains are written as pairs, separated by commas or spaces:
+
+```
+VITE_NIP5_DOMAINS=1f3c…:nostrfeed.com, 9ab2…:zap.example
+```
+
+Either order works — the half with a dot in it is read as the hostname. The
+first domain is the default: it is what the buy form opens on, and what a name
+falls back to reading as. The rest are offered in a picker, and every one of
+them needs its own `/.well-known/nostr.json` proxy rule (below) pointing at
+**that** domain's id.
+
+A user may hold names on any number of these, and several on one domain. Only
+one of them can go in the profile's `nip05` — the card lets them pick which.
 
 **Left blank, the whole card is hidden.** So is it when the extension answers
 404, which is what an instance without `nostrnip5` installed does to every route
@@ -157,6 +175,8 @@ lookup fails in every web client while working fine in curl.
 - [ ] That domain's cost config set (free names, per-character prices, max years)
 - [ ] `/.well-known/nostr.json` proxied, with CORS
 - [ ] `VITE_NIP5_DOMAIN` set if it differs from the lightning address domain
+- [ ] Any further domains in `VITE_NIP5_DOMAINS`, each with its own cost config
+      and its own proxy rule
 
 Verify by fetching `https://<domain>/.well-known/nostr.json?name=<name>` and
 checking the `names` object maps the name to the right hex pubkey.

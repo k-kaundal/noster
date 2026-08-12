@@ -21,29 +21,113 @@
  */
 import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
 
-/**
- * The domain to sell names under, as the extension's own id for it.
- *
- * There is no public endpoint that lists domains — `GET /nostrnip5/api/v1/domains`
- * wants an admin API key — so the id has to be configuration. Left unset, the
- * whole feature stays hidden rather than offering a name it cannot deliver.
- */
-export const NIP5_DOMAIN_ID = (import.meta.env.VITE_NIP5_DOMAIN_ID || '').trim();
+/** One domain names can be bought under: the extension's id, and the hostname. */
+export interface Nip5Domain {
+  /** The extension's own id, which every request is addressed to. */
+  id: string;
+  /** What the name reads as, and where clients look for the well-known file. */
+  domain: string;
+}
 
 /**
- * The domain those names read as.
+ * Reads the configured domains.
  *
- * Also configuration, for the same reason: the id above is a UUID, and nothing
- * we can read without an admin key maps it back to a hostname. Defaults to the
- * lightning address domain, which is right whenever the operator sells both
- * under one name.
+ * Both halves have to be configured because neither can be discovered: the
+ * extension lists domains behind a wallet key that answers for the operator's
+ * account rather than the visitor's, and its search endpoint — the one public
+ * route — returns the local part alone, with no hostname anywhere in the reply.
+ * So an id without a hostname is an id we cannot name on screen.
+ *
+ * Written as `id:hostname` pairs, and read either way round: the half with a
+ * dot in it is the hostname, since a domain id has none and a hostname always
+ * does. Ordering is kept, so the first entry stays the default.
  */
-export const NIP5_DOMAIN =
-  (import.meta.env.VITE_NIP5_DOMAIN || '').trim() || ADDRESS_DOMAIN;
+export function parseNip5Domains(value: string | undefined): Nip5Domain[] {
+  const domains: Nip5Domain[] = [];
+
+  for (const entry of (value || '').split(/[\s,]+/)) {
+    if (!entry) continue;
+
+    const parts = entry.split(/[:=]/).filter(Boolean);
+    if (parts.length < 2) continue;
+
+    const domain = parts.find((part) => part.includes('.'));
+    const id = parts.find((part) => part !== domain);
+    if (!domain || !id) continue;
+
+    // First one wins, so a repeat in the config cannot reorder the default
+    if (domains.some((existing) => existing.id === id)) continue;
+
+    domains.push({ id: id.trim(), domain: domain.trim().toLowerCase() });
+  }
+
+  return domains;
+}
+
+/**
+ * Every domain this deployment sells names under, best first.
+ *
+ * `VITE_NIP5_DOMAIN_ID` and `VITE_NIP5_DOMAIN` still name the first, so an
+ * existing deployment needs no change; `VITE_NIP5_DOMAINS` adds the rest. Left
+ * empty, the whole feature stays hidden rather than offering a name it cannot
+ * deliver.
+ */
+export const NIP5_DOMAINS: Nip5Domain[] = (() => {
+  const primaryId = (import.meta.env.VITE_NIP5_DOMAIN_ID || '').trim();
+  const primary: Nip5Domain[] = primaryId
+    ? [
+        {
+          id: primaryId,
+          domain:
+            (import.meta.env.VITE_NIP5_DOMAIN || '').trim().toLowerCase() ||
+            ADDRESS_DOMAIN,
+        },
+      ]
+    : [];
+
+  const rest = parseNip5Domains(import.meta.env.VITE_NIP5_DOMAINS).filter(
+    (entry) => entry.id !== primaryId
+  );
+
+  return [...primary, ...rest];
+})();
+
+/**
+ * The default domain, as an id and as a hostname.
+ *
+ * Kept as two plain exports because most of the app only ever needs to say
+ * "our domain" — a placeholder, a line of copy. Anything holding a real
+ * address should read that address's own domain instead, since a name bought
+ * under the second domain is a different name.
+ */
+export const NIP5_DOMAIN_ID = NIP5_DOMAINS[0]?.id ?? '';
+export const NIP5_DOMAIN = NIP5_DOMAINS[0]?.domain ?? ADDRESS_DOMAIN;
 
 /** Whether the operator has set up the extension for this deployment. */
 export function isNip5Configured(): boolean {
-  return !!NIP5_DOMAIN_ID;
+  return NIP5_DOMAINS.length > 0;
+}
+
+/** The configured domain with this id, when it is one of ours. */
+export function nip5DomainById(id: string | undefined): Nip5Domain | undefined {
+  return NIP5_DOMAINS.find((entry) => entry.id === id);
+}
+
+/**
+ * The hostname a domain id reads as.
+ *
+ * Falls back to the default rather than to the id itself: a UUID rendered
+ * where a hostname belongs looks like corrupted data, while the default is at
+ * worst the wrong one of our own names — and an address on an unconfigured
+ * domain is filtered out long before it reaches here.
+ */
+export function nip5Host(domainId: string | undefined): string {
+  return nip5DomainById(domainId)?.domain ?? NIP5_DOMAIN;
+}
+
+/** Whether a domain id is one this deployment sells under. */
+export function isOurNip5Domain(id: string | undefined): boolean {
+  return !!nip5DomainById(id);
 }
 
 /** How many years the extension will sell at once, absent a domain saying otherwise. */
@@ -172,6 +256,23 @@ export function normalizeLocalPart(input: string): string {
 /** The identifier as it goes into a profile's `nip05` field. */
 export function formatNip5(localPart: string, domain = NIP5_DOMAIN): string {
   return `${localPart}@${domain}`;
+}
+
+/**
+ * What a name someone holds actually reads as.
+ *
+ * Uses the address's own domain rather than the default one. With a single
+ * domain configured the two are always the same, which is exactly why this is
+ * worth having: the moment a second one exists, every place that formatted a
+ * name against the default started publishing the wrong hostname into people's
+ * profiles, and a `nip05` pointing at the wrong domain fails verification
+ * silently — the ✓ simply never appears.
+ */
+export function nip5Identifier(
+  address: Pick<Nip5Address, 'local_part' | 'domain_id'> | null | undefined
+): string | null {
+  if (!address?.local_part) return null;
+  return formatNip5(address.local_part, nip5Host(address.domain_id));
 }
 
 /** Where a client will check the identifier. */
