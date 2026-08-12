@@ -4,14 +4,19 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useToast } from '@/hooks/useToast';
 import { usePayAnyWallet } from '@/hooks/usePayAnyWallet';
 import {
+  forgetQuote,
   invoiceAmountSats,
+  isDuplicateInvoice,
   isExpectedDenial,
   isMissingUser,
+  isQuoteStale,
   unwrapList,
   LAWALLET_DOMAIN,
   laWalletRequest,
   mergeHeldAddresses,
   openSession,
+  recallQuote,
+  rememberQuote,
   requiresPayment,
   sessionLifetimeMs,
   type AddressMode,
@@ -296,13 +301,44 @@ export function useLaWallet() {
    * is the one number that must not be wrong.
    */
   const quoteName = async (username: string) => {
-    const invoice = await laWalletRequest<ServiceInvoice>('/api/invoices', {
-      method: 'POST',
-      body: { purpose: 'wallet-address', metadata: { username } },
-      signer: signer!,
+    const pubkey = user?.pubkey ?? '';
+    const held = recallQuote(pubkey, username);
+
+    const quote = (invoice: ServiceInvoice) => ({
+      invoice,
+      amountSats: invoiceAmountSats(invoice.pr),
     });
 
-    return { invoice, amountSats: invoiceAmountSats(invoice.pr) };
+    /**
+     * A recent invoice for this name is offered again rather than replaced.
+     *
+     * The service issues one invoice per name and then cannot issue another:
+     * its node hands back the same BOLT11, and the second row collides on the
+     * payment hash. So asking twice does not get a fresh bill, it gets a 500
+     * — and throws away the only payable copy of the first.
+     */
+    if (held && !isQuoteStale(held)) return quote(held.invoice);
+
+    try {
+      const invoice = await laWalletRequest<ServiceInvoice>('/api/invoices', {
+        method: 'POST',
+        body: { purpose: 'wallet-address', metadata: { username } },
+        signer: signer!,
+      });
+
+      rememberQuote(pubkey, username, invoice);
+      return quote(invoice);
+    } catch (error) {
+      if (!isDuplicateInvoice(error)) throw error;
+
+      // Old, but the service will not replace it, so it is the only one there
+      // is — better a bill that might have expired than no bill at all
+      if (held) return quote(held.invoice);
+
+      throw new Error(
+        `The service already issued an invoice for "${username}" and will not issue another until that one expires. That is a fault on their side — try again in about an hour, or pick a different name.`
+      );
+    }
   };
 
   const payForName = async (invoice: ServiceInvoice) => {
@@ -399,6 +435,9 @@ export function useLaWallet() {
       return await withUser(() => claimName(quote.username, quote.mode));
     },
     onSuccess: (created) => {
+      // Spent: keeping it would offer a settled invoice on the next attempt
+      forgetQuote(user?.pubkey ?? '', created.username);
+
       invalidate();
       toast({
         title: 'Address bought',

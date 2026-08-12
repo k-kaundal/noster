@@ -185,7 +185,17 @@ export class LaWalletError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string
+    readonly code?: string,
+    /**
+     * What the server actually said, when that differs from `message`.
+     *
+     * A 500 arrives carrying whatever leaked out of the layer that broke —
+     * this service has answered with a raw Prisma invocation dump — and that
+     * belongs nowhere near a toast. `message` is what a person is shown;
+     * `detail` is kept so code can still recognise the specific failure and
+     * so it survives into the console.
+     */
+    readonly detail?: string
   ) {
     super(message);
     this.name = 'LaWalletError';
@@ -214,6 +224,107 @@ export function isMissingUser(error: unknown): boolean {
     (error.code === 'NOT_FOUND' || error.code === 'AUTHENTICATION_ERROR') &&
     /user not found/i.test(error.message)
   );
+}
+
+/**
+ * Whether the service refused to issue an invoice because it already has one.
+ *
+ * The failure arrives as a 500 carrying an ORM message — a unique-constraint
+ * violation on `paymentHash` — which is the service trying to insert a second
+ * row for a BOLT11 its node handed back unchanged. Asking again produces the
+ * same collision, so this is not a retry case; it is a case for using the
+ * invoice already issued.
+ *
+ * Matched on the detail rather than the code, because the code is the generic
+ * `INTERNAL_SERVER_ERROR` that every unhandled failure carries.
+ */
+export function isDuplicateInvoice(error: unknown): boolean {
+  if (!(error instanceof LaWalletError)) return false;
+
+  const detail = error.detail ?? '';
+  return /unique constraint/i.test(detail) && /paymenthash/i.test(detail);
+}
+
+/**
+ * Invoices this browser has been issued, kept so they are not asked for twice.
+ *
+ * Written straight to storage rather than through `useLocalStorage`, for the
+ * reason `cashuStore` does the same: these are read and written inside
+ * mutations, where a state snapshot taken at mount is exactly the stale value
+ * that would lose one.
+ *
+ * Worth keeping at all because the service will not reissue. Once it has
+ * handed out an invoice for a name, a second request collides on the payment
+ * hash and fails — so a copy that was only ever held in memory becomes a bill
+ * that cannot be paid and a name that cannot be bought, for as long as the
+ * original takes to expire.
+ */
+const QUOTE_KEY = 'lawallet:quotes';
+
+export interface StoredQuote {
+  invoice: ServiceInvoice;
+  /** Epoch milliseconds, from this browser. */
+  issuedAt: number;
+}
+
+/**
+ * How long an unpaid invoice is offered again without asking for a new one.
+ *
+ * Well inside the hour BOLT11 invoices usually allow. Being early costs one
+ * request; being late offers somebody an invoice their wallet will reject as
+ * expired, which reads as the payment failing.
+ */
+export const QUOTE_FRESH_MS = 30 * 60_000;
+
+function quoteSlot(pubkey: string, username: string): string {
+  return `${pubkey}:${username.toLowerCase()}`;
+}
+
+function readQuotes(): Record<string, StoredQuote> {
+  try {
+    const raw = localStorage.getItem(QUOTE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeQuotes(quotes: Record<string, StoredQuote>): void {
+  try {
+    localStorage.setItem(QUOTE_KEY, JSON.stringify(quotes));
+  } catch {
+    // A full or blocked store costs a re-request, not correctness
+  }
+}
+
+export function rememberQuote(
+  pubkey: string,
+  username: string,
+  invoice: ServiceInvoice,
+  now = Date.now()
+): void {
+  const quotes = readQuotes();
+  quotes[quoteSlot(pubkey, username)] = { invoice, issuedAt: now };
+  writeQuotes(quotes);
+}
+
+export function recallQuote(
+  pubkey: string,
+  username: string
+): StoredQuote | null {
+  return readQuotes()[quoteSlot(pubkey, username)] ?? null;
+}
+
+export function forgetQuote(pubkey: string, username: string): void {
+  const quotes = readQuotes();
+  delete quotes[quoteSlot(pubkey, username)];
+  writeQuotes(quotes);
+}
+
+/** Whether a held invoice is old enough that it may no longer be payable. */
+export function isQuoteStale(quote: StoredQuote, now = Date.now()): boolean {
+  return now - quote.issuedAt > QUOTE_FRESH_MS;
 }
 
 /** A session token from `POST /api/jwt`, with what the service said about it. */
@@ -326,7 +437,10 @@ export function isExpectedDenial(error: unknown): boolean {
  * instead produces "[object Object]" in a toast, which is how an API with
  * perfectly good error messages ends up telling people nothing.
  */
-function describeError(body: unknown, status: number): { message: string; code?: string } {
+function describeError(
+  body: unknown,
+  status: number
+): { message: string; code?: string; detail?: string } {
   if (body && typeof body === 'object') {
     const error = (body as { error?: unknown }).error;
 
@@ -334,9 +448,29 @@ function describeError(body: unknown, status: number): { message: string; code?:
       const { message, code } = error as { message?: unknown; code?: unknown };
 
       if (typeof message === 'string' && message) {
+        /**
+         * A 500 is never something the reader can act on, and the text is
+         * whatever escaped the layer that broke. This one has answered with
+         * an ORM stack dump — "Invalid `prisma.invoice.create()` invocation:
+         * Unique constraint failed on the fields: (`paymentHash`)" — which is
+         * a database schema shown to somebody who was trying to buy a name.
+         *
+         * Kept as `detail` rather than dropped, so the specific failure is
+         * still recognisable in code and still readable in the console.
+         */
+        if (status >= 500) {
+          return {
+            message:
+              'The wallet service hit an error on its side. Nothing is wrong with what you entered.',
+            code: typeof code === 'string' ? code : undefined,
+            detail: message,
+          };
+        }
+
         return {
           message,
           code: typeof code === 'string' ? code : undefined,
+          detail: message,
         };
       }
     }
@@ -403,8 +537,8 @@ export async function laWalletRequest<T>(
   }
 
   if (!response.ok) {
-    const { message, code } = describeError(parsed, response.status);
-    throw new LaWalletError(message, response.status, code);
+    const { message, code, detail } = describeError(parsed, response.status);
+    throw new LaWalletError(message, response.status, code, detail);
   }
 
   return parsed as T;
