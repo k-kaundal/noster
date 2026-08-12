@@ -395,3 +395,145 @@
   }
 
 }
+
+/* ---------------------------------------------------------------------------
+   Animated avatar rings (see src/lib/avatarRing.ts)
+
+   Drawn on a pseudo-element rather than the avatar's own border, so the ring
+   can be thicker, blurred or rotating without moving the picture inside it.
+   Every one of these sits behind the avatar and is purely decorative.
+--------------------------------------------------------------------------- */
+
+.avatar-ring {
+  position: relative;
+  display: inline-flex;
+  border-radius: 9999px;
+}
+
+.avatar-ring::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.avatar-ring-pulse::before {
+  border: 2px solid hsl(var(--primary) / 0.55);
+  animation: avatar-ring-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes avatar-ring-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.045); }
+}
+
+.avatar-ring-glow::before {
+  border: 2px solid hsl(var(--primary) / 0.7);
+  box-shadow: 0 0 12px 2px hsl(var(--primary) / 0.45);
+  animation: avatar-ring-glow 3.2s ease-in-out infinite;
+}
+
+@keyframes avatar-ring-glow {
+  0%, 100% { box-shadow: 0 0 8px 1px hsl(var(--primary) / 0.35); }
+  50% { box-shadow: 0 0 16px 3px hsl(var(--primary) / 0.6); }
+}
+
+/*
+  A single travelling highlight. `conic-gradient` on a rotating element rather
+  than an animated gradient, because rotating a transform is compositor work
+  and animating gradient stops is not.
+*/
+.avatar-ring-orbit::before {
+  inset: -3px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 300deg,
+    hsl(var(--primary)) 350deg,
+    transparent 360deg
+  );
+  animation: avatar-ring-spin 2.6s linear infinite;
+}
+
+.avatar-ring-orbit::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 9999px;
+  background: hsl(var(--card));
+  z-index: -1;
+}
+
+.avatar-ring-aurora::before {
+  inset: -3px;
+  background: conic-gradient(
+    from 0deg,
+    hsl(var(--primary)),
+    hsl(280 85% 65%),
+    hsl(190 90% 60%),
+    hsl(var(--primary))
+  );
+  filter: blur(2px);
+  animation: avatar-ring-spin 7s linear infinite;
+}
+
+.avatar-ring-aurora::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 9999px;
+  background: hsl(var(--card));
+  z-index: -1;
+}
+
+.avatar-ring-prism::before {
+  inset: -3.5px;
+  background: conic-gradient(
+    from 0deg,
+    hsl(0 90% 62%),
+    hsl(45 95% 58%),
+    hsl(120 70% 50%),
+    hsl(190 90% 58%),
+    hsl(265 85% 65%),
+    hsl(320 85% 62%),
+    hsl(0 90% 62%)
+  );
+  animation: avatar-ring-spin 4.5s linear infinite;
+}
+
+.avatar-ring-prism::after {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 9999px;
+  background: hsl(var(--card));
+  z-index: -1;
+}
+
+@keyframes avatar-ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+/*
+  Reduced motion keeps the ring and stops the movement.
+  
+  The global rule below collapses every animation to 0.01ms, which for a
+  rotating conic gradient freezes it at whatever angle it started — still a
+  ring, just a static one. That is the right outcome: somebody who asked for
+  less motion asked for less motion, not for their decoration to disappear.
+  Spelled out here so a later change to the global rule cannot silently turn
+  these back on.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .avatar-ring::before,
+  .avatar-ring::after {
+    animation: none !important;
+  }
+
+  .avatar-ring-pulse::before {
+    opacity: 0.8;
+    transform: none;
+  }
+}

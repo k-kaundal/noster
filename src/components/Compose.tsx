@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BarChart3,
+  Eraser,
   Eye,
   FileText,
   Image,
@@ -19,7 +20,7 @@ import { useAuthor } from '@/hooks/useAuthor';
 import { useAccountStored } from '@/hooks/useStore';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
-import { looksLikeMarkdown } from '@/lib/markdown';
+import { looksLikeMarkdown, stripMarkdown } from '@/lib/markdown';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -126,6 +127,26 @@ export function Compose() {
    * regexes and the composer re-renders on every keystroke for other reasons.
    */
   const isMarkdown = useMemo(() => looksLikeMarkdown(content), [content]);
+
+  /**
+   * Takes the Markdown out and leaves the words.
+   *
+   * The text is replaced rather than reformatted on publish, so what the box
+   * shows is what gets posted — a cleanup that happened invisibly at send time
+   * would be a different note than the one they read back before pressing the
+   * button.
+   */
+  const cleanMarkdown = () => {
+    const cleaned = stripMarkdown(content);
+
+    if (cleaned === content) return;
+
+    setContent(cleaned);
+    toast({
+      title: 'Formatting removed',
+      description: 'Links and line breaks were kept.',
+    });
+  };
 
   /**
    * Hands what has been typed to the article editor.
@@ -377,21 +398,43 @@ export function Compose() {
             real.
           */}
           {isMarkdown && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed bg-muted/40 p-3">
-              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-                That looks like Markdown. A note posts it as plain text —
-                asterisks and all.
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="shrink-0"
-                onClick={() => openArticle(content)}
-              >
-                Continue as an article
-              </Button>
+            <div className="space-y-2.5 rounded-lg border border-dashed bg-muted/40 p-3">
+              <div className="flex items-start gap-2.5">
+                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+                  That looks like Markdown. A note posts it as plain text —
+                  asterisks and all.
+                </p>
+              </div>
+
+              {/*
+                Two ways out, because there are two things somebody meant. One
+                wanted the formatting, and belongs in an article; the other
+                pasted it from somewhere and just wants it gone.
+              */}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="flex-1 gap-1.5"
+                  onClick={() => openArticle(content)}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Write as article
+                </Button>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 gap-1.5"
+                  onClick={cleanMarkdown}
+                >
+                  <Eraser className="h-3.5 w-3.5" />
+                  Remove formatting
+                </Button>
+              </div>
             </div>
           )}
 

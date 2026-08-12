@@ -261,3 +261,83 @@ export function looksLikeMarkdown(text: string): boolean {
 
   return weak >= 2;
 }
+
+/**
+ * Rewrites Markdown as the plain text a note actually posts.
+ *
+ * Different from `markdownToText`, which flattens a whole article into one
+ * line for a search snippet. This one is for somebody who typed formatting
+ * into the note box and wants it gone: paragraphs, lists and line breaks all
+ * survive, because the result is the thing they are about to publish.
+ *
+ * Links are the part worth getting right. `[docs](https://example.com)` is two
+ * pieces of information, and dropping either loses something — the words
+ * without the address is a dead reference, the address without the words is a
+ * naked URL in the middle of a sentence. Both are kept, unless they say the
+ * same thing.
+ *
+ * Images become their URL alone, since that is what a Nostr client renders as
+ * an image; keeping the alt text would leave a stray word above the picture.
+ */
+export function stripMarkdown(source: string): string {
+  const lines = source.replace(/\r\n?/g, '\n').split('\n');
+  const out: string[] = [];
+
+  let inFence = false;
+
+  for (const line of lines) {
+    if (FENCE.test(line.trim())) {
+      // The fence markers go; what was inside them stays, exactly as typed
+      inFence = !inFence;
+      continue;
+    }
+
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+
+    let text = line;
+
+    // A rule is pure syntax — nothing of it survives as prose
+    if (RULE.test(text.trim())) continue;
+
+    text = text.replace(HEADING, '$2');
+    text = text.replace(QUOTE, '$1');
+    text = text.replace(UNORDERED, '- $1');
+
+    out.push(stripInline(text));
+  }
+
+  /**
+   * Blank runs left behind by removed rules and fences are collapsed, but a
+   * single blank line is kept: it is the paragraph break, and losing it would
+   * turn a structured note into a wall.
+   */
+  return out
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Inline syntax removed from one line. */
+function stripInline(line: string): string {
+  return (
+    line
+      // Images first: their URL is the content, so the alt text goes
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g, '$2')
+      /**
+       * Links keep both halves unless they are the same thing. Written as a
+       * callback rather than a replacement string so the two can be compared.
+       */
+      .replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, (_match, label: string, href: string) =>
+        label.trim() === href.trim() ? href : `${label} (${href})`
+      )
+      .replace(/\*\*\*([^*\n]+)\*\*\*/g, '$1')
+      .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+      .replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, '$1')
+      .replace(/(?<!\w)__([^_\n]+)__(?!\w)/g, '$1')
+      .replace(/(?<!\w)_([^_\n]+)_(?!\w)/g, '$1')
+      .replace(/`([^`\n]+)`/g, '$1')
+  );
+}

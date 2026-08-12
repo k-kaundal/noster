@@ -59,7 +59,15 @@ export function MarkdownToolbar({
   isUploading,
 }: MarkdownToolbarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-0.5 border-b px-2 py-1.5">
+    /*
+     * Sticks below the app header while the body scrolls.
+     *
+     * A toolbar pinned to the top of a 420px-minimum textarea is off screen
+     * by the second paragraph, which is precisely when somebody reaches for
+     * a heading. Opaque rather than translucent, so the text does not show
+     * through it as it passes underneath.
+     */
+    <div className="sticky top-[var(--header-height)] z-10 flex flex-wrap items-center gap-0.5 border-b bg-background px-2 py-1.5">
       {BUTTONS.map(({ action, icon: Icon, label, keys }) => (
         <Tooltip key={action}>
           <TooltipTrigger asChild>

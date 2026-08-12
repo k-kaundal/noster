@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BadgeCheck,
+  Columns2,
   Eye,
   FileText,
   ImagePlus,
@@ -573,6 +574,16 @@ function Editor() {
                 <Eye className="mr-1.5 h-3.5 w-3.5" />
                 Preview
               </TabsTrigger>
+
+              {/*
+                Only offered where there is room for two columns. A split view
+                on a phone is two cramped ones, and the tabs already do that
+                job better on a narrow screen.
+              */}
+              <TabsTrigger value="split" className="hidden lg:inline-flex">
+                <Columns2 className="mr-1.5 h-3.5 w-3.5" />
+                Split
+              </TabsTrigger>
             </TabsList>
 
             <span className="text-xs tabular-nums text-muted-foreground">
@@ -599,6 +610,33 @@ function Editor() {
                 Nothing to preview yet.
               </p>
             )}
+          </TabsContent>
+
+          {/*
+            Editor and result together, which is the thing a Markdown editor
+            is for: seeing that the heading you just typed is a heading,
+            without losing your place to a tab switch.
+          */}
+          <TabsContent value="split" className="m-0">
+            <div className="grid lg:grid-cols-2 lg:divide-x">
+              <BodyEditor
+                ref={bodyRef}
+                value={content}
+                onChange={setContent}
+                onInsertImage={insertImage}
+                isUploading={isUploading}
+              />
+
+              <div className="max-h-[70vh] overflow-y-auto p-5 scrollbar-thin">
+                {content.trim() ? (
+                  <Markdown source={content} />
+                ) : (
+                  <p className="py-12 text-center text-sm text-muted-foreground">
+                    The preview appears as you type.
+                  </p>
+                )}
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
       </Card>

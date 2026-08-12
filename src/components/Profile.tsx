@@ -27,6 +27,8 @@ import { genUserName } from '@/lib/genUserName';
 import { Post } from '@/components/Post';
 import { NoteContent } from '@/components/NoteContent';
 import { ReportNotice } from '@/components/ReportNotice';
+import { AvatarRing } from '@/components/AvatarRing';
+import { AvatarRingPicker } from '@/components/AvatarRingPicker';
 import { EmptyState } from '@/components/EmptyState';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { FollowButton } from '@/components/FollowButton';
@@ -193,80 +195,93 @@ export function Profile({ pubkey }: ProfileProps) {
             leaves the name squeezed against the action buttons.
           */}
           <div className="absolute -bottom-10 left-4 sm:-bottom-12 sm:left-6">
-            <Avatar className="h-20 w-20 border-4 border-card shadow-md sm:h-24 sm:w-24">
-              <AvatarImage src={metadata?.picture} alt="" className="object-cover" />
-              <AvatarFallback className="text-xl">
-                {displayName.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <AvatarRing metadata={metadata as Record<string, unknown>}>
+              <Avatar className="h-20 w-20 border-4 border-card shadow-md sm:h-24 sm:w-24">
+                <AvatarImage src={metadata?.picture} alt="" className="object-cover" />
+                <AvatarFallback className="text-xl">
+                  {displayName.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            </AvatarRing>
           </div>
         </div>
 
         <CardContent className="space-y-4 px-4 pb-5 pt-4 sm:px-6">
           {/*
-            Wraps, and the buttons share the row rather than overflowing it.
-            Four of them — zap, message, follow, share — do not fit across a
-            360px screen, and `justify-end` with no wrap pushed the last one
-            off the edge instead of moving it down.
+            Identity and actions swap places between the two layouts.
+
+            On a phone the avatar hangs 40px into this card while the padding
+            above is only 16px, so anything placed first here lands underneath
+            it — which is where the zap button was. The name goes first
+            instead, cleared past the overhang, and the buttons sit below it
+            where there is a full width to share.
+
+            On a wider screen the avatar is bottom-left and the buttons are
+            top-right, so they never meet and the original order is kept.
           */}
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {isCurrentUser ? (
-              <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <PenSquare className="mr-2 h-4 w-4" />
-                    Edit profile
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>Edit profile</DialogTitle>
-                  </DialogHeader>
-                  <EditProfileForm onSuccess={() => setIsEditProfileOpen(false)} />
-
-                  {/* Kind 10011 is its own replaceable event, so it saves
-                      separately from the kind 0 profile above. */}
-                  <LinkedAccountsEditor />
-
-                  {/* Badges are awarded without asking; this is the consent */}
-                  <BadgeSettings />
-                </DialogContent>
-              </Dialog>
-            ) : (
-              <>
-                {/* Zapping a person rather than a note. Hidden by the dialog
-                    itself when they have no lightning address, so it never
-                    offers to pay somebody who cannot be paid. */}
-                {user && author.data?.event && (
-                  <ZapDialog target={author.data.event}>
+          <div className="flex flex-col gap-4">
+            <div className="order-2 grid grid-cols-2 gap-2 sm:order-1 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+              {isCurrentUser ? (
+                <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
+                  <DialogTrigger asChild>
                     <Button variant="outline" size="sm">
-                      <Zap className="mr-2 h-4 w-4 text-zap" />
-                      Zap
+                      <PenSquare className="mr-2 h-4 w-4" />
+                      Edit profile
                     </Button>
-                  </ZapDialog>
-                )}
-                {user && (
-                  <Button asChild variant="outline" size="sm">
-                    <Link to={`/chat/${npub}`}>
-                      <MessagesSquare className="mr-2 h-4 w-4" />
-                      Message
-                    </Link>
-                  </Button>
-                )}
-                <FollowButton pubkey={pubkey} size="default" variant="default" />
-              </>
-            )}
+                  </DialogTrigger>
+                  <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>Edit profile</DialogTitle>
+                    </DialogHeader>
+                    <EditProfileForm onSuccess={() => setIsEditProfileOpen(false)} />
 
-            <ShareProfileDialog
-              npub={npub}
-              displayName={displayName}
-              lightningAddress={lightningAddress}
-              onCopy={copy}
-            />
-          </div>
+                    {/* What the ring around your avatar does, and which of
+                        them your tier has earned. */}
+                    <AvatarRingPicker />
 
-          {/* Identity block sits below the avatar overhang */}
-          <div className="space-y-1 pt-4 sm:pt-4">
+                    {/* Kind 10011 is its own replaceable event, so it saves
+                        separately from the kind 0 profile above. */}
+                    <LinkedAccountsEditor />
+
+                    {/* Badges are awarded without asking; this is the consent */}
+                    <BadgeSettings />
+                  </DialogContent>
+                </Dialog>
+              ) : (
+                <>
+                  {/* Zapping a person rather than a note. Hidden by the dialog
+                      itself when they have no lightning address, so it never
+                      offers to pay somebody who cannot be paid. */}
+                  {user && author.data?.event && (
+                    <ZapDialog target={author.data.event}>
+                      <Button variant="outline" size="sm">
+                        <Zap className="mr-2 h-4 w-4 text-zap" />
+                        Zap
+                      </Button>
+                    </ZapDialog>
+                  )}
+                  {user && (
+                    <Button asChild variant="outline" size="sm">
+                      <Link to={`/chat/${npub}`}>
+                        <MessagesSquare className="mr-2 h-4 w-4" />
+                        Message
+                      </Link>
+                    </Button>
+                  )}
+                  <FollowButton pubkey={pubkey} size="sm" variant="default" />
+                </>
+              )}
+
+              <ShareProfileDialog
+                npub={npub}
+                displayName={displayName}
+                lightningAddress={lightningAddress}
+                onCopy={copy}
+              />
+            </div>
+
+            {/* Clears the avatar, which overhangs further on a phone */}
+            <div className="order-1 space-y-1 pt-11 sm:order-2 sm:pt-4">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <h1 className="min-w-0 break-words text-xl font-bold sm:text-2xl">
                 {displayName}
@@ -293,7 +308,8 @@ export function Profile({ pubkey }: ProfileProps) {
               {/* NIP-85: only rendered if the reader declared a rank provider */}
               <TrustScore pubkey={pubkey} />
             </div>
-            <p className="text-sm text-muted-foreground">@{username}</p>
+              <p className="text-sm text-muted-foreground">@{username}</p>
+            </div>
           </div>
 
           {/*
