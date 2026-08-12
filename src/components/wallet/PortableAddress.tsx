@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { AddressReceiveDialog } from '@/components/wallet/AddressReceiveDialog';
+import { NamePayment } from '@/components/wallet/NamePayment';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useLaWallet } from '@/hooks/useLaWallet';
@@ -291,7 +292,7 @@ function LinkedAddress({ held }: { held: HeldAddress }) {
 }
 
 function ClaimForm() {
-  const { claim, isClaiming, buy, isBuying, checkName, domain } = useLaWallet();
+  const { claim, isClaiming, checkName, domain } = useLaWallet();
   const { suggestion } = useIdentity();
 
   const [name, setName] = useState(() => suggestLaWalletName(suggestion));
@@ -371,45 +372,16 @@ function ClaimForm() {
       ) : null}
 
       {price ? (
-        <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
-          <p className="text-sm">
-            <span className="font-medium">
-              {laWalletAddress(price.username, domain)}
-            </span>{' '}
-            <span className="text-muted-foreground">
-              {price.amountSats === null
-                ? 'has to be paid for.'
-                : `costs ${price.amountSats.toLocaleString()} sats.`}
-            </span>
-          </p>
-          {/* The number comes from the invoice the service raised, not from
-              any rule of ours — there is no amount field to send and no price
-              endpoint to read, so this is the only figure that is certain to
-              match what the wallet gets charged */}
-          <p className="text-xs text-muted-foreground">
-            Paid once, from a wallet connected here. The name is yours
-            afterwards and is never reissued to anybody else.
-          </p>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              disabled={isBuying}
-              onClick={() =>
-                void buy(price)
-                  .then(() => setPrice(null))
-                  .catch(() => {})
-              }
-            >
-              {isBuying && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              {price.amountSats === null
-                ? 'Pay and claim'
-                : `Pay ${price.amountSats.toLocaleString()} sats`}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setPrice(null)}>
-              Not now
-            </Button>
-          </div>
-        </div>
+        /* The figure comes from the invoice the service raised, not from any
+           rule of ours — there is no amount field to send and no price
+           endpoint to read, so it is the only number certain to match what
+           the wallet gets charged */
+        <NamePayment
+          price={price}
+          domain={domain}
+          onDone={() => setPrice(null)}
+          onCancel={() => setPrice(null)}
+        />
       ) : (
         <Button
           size="sm"

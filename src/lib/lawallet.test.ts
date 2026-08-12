@@ -8,6 +8,7 @@ import {
   isDuplicateInvoice,
   readInvoice,
   readStoredInvoice,
+  readVerification,
   readWalletAddress,
   unwrapRecord,
   isMissingUser,
@@ -681,6 +682,15 @@ describe('readInvoice', () => {
     expect(invoice.expiresAt).toBe(LIVE_INVOICE.expiresAt);
   });
 
+  it('keeps the verify URL, which is what allows paying from elsewhere', () => {
+    /**
+     * Claiming needs the preimage and an outside wallet never hands one to a
+     * web page. Losing this field would quietly reduce the payment options
+     * back to "a wallet connected here".
+     */
+    expect(readInvoice(LIVE_INVOICE).verify).toBe(LIVE_INVOICE.verify);
+  });
+
   it('still reads the field name the schema documents', () => {
     const invoice = readInvoice({ id: 'a', pr: 'lnbc10u1pabc', settled: false });
 
@@ -753,5 +763,37 @@ describe('readWalletAddress', () => {
 
   it('defaults an unusable mode rather than carrying it', () => {
     expect(readWalletAddress({ mode: 42 }, 'premium').mode).toBe('IDLE');
+  });
+});
+
+describe('readVerification', () => {
+  it('reads a settled LUD-21 response', () => {
+    expect(
+      readVerification({ status: 'OK', settled: true, preimage: 'abc123' })
+    ).toEqual({ settled: true, preimage: 'abc123' });
+  });
+
+  it('reads one that has not been paid yet', () => {
+    expect(
+      readVerification({ status: 'OK', settled: false, preimage: null })
+    ).toEqual({ settled: false, preimage: undefined });
+  });
+
+  it('takes a preimage as proof on its own', () => {
+    /**
+     * LUD-21 holds the preimage back until the payment settles, so its
+     * presence cannot mean anything else — and an implementation that returns
+     * one without setting `settled` should not cost somebody their name.
+     */
+    expect(readVerification({ preimage: 'abc123' }).settled).toBe(true);
+  });
+
+  it('does not read an unpaid invoice as paid', () => {
+    // The direction that matters: a false positive claims a name that was
+    // never paid for, and the claim fails with the money already gone
+    expect(readVerification({ status: 'ERROR' }).settled).toBe(false);
+    expect(readVerification({}).settled).toBe(false);
+    expect(readVerification(null).settled).toBe(false);
+    expect(readVerification({ settled: 'true' }).settled).toBe(false);
   });
 });

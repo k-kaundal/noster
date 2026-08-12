@@ -823,6 +823,15 @@ export interface ServiceInvoice {
   amountSats?: number | null;
   /** ISO 8601, when the service says the invoice stops being payable. */
   expiresAt?: string;
+  /**
+   * LUD-21 verification URL, which is what makes paying from elsewhere
+   * possible at all.
+   *
+   * Claiming the name needs the preimage, and a wallet outside this app never
+   * hands one back. This URL is the service telling us where to ask instead —
+   * so an invoice scanned onto a phone can still be proven here.
+   */
+  verify?: string;
   purpose?: 'registration' | 'wallet-address';
   settled?: boolean;
 }
@@ -884,9 +893,64 @@ export function readInvoice(body: unknown): ServiceInvoice {
         ? amount
         : invoiceAmountSats(pr),
     expiresAt: firstString(record, ['expiresAt', 'expires_at']),
+    verify: firstString(record, ['verify', 'verifyUrl']),
     purpose: record.purpose as ServiceInvoice['purpose'],
     settled: record.settled === true,
   };
+}
+
+/** What LUD-21 says about a payment when asked. */
+export interface PaymentVerification {
+  settled: boolean;
+  /** Proof of payment, which is the whole reason to ask. */
+  preimage?: string;
+}
+
+/**
+ * Reads a LUD-21 verify response.
+ *
+ * The schema documents only `{status}`, which would make this useless — but
+ * the schema also documented the payment request as `pr` when the service
+ * sends `bolt11`, so the spec is treated here as a floor rather than a
+ * description. LUD-21 itself defines `settled` and `preimage`, and the
+ * service publishes a verify URL on every invoice, which it would have no
+ * reason to do if it answered with neither.
+ *
+ * A preimage is taken as proof on its own. LUD-21 holds it back until the
+ * payment settles, so its presence cannot mean anything else.
+ */
+export function readVerification(body: unknown): PaymentVerification {
+  const record = unwrapRecord(body);
+  const preimage = firstString(record, ['preimage']);
+
+  return {
+    settled: record.settled === true || record.paid === true || !!preimage,
+    preimage,
+  };
+}
+
+/**
+ * Asks whether an invoice has been paid, and for the proof if it has.
+ *
+ * Public — no signature, no session — because the URL already names the one
+ * payment it can speak about. Fetched directly rather than through
+ * `laWalletRequest`, since the service gives the URL absolute and on a
+ * different host than the API.
+ */
+export async function verifyPayment(
+  url: string,
+  signal?: AbortSignal
+): Promise<PaymentVerification> {
+  const response = await fetch(url, { signal });
+
+  if (!response.ok) {
+    throw new LaWalletError(
+      'Could not check whether that invoice has been paid.',
+      response.status
+    );
+  }
+
+  return readVerification(await response.json());
 }
 
 /**
