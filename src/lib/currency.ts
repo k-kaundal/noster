@@ -51,20 +51,40 @@ function usableRate(value: unknown): number | null {
 /**
  * Reads the sats-per-unit figure out of `GET /api/v1/rate/{currency}`.
  *
- * The response is a single-entry object keyed by the currency — but keyed by
- * the string *as it was requested*, since the handler echoes the raw path
- * parameter back. So the key is matched case-insensitively rather than looked
- * up directly, and a lone entry is accepted whatever it is called.
+ * Three shapes, because LNbits has shipped more than one and an instance is
+ * whatever version its operator is running:
+ *
+ * - `{"rate": 15.66, "price": 6385047.61}` — current. `rate` is sats per unit
+ *   of currency, `price` is what one whole coin costs. The two are the same
+ *   fact either way up, and they agree: 100,000,000 / 6,385,047.61 = 15.66.
+ * - `{"price": …}` alone, which has to be inverted.
+ * - `{"INR": 15.66}` — older, keyed by the currency. Keyed by the string *as
+ *   it was requested*, since that handler echoed the raw path parameter, so
+ *   the key is compared case-insensitively rather than looked up.
+ *
+ * `rate` is preferred over `price` only because it needs no arithmetic; when
+ * it is missing or unusable the price is inverted instead, so an instance
+ * reporting one field but not the other still works.
  */
 export function readRate(body: unknown, currency: string): number | null {
   if (!body || typeof body !== 'object') return null;
 
-  const entries = Object.entries(body as Record<string, unknown>);
+  const record = body as Record<string, unknown>;
+  const entries = Object.entries(record);
   const wanted = currency.trim().toUpperCase();
 
   for (const [key, value] of entries) {
-    if (key.trim().toUpperCase() === wanted) return usableRate(value);
+    if (key.trim().toUpperCase() === wanted) {
+      const keyed = usableRate(value);
+      if (keyed !== null) return keyed;
+    }
   }
+
+  const rate = usableRate(record.rate);
+  if (rate !== null) return rate;
+
+  const price = usableRate(record.price);
+  if (price !== null) return SATS_PER_BTC / price;
 
   return entries.length === 1 ? usableRate(entries[0][1]) : null;
 }
