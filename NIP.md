@@ -2,9 +2,38 @@
 
 This app publishes standard Nostr events. It defines no custom kinds.
 
-It does add fields to one existing schema, documented here so another client
+It does add fields to two existing schemas, documented here so another client
 reading NostrFeed's events knows what they are — and so a future version of
 this app does not quietly change their meaning.
+
+## Avatar ring on profile metadata (kind 0)
+
+NostrFeed reads one non-standard field from kind 0:
+
+| field         | value                                                     |
+| ------------- | --------------------------------------------------------- |
+| `avatar_ring` | id of an animated ring drawn around the profile's avatar   |
+
+```jsonc
+{
+  "name": "alice",
+  "lud16": "alice@nostrfeed.com",
+  "avatar_ring": "orbit"
+}
+```
+
+Current ids: `pulse`, `glow`, `orbit`, `aurora`, `prism`. Absent, unknown or
+non-string means no ring.
+
+### Why it needs no enforcement
+
+Which rings a profile may wear is derived from the tier of its own `lud16`, in
+the same event. Every reader recomputes that independently, so a profile naming
+a ring above its tier renders without one — on its owner's screen as much as
+anyone else's. There is nothing to trust and so nothing to verify.
+
+Clients that do not know the field ignore it, as NIP-01 expects of unknown kind
+0 fields. It is purely decorative and carries no protocol meaning.
 
 ## Ecash token detail on NIP-60 spending history (kind 7376)
 

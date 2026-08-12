@@ -27,6 +27,8 @@ import { genUserName } from '@/lib/genUserName';
 import { Post } from '@/components/Post';
 import { NoteContent } from '@/components/NoteContent';
 import { ReportNotice } from '@/components/ReportNotice';
+import { AvatarRing } from '@/components/AvatarRing';
+import { AvatarRingPicker } from '@/components/AvatarRingPicker';
 import { EmptyState } from '@/components/EmptyState';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { FollowButton } from '@/components/FollowButton';
@@ -193,12 +195,14 @@ export function Profile({ pubkey }: ProfileProps) {
             leaves the name squeezed against the action buttons.
           */}
           <div className="absolute -bottom-10 left-4 sm:-bottom-12 sm:left-6">
-            <Avatar className="h-20 w-20 border-4 border-card shadow-md sm:h-24 sm:w-24">
-              <AvatarImage src={metadata?.picture} alt="" className="object-cover" />
-              <AvatarFallback className="text-xl">
-                {displayName.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <AvatarRing metadata={metadata as Record<string, unknown>}>
+              <Avatar className="h-20 w-20 border-4 border-card shadow-md sm:h-24 sm:w-24">
+                <AvatarImage src={metadata?.picture} alt="" className="object-cover" />
+                <AvatarFallback className="text-xl">
+                  {displayName.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            </AvatarRing>
           </div>
         </div>
 
@@ -230,6 +234,10 @@ export function Profile({ pubkey }: ProfileProps) {
                       <DialogTitle>Edit profile</DialogTitle>
                     </DialogHeader>
                     <EditProfileForm onSuccess={() => setIsEditProfileOpen(false)} />
+
+                    {/* What the ring around your avatar does, and which of
+                        them your tier has earned. */}
+                    <AvatarRingPicker />
 
                     {/* Kind 10011 is its own replaceable event, so it saves
                         separately from the kind 0 profile above. */}

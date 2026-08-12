@@ -55,6 +55,7 @@ import { RepliesSection } from '@/components/RepliesSection';
 import { QuotedNote } from '@/components/QuotedNote';
 import { MaybeWarned } from '@/components/ContentWarning';
 import { PowBadge } from '@/components/PowBadge';
+import { AvatarRing } from '@/components/AvatarRing';
 import { formatTimeLeft, secondsUntilExpiry } from '@/lib/expiration';
 import { ReactionChips, ReactionPicker } from '@/components/ReactionPicker';
 import {
@@ -270,17 +271,24 @@ export function Post({
             tabIndex={-1}
             aria-hidden="true"
           >
-            <Avatar
-              className={cn(
-                'transition-opacity hover:opacity-90',
-                embedded ? 'h-7 w-7 sm:h-8 sm:w-8' : 'h-9 w-9 sm:h-10 sm:w-10',
-              )}
-            >
-              <AvatarImage src={metadata?.picture} alt="" />
-              <AvatarFallback className="text-xs">
-                {displayName.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            {/*
+              Free to draw here: the ring is read from the same metadata this
+              avatar already loaded, so a feed full of them costs no extra
+              lookups.
+            */}
+            <AvatarRing metadata={metadata as Record<string, unknown>}>
+              <Avatar
+                className={cn(
+                  'transition-opacity hover:opacity-90',
+                  embedded ? 'h-7 w-7 sm:h-8 sm:w-8' : 'h-9 w-9 sm:h-10 sm:w-10',
+                )}
+              >
+                <AvatarImage src={metadata?.picture} alt="" />
+                <AvatarFallback className="text-xs">
+                  {displayName.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            </AvatarRing>
           </Link>
         </UserHoverCard>
 
