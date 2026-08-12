@@ -16,6 +16,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useReport } from '@/hooks/useReport';
 import { useMuteList } from '@/hooks/useMuteList';
+import { useMutePrivacy } from '@/hooks/useMutePrivacy';
 import {
   PROFILE_ONLY_TYPES,
   REPORT_TYPES,
@@ -41,7 +42,8 @@ export function ReportDialog({
   event,
 }: ReportDialogProps) {
   const { report, isReporting } = useReport();
-  const { muteUser, isUserMuted } = useMuteList();
+  const { muteUser, isUserMuted, canBePrivate } = useMuteList();
+  const { isPrivate } = useMutePrivacy();
 
   const [type, setType] = useState<ReportType>('spam');
   const [reason, setReason] = useState('');
@@ -83,7 +85,7 @@ export function ReportDialog({
 
     // Reporting rarely means "and keep showing me this"
     if (alsoMute && !isUserMuted(pubkey)) {
-      await muteUser(pubkey);
+      await muteUser(pubkey, { private: isPrivate && canBePrivate });
     }
 
     onOpenChange(false);
