@@ -23,7 +23,31 @@ const USD: FiatRate = {
 };
 
 describe('readRate', () => {
-  it('reads the single-entry object LNbits answers with', () => {
+  /** Captured from `GET /api/v1/rate/INR` on the instance this app talks to. */
+  const LIVE_INR = { rate: 15.661590344821251, price: 6385047.609999999 };
+
+  it('reads the shape the instance actually answers with', () => {
+    expect(readRate(LIVE_INR, 'INR')).toBe(15.661590344821251);
+  });
+
+  it('agrees with itself: the rate is the inverse of the price', () => {
+    /**
+     * The two fields are one fact either way up, and this is the check that
+     * the app is reading the one it thinks it is — a swap would be a factor
+     * of ten to the fourteenth here and still look like a number.
+     */
+    expect(SATS_PER_BTC / LIVE_INR.price).toBeCloseTo(LIVE_INR.rate, 6);
+  });
+
+  it('inverts the price when the rate is missing or unusable', () => {
+    expect(readRate({ price: 6385047.609999999 }, 'INR')).toBeCloseTo(
+      15.66159,
+      5
+    );
+    expect(readRate({ rate: 0, price: 100_000 }, 'USD')).toBe(1000);
+  });
+
+  it('still reads the older shape keyed by the currency', () => {
     expect(readRate({ USD: 862.07 }, 'USD')).toBe(862.07);
   });
 
@@ -41,7 +65,7 @@ describe('readRate', () => {
     expect(readRate({ rate: 1000 }, 'USD')).toBe(1000);
   });
 
-  it('refuses to guess when several keys are present', () => {
+  it('refuses to guess when several unknown keys are present', () => {
     expect(readRate({ USD: 1000, EUR: 900 }, 'GBP')).toBeNull();
   });
 
@@ -52,6 +76,7 @@ describe('readRate', () => {
      */
     expect(readRate({ USD: 0 }, 'USD')).toBeNull();
     expect(readRate({ USD: -5 }, 'USD')).toBeNull();
+    expect(readRate({ rate: 0, price: 0 }, 'USD')).toBeNull();
   });
 
   it('rejects anything that is not a usable number', () => {
