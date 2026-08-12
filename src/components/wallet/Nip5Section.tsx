@@ -30,6 +30,7 @@ import {
 } from '@/hooks/useNip5';
 import { QrCode } from '@/components/wallet/QrCode';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useLightningAddress } from '@/hooks/useLightningAddress';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
 import {
@@ -233,6 +234,65 @@ function OwnedName({ address }: { address: Nip5Address }) {
       )}
 
       <LightningDestination address={address} identifier={identifier} />
+
+      <ZapsHere address={address} identifier={identifier} />
+    </div>
+  );
+}
+
+/**
+ * Pointing the profile's zap address at this name.
+ *
+ * The card could say "kk@getzap.me receives payments" and offer no way to tell
+ * anyone: `nip05` and `lud16` are two separate profile fields, and publishing
+ * the name as one of them says nothing about the other. So a name could be
+ * verified, attached to a wallet, and still not be where zaps went — with
+ * nothing on screen to fix it.
+ *
+ * The list of addresses further up cannot cover this. It reads pay links, and
+ * the link the extension makes for a name carries no domain, so it shows up
+ * there under the *lightning* domain rather than the one the name is actually
+ * bought at — a different address, and not the one to publish.
+ */
+function ZapsHere({
+  address,
+  identifier,
+}: {
+  address: Nip5Address;
+  identifier: string;
+}) {
+  const { profileAddress, setProfileAddress, isPublishing } =
+    useLightningAddress();
+
+  // Nothing to publish until payments actually land somewhere
+  if (!isZappable(address) || nip5State(address) === 'inactive') return null;
+
+  if (profileAddress?.trim().toLowerCase() === identifier.toLowerCase()) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-success-strong">
+        <Check className="h-3.5 w-3.5" />
+        Zaps land here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        {profileAddress
+          ? `Your profile still sends zaps to ${profileAddress}.`
+          : 'Your profile does not advertise a zap address yet.'}
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 px-2 text-xs"
+        disabled={isPublishing}
+        onClick={() => void setProfileAddress(identifier).catch(() => {})}
+      >
+        {isPublishing && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+        Send my zaps here
+      </Button>
     </div>
   );
 }
