@@ -113,11 +113,11 @@ export function CommunityView({ community }: { community: Community }) {
       {user && <ComposeToCommunity community={community} />}
 
       <Tabs defaultValue="approved">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="approved" className="flex-1 sm:flex-none">
+        <TabsList>
+          <TabsTrigger value="approved">
             Posts {approved.length > 0 && `(${approved.length})`}
           </TabsTrigger>
-          <TabsTrigger value="pending" className="flex-1 sm:flex-none">
+          <TabsTrigger value="pending">
             {isModerator ? 'Awaiting review' : 'Unapproved'}{' '}
             {pending.length > 0 && `(${pending.length})`}
           </TabsTrigger>

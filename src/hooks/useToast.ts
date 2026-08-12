@@ -5,8 +5,24 @@ import type {
   ToastProps,
 } from "@/components/ui/toast"
 
-const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+/**
+ * How many can be on screen at once.
+ *
+ * Was one, which meant a second toast erased the first instantly — do two
+ * things quickly and you never see what the first one said. Three is enough
+ * for a burst without becoming a wall.
+ */
+const TOAST_LIMIT = 3
+
+/**
+ * How long a dismissed toast lingers in state before being dropped.
+ *
+ * Was 1000000ms — sixteen minutes, the library's unedited default. It is
+ * invisible by then, so this is a leak rather than a bug you can see, but
+ * holding closed toasts for a quarter of an hour is not a decision anybody
+ * made. Long enough here for the close animation, and no longer.
+ */
+const TOAST_REMOVE_DELAY = 1000
 
 type ToasterToast = ToastProps & {
   id: string

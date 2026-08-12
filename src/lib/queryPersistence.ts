@@ -47,8 +47,19 @@ export const MAX_BYTES = 1_500_000;
  * Deliberately excluded: anything from the wallet (`lnbits-*`), which is a
  * balance that must never be shown stale, and anything private (`direct-
  * messages`) that has no business surviving in plain text on a shared device.
+ *
+ * The exchange rate is here too, and is the one exception to that rule about
+ * staleness: it carries the time it was read, and everything that shows it
+ * marks an old one as old. Without it the fiat figure beside every balance
+ * appears a second or two after the balance itself, on every load.
  */
-const PERSISTED = new Set(['author', 'feed', 'follows', 'relay-list']);
+const PERSISTED = new Set([
+  'author',
+  'feed',
+  'follows',
+  'relay-list',
+  'btc-rate',
+]);
 
 export interface StoredCache {
   version: number;

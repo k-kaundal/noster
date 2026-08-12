@@ -21,6 +21,7 @@ import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { AccentPicker } from '@/components/AccentPicker';
+import { CurrencySettings } from '@/components/CurrencySettings';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -67,23 +68,23 @@ export function SettingsPage() {
         />
 
         <Tabs defaultValue="appearance" className="space-y-4">
-          <TabsList className="w-full sm:w-auto">
-            <TabsTrigger value="appearance" className="flex-1 sm:flex-none">
+          <TabsList>
+            <TabsTrigger value="appearance">
               Appearance
             </TabsTrigger>
-            <TabsTrigger value="ui" className="flex-1 sm:flex-none">
+            <TabsTrigger value="ui">
               UI
             </TabsTrigger>
-            <TabsTrigger value="alerts" className="flex-1 sm:flex-none">
+            <TabsTrigger value="alerts">
               Alerts
             </TabsTrigger>
-            <TabsTrigger value="muted" className="flex-1 sm:flex-none">
+            <TabsTrigger value="muted">
               Muted
             </TabsTrigger>
-            <TabsTrigger value="messages" className="flex-1 sm:flex-none">
+            <TabsTrigger value="messages">
               Messages
             </TabsTrigger>
-            <TabsTrigger value="wallet" className="flex-1 sm:flex-none">
+            <TabsTrigger value="wallet">
               Wallet
             </TabsTrigger>
           </TabsList>
@@ -117,7 +118,10 @@ export function SettingsPage() {
             )}
           </TabsContent>
           <TabsContent value="wallet">
-            <WalletPointer />
+            <div className="space-y-4">
+              <CurrencySettings />
+              <WalletPointer />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

@@ -83,7 +83,7 @@ export function RelayAdminPanel({ relayUrl }: { relayUrl: string }) {
 
       <CardContent>
         <Tabs defaultValue="pubkeys">
-          <TabsList className="w-full justify-start overflow-x-auto">
+          <TabsList>
             <TabsTrigger value="pubkeys">People</TabsTrigger>
             {supports('listeventsneedingmoderation') && (
               <TabsTrigger value="queue">Queue</TabsTrigger>

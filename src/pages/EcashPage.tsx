@@ -15,6 +15,7 @@ import {
 import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
+import { FiatValue } from '@/components/FiatValue';
 import { LoginArea } from '@/components/auth/LoginArea';
 import {
   AlertDialog,
@@ -142,12 +143,15 @@ function Ecash() {
           {isLoading ? (
             <Skeleton className="mt-3 h-12 w-48 rounded-lg" />
           ) : (
-            <p className="mt-2 text-5xl font-bold tracking-tight tabular">
-              {balanceSats.toLocaleString()}
-              <span className="ml-3 text-lg font-normal text-muted-foreground">
-                sats
-              </span>
-            </p>
+            <>
+              <p className="mt-2 text-5xl font-bold tracking-tight tabular">
+                {balanceSats.toLocaleString()}
+                <span className="ml-3 text-lg font-normal text-muted-foreground">
+                  sats
+                </span>
+              </p>
+              <FiatValue sats={balanceSats} className="mt-1 block text-sm" />
+            </>
           )}
 
           <p className="mt-2 text-xs text-muted-foreground">

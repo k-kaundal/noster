@@ -401,17 +401,17 @@ export function Profile({ pubkey }: ProfileProps) {
       <Spotlight pubkey={pubkey} />
 
       <Tabs defaultValue="notes" className="space-y-4">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="notes" className="flex-1 sm:flex-none">
+        <TabsList>
+          <TabsTrigger value="notes">
             Notes
           </TabsTrigger>
-          <TabsTrigger value="replies" className="flex-1 sm:flex-none">
+          <TabsTrigger value="replies">
             Replies
           </TabsTrigger>
-          <TabsTrigger value="articles" className="flex-1 sm:flex-none">
+          <TabsTrigger value="articles">
             Articles
           </TabsTrigger>
-          <TabsTrigger value="media" className="flex-1 sm:flex-none">
+          <TabsTrigger value="media">
             Media
           </TabsTrigger>
         </TabsList>
