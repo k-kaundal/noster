@@ -5,14 +5,17 @@ import { ArticleView } from '@/components/articles/ArticleView';
 import { CommunityView } from '@/components/communities/CommunityView';
 import { ListView } from '@/components/lists/ListView';
 import { ListingView } from '@/components/market/ListingView';
+import { CalendarEventView } from '@/components/calendar/CalendarEventView';
 import { useArticle } from '@/hooks/useArticles';
 import { useCommunity } from '@/hooks/useCommunities';
 import { useList } from '@/hooks/useLists';
 import { useListing } from '@/hooks/useListings';
+import { useCalendarEvent } from '@/hooks/useCalendar';
 import { ARTICLE_DRAFT_KIND, ARTICLE_KIND } from '@/lib/article';
 import { COMMUNITY_KIND } from '@/lib/community';
 import { LIST_KINDS } from '@/lib/lists';
 import { LISTING_DRAFT_KIND, LISTING_KIND } from '@/lib/nip99';
+import { CALENDAR_EVENT_KINDS } from '@/lib/nip52';
 import { kindLabel } from '@/lib/eventKinds';
 
 interface AddressableViewProps {
@@ -47,6 +50,12 @@ export function AddressableView({
 
   if (LIST_KINDS.includes(kind)) {
     return <ListRoute kind={kind} pubkey={pubkey} identifier={identifier} />;
+  }
+
+  if ((CALENDAR_EVENT_KINDS as readonly number[]).includes(kind)) {
+    return (
+      <CalendarEventRoute kind={kind} pubkey={pubkey} identifier={identifier} />
+    );
   }
 
   return (
@@ -134,4 +143,27 @@ function ListingRoute({ kind, pubkey, identifier }: AddressableViewProps) {
   }
 
   return <ListingView listing={listing} />;
+}
+
+function CalendarEventRoute({ kind, pubkey, identifier }: AddressableViewProps) {
+  const { calendarEvent, isLoading } = useCalendarEvent(
+    pubkey,
+    identifier,
+    kind
+  );
+
+  if (isLoading) return <PostSkeleton />;
+
+  if (!calendarEvent) {
+    return (
+      <EmptyState
+        icon={FileQuestion}
+        title="Event not found"
+        description="It may have been removed, or it isn't on the relay you're connected to."
+        showRelaySelector
+      />
+    );
+  }
+
+  return <CalendarEventView calendarEvent={calendarEvent} />;
 }
