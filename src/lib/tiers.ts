@@ -1,5 +1,24 @@
 import { ADDRESS_DOMAINS, normalizeDomain } from '@/lib/lightningAddress';
+import { NIP5_DOMAINS } from '@/lib/nip5';
 import { isGeneratedName } from '@/lib/freeAddress';
+
+/**
+ * Every domain an address of ours can be at.
+ *
+ * Two lists, because they are two products the operator configures separately:
+ * lightning addresses come off `lnurlp` pay links, verified names off the
+ * `nostrnip5` extension, and nothing says one deployment must sell both under
+ * the same hostname. A verified name can have a lightning address attached to
+ * it, which puts a real address of ours on a domain the first list has never
+ * heard of — and an address that ranks as nobody's disappears from the page
+ * that is supposed to list what somebody owns.
+ */
+const OUR_DOMAINS: string[] = [
+  ...new Set([
+    ...ADDRESS_DOMAINS,
+    ...NIP5_DOMAINS.map((entry) => entry.domain),
+  ]),
+];
 
 /**
  * The two things a name can be here, and what separates them.
@@ -85,7 +104,7 @@ export function tierOf(
   const local = address.slice(0, at).toLowerCase();
   const domain = normalizeDomain(address.slice(at + 1));
 
-  const configured = domains.named ?? ADDRESS_DOMAINS;
+  const configured = domains.named ?? OUR_DOMAINS;
   const named = (Array.isArray(configured) ? configured : [configured]).map(
     normalizeDomain
   );
