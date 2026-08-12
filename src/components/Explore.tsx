@@ -42,19 +42,19 @@ export function Explore() {
         />
       ) : (
         <Tabs defaultValue="latest" className="space-y-4">
-          <TabsList className="w-full sm:w-auto">
-            <TabsTrigger value="latest" className="flex-1 sm:flex-none">
+          <TabsList>
+            <TabsTrigger value="latest">
               Latest
             </TabsTrigger>
-            <TabsTrigger value="media" className="flex-1 sm:flex-none">
+            <TabsTrigger value="media">
               <ImageIcon className="mr-1.5 h-3.5 w-3.5" />
               Media
             </TabsTrigger>
-            <TabsTrigger value="links" className="flex-1 sm:flex-none">
+            <TabsTrigger value="links">
               <LinkIcon className="mr-1.5 h-3.5 w-3.5" />
               Links
             </TabsTrigger>
-            <TabsTrigger value="people" className="flex-1 sm:flex-none">
+            <TabsTrigger value="people">
               <Users className="mr-1.5 h-3.5 w-3.5" />
               People
             </TabsTrigger>

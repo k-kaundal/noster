@@ -12,7 +12,21 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-0.5 text-muted-foreground",
+      /*
+       * Scrolls rather than squeezing.
+       *
+       * This is `inline-flex` with no overflow rule, so a tab bar wider than
+       * the screen had nowhere to go: six settings tabs want 411px and a
+       * 360px phone has 328px of it. Call sites were papering over it with
+       * `flex-1`, which divides the width instead — 53px per tab, and labels
+       * cut in half.
+       *
+       * Horizontal scroll is what every mobile app does here, and it keeps
+       * the labels readable. The scrollbar is hidden because the tabs are
+       * obviously swipeable and a bar under them is noise on a control this
+       * short.
+       */
+      "inline-flex h-9 max-w-full items-center justify-start overflow-x-auto rounded-lg bg-muted p-0.5 text-muted-foreground [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
       className
     )}
     {...props}
@@ -27,7 +41,8 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground",
+      // `shrink-0` so a trigger keeps its label rather than being compressed
+      "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground",
       className
     )}
     {...props}

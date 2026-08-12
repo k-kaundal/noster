@@ -67,23 +67,23 @@ export function SettingsPage() {
         />
 
         <Tabs defaultValue="appearance" className="space-y-4">
-          <TabsList className="w-full sm:w-auto">
-            <TabsTrigger value="appearance" className="flex-1 sm:flex-none">
+          <TabsList>
+            <TabsTrigger value="appearance">
               Appearance
             </TabsTrigger>
-            <TabsTrigger value="ui" className="flex-1 sm:flex-none">
+            <TabsTrigger value="ui">
               UI
             </TabsTrigger>
-            <TabsTrigger value="alerts" className="flex-1 sm:flex-none">
+            <TabsTrigger value="alerts">
               Alerts
             </TabsTrigger>
-            <TabsTrigger value="muted" className="flex-1 sm:flex-none">
+            <TabsTrigger value="muted">
               Muted
             </TabsTrigger>
-            <TabsTrigger value="messages" className="flex-1 sm:flex-none">
+            <TabsTrigger value="messages">
               Messages
             </TabsTrigger>
-            <TabsTrigger value="wallet" className="flex-1 sm:flex-none">
+            <TabsTrigger value="wallet">
               Wallet
             </TabsTrigger>
           </TabsList>

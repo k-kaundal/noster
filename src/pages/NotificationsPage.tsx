@@ -76,9 +76,9 @@ export function NotificationsPage() {
               value={filter}
               onValueChange={(value) => setFilter(value as NotificationFilter)}
             >
-              <TabsList className="w-full justify-start overflow-x-auto scrollbar-thin">
+              <TabsList>
                 {NOTIFICATION_FILTERS.map(({ value, label }) => (
-                  <TabsTrigger key={value} value={value} className="flex-1 sm:flex-none">
+                  <TabsTrigger key={value} value={value}>
                     {label}
                   </TabsTrigger>
                 ))}
