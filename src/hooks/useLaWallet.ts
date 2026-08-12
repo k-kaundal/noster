@@ -6,6 +6,7 @@ import { usePayAnyWallet } from '@/hooks/usePayAnyWallet';
 import {
   invoiceAmountSats,
   isExpectedDenial,
+  isMissingUser,
   unwrapList,
   LAWALLET_DOMAIN,
   laWalletRequest,
@@ -13,6 +14,7 @@ import {
   requiresPayment,
   type AddressMode,
   type AliasProbe,
+  type LaWalletUser,
   type RemoteWallet,
   type ServiceInvoice,
   type WalletAddress,
@@ -63,6 +65,71 @@ export function useLaWallet() {
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['lawallet-addresses'] });
   }, [queryClient]);
+
+  /**
+   * Makes sure the service holds a user record for this key.
+   *
+   * A NIP-98 signature proves who somebody is; it does not give the service a
+   * row to hang an address off. `GET /api/users/me` is documented as "load or
+   * create" and is the only route that creates one, so a key that has never
+   * called it can authenticate perfectly and still be refused everything with
+   * `{"code":"NOT_FOUND","message":"User not found"}` — a sentence that, on
+   * the screen where somebody has just typed a name they want, reads as if
+   * the *name* were the thing not found.
+   *
+   * Cached forever once it succeeds: the record does not stop existing, and
+   * the point of caching is to spend one signature per session rather than
+   * one per click.
+   */
+  const ensureUser = useCallback(async () => {
+    if (!signer) throw new Error('Log in to use wallet addresses.');
+
+    return await queryClient.fetchQuery<LaWalletUser>({
+      queryKey: ['lawallet-user', user?.pubkey ?? ''],
+      queryFn: () => laWalletRequest<LaWalletUser>('/api/users/me', { signer }),
+      staleTime: Infinity,
+    });
+  }, [queryClient, signer, user?.pubkey]);
+
+  /**
+   * Runs a write, and if the service says there is no user, makes one and
+   * tries again.
+   *
+   * Provisioning on the refusal rather than ahead of it, which matters
+   * because every request here is signed: a `users/me` call before each write
+   * would be a second signer prompt for everybody, forever, to fix something
+   * that is true once in an account's life. This way the steady state costs
+   * nothing and only the very first write pays for the round trip.
+   *
+   * Safe only for writes that leave nothing behind when they fail — a refused
+   * claim creates no name, a refused wallet POST stores no connection. It is
+   * not safe for anything that has already moved money, which is why buying a
+   * name does not use it.
+   *
+   * Deliberately not applied to the reads either. Provisioning is a side
+   * effect of asking, and creating an account for everybody who merely opens
+   * the page is not this app's decision to make — the reads already answer
+   * empty for a key that has none.
+   */
+  const withUser = useCallback(
+    async <T,>(write: () => Promise<T>): Promise<T> => {
+      try {
+        return await write();
+      } catch (error) {
+        if (!isMissingUser(error)) throw error;
+
+        // Any cached record is demonstrably wrong, since the service just
+        // said it has none
+        queryClient.removeQueries({
+          queryKey: ['lawallet-user', user?.pubkey ?? ''],
+        });
+
+        await ensureUser();
+        return await write();
+      }
+    },
+    [ensureUser, queryClient, user?.pubkey]
+  );
 
   /**
    * Reads here are refused for two ordinary reasons — no account yet, or a
@@ -235,16 +302,26 @@ export function useLaWallet() {
    * without this app knowing.
    */
   const claim = useMutation<ClaimOutcome, Error, ClaimRequest>({
-    mutationFn: async ({ username, mode = 'IDLE' }) => {
-      try {
-        return { kind: 'claimed', address: await claimName(username, mode) };
-      } catch (error) {
-        if (!requiresPayment(error)) throw error;
+    mutationFn: async ({ username, mode = 'IDLE' }) =>
+      /**
+       * Claiming is usually somebody's first write here, so it is the place
+       * the missing user record surfaces. Provisioned around the whole thing
+       * rather than around `claimName` alone, since the paid path raises an
+       * invoice against the same account.
+       */
+      await withUser(async () => {
+        try {
+          return {
+            kind: 'claimed' as const,
+            address: await claimName(username, mode),
+          };
+        } catch (error) {
+          if (!requiresPayment(error)) throw error;
 
-        const { invoice, amountSats } = await quoteName(username);
-        return { kind: 'price', username, mode, invoice, amountSats };
-      }
-    },
+          const { invoice, amountSats } = await quoteName(username);
+          return { kind: 'price' as const, username, mode, invoice, amountSats };
+        }
+      }),
     onSuccess: (outcome) => {
       if (outcome.kind !== 'claimed') return;
 
@@ -266,8 +343,18 @@ export function useLaWallet() {
   /** Pays a price already shown to someone, then takes the name. */
   const buy = useMutation({
     mutationFn: async (quote: NamePrice) => {
+      /**
+       * Provisioned up front here, not on the refusal.
+       *
+       * `withUser` retries the whole closure, and the closure pays an invoice
+       * — so a missing user record discovered after the payment would charge
+       * for the name twice. The account is made before any money moves, and
+       * the retry after payment is narrowed to the claim alone.
+       */
+      await ensureUser();
       await payForName(quote.invoice);
-      return await claimName(quote.username, quote.mode);
+
+      return await withUser(() => claimName(quote.username, quote.mode));
     },
     onSuccess: (created) => {
       invalidate();
@@ -346,16 +433,23 @@ export function useLaWallet() {
       name: string;
       connectionString: string;
     }) =>
-      await laWalletRequest<RemoteWallet>('/api/remote-wallets', {
-        method: 'POST',
-        body: {
-          name,
-          type: 'NWC',
-          config: { nwcUri: connectionString },
-          isDefault: true,
-        },
-        signer: signer!,
-      }),
+      /*
+       * The other write somebody can reach without ever having claimed a
+       * name: connecting a wallet before picking an address.
+       */
+      await withUser(
+        async () =>
+          await laWalletRequest<RemoteWallet>('/api/remote-wallets', {
+            method: 'POST',
+            body: {
+              name,
+              type: 'NWC',
+              config: { nwcUri: connectionString },
+              isDefault: true,
+            },
+            signer: signer!,
+          })
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lawallet-wallets'] });
       toast({ title: 'Wallet connected' });

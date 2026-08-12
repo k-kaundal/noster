@@ -166,6 +166,21 @@ export interface AliasProbe {
   };
 }
 
+/**
+ * The service's own record of a key, from `GET /api/users/me`.
+ *
+ * That route is documented as "load or create", and it is the only one that
+ * creates. A Nostr signature proves who somebody is, but it does not give the
+ * service a row to hang an address off — so every write here needs this to
+ * have been called at least once for the key doing the writing.
+ */
+export interface LaWalletUser {
+  id: string;
+  pubkey: string;
+  role: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'USER';
+  createdAt: string;
+}
+
 export class LaWalletError extends Error {
   constructor(
     message: string,
@@ -175,6 +190,23 @@ export class LaWalletError extends Error {
     super(message);
     this.name = 'LaWalletError';
   }
+}
+
+/**
+ * Whether a refusal means "this key has no account here" specifically.
+ *
+ * The message is consulted as well as the code, which is not something to do
+ * lightly. But `NOT_FOUND` is also what a write against a deleted *address*
+ * answers with, and the two want opposite handling: one is fixed by
+ * provisioning the account and retrying, the other is fixed by nothing and
+ * would spend a signature discovering that.
+ */
+export function isMissingUser(error: unknown): boolean {
+  return (
+    error instanceof LaWalletError &&
+    error.code === 'NOT_FOUND' &&
+    /user/i.test(error.message)
+  );
 }
 
 /**

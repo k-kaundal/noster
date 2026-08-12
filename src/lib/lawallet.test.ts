@@ -5,6 +5,7 @@ import {
   acceptsPayments,
   addressesForPubkey,
   isExpectedDenial,
+  isMissingUser,
   refusalReason,
   unwrapList,
   invoiceAmountSats,
@@ -419,5 +420,31 @@ describe('isExpectedDenial', () => {
     expect(isExpectedDenial(fail(500))).toBe(false);
     expect(isExpectedDenial(new Error('offline'))).toBe(false);
     expect(isExpectedDenial(undefined)).toBe(false);
+  });
+});
+
+describe('isMissingUser', () => {
+  /** The exact envelope the service answers a claim with, for a fresh key. */
+  const noUser = new LaWalletError('User not found', 404, 'NOT_FOUND');
+
+  it('recognises the refusal that means "provision an account first"', () => {
+    expect(isMissingUser(noUser)).toBe(true);
+  });
+
+  it('does not read a missing address as a missing user', () => {
+    /**
+     * Both come back as NOT_FOUND and they want opposite handling: one is
+     * fixed by calling `GET /api/users/me` and trying again, the other is
+     * fixed by nothing and would spend a signature finding that out.
+     */
+    expect(
+      isMissingUser(new LaWalletError('Address not found', 404, 'NOT_FOUND'))
+    ).toBe(false);
+  });
+
+  it('ignores anything that is not that refusal', () => {
+    expect(isMissingUser(new LaWalletError('User not found', 401))).toBe(false);
+    expect(isMissingUser(new Error('User not found'))).toBe(false);
+    expect(isMissingUser(undefined)).toBe(false);
   });
 });
