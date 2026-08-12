@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { UserHoverCard } from '@/components/UserHoverCard';
 import { ZapButton } from '@/components/ZapButton';
+import { ArticleZap } from '@/components/articles/ArticleZap';
 import { CommentsSection } from '@/components/comments/CommentsSection';
 import { Markdown } from '@/components/articles/Markdown';
 import { MaybeWarned } from '@/components/ContentWarning';
@@ -172,6 +173,13 @@ export function ArticleView({ article }: { article: Article }) {
             <Markdown source={article.content} />
           </MaybeWarned>
         </HighlightSelection>
+
+        {/*
+          Paying the author, where somebody who has just finished reading is
+          actually looking. The header keeps its own zap control for anyone
+          who decides before they start.
+        */}
+        <ArticleZap article={article.event} />
 
         {/* NIP-75: the goal this article is raising for, if it names one */}
         <LinkedZapGoal event={article.event} />
