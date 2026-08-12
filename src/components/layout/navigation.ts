@@ -2,6 +2,7 @@ import {
   Banknote,
   Bell,
   Bookmark,
+  CalendarDays,
   Compass,
   Film,
   Flame,
@@ -62,6 +63,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
     },
     { href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
     { href: '/lists', icon: List, label: 'Lists', secondary: true },
+    { href: '/calendar', icon: CalendarDays, label: 'Calendar', secondary: true },
     {
       href: '/communities',
       icon: Users,
