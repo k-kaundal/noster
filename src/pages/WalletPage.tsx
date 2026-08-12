@@ -322,20 +322,6 @@ function ConnectedWallet() {
             <span className="ml-auto">→</span>
           </Link>
 
-          {/* This used to send people to another site to "open the wallet on
-              its own", which is a link out of the product at the moment they
-              are most likely to buy something. What is actually behind that
-              domain is the top tier of name, so it says that instead — and
-              points at the place in this app where it is bought. */}
-          <Link
-            to="/wallet#names"
-            className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-500/10 dark:text-amber-400"
-          >
-            <Sparkles className="h-4 w-4" />
-            <span>Get a portable name — check one, then pay to keep it</span>
-            <span className="ml-auto">→</span>
-          </Link>
-
           {/* The other wallet. Worth naming here rather than only in the nav,
               because "the balance is held by whoever runs the server" is the
               exact objection ecash answers */}

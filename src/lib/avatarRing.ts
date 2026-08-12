@@ -79,10 +79,16 @@ export const RING_STYLES: RingStyle[] = [
     className: 'avatar-ring-aurora',
   },
   {
+    /*
+     * Sat above `named` while there was a tier above it. There is not any
+     * more, so it moved down rather than out — the ladder is still three
+     * rungs (no address, free address, bought name) and deleting the best
+     * ring would take something away from the people who had paid for it.
+     */
     id: 'prism',
     label: 'Prism',
     blurb: 'A full spectrum, turning.',
-    requires: 'portable',
+    requires: 'named',
     className: 'avatar-ring-prism',
   },
 ];

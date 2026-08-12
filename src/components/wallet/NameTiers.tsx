@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { VerificationBadge, VerificationMark } from '@/components/VerificationBadge';
 import { AddressReceiveDialog } from '@/components/wallet/AddressReceiveDialog';
 import { useIdentity } from '@/hooks/useIdentity';
-import { useLaWallet } from '@/hooks/useLaWallet';
 import { useToast } from '@/hooks/useToast';
 import { describeTier, leadAddress, nextTier, rankAddresses } from '@/lib/tiers';
 import { cn } from '@/lib/utils';
@@ -21,24 +20,18 @@ import { cn } from '@/lib/utils';
  */
 export function NameTiers() {
   const { lightning } = useIdentity();
-  const lawallet = useLaWallet();
   const { toast } = useToast();
 
   const [receivingAt, setReceivingAt] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<string | null>(null);
 
-  const domains = { portable: lawallet.domain };
+  const held = lightning.addresses.map((entry) => entry.address);
 
-  const held = [
-    ...lightning.addresses.map((entry) => entry.address),
-    ...lawallet.held.filter((entry) => !entry.refusal).map((entry) => entry.address),
-  ];
-
-  const ranked = rankAddresses(held, domains);
+  const ranked = rankAddresses(held);
   if (!ranked.length) return null;
 
   // What the profile says, so the ranking never overrules a real decision
-  const lead = leadAddress(held, lightning.profileAddress, domains);
+  const lead = leadAddress(held, lightning.profileAddress);
   const upsell = nextTier(ranked[0]?.tier ?? null);
 
   return (
@@ -149,9 +142,7 @@ export function NameTiers() {
           they bought. */}
       {upsell && (
         <p className="text-xs text-muted-foreground">
-          {describeTier(upsell).label.toLowerCase() === 'verified'
-            ? 'A verified name gets you your own name and a ✓ on every post — below.'
-            : 'A portable name keeps working when you change what is behind it — below.'}
+          A verified name gets you your own name and a ✓ on every post — below.
         </p>
       )}
 

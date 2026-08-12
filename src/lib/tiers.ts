@@ -1,33 +1,33 @@
 import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
-import { LAWALLET_DOMAIN } from '@/lib/lawallet';
 import { isGeneratedName } from '@/lib/freeAddress';
 
 /**
- * The three things a name can be here, and what separates them.
+ * The two things a name can be here, and what separates them.
  *
- * Every tier receives zaps. That is deliberate and it is the part worth being
+ * Both tiers receive zaps. That is deliberate and it is the part worth being
  * loud about: most Nostr clients give a new account no way to be paid at all,
  * so somebody arrives, posts, and finds the zap button on their own profile
  * does nothing. Here the free tier is a working lightning address from the
  * first minute — it just does not say who you are.
  *
- * What money buys is the name, in two steps:
+ * What money buys is the name:
  *
  * - **assigned** — derived from the key. Permanent, free, receives zaps, and
  *   looks like what it is: a string nobody chose.
  * - **named** — a name at our own domain, bought by the year through the
  *   NIP-05 extension, which is also what puts a ✓ against posts.
- * - **portable** — a name at the wallet service's domain whose destination is
- *   a setting. It costs more because it is the only one that keeps working
- *   when you change what is behind it.
+ * There was a third, `portable`, at an outside wallet service's domain. That
+ * service is gone, and with it the only issuer of that tier — a rung nothing
+ * can reach is worse than no rung, because it leaves an upsell on screen
+ * pointing at something nobody can buy.
  *
  * Kept apart from `identity.ts`, which answers "what is left to do"; this
  * answers "what does somebody have, and which of it is best".
  */
-export type NameTier = 'assigned' | 'named' | 'portable';
+export type NameTier = 'assigned' | 'named';
 
 /** Ascending. The last one somebody holds is the one to lead with. */
-export const TIER_ORDER: NameTier[] = ['assigned', 'named', 'portable'];
+export const TIER_ORDER: NameTier[] = ['assigned', 'named'];
 
 export function tierRank(tier: NameTier): number {
   return TIER_ORDER.indexOf(tier);
@@ -42,17 +42,11 @@ export interface TierCopy {
    * Which mark to draw. Names a shape rather than a component so this file
    * stays testable and free of React.
    */
-  mark: 'dot' | 'check' | 'star';
+  mark: 'dot' | 'check';
 }
 
 export function describeTier(tier: NameTier): TierCopy {
   switch (tier) {
-    case 'portable':
-      return {
-        label: 'Portable',
-        blurb: 'Your name, pointed wherever you like. Moves with you.',
-        mark: 'star',
-      };
     case 'named':
       return {
         label: 'Verified',
@@ -72,13 +66,13 @@ export function describeTier(tier: NameTier): TierCopy {
  * Which tier an address belongs to.
  *
  * Decided by domain first and shape second, because the domain is the thing
- * that cannot be faked by a name: an address at the wallet service is portable
- * whatever it is called, and one at our own domain is assigned or bought
- * depending only on whether a person picked the local part.
+ * that cannot be faked by a name: an address at our own domain is assigned or
+ * bought depending only on whether a person picked the local part, and one
+ * from anywhere else is not ours to rank.
  */
 export function tierOf(
   address: string,
-  domains: { named?: string; portable?: string } = {}
+  domains: { named?: string } = {}
 ): NameTier | null {
   const at = address.lastIndexOf('@');
   if (at <= 0) return null;
@@ -86,10 +80,8 @@ export function tierOf(
   const local = address.slice(0, at).toLowerCase();
   const domain = address.slice(at + 1).toLowerCase();
 
-  const portable = (domains.portable ?? LAWALLET_DOMAIN).toLowerCase();
   const named = (domains.named ?? ADDRESS_DOMAIN).toLowerCase();
 
-  if (domain === portable) return 'portable';
   if (domain === named) return isGeneratedName(local) ? 'assigned' : 'named';
 
   // An address from somewhere else entirely. Real, and not one of our tiers.
@@ -112,7 +104,7 @@ export interface TieredAddress {
  */
 export function rankAddresses(
   addresses: string[],
-  domains?: { named?: string; portable?: string }
+  domains?: { named?: string }
 ): TieredAddress[] {
   const seen = new Set<string>();
   const ranked: TieredAddress[] = [];
@@ -141,7 +133,7 @@ export function rankAddresses(
 export function leadAddress(
   addresses: string[],
   chosen?: string | null,
-  domains?: { named?: string; portable?: string }
+  domains?: { named?: string }
 ): TieredAddress | null {
   const ranked = rankAddresses(addresses, domains);
   if (!ranked.length) return null;
