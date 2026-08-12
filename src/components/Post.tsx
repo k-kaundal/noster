@@ -9,6 +9,7 @@ import { useEvent } from '@/hooks/useEvent';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useBookmarks } from '@/hooks/useBookmarks';
 import { useMuteList } from '@/hooks/useMuteList';
+import { useMutePrivacy } from '@/hooks/useMutePrivacy';
 import { useDeleteEvent } from '@/hooks/useDeleteEvent';
 import { useToast } from '@/hooks/useToast';
 import { useOnceOpened } from '@/hooks/useDeferredDialog';
@@ -150,7 +151,11 @@ export function Post({
   const { isReposted, repostCount, repost, isReposting } = useReposts(event.id);
   const { replyCount } = useReplies(event.id);
   const { isBookmarked, toggle: toggleBookmark, isToggling } = useBookmarks();
-  const { isUserMuted, muteUser, unmuteUser } = useMuteList();
+  const { isUserMuted, muteUser, unmuteUser, canBePrivate } = useMuteList();
+  const { isPrivate } = useMutePrivacy();
+
+  // Private only when the user asked for it and the signer can encrypt
+  const mutePrivately = isPrivate && canBePrivate;
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
@@ -363,7 +368,7 @@ export function Post({
                 onClick={() =>
                   isUserMuted(event.pubkey)
                     ? unmuteUser(event.pubkey)
-                    : muteUser(event.pubkey)
+                    : muteUser(event.pubkey, { private: mutePrivately })
                 }
               >
                 <VolumeX className="mr-2 h-4 w-4" />

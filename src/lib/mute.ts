@@ -39,12 +39,23 @@ export function isExpired(item: string | MutedItem): boolean {
   return item.expiry < Math.floor(Date.now() / 1000);
 }
 
-/** Reads a kind 10000 event into a mute list. */
+/** Reads a kind 10000 event's public tags into a mute list. */
 export function parseMuteList(event: NostrEvent | undefined): MuteList {
   if (!event) return EMPTY_MUTE_LIST;
+  return parseMuteTags(event.tags);
+}
 
+/**
+ * Reads mute entries out of a bare tag array.
+ *
+ * Split out from `parseMuteList` because NIP-51's private items are the same
+ * tag array, encrypted into `.content` — so the private half has to be read by
+ * exactly the same code, or the two halves would drift and a privately muted
+ * word would stop working the moment the public parser learned something new.
+ */
+export function parseMuteTags(tags: string[][]): MuteList {
   const collect = (name: string) =>
-    event.tags
+    tags
       .filter(([tagName]) => tagName === name)
       .map(([, value, ...rest]) => {
         // Support: ['p', 'pubkey'] or ['p', 'pubkey', 'expiry', '1692921600'] or ['p', 'pubkey', 'soft-mute']
@@ -248,4 +259,47 @@ export function filterMuted<T extends NostrEvent>(
     return events;
   }
   return events.filter((event) => !isMuted(event, list));
+}
+
+/**
+ * Combines the public and private halves of a mute list.
+ *
+ * Everything that filters a feed wants one answer to "is this muted", and it
+ * does not care which half the entry came from. Keeping the halves apart
+ * everywhere would mean every call site remembering to check both, and the one
+ * that forgot would leak a privately muted account back into somebody's feed.
+ */
+export function mergeMuteLists(a: MuteList, b: MuteList): MuteList {
+  const join = (
+    left: (string | MutedItem)[],
+    right: (string | MutedItem)[]
+  ): (string | MutedItem)[] => {
+    const seen = new Set<string>();
+    const out: (string | MutedItem)[] = [];
+
+    for (const item of [...left, ...right]) {
+      const value = getMuteValue(item);
+      if (seen.has(value)) continue;
+      seen.add(value);
+      out.push(item);
+    }
+
+    return out;
+  };
+
+  return {
+    pubkeys: join(a.pubkeys, b.pubkeys),
+    hashtags: join(a.hashtags, b.hashtags),
+    words: join(a.words, b.words),
+    threads: join(a.threads, b.threads),
+  };
+}
+
+/** Whether a value appears anywhere in a mute list. */
+export function muteListHas(list: MuteList, value: string): boolean {
+  return (
+    [...list.pubkeys, ...list.hashtags, ...list.words, ...list.threads].some(
+      (item) => getMuteValue(item) === value
+    )
+  );
 }

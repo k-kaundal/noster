@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
+import { Badge } from '@/components/ui/badge';
 import {
+  Globe,
   Hash,
   Loader2,
+  Lock,
   MessagesSquare,
   Plus,
   Sparkles,
@@ -30,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useMuteList } from '@/hooks/useMuteList';
+import { useMutePrivacy } from '@/hooks/useMutePrivacy';
 import { useAdultContent } from '@/hooks/useAdultContent';
 import { useMachineEvents } from '@/hooks/useMachineEvents';
 import { TrustProviderSettings } from '@/components/trust/TrustProviderSettings';
@@ -237,6 +241,8 @@ function MuteSettings() {
     list,
     isLoading,
     isUpdating,
+    canBePrivate,
+    isPrivatelyMuted,
     unmuteUser,
     muteWord,
     unmuteWord,
@@ -244,11 +250,33 @@ function MuteSettings() {
     unmuteHashtag,
   } = useMuteList();
 
+  const { isPrivate, setPrivate } = useMutePrivacy();
+
   const [word, setWord] = useState('');
   const [hashtag, setHashtag] = useState('');
 
+  // Only ever private when the signer can actually encrypt
+  const visibility = { private: isPrivate && canBePrivate };
+
   return (
     <div className="space-y-4">
+      <Card>
+        <CardContent className="flex items-start justify-between gap-4 py-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Keep new mutes private</p>
+            <p className="text-sm text-muted-foreground">
+              {canBePrivate
+                ? 'Encrypted so only you can read them. A public mute list tells everyone who you have blocked.'
+                : 'Your signer cannot encrypt, so mutes are published in the open where anyone can read them.'}
+            </p>
+          </div>
+          <Switch
+            checked={isPrivate && canBePrivate}
+            disabled={!canBePrivate}
+            onCheckedChange={setPrivate}
+          />
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -271,6 +299,7 @@ function MuteSettings() {
                   <MutedPersonRow
                     key={pubkey}
                     pubkey={pubkey}
+                    isPrivate={isPrivatelyMuted(pubkey)}
                     onUnmute={() => unmuteUser(pubkey)}
                     disabled={isUpdating}
                   />
@@ -289,7 +318,7 @@ function MuteSettings() {
         value={word}
         onValueChange={setWord}
         onAdd={async () => {
-          await muteWord(word);
+          await muteWord(word, visibility);
           setWord('');
         }}
         items={list.words.map(getMuteValue)}
@@ -305,7 +334,7 @@ function MuteSettings() {
         value={hashtag}
         onValueChange={setHashtag}
         onAdd={async () => {
-          await muteHashtag(hashtag);
+          await muteHashtag(hashtag, visibility);
           setHashtag('');
         }}
         items={list.hashtags.map(getMuteValue)}
@@ -319,10 +348,12 @@ function MuteSettings() {
 
 function MutedPersonRow({
   pubkey,
+  isPrivate,
   onUnmute,
   disabled,
 }: {
   pubkey: string;
+  isPrivate: boolean;
   onUnmute: () => void;
   disabled: boolean;
 }) {
@@ -346,6 +377,24 @@ function MutedPersonRow({
       >
         {displayName}
       </Link>
+
+      {/*
+        Which half this entry lives in. Worth stating: the difference is
+        whether the person being muted can find out.
+      */}
+      <Badge variant="secondary" className="shrink-0 gap-1 text-xs">
+        {isPrivate ? (
+          <>
+            <Lock className="h-3 w-3" />
+            Private
+          </>
+        ) : (
+          <>
+            <Globe className="h-3 w-3" />
+            Public
+          </>
+        )}
+      </Badge>
 
       <Button variant="outline" size="sm" onClick={onUnmute} disabled={disabled}>
         Unmute

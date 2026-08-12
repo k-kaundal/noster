@@ -24,11 +24,26 @@ export const GROUP_METADATA = 39000;
 export const GROUP_ADMINS = 39001;
 export const GROUP_MEMBERS = 39002;
 export const GROUP_ROLES = 39003;
+/** Who is currently in the group's live audio/video room. */
+export const LIVEKIT_PARTICIPANTS = 39004;
 export const GROUP_PINS = 39005;
 
-/** Moderation, sent by admins and carrying the group in an `h` tag. */
+/**
+ * Moderation, sent by admins and carrying the group in an `h` tag.
+ *
+ * The relay decides who may send which of these — the spec deliberately does
+ * not say what a role can do, only that the relay checks. So nothing here
+ * gates on a role name: a client that guessed the policy would refuse actions
+ * the relay would have allowed, and allow ones it rejects anyway.
+ */
 export const PUT_USER = 9000;
 export const REMOVE_USER = 9001;
+export const EDIT_METADATA = 9002;
+export const DELETE_EVENT = 9005;
+export const CREATE_GROUP = 9007;
+export const DELETE_GROUP = 9008;
+export const CREATE_INVITE = 9009;
+export const UPDATE_PIN_LIST = 9010;
 
 /** Sent by anyone about their own membership. */
 export const JOIN_REQUEST = 9021;
@@ -416,4 +431,381 @@ export function buildGroupListTags(groups: SavedGroup[]): string[][] {
   for (const relay of relays) tags.push(['r', relay]);
 
   return tags;
+}
+
+/**
+ * Metadata fields an admin can change, as `kind:9002` takes them.
+ *
+ * The booleans are three-state on purpose. `undefined` means "leave it as it
+ * is", and the spec's flags are presence-only — `["private"]` with no value —
+ * so there is no way to spell "off" other than omitting the tag. Conflating
+ * "unchanged" with "off" would quietly make a private group public the first
+ * time somebody renamed it.
+ */
+export interface GroupMetadataEdit {
+  name?: string;
+  picture?: string;
+  banner?: string;
+  about?: string;
+  isPrivate?: boolean;
+  isRestricted?: boolean;
+  isHidden?: boolean;
+  isClosed?: boolean;
+  hasLivekit?: boolean;
+  /** Null detaches the group and makes it a root. */
+  parent?: string | null;
+  supportedKinds?: number[] | null;
+  /**
+   * The child list, in order.
+   *
+   * Only for reordering. Left out, the group's existing children are carried
+   * through unchanged — which is required, not merely polite: an edit missing
+   * any of them is rejected outright.
+   */
+  children?: string[];
+}
+
+/**
+ * Tags for a `kind:9002` edit-metadata event.
+ *
+ * Takes the group's current metadata as well as the changes, because this
+ * event replaces the whole description rather than patching it — a field left
+ * out is a field cleared. Two of those omissions are outright rejections
+ * rather than quiet damage:
+ *
+ * - "kind:9002 metadata edits that do not include all the children as child
+ *   tags MUST be rejected." So a rename that forgot the children would be
+ *   thrown out by the relay, and the admin would see a failure with no
+ *   explanation of which tag was missing.
+ * - At most one `parent` tag is allowed, and its absence is what makes a group
+ *   a root — so detaching is expressed by leaving it out, not by a value.
+ */
+export function editMetadataTags(
+  current: GroupMetadata,
+  changes: GroupMetadataEdit = {},
+  options: { seen?: NostrEvent[]; selfPubkey?: string } = {}
+): string[][] {
+  const tags = groupTags(current.id, options);
+
+  const pick = <T>(next: T | undefined, existing: T): T =>
+    next === undefined ? existing : next;
+
+  const name = pick(changes.name, current.name);
+  const picture = pick(changes.picture, current.picture);
+  const banner = pick(changes.banner, current.banner);
+  const about = pick(changes.about, current.about);
+
+  if (name) tags.push(['name', name]);
+  if (picture) tags.push(['picture', picture]);
+  if (banner) tags.push(['banner', banner]);
+  if (about) tags.push(['about', about]);
+
+  // Presence-only flags: written when on, absent when off
+  const flags: [string, boolean][] = [
+    ['private', pick(changes.isPrivate, current.isPrivate)],
+    ['restricted', pick(changes.isRestricted, current.isRestricted)],
+    ['hidden', pick(changes.isHidden, current.isHidden)],
+    ['closed', pick(changes.isClosed, current.isClosed)],
+    ['livekit', pick(changes.hasLivekit, current.hasLivekit)],
+  ];
+
+  for (const [flag, on] of flags) {
+    if (on) tags.push([flag]);
+  }
+
+  const supported = pick(changes.supportedKinds, current.supportedKinds);
+
+  /**
+   * An empty list is written as a bare tag, which is how an AV-only group is
+   * described. Only a null — "no restriction stated" — omits it entirely.
+   */
+  if (supported !== null) {
+    tags.push(['supported_kinds', ...supported.map(String)]);
+  }
+
+  const parent =
+    changes.parent === undefined ? current.parent : changes.parent;
+
+  if (parent) tags.push(['parent', parent]);
+
+  /**
+   * The full child list, in order. Carried through untouched unless the caller
+   * is deliberately reordering it — the relay rejects an edit that omits any
+   * child, so this is the difference between a rename working and failing.
+   */
+  for (const child of changes.children ?? current.children) {
+    tags.push(['child', child]);
+  }
+
+  return tags;
+}
+
+/**
+ * Tags for reordering a parent's children.
+ *
+ * Separate from a metadata edit only because the caller is thinking about a
+ * different thing; on the wire it is the same `kind:9002`, carrying the same
+ * complete list. The order of the `child` tags *is* the order.
+ */
+export function reorderChildrenTags(
+  current: GroupMetadata,
+  children: string[],
+  options: { seen?: NostrEvent[]; selfPubkey?: string } = {}
+): string[][] {
+  const known = new Set(current.children);
+
+  /**
+   * Only children the group already has, and all of them. A list that dropped
+   * one would be rejected, and one that invented an id would claim a group
+   * that may not exist.
+   */
+  const ordered = children.filter((id) => known.has(id));
+  for (const id of current.children) {
+    if (!ordered.includes(id)) ordered.push(id);
+  }
+
+  return editMetadataTags(current, { children: ordered }, options);
+}
+
+/** Tags for `kind:9000`, adding a user or changing their roles. */
+export function putUserTags(
+  groupId: string,
+  pubkey: string,
+  roles: string[] = [],
+  options: { seen?: NostrEvent[]; selfPubkey?: string } = {}
+): string[][] {
+  return [...groupTags(groupId, options), ['p', pubkey, ...roles]];
+}
+
+/** Tags for `kind:9001`, removing a user. */
+export function removeUserTags(
+  groupId: string,
+  pubkey: string,
+  options: { seen?: NostrEvent[]; selfPubkey?: string } = {}
+): string[][] {
+  return [...groupTags(groupId, options), ['p', pubkey]];
+}
+
+/** Tags for `kind:9005`, asking the relay to drop an event. */
+export function deleteEventTags(
+  groupId: string,
+  eventId: string,
+  options: { seen?: NostrEvent[]; selfPubkey?: string } = {}
+): string[][] {
+  return [...groupTags(groupId, options), ['e', eventId]];
+}
+
+/** Tags for `kind:9009`, minting an invite code. */
+export function createInviteTags(
+  groupId: string,
+  code: string,
+  options: { seen?: NostrEvent[]; selfPubkey?: string } = {}
+): string[][] {
+  return [...groupTags(groupId, options), ['code', code]];
+}
+
+/**
+ * Tags for `kind:9010`, setting the pinned list.
+ *
+ * The whole list every time. "Pinning, unpinning, reordering and clearing pins
+ * are all done by submitting a new list", so an empty one is a legitimate
+ * event meaning "nothing is pinned" rather than a mistake to guard against.
+ *
+ * Event ids go in `e` tags and addresses in `a`, told apart by shape: an
+ * address is `kind:pubkey:d` and an id is 64 hex characters.
+ */
+export function updatePinsTags(
+  groupId: string,
+  pins: string[],
+  options: { seen?: NostrEvent[]; selfPubkey?: string } = {}
+): string[][] {
+  const tags = groupTags(groupId, options);
+
+  for (const pin of pins) {
+    const value = pin.trim();
+    if (!value) continue;
+
+    tags.push([/^\d+:[0-9a-f]{64}:/i.test(value) ? 'a' : 'e', value]);
+  }
+
+  return tags;
+}
+
+/** Tags for `kind:9007` / `kind:9008`, which carry nothing but the group. */
+export function groupLifecycleTags(
+  groupId: string,
+  options: { seen?: NostrEvent[]; selfPubkey?: string } = {}
+): string[][] {
+  return groupTags(groupId, options);
+}
+
+/** Tags for `kind:9021`, a join request, optionally with an invite code. */
+export function joinRequestTags(
+  groupId: string,
+  invite?: string,
+  options: { seen?: NostrEvent[]; selfPubkey?: string } = {}
+): string[][] {
+  const tags = groupTags(groupId, options);
+  if (invite?.trim()) tags.push(['code', invite.trim()]);
+  return tags;
+}
+
+/**
+ * How a relay's rejection of a join request should be read.
+ *
+ * The spec asks relays to say in the message "whether the rejection is final,
+ * if the request is pending review, or if some other special handling is
+ * relevant", and mandates one exact prefix: a user who is already a member
+ * gets `duplicate:`. That one is worth acting on rather than showing — it
+ * means the join succeeded some time ago.
+ */
+export type JoinOutcome = 'joined' | 'already-member' | 'pending' | 'rejected';
+
+export function readJoinRejection(message: string): JoinOutcome {
+  const text = message.trim().toLowerCase();
+
+  if (text.startsWith('duplicate:')) return 'already-member';
+
+  /**
+   * Everything else is a guess at prose, so it only ever softens the message
+   * shown — never grants access. Getting this wrong displays the wrong
+   * sentence; it cannot let anybody into a group.
+   */
+  if (/\b(pending|awaiting|review|moderat|approv)/.test(text)) return 'pending';
+
+  return 'rejected';
+}
+
+/**
+ * Where a group's admins say the group now lives.
+ *
+ * The spec's answer to a relay going away: "clients SHOULD periodically -- and
+ * MUST, if their primary relay for a group is offline or unreachable -- look
+ * at the kind:10009 event of the group's admins and of trusted friends. The
+ * pubkeys of the admins of the groups the user is in SHOULD be cached locally
+ * so this check can be performed even when the original relay is down."
+ *
+ * The caching is the part that is easy to skip and impossible to work without.
+ * Admins are named in the group's own kind:39001, which lives on the relay
+ * that just stopped answering — so a client that only learns who the admins
+ * are by asking the dead relay can never perform the check the spec makes
+ * mandatory for exactly that situation.
+ */
+export interface GroupLocation {
+  relay: string;
+  /** Admins pointing at this relay. More agreement is more confidence. */
+  vouchedBy: string[];
+}
+
+export interface GroupMoveReport {
+  groupId: string;
+  /** Where the client has been looking. */
+  from?: string;
+  /** Other relays admins now name, most-vouched first. */
+  candidates: GroupLocation[];
+}
+
+function normaliseRelay(url: string): string {
+  return url.trim().replace(/\/+$/, '').toLowerCase();
+}
+
+/**
+ * Reads admins' group lists to find where a group may have moved.
+ *
+ * Deliberately reports rather than decides. The same id on a second relay is
+ * as likely to be a fork as a migration — the spec treats forks as a feature,
+ * two communities that share a name and disagree — and no amount of tag
+ * reading distinguishes "we moved" from "we split". So this returns the
+ * candidates and leaves the choice to the person whose group it is.
+ */
+export function findGroupMoves(
+  groupId: string,
+  adminLists: { pubkey: string; event: NostrEvent }[],
+  currentRelay?: string
+): GroupMoveReport {
+  const here = currentRelay ? normaliseRelay(currentRelay) : undefined;
+  const byRelay = new Map<string, Set<string>>();
+
+  for (const { pubkey, event } of adminLists) {
+    for (const saved of parseGroupList(event)) {
+      if (saved.id !== groupId || !saved.relay) continue;
+
+      const relay = normaliseRelay(saved.relay);
+      if (relay === here) continue;
+
+      const vouchers = byRelay.get(relay) ?? new Set<string>();
+      vouchers.add(pubkey);
+      byRelay.set(relay, vouchers);
+    }
+  }
+
+  const candidates = [...byRelay]
+    .map(([relay, vouchers]) => ({ relay, vouchedBy: [...vouchers] }))
+    .sort((a, b) => b.vouchedBy.length - a.vouchedBy.length);
+
+  return { groupId, from: currentRelay, candidates };
+}
+
+/**
+ * The LiveKit token endpoint for a group.
+ *
+ * Derived from the relay's websocket URL, since that is the only address a
+ * client holds — `wss://` becomes `https://`, and `ws://` becomes `http://`
+ * so a local relay over plain HTTP still works rather than failing on a
+ * scheme mismatch nobody can debug.
+ */
+export function livekitTokenUrl(relayUrl: string, groupId: string): string {
+  const url = new URL(relayUrl);
+  url.protocol = url.protocol === 'ws:' ? 'http:' : 'https:';
+  url.pathname = `/.well-known/nip29/livekit/${encodeURIComponent(groupId)}`;
+  url.search = '';
+
+  return url.toString();
+}
+
+/** Where a relay says whether it does LiveKit at all. */
+export function livekitSupportUrl(relayUrl: string): string {
+  const url = new URL(relayUrl);
+  url.protocol = url.protocol === 'ws:' ? 'http:' : 'https:';
+  url.pathname = '/.well-known/nip29/livekit';
+  url.search = '';
+
+  return url.toString();
+}
+
+/** Who the relay says is currently in a group's AV room (`kind:39004`). */
+export function parseLivekitParticipants(
+  event: NostrEvent | undefined
+): string[] {
+  if (!event || event.kind !== LIVEKIT_PARTICIPANTS) return [];
+
+  return event.tags
+    .filter(
+      ([name, value]) =>
+        name === 'participant' && /^[0-9a-f]{64}$/i.test(value ?? '')
+    )
+    .map(([, pubkey]) => pubkey.toLowerCase());
+}
+
+/**
+ * The Nostr pubkey behind a LiveKit participant identity.
+ *
+ * "Relays MUST set the sub property on the issued JWT such that the initial 64
+ * characters correspond to the lowercase hex public key of the Nostr user",
+ * with a random suffix so one person can join twice. Comparing identities
+ * whole would show the same person as two strangers on their second device.
+ */
+export function pubkeyFromIdentity(identity: string): string | null {
+  const head = identity.slice(0, 64).toLowerCase();
+  return /^[0-9a-f]{64}$/.test(head) ? head : null;
+}
+
+/** Whether a relay's NIP-11 document claims subgroup support. */
+export function supportsSubgroups(info: unknown): boolean {
+  if (!info || typeof info !== 'object') return false;
+
+  const nip29 = (info as { nip29?: unknown }).nip29;
+  if (!nip29 || typeof nip29 !== 'object') return false;
+
+  return (nip29 as { subgroups?: unknown }).subgroups === true;
 }

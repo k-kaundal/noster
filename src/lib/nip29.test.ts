@@ -21,6 +21,17 @@ import {
   parseGroupReference,
   parseGroupRoles,
   rolesOf,
+  LIVEKIT_PARTICIPANTS,
+  editMetadataTags,
+  findGroupMoves,
+  joinRequestTags,
+  livekitTokenUrl,
+  parseLivekitParticipants,
+  pubkeyFromIdentity,
+  readJoinRejection,
+  reorderChildrenTags,
+  supportsSubgroups,
+  updatePinsTags,
 } from './nip29';
 
 const RELAY_KEY = 'r'.repeat(64);
@@ -422,5 +433,236 @@ describe('group list', () => {
     // to a relay called "Pizza"
     const tags = buildGroupListTags([{ id: 'pizza', name: 'Pizza' }]);
     expect(tags[0]).toEqual(['group', 'pizza', '', 'Pizza']);
+  });
+});
+
+describe('editMetadataTags', () => {
+  const group = parseGroupMetadata(
+    event({ kind: GROUP_METADATA, tags: [
+      ['d', 'tech'],
+      ['name', 'Tech'],
+      ['about', 'stuff'],
+      ['private'],
+      ['closed'],
+      ['supported_kinds', '9', '11'],
+      ['child', 'nostr'],
+      ['child', 'bitcoin'],
+    ] })
+  )!;
+
+  it('carries every child through an unrelated edit, in order', () => {
+    // A kind:9002 that omits any child MUST be rejected by the relay
+    const tags = editMetadataTags(group, { name: 'Technology' });
+    const children = tags.filter(([name]) => name === 'child').map(([, id]) => id);
+
+    expect(children).toEqual(['nostr', 'bitcoin']);
+  });
+
+  it('leaves presence-only flags alone unless asked', () => {
+    expect(
+      editMetadataTags(group, { name: 'x' }).some(([name]) => name === 'private')
+    ).toBe(true);
+  });
+
+  it('drops a flag turned off, since absence is the only way to say off', () => {
+    expect(
+      editMetadataTags(group, { isPrivate: false }).some(
+        ([name]) => name === 'private'
+      )
+    ).toBe(false);
+  });
+
+  it('detaches to root by omitting the parent tag', () => {
+    const child = parseGroupMetadata(
+      event({ kind: GROUP_METADATA, tags: [
+        ['d', 'nostr'],
+        ['name', 'Nostr'],
+        ['parent', 'tech'],
+      ] })
+    )!;
+
+    expect(
+      editMetadataTags(child, { parent: null }).some(([name]) => name === 'parent')
+    ).toBe(false);
+    expect(editMetadataTags(child, { parent: 'social' })).toContainEqual([
+      'parent',
+      'social',
+    ]);
+    expect(editMetadataTags(child, {})).toContainEqual(['parent', 'tech']);
+  });
+
+  it('writes a bare supported_kinds for an AV-only group', () => {
+    const av = parseGroupMetadata(
+      event({ kind: GROUP_METADATA, tags: [
+        ['d', 'av'],
+        ['name', 'AV'],
+        ['supported_kinds'],
+        ['livekit'],
+      ] })
+    )!;
+
+    expect(av.supportedKinds).toEqual([]);
+    expect(editMetadataTags(av, {})).toContainEqual(['supported_kinds']);
+  });
+
+  it('omits supported_kinds entirely when the group accepts anything', () => {
+    const any = parseGroupMetadata(
+      event({ kind: GROUP_METADATA, tags: [['d', 'any'], ['name', 'Any']] })
+    )!;
+
+    expect(any.supportedKinds).toBeNull();
+    expect(
+      editMetadataTags(any, {}).some(([name]) => name === 'supported_kinds')
+    ).toBe(false);
+  });
+
+  it('keeps the child list complete when reordering', () => {
+    const tags = reorderChildrenTags(group, ['bitcoin']);
+    const children = tags.filter(([name]) => name === 'child').map(([, id]) => id);
+
+    expect(children).toEqual(['bitcoin', 'nostr']);
+  });
+
+  it('refuses to invent a child that is not one', () => {
+    const tags = reorderChildrenTags(group, ['bitcoin', 'imaginary']);
+    const children = tags.filter(([name]) => name === 'child').map(([, id]) => id);
+
+    expect(children).toEqual(['bitcoin', 'nostr']);
+  });
+});
+
+describe('updatePinsTags', () => {
+  it('tells event ids and addresses apart', () => {
+    const tags = updatePinsTags('g', [
+      'd'.repeat(64),
+      `30023:${'a'.repeat(64)}:my-article`,
+    ]);
+
+    expect(tags).toContainEqual(['e', 'd'.repeat(64)]);
+    expect(tags).toContainEqual(['a', `30023:${'a'.repeat(64)}:my-article`]);
+  });
+
+  it('treats an empty list as clearing the pins', () => {
+    expect(updatePinsTags('g', [])).toEqual([['h', 'g']]);
+  });
+});
+
+describe('joinRequestTags', () => {
+  it('carries an invite code when there is one', () => {
+    expect(joinRequestTags('g', 'SECRET')).toEqual([
+      ['h', 'g'],
+      ['code', 'SECRET'],
+    ]);
+    expect(joinRequestTags('g')).toEqual([['h', 'g']]);
+  });
+});
+
+describe('readJoinRejection', () => {
+  it('recognises the spec-mandated duplicate prefix', () => {
+    expect(readJoinRejection('duplicate: already a member')).toBe(
+      'already-member'
+    );
+    expect(readJoinRejection('DUPLICATE: x')).toBe('already-member');
+  });
+
+  it('separates a request under review from a refusal', () => {
+    expect(readJoinRejection('pending review by an admin')).toBe('pending');
+    expect(readJoinRejection('awaiting moderator approval')).toBe('pending');
+    expect(readJoinRejection('you are banned')).toBe('rejected');
+    expect(readJoinRejection('payment required')).toBe('rejected');
+  });
+});
+
+describe('findGroupMoves', () => {
+  const list = (relay: string) =>
+    event({ kind: GROUP_LIST, tags: [['group', 'pizza', relay, 'Pizza']] });
+
+  it('ranks candidate relays by how many admins point there', () => {
+    const report = findGroupMoves(
+      'pizza',
+      [
+        { pubkey: 'admin1', event: list('wss://new.example') },
+        { pubkey: 'admin2', event: list('wss://new.example/') },
+        { pubkey: 'admin3', event: list('wss://other.example') },
+      ],
+      'wss://old.example'
+    );
+
+    expect(report.candidates[0].relay).toBe('wss://new.example');
+    expect(report.candidates[0].vouchedBy).toEqual(['admin1', 'admin2']);
+    expect(report.candidates).toHaveLength(2);
+  });
+
+  it('does not report the relay already in use', () => {
+    const report = findGroupMoves(
+      'pizza',
+      [{ pubkey: 'admin1', event: list('wss://old.example') }],
+      'wss://old.example'
+    );
+
+    expect(report.candidates).toEqual([]);
+  });
+
+  it('ignores other groups in the same list', () => {
+    const mixed = event({
+      kind: GROUP_LIST,
+      tags: [['group', 'pasta', 'wss://elsewhere.example']],
+    });
+
+    expect(
+      findGroupMoves('pizza', [{ pubkey: 'a', event: mixed }]).candidates
+    ).toEqual([]);
+  });
+});
+
+describe('livekit helpers', () => {
+  it('derives the token endpoint from the relay url', () => {
+    expect(livekitTokenUrl('wss://relay.tld', 'g')).toBe(
+      'https://relay.tld/.well-known/nip29/livekit/g'
+    );
+  });
+
+  it('keeps plain http for a local relay', () => {
+    expect(livekitTokenUrl('ws://localhost:7777', 'g')).toBe(
+      'http://localhost:7777/.well-known/nip29/livekit/g'
+    );
+  });
+
+  it('escapes a group id with awkward characters', () => {
+    expect(livekitTokenUrl('wss://relay.tld', 'a b/c')).toContain('a%20b%2Fc');
+  });
+
+  it('reads participants, ignoring malformed pubkeys', () => {
+    expect(
+      parseLivekitParticipants(
+        event({ kind: LIVEKIT_PARTICIPANTS, tags: [
+          ['d', 'g'],
+          ['participant', 'a'.repeat(64)],
+          ['participant', 'nope'],
+        ] })
+      )
+    ).toEqual(['a'.repeat(64)]);
+  });
+
+  it('recovers the pubkey from a livekit identity with a random suffix', () => {
+    const pubkey = 'b'.repeat(64);
+
+    expect(pubkeyFromIdentity(`${pubkey}RANDOM`)).toBe(pubkey);
+    // The same person on two devices must not read as two people
+    expect(pubkeyFromIdentity(`${pubkey}aaa`)).toBe(
+      pubkeyFromIdentity(`${pubkey}zzz`)
+    );
+    expect(pubkeyFromIdentity('short')).toBeNull();
+  });
+});
+
+describe('supportsSubgroups', () => {
+  it('only accepts an explicit true', () => {
+    expect(supportsSubgroups({ nip29: { subgroups: true } })).toBe(true);
+    expect(supportsSubgroups({ nip29: { subgroups: false } })).toBe(false);
+    expect(supportsSubgroups({ nip29: {} })).toBe(false);
+    expect(supportsSubgroups({})).toBe(false);
+    expect(supportsSubgroups(null)).toBe(false);
+    expect(supportsSubgroups('nope')).toBe(false);
   });
 });
