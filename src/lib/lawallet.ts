@@ -110,6 +110,43 @@ export function unwrapList<T>(body: unknown): T[] {
   return [];
 }
 
+/**
+ * The same, for a response that is one record rather than a list.
+ *
+ * `unwrapList` exists because the schema promises `{data: [...]}` and the
+ * service answers with a bare array. Single records are the same problem in
+ * the other direction — some routes wrap, some do not — and reading only one
+ * shape means every field arrives `undefined`, which is not an error anywhere
+ * until something calls a method on one.
+ *
+ * Only `data` is unwrapped. Guessing at other envelope names would risk
+ * mistaking a record's own nested object for the record.
+ */
+export function unwrapRecord(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
+
+  const record = body as Record<string, unknown>;
+  const nested = record.data;
+
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
+  }
+
+  return record;
+}
+
+/** The first of these fields that carries a non-empty string. */
+function firstString(
+  record: Record<string, unknown>,
+  keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 /** Whether the service says this address currently accepts payments. */
 export function acceptsPayments(address: DirectoryAddress): boolean {
   const info = address.protocols;
@@ -313,7 +350,23 @@ export function recallQuote(
   pubkey: string,
   username: string
 ): StoredQuote | null {
-  return readQuotes()[quoteSlot(pubkey, username)] ?? null;
+  const held = readQuotes()[quoteSlot(pubkey, username)];
+  if (!held) return null;
+
+  /**
+   * Read back through the same boundary as a fresh response.
+   *
+   * Storage holds whatever the service sent on the day it was written, which
+   * is not necessarily what this build expects — and an invoice saved before
+   * `bolt11` was understood would otherwise come back with no payment request
+   * and fail exactly where it failed the first time. Normalising here also
+   * rescues those: the payment request was always in the record, only under a
+   * name nothing was reading.
+   */
+  const invoice = readStoredInvoice(held.invoice);
+  if (!invoice) return null;
+
+  return { invoice, issuedAt: held.issuedAt };
 }
 
 export function forgetQuote(pubkey: string, username: string): void {
@@ -322,8 +375,27 @@ export function forgetQuote(pubkey: string, username: string): void {
   writeQuotes(quotes);
 }
 
-/** Whether a held invoice is old enough that it may no longer be payable. */
+/**
+ * Whether a held invoice is past being worth offering again.
+ *
+ * The service states an `expiresAt`, and where it does that is the answer —
+ * a guess cannot beat the issuer on its own invoice. The window below is the
+ * fallback for a response that carries no expiry, and it is deliberately well
+ * short of the hour BOLT11 invoices usually allow: being early costs one
+ * request, being late offers somebody a bill their wallet rejects, which
+ * reads as the payment failing rather than as the bill being old.
+ *
+ * A small margin comes off the stated expiry for the same reason. An invoice
+ * that expires while the payment is in flight fails in a way nobody can tell
+ * apart from a broken wallet.
+ */
 export function isQuoteStale(quote: StoredQuote, now = Date.now()): boolean {
+  const expiry = quote.invoice.expiresAt
+    ? Date.parse(quote.invoice.expiresAt)
+    : NaN;
+
+  if (!Number.isNaN(expiry)) return now > expiry - 60_000;
+
   return now - quote.issuedAt > QUOTE_FRESH_MS;
 }
 
@@ -732,11 +804,128 @@ export function isLive(address: WalletAddress): boolean {
 /** A pay-then-act invoice, as returned by `POST /api/invoices`. */
 export interface ServiceInvoice {
   id: string;
-  purpose: 'registration' | 'wallet-address';
-  /** BOLT11. */
+  /**
+   * BOLT11.
+   *
+   * Named `pr` because that is what the schema calls it. The service sends it
+   * as `bolt11`, so nothing may read this field off a raw response — see
+   * `readInvoice`, which is the only thing that should build one of these.
+   */
   pr: string;
   paymentHash: string;
-  settled: boolean;
+  /**
+   * What it costs, as the service states it.
+   *
+   * Preferred over reading the amount out of the BOLT11 ourselves. Both should
+   * agree, and where they might not, the number the service put in writing is
+   * the one to show next to a button that spends money.
+   */
+  amountSats?: number | null;
+  /** ISO 8601, when the service says the invoice stops being payable. */
+  expiresAt?: string;
+  purpose?: 'registration' | 'wallet-address';
+  settled?: boolean;
+}
+
+/**
+ * Reads an invoice response, whatever the service decided to call the fields.
+ *
+ * The schema documents `pr`; the service sends `bolt11`, plus an `amountSats`
+ * and an `expiresAt` that the schema does not mention at all. Reading only the
+ * documented name left `pr` undefined, and nothing noticed until the amount
+ * parser called `.trim()` on it — so a mismatch between two field names
+ * reached the reader as "Cannot read properties of undefined" on the screen
+ * where they were buying a name.
+ *
+ * Which is the argument for this function existing rather than a wider type:
+ * the shape is checked once, at the boundary, and everything past it holds an
+ * invoice that is known to have a payment request in it.
+ */
+export function readInvoice(body: unknown): ServiceInvoice {
+  const record = unwrapRecord(body);
+
+  const pr = firstString(record, [
+    'bolt11',
+    'pr',
+    'payment_request',
+    'paymentRequest',
+  ]);
+
+  if (!pr) {
+    throw new LaWalletError(
+      'The wallet service returned an invoice with no payment request in it, so there is nothing to pay.',
+      200
+    );
+  }
+
+  const id = firstString(record, ['id', 'invoiceId', 'invoice_id']);
+
+  if (!id) {
+    /**
+     * Refused rather than carried. Claiming the name afterwards is
+     * `POST /api/invoices/{id}/claim`, so an invoice with no id can be paid
+     * and then proves nothing — which is the one failure worth stopping
+     * before the money moves rather than after.
+     */
+    throw new LaWalletError(
+      'The wallet service returned an invoice with no id, which means a payment could not be proven afterwards.',
+      200
+    );
+  }
+
+  const amount = record.amountSats;
+
+  return {
+    id,
+    pr,
+    paymentHash: firstString(record, ['paymentHash', 'payment_hash']) ?? '',
+    amountSats:
+      typeof amount === 'number' && Number.isFinite(amount)
+        ? amount
+        : invoiceAmountSats(pr),
+    expiresAt: firstString(record, ['expiresAt', 'expires_at']),
+    purpose: record.purpose as ServiceInvoice['purpose'],
+    settled: record.settled === true,
+  };
+}
+
+/**
+ * Reads an address record back from a write, with the name asked for as the
+ * fallback.
+ *
+ * Same boundary as `readInvoice`, and here for the same reason: the invoice
+ * route renamed a field the schema documents, so this one may too. The cost of
+ * being wrong is smaller but not nothing — the success toast says "{name} is
+ * yours", and an undefined there tells somebody their name is `undefined`.
+ */
+export function readWalletAddress(
+  body: unknown,
+  fallbackUsername: string
+): WalletAddress {
+  const record = unwrapRecord(body);
+  const mode = record.mode;
+
+  return {
+    username: firstString(record, ['username', 'name']) ?? fallbackUsername,
+    mode: (typeof mode === 'string' ? mode : 'IDLE') as AddressMode,
+    redirect: typeof record.redirect === 'string' ? record.redirect : null,
+    remoteWalletId:
+      typeof record.remoteWalletId === 'string' ? record.remoteWalletId : null,
+    isPrimary: record.isPrimary === true,
+  };
+}
+
+/**
+ * The same, for an invoice coming back out of storage rather than off the
+ * wire. Answers null instead of throwing, since a stored record that cannot
+ * be read is simply one to forget.
+ */
+export function readStoredInvoice(body: unknown): ServiceInvoice | null {
+  try {
+    return readInvoice(body);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -780,6 +969,11 @@ export function invoiceAmountSats(bolt11: string): number | null {
    * separator — parses as an amount of one whole bitcoin, and the button next
    * to it offers to pay 100,000,000 sats.
    */
+  // Guarded rather than trusted. A missing field used to reach here as
+  // `undefined.trim()`, which surfaced to the reader as "Cannot read
+  // properties of undefined" on the screen where they were buying a name
+  if (typeof bolt11 !== 'string') return null;
+
   const match = /^ln(?:bcrt|bc|tb)(?:(\d+)([munp])?)?1/i.exec(bolt11.trim());
   if (!match || !match[1]) return null;
 

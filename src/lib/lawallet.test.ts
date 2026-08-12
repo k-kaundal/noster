@@ -6,6 +6,10 @@ import {
   addressesForPubkey,
   isExpectedDenial,
   isDuplicateInvoice,
+  readInvoice,
+  readStoredInvoice,
+  readWalletAddress,
+  unwrapRecord,
   isMissingUser,
   isQuoteStale,
   recallQuote,
@@ -560,7 +564,7 @@ describe('the held-invoice store', () => {
   const invoice = {
     id: 'inv_1',
     purpose: 'wallet-address' as const,
-    pr: 'lnbc10u1p...',
+    pr: 'lnbc10u1pabc',
     paymentHash: 'abc',
     settled: false,
   };
@@ -572,7 +576,13 @@ describe('the held-invoice store', () => {
   it('gives back the invoice it was handed', () => {
     rememberQuote('pub', 'alice', invoice, 1000);
 
-    expect(recallQuote('pub', 'alice')).toEqual({ invoice, issuedAt: 1000 });
+    const held = recallQuote('pub', 'alice');
+
+    // Normalised on the way out, so it carries a derived amount the stored
+    // record did not have — the payment request and id are what must survive
+    expect(held?.issuedAt).toBe(1000);
+    expect(held?.invoice.pr).toBe(invoice.pr);
+    expect(held?.invoice.id).toBe(invoice.id);
   });
 
   it('keeps one key\'s invoices away from another\'s', () => {
@@ -584,7 +594,7 @@ describe('the held-invoice store', () => {
   it('matches the name however it was capitalised', () => {
     rememberQuote('pub', 'Alice', invoice);
 
-    expect(recallQuote('pub', 'alice')?.invoice).toEqual(invoice);
+    expect(recallQuote('pub', 'alice')?.invoice.id).toBe(invoice.id);
   });
 
   it('forgets one without disturbing the rest', () => {
@@ -628,5 +638,120 @@ describe('isQuoteStale', () => {
      */
     expect(QUOTE_FRESH_MS).toBeLessThan(60 * 60_000);
     expect(isQuoteStale(quote, quote.issuedAt + QUOTE_FRESH_MS + 1)).toBe(true);
+  });
+});
+
+/** Captured from a real POST /api/invoices, exactly as it came back. */
+const LIVE_INVOICE = {
+  id: '12527fd0-168f-48ac-bbfd-0deeb0cde74c',
+  bolt11:
+    'lnbc50u1p48et3wpp5unt7uf8f2zkk49flc2nwlg23m6ms3gl265wvechpj025jt35lpsqcqzyssp5sj3um0x452r5aaa360le2kvem6244lcgmy57n7mg0qek9vjtc3xq9q7sqqqqqqqqqqqqqqqqqqqsqqqqqysgqhp5ztsfewjuxp7fcxmk8hynk8x8r2sllnkczzyytpklg7wvplwkj26smqz9gxqrrssrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glclllc9ma0u3h3ksqqqqlgqqqqqeqqjq99c79llj9hcd0x3ethaax0pcmnr4a3empdymdn5qvffm0a4mefs5wcfdwdj434sm6sxjuw9ukz02gjva7z8evw3k3rzw4jwcnf3y5sqpag3c0s',
+  paymentHash:
+    'e4d7ee24e950ad6a953fc2a6efa151deb708a3ead51ccce2e193d5492e34f860',
+  amountSats: 5000,
+  verify:
+    'https://getzap.me/api/lud16/kk/verify/e4d7ee24e950ad6a953fc2a6efa151deb708a3ead51ccce2e193d5492e34f860',
+  expiresAt: '2026-08-12T17:42:31.034Z',
+};
+
+describe('readInvoice', () => {
+  it('reads the payment request the service actually sends', () => {
+    /**
+     * The schema calls this field `pr`. The service calls it `bolt11`.
+     * Reading only the documented name left it undefined all the way to
+     * `.trim()`, which is how a field-name mismatch reached somebody buying a
+     * name as "Cannot read properties of undefined".
+     */
+    expect(readInvoice(LIVE_INVOICE).pr).toBe(LIVE_INVOICE.bolt11);
+  });
+
+  it('keeps the amount the service stated rather than re-deriving it', () => {
+    const invoice = readInvoice(LIVE_INVOICE);
+
+    expect(invoice.amountSats).toBe(5000);
+    // And it agrees with the invoice itself — lnbc50u is 0.00005 BTC
+    expect(invoiceAmountSats(LIVE_INVOICE.bolt11)).toBe(5000);
+  });
+
+  it('carries the id, hash and expiry through', () => {
+    const invoice = readInvoice(LIVE_INVOICE);
+
+    expect(invoice.id).toBe(LIVE_INVOICE.id);
+    expect(invoice.paymentHash).toBe(LIVE_INVOICE.paymentHash);
+    expect(invoice.expiresAt).toBe(LIVE_INVOICE.expiresAt);
+  });
+
+  it('still reads the field name the schema documents', () => {
+    const invoice = readInvoice({ id: 'a', pr: 'lnbc10u1pabc', settled: false });
+
+    expect(invoice.pr).toBe('lnbc10u1pabc');
+    // Derived, since this shape states no amount
+    expect(invoice.amountSats).toBe(1000);
+  });
+
+  it('unwraps a record that arrives inside an envelope', () => {
+    expect(readInvoice({ data: LIVE_INVOICE }).id).toBe(LIVE_INVOICE.id);
+  });
+
+  it('refuses an invoice with nothing to pay', () => {
+    expect(() => readInvoice({ id: 'a' })).toThrow(/nothing to pay/i);
+    expect(() => readInvoice(null)).toThrow(/nothing to pay/i);
+  });
+
+  it('refuses an invoice that could never be claimed', () => {
+    /**
+     * Claiming is POST /api/invoices/{id}/claim, so one with no id can be
+     * paid and then proves nothing — worth stopping before the money moves.
+     */
+    expect(() => readInvoice({ bolt11: 'lnbc10u1pabc' })).toThrow(/no id/i);
+  });
+});
+
+describe('readStoredInvoice', () => {
+  it('rescues an invoice saved before bolt11 was understood', () => {
+    // The payment request was always in the record, under a name nothing read
+    expect(readStoredInvoice(LIVE_INVOICE)?.pr).toBe(LIVE_INVOICE.bolt11);
+  });
+
+  it('answers null for a stored record that cannot be read', () => {
+    expect(readStoredInvoice({ id: 'a' })).toBeNull();
+    expect(readStoredInvoice(undefined)).toBeNull();
+  });
+});
+
+describe('unwrapRecord', () => {
+  it('takes the envelope off when there is one', () => {
+    expect(unwrapRecord({ data: { id: 'a' } })).toEqual({ id: 'a' });
+  });
+
+  it('leaves a bare record alone', () => {
+    expect(unwrapRecord({ id: 'a' })).toEqual({ id: 'a' });
+  });
+
+  it('does not mistake a list or a scalar for a record', () => {
+    expect(unwrapRecord([{ id: 'a' }])).toEqual({});
+    expect(unwrapRecord('nope')).toEqual({});
+    expect(unwrapRecord(null)).toEqual({});
+  });
+
+  it('leaves a record whose own data field is not an object', () => {
+    expect(unwrapRecord({ data: 'x', id: 'a' })).toEqual({ data: 'x', id: 'a' });
+  });
+});
+
+describe('readWalletAddress', () => {
+  it('falls back to the name that was asked for', () => {
+    // Otherwise the success toast says "undefined is yours"
+    expect(readWalletAddress({}, 'premium').username).toBe('premium');
+  });
+
+  it('prefers what the service returned', () => {
+    expect(readWalletAddress({ username: 'alice' }, 'premium').username).toBe(
+      'alice'
+    );
+  });
+
+  it('defaults an unusable mode rather than carrying it', () => {
+    expect(readWalletAddress({ mode: 42 }, 'premium').mode).toBe('IDLE');
   });
 });
