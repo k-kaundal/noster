@@ -21,7 +21,18 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
 
+/**
+ * Which part of the rail an entry belongs to.
+ *
+ * Nineteen destinations in one flat column is a wall a reader has to scan
+ * rather than a menu they can use — and on a 13-inch laptop it is also taller
+ * than the viewport, which used to put Settings below the fold with nothing to
+ * scroll. Sections give the eye somewhere to stop.
+ */
+export type NavSection = 'main' | 'discover' | 'money' | 'manage';
+
 export interface NavItem {
+  section?: NavSection;
   href: string;
   icon: LucideIcon;
   label: string;
@@ -43,10 +54,11 @@ export interface NavItem {
  */
 export function getNavItems(pubkey?: string): NavItem[] {
   return [
-    { href: '/', icon: Home, label: 'Home', shortcut: 'H' },
-    { href: '/reels', icon: Film, label: 'Reels', shortcut: 'V' },
-    { href: '/explore', icon: Compass, label: 'Explore', shortcut: 'E' },
+    { section: 'main', href: '/', icon: Home, label: 'Home', shortcut: 'H' },
+    { section: 'main', href: '/reels', icon: Film, label: 'Reels', shortcut: 'V' },
+    { section: 'main', href: '/explore', icon: Compass, label: 'Explore', shortcut: 'E' },
     {
+      section: 'main',
       href: '/chat',
       icon: MessagesSquare,
       label: 'Messages',
@@ -54,6 +66,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
       requiresAuth: true,
     },
     {
+      section: 'main',
       href: '/notifications',
       icon: Bell,
       label: 'Notifications',
@@ -61,10 +74,11 @@ export function getNavItems(pubkey?: string): NavItem[] {
       requiresAuth: true,
       secondary: true,
     },
-    { href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
-    { href: '/lists', icon: List, label: 'Lists', secondary: true },
-    { href: '/calendar', icon: CalendarDays, label: 'Calendar', secondary: true },
+    { section: 'discover', href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
+    { section: 'discover', href: '/lists', icon: List, label: 'Lists', secondary: true },
+    { section: 'discover', href: '/calendar', icon: CalendarDays, label: 'Calendar', secondary: true },
     {
+      section: 'discover',
       href: '/communities',
       icon: Users,
       label: 'Communities',
@@ -72,8 +86,9 @@ export function getNavItems(pubkey?: string): NavItem[] {
       secondary: true,
     },
     // NIP-29: hosted by one relay, unlike the communities above
-    { href: '/groups', icon: MessagesSquare, label: 'Groups', secondary: true },
+    { section: 'discover', href: '/groups', icon: MessagesSquare, label: 'Groups', secondary: true },
     {
+      section: 'main',
       href: '/write',
       icon: PenLine,
       label: 'Write',
@@ -84,6 +99,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
     ...(pubkey
       ? [
           {
+            section: 'main',
             href: `/${nip19.npubEncode(pubkey)}`,
             icon: User,
             label: 'Profile',
@@ -92,6 +108,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
         ]
       : []),
     {
+      section: 'discover',
       href: '/bookmarks',
       icon: Bookmark,
       label: 'Bookmarks',
@@ -100,6 +117,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
       secondary: true,
     },
     {
+      section: 'money',
       href: '/wallet',
       icon: Wallet,
       label: 'Wallet',
@@ -108,15 +126,16 @@ export function getNavItems(pubkey?: string): NavItem[] {
       secondary: true,
     },
     {
+      section: 'money',
       href: '/ecash',
       icon: Banknote,
       label: 'Ecash',
       requiresAuth: true,
       secondary: true,
     },
-    { href: '/relays', icon: Server, label: 'Relays', shortcut: 'R', secondary: true },
-    { href: '/premium', icon: Sparkles, label: 'Relay access', secondary: true },
-    { href: '/settings', icon: Settings, label: 'Settings', shortcut: ',', secondary: true },
+    { section: 'manage', href: '/relays', icon: Server, label: 'Relays', shortcut: 'R', secondary: true },
+    { section: 'money', href: '/premium', icon: Sparkles, label: 'Relay access', secondary: true },
+    { section: 'manage', href: '/settings', icon: Settings, label: 'Settings', shortcut: ',', secondary: true },
     { href: '/compose', icon: PenSquare, label: 'Compose', shortcut: 'C', requiresAuth: true },
   ];
 }
@@ -125,4 +144,27 @@ export function getNavItems(pubkey?: string): NavItem[] {
 export function isActiveRoute(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** The order sections appear in, with the label shown above each. */
+export const NAV_SECTIONS: { id: NavSection; label: string }[] = [
+  { id: 'main', label: '' },
+  { id: 'discover', label: 'Discover' },
+  { id: 'money', label: 'Sats' },
+  { id: 'manage', label: 'Manage' },
+];
+
+/**
+ * Groups nav items for display, dropping empty sections.
+ *
+ * The first section is deliberately unlabelled: a heading above Home is noise,
+ * and the items below it are the ones people came for.
+ */
+export function groupNavItems(
+  items: NavItem[]
+): { id: NavSection; label: string; items: NavItem[] }[] {
+  return NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: items.filter((item) => (item.section ?? 'main') === section.id),
+  })).filter((section) => section.items.length > 0);
 }
