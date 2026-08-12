@@ -15,6 +15,8 @@ import {
   laWalletRequest,
   mergeHeldAddresses,
   openSession,
+  readInvoice,
+  readWalletAddress,
   recallQuote,
   rememberQuote,
   requiresPayment,
@@ -284,11 +286,14 @@ export function useLaWallet() {
    * charge people on instances that give names away.
    */
   const claimName = async (username: string, mode: AddressMode) =>
-    await laWalletRequest<WalletAddress>('/api/wallet/addresses', {
-      method: 'POST',
-      body: { username, mode },
-      signer: signer!,
-    });
+    readWalletAddress(
+      await laWalletRequest<unknown>('/api/wallet/addresses', {
+        method: 'POST',
+        body: { username, mode },
+        signer: signer!,
+      }),
+      username
+    );
 
   /**
    * Asks the service what a name costs.
@@ -306,7 +311,9 @@ export function useLaWallet() {
 
     const quote = (invoice: ServiceInvoice) => ({
       invoice,
-      amountSats: invoiceAmountSats(invoice.pr),
+      // The service's own figure, falling back to reading the BOLT11 only
+      // when it does not state one
+      amountSats: invoice.amountSats ?? invoiceAmountSats(invoice.pr),
     });
 
     /**
@@ -320,11 +327,13 @@ export function useLaWallet() {
     if (held && !isQuoteStale(held)) return quote(held.invoice);
 
     try {
-      const invoice = await laWalletRequest<ServiceInvoice>('/api/invoices', {
-        method: 'POST',
-        body: { purpose: 'wallet-address', metadata: { username } },
-        signer: signer!,
-      });
+      const invoice = readInvoice(
+        await laWalletRequest<unknown>('/api/invoices', {
+          method: 'POST',
+          body: { purpose: 'wallet-address', metadata: { username } },
+          signer: signer!,
+        })
+      );
 
       rememberQuote(pubkey, username, invoice);
       return quote(invoice);
