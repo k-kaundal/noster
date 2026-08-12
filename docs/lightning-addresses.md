@@ -53,9 +53,11 @@ the domain that must serve that route.**
 
 ### Option A — no setup (current default)
 
-Leave `VITE_LIGHTNING_ADDRESS_DOMAIN` empty. Addresses are issued on the LNbits
-host: `alice@ln.nostrfeed.com`. LNbits serves its own well-known route, so this
-works immediately with nothing to configure.
+Leave `VITE_LIGHTNING_ADDRESS_DOMAIN` empty. Addresses are then issued on the
+host in `VITE_LNBITS_URL` — `alice@ln.nostrfeed.com` for the default instance.
+LNbits serves its own well-known route, so this works immediately with nothing
+to configure, and it stays correct if the instance moves: the fallback is read
+from the LNbits URL rather than written down a second time.
 
 ### Option B — addresses on the apex domain
 
