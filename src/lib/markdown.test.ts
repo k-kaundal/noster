@@ -5,6 +5,7 @@ import {
   markdownToText,
   parseInline,
   parseMarkdown,
+  stripMarkdown,
 } from './markdown';
 
 describe('parseMarkdown', () => {
@@ -238,5 +239,84 @@ describe('looksLikeMarkdown', () => {
 
   it('ignores anything too short to be an article', () => {
     expect(looksLikeMarkdown('# hi')).toBe(false);
+  });
+});
+
+describe('stripMarkdown', () => {
+  it('removes headings and emphasis, keeping the words', () => {
+    expect(stripMarkdown('# Heading\n\nSome **bold** and *italic* text.')).toBe(
+      'Heading\n\nSome bold and italic text.'
+    );
+  });
+
+  it('keeps both halves of a link', () => {
+    expect(stripMarkdown('Read the [docs](https://example.com/docs) today.')).toBe(
+      'Read the docs (https://example.com/docs) today.'
+    );
+  });
+
+  it('does not repeat a link whose label is its url', () => {
+    expect(stripMarkdown('See [https://example.com](https://example.com)')).toBe(
+      'See https://example.com'
+    );
+  });
+
+  it('reduces an image to its url, which is what renders', () => {
+    expect(stripMarkdown('![a cat](https://example.com/cat.png)')).toBe(
+      'https://example.com/cat.png'
+    );
+  });
+
+  it('keeps the code inside a fence and drops the fence', () => {
+    expect(stripMarkdown('before\n\n```js\nconst a = 1;\n```\n\nafter')).toBe(
+      'before\n\nconst a = 1;\n\nafter'
+    );
+  });
+
+  it('drops rules and collapses the gap they leave', () => {
+    expect(stripMarkdown('above\n\n---\n\nbelow')).toBe('above\n\nbelow');
+  });
+
+  it('keeps paragraph breaks', () => {
+    expect(stripMarkdown('a **b** c\n\n\n\nd')).toBe('a b c\n\nd');
+  });
+
+  it('normalises list markers without removing the list', () => {
+    expect(stripMarkdown('- first\n* second\n+ third')).toBe(
+      '- first\n- second\n- third'
+    );
+  });
+
+  it('leaves arithmetic and snake_case alone', () => {
+    const plain = '5 * 3 = 15 and a_b_c stay put';
+    expect(stripMarkdown(plain)).toBe(plain);
+  });
+
+  it('leaves plain text completely untouched', () => {
+    const plain = 'gm nostr — see https://example.com for more';
+    expect(stripMarkdown(plain)).toBe(plain);
+  });
+
+  it('produces text the detector no longer calls Markdown', () => {
+    /**
+     * The point of the button: press it, and the prompt that offered it goes
+     * away. If the output still tripped the detector the banner would stay up
+     * and the control would look broken.
+     */
+    const post =
+      '# My update\n\nI shipped **three** things:\n\n- a [wallet](https://example.com)\n- `ecash` backups\n\n> it works\n\n---\n\nMore soon.';
+
+    expect(looksLikeMarkdown(post)).toBe(true);
+    expect(looksLikeMarkdown(stripMarkdown(post))).toBe(false);
+  });
+
+  it('loses nothing a reader needs', () => {
+    const post =
+      'See [the docs](https://example.com/docs) and ![shot](https://example.com/a.png)';
+    const cleaned = stripMarkdown(post);
+
+    for (const needle of ['the docs', 'example.com/docs', 'example.com/a.png']) {
+      expect(cleaned).toContain(needle);
+    }
   });
 });
