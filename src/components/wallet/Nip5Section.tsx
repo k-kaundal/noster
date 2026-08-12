@@ -39,9 +39,11 @@ import {
   expiresAt,
   nip5State,
   normalizeLocalPart,
+  promoOutcome,
   validateLocalPart,
   yearOptions,
   type Nip5Address,
+  type Nip5AddressStatus,
 } from '@/lib/nip5';
 
 /**
@@ -318,6 +320,7 @@ function BuyName() {
     normalizeLocalPart(suggestedFrom)
   );
   const [years, setYears] = useState(1);
+  const [promoCode, setPromoCode] = useState('');
   const [pending, setPending] = useState<PendingNip5 | null>(null);
   // Availability stays hidden until the field is used, so a prefilled
   // suggestion doesn't greet you with a validation error
@@ -335,6 +338,9 @@ function BuyName() {
     return (
       <PendingPayment
         pending={pending}
+        // What the search said before any code was applied, so the invoice can
+        // be shown as a difference rather than as a bare number
+        quoted={search.data}
         // The mutations report their own failures; these catches only stop
         // an unhandled rejection reaching the console
         onPay={(optionId) => void pay({ pending, optionId }).catch(() => {})}
@@ -405,10 +411,39 @@ function BuyName() {
         />
       </div>
 
+      {/*
+        Offered without being pushed. A prominent "have a code?" box invents
+        the idea that everyone else is paying less, and somebody who has one
+        will look for the field anyway.
+      */}
+      <div className="space-y-1.5">
+        <Label
+          htmlFor="nip5-promo"
+          className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+        >
+          Discount code (optional)
+        </Label>
+        <Input
+          id="nip5-promo"
+          value={promoCode}
+          onChange={(event) => setPromoCode(event.target.value)}
+          placeholder="If you have one"
+          autoCapitalize="characters"
+          spellCheck={false}
+          className="font-mono uppercase"
+        />
+        <p className="text-xs text-muted-foreground">
+          {/* Said here because the server ignores an unknown code rather than
+              refusing the claim, so the invoice is the first and only place a
+              wrong one shows up */}
+          The invoice shows what you actually pay — check it before paying.
+        </p>
+      </div>
+
       <Button
         onClick={async () => {
           try {
-            const result = await claim({ localPart, years });
+            const result = await claim({ localPart, years, promoCode });
             // A free name comes back with no invoice — it is already reserved,
             // and a payment screen for nothing would strand the person
             if (result.bolt11) setPending(result);
@@ -474,11 +509,14 @@ function Availability({
 
 function PendingPayment({
   pending,
+  quoted,
   onPay,
   isPaying,
   onCancel,
 }: {
   pending: PendingNip5;
+  /** The list price, so a discount can be shown as a difference. */
+  quoted?: Nip5AddressStatus | null;
   onPay: (optionId?: string) => void;
   isPaying: boolean;
   onCancel: () => void;
@@ -487,6 +525,7 @@ function PendingPayment({
   const { payOptions } = useNip5();
 
   const sats = pending.address?.extra?.price_in_sats;
+  const promo = promoOutcome(quoted, pending.address?.extra);
   const usable = payOptions.filter((option) => !option.unavailable);
 
   return (
@@ -502,6 +541,21 @@ function PendingPayment({
           paid. Nobody else can take it meanwhile.
         </p>
       </div>
+
+      {/*
+        Shown as a difference rather than as "code accepted", because the
+        server ignores a code it does not know instead of refusing the claim —
+        so the only proof a code did anything is that the price moved.
+      */}
+      {promo.applied && (
+        <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success-strong">
+          <Check className="h-4 w-4 shrink-0" />
+          Discount applied
+          {promo.savedSats
+            ? ` — ${promo.savedSats.toLocaleString()} sats off`
+            : ''}
+        </p>
+      )}
 
       {/* The QR was missing, and it is the only way to pay from a phone that
           is not this browser — which is where most people keep their sats */}

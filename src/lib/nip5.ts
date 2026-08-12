@@ -67,6 +67,10 @@ export interface Nip5AddressExtra {
   max_years?: number;
   relays?: string[];
   ln_address?: Nip5LnAddressConfig;
+  /** The code that was applied, when one was. */
+  promo_code?: string;
+  /** Who gets the referrer half of a promotion, when the code names one. */
+  referer?: string;
 }
 
 /** An identifier owned by an account, as `Address` in the extension's schema. */
@@ -247,6 +251,69 @@ export function describePrice(
   return sats
     ? `${fiat} / ${per} (≈ ${sats.toLocaleString()} sats)`
     : `${fiat} / ${per}`;
+}
+
+/**
+ * Cleans up a promo code the way somebody will actually type one.
+ *
+ * These get read off a poster, a podcast, a friend's message — with a trailing
+ * space, in the wrong case, occasionally wrapped in quotes. All of those name
+ * a real code and all of them fail an exact comparison on the server, which
+ * answers "no such promotion" and looks like the code was fake.
+ */
+export function normalizePromoCode(input: string): string {
+  return input.trim().replace(/^["']|["']$/g, '').toUpperCase();
+}
+
+/** What a promo code turned out to be worth. */
+export interface PromoOutcome {
+  /** Whether the server charged less than it quoted. */
+  applied: boolean;
+  /** Sats saved, when both figures are in sats and the code worked. */
+  savedSats?: number;
+}
+
+/**
+ * Compares the price that was quoted against the price that was charged.
+ *
+ * Asked *after* the claim rather than before it, because there is nowhere to
+ * ask before: the search endpoint takes a name and a year count and knows
+ * nothing about codes, so the only place a discount becomes visible is the
+ * invoice raised in response to the claim. Somebody who typed a code that does
+ * not exist would otherwise pay full price with no sign of it — the server
+ * ignores an unknown code rather than refusing the claim.
+ */
+export function promoOutcome(
+  quoted: Pick<Nip5AddressStatus, 'price' | 'price_in_sats'> | null | undefined,
+  charged: Nip5AddressExtra | null | undefined
+): PromoOutcome {
+  if (!quoted || !charged) return { applied: false };
+
+  const before = quoted.price_in_sats;
+  const after = charged.price_in_sats;
+
+  if (
+    typeof before === 'number' &&
+    typeof after === 'number' &&
+    after < before
+  ) {
+    return { applied: true, savedSats: Math.round(before - after) };
+  }
+
+  /**
+   * Falls back to the currency figure when sats are missing on either side.
+   * Reported as applied without an amount rather than as not applied, since
+   * "your code did nothing" is the one wrong answer here.
+   */
+  if (
+    typeof quoted.price === 'number' &&
+    typeof charged.price === 'number' &&
+    charged.price < quoted.price
+  ) {
+    return { applied: true };
+  }
+
+  return { applied: false };
 }
 
 /** The year counts to offer, given what the domain allows. */

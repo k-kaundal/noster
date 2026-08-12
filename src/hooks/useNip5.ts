@@ -19,6 +19,7 @@ import {
   NIP5_DOMAIN_ID,
   formatNip5,
   isNip5Configured,
+  normalizePromoCode,
   readClaimedAddress,
   readPaymentHash,
   validateLocalPart,
@@ -151,8 +152,12 @@ export function useNip5() {
 
   const identifier = primary ? formatNip5(primary.local_part) : null;
 
-  const claim = useMutation<PendingNip5, Error, { localPart: string; years: number }>({
-    mutationFn: async ({ localPart, years }) => {
+  const claim = useMutation<
+    PendingNip5,
+    Error,
+    { localPart: string; years: number; promoCode?: string; referer?: string }
+  >({
+    mutationFn: async ({ localPart, years, promoCode, referer }) => {
       if (!user) throw new Error('Log in first');
       if (!isNip5Configured()) {
         throw new Error(
@@ -171,6 +176,13 @@ export function useNip5() {
             // here rather than whichever key the LNbits account was made with
             pubkey: user.pubkey,
             years,
+            /*
+             * Sent only when there is one. An empty `promo_code` is not the
+             * same as no promo code to the server, and the difference decides
+             * whether it looks the promotion up at all.
+             */
+            ...(promoCode ? { promo_code: normalizePromoCode(promoCode) } : {}),
+            ...(referer ? { referer } : {}),
             create_invoice: true,
           },
         })

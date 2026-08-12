@@ -7,6 +7,8 @@ import {
   nip5State,
   nip5WellKnownUrl,
   normalizeLocalPart,
+  normalizePromoCode,
+  promoOutcome,
   readClaimedAddress,
   readPaymentHash,
   validateLocalPart,
@@ -216,5 +218,63 @@ describe('readClaimedAddress', () => {
   it('returns null for anything else', () => {
     expect(readClaimedAddress({ ok: true })).toBeNull();
     expect(readClaimedAddress(undefined)).toBeNull();
+  });
+});
+
+describe('normalizePromoCode', () => {
+  it('takes what somebody actually types', () => {
+    /**
+     * These are read off a poster or a message, so they arrive with spaces,
+     * in the wrong case, sometimes inside quotes. All of those name a real
+     * code and all of them fail an exact comparison on the server, which then
+     * answers as though the code were fake.
+     */
+    expect(normalizePromoCode('  launch  ')).toBe('LAUNCH');
+    expect(normalizePromoCode('"LAUNCH"')).toBe('LAUNCH');
+    expect(normalizePromoCode("'launch'")).toBe('LAUNCH');
+  });
+
+  it('leaves an empty field empty', () => {
+    expect(normalizePromoCode('   ')).toBe('');
+  });
+});
+
+describe('promoOutcome', () => {
+  it('reads a discount as the difference between quoted and charged', () => {
+    expect(
+      promoOutcome({ price_in_sats: 10_000 }, { price_in_sats: 7_500 })
+    ).toEqual({ applied: true, savedSats: 2_500 });
+  });
+
+  it('says nothing happened when the price did not move', () => {
+    /**
+     * The direction that matters. The server ignores a code it does not know
+     * rather than refusing the claim, so a wrong code produces a full-price
+     * invoice — and claiming "discount applied" over it would have somebody
+     * pay full price believing otherwise.
+     */
+    expect(
+      promoOutcome({ price_in_sats: 10_000 }, { price_in_sats: 10_000 }).applied
+    ).toBe(false);
+  });
+
+  it('never reads a higher price as a discount', () => {
+    expect(
+      promoOutcome({ price_in_sats: 10_000 }, { price_in_sats: 12_000 }).applied
+    ).toBe(false);
+  });
+
+  it('falls back to the currency figure when sats are missing', () => {
+    // Applied without an amount, since "your code did nothing" is the one
+    // wrong answer available here
+    expect(promoOutcome({ price: 10 }, { price: 8 })).toEqual({
+      applied: true,
+    });
+  });
+
+  it('answers safely when either side is unknown', () => {
+    expect(promoOutcome(null, { price_in_sats: 100 }).applied).toBe(false);
+    expect(promoOutcome({ price_in_sats: 100 }, null).applied).toBe(false);
+    expect(promoOutcome({}, {}).applied).toBe(false);
   });
 });
