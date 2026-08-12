@@ -2,7 +2,12 @@ import { useMutation } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
-import { REPORT_KIND, buildReportTags, type ReportType } from '@/lib/reactions';
+import {
+  REPORT_KIND,
+  buildReportTags,
+  type ReportBlob,
+  type ReportType,
+} from '@/lib/reports';
 
 /**
  * Publishes a NIP-56 report.
@@ -24,6 +29,8 @@ export function useReport() {
       kind?: number;
       type: ReportType;
       reason?: string;
+      /** One file inside the event, rather than the whole note. */
+      blob?: ReportBlob;
     }) => {
       if (!user) throw new Error('You must be logged in to report');
       if (input.pubkey === user.pubkey) {

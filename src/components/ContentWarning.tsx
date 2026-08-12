@@ -7,6 +7,8 @@ import { EyeOff, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAdultContent } from '@/hooks/useAdultContent';
+import { useFriendReports } from '@/hooks/useFriendReports';
+import { describeReports, shouldBlurMedia } from '@/lib/reports';
 import { isAdultContent } from '@/lib/nsfw';
 import {
   categoryLabels,
@@ -182,6 +184,13 @@ export function ContentWarning({
  * Saves every call site from repeating the same conditional, and — more to the
  * point — makes the safe thing the short thing to write, so a new render path
  * does not quietly ship without a gate.
+ *
+ * A gate can also come from outside the event. NIP-56 suggests exactly one
+ * automatic response to reports — "if 3+ of your friends report a profile for
+ * nudity, clients can have an option to automatically blur photos" — and this
+ * is where that lands, because every render path that shows a note already
+ * passes through here. Wiring it into each call site instead would mean the
+ * next one added silently opts out.
  */
 export function MaybeWarned({
   event,
@@ -196,11 +205,35 @@ export function MaybeWarned({
   className?: string;
   opaque?: boolean;
 }) {
-  if (!warning) return <>{children}</>;
+  const reports = useFriendReports();
+
+  /**
+   * The author's own warning wins when there is one. They said what it is,
+   * and replacing their words with a count of who complained is both less
+   * informative and a small insult.
+   */
+  const reported =
+    !warning &&
+    (shouldBlurMedia(reports.forEvent(event.id)) ||
+      shouldBlurMedia(reports.forPubkey(event.pubkey)));
+
+  const effective: Warning | null =
+    warning ??
+    (reported
+      ? {
+          reason: describeReports(
+            reports.forEvent(event.id) ?? reports.forPubkey(event.pubkey)!
+          ),
+          categories: ['nudity'],
+          severity: 'moderate',
+        }
+      : null);
+
+  if (!effective) return <>{children}</>;
 
   return (
     <ContentWarning
-      warning={warning}
+      warning={effective}
       event={event}
       className={className}
       opaque={opaque}

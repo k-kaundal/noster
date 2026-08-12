@@ -4,7 +4,6 @@ import {
   buildDeletionTags,
   buildReactionTags,
   buildUnreactTags,
-  buildReportTags,
   customEmojiUrl,
   groupReactions,
   isLike,
@@ -116,39 +115,6 @@ describe('groupReactions', () => {
       ['emoji', 'pepe', 'https://example.com/pepe.png'],
     ]);
     expect(groupReactions([event])[0].url).toBe('https://example.com/pepe.png');
-  });
-});
-
-describe('buildReportTags', () => {
-  it('tags the author with the report type', () => {
-    expect(buildReportTags({ pubkey: THEM, type: 'spam' })).toEqual([
-      ['p', THEM, 'spam'],
-    ]);
-  });
-
-  it('tags the note as well when one prompted the report', () => {
-    const tags = buildReportTags({
-      pubkey: THEM,
-      eventId: 'd'.repeat(64),
-      kind: 1,
-      type: 'nudity',
-    });
-
-    expect(tags).toEqual([
-      ['p', THEM, 'nudity'],
-      ['e', 'd'.repeat(64), 'nudity'],
-      ['k', '1'],
-    ]);
-  });
-
-  it('omits the kind tag when the kind is unknown', () => {
-    const tags = buildReportTags({
-      pubkey: THEM,
-      eventId: 'd'.repeat(64),
-      type: 'other',
-    });
-
-    expect(tags.some(([name]) => name === 'k')).toBe(false);
   });
 });
 

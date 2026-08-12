@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { Flag, Loader2 } from 'lucide-react';
 import {
@@ -16,7 +16,12 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useReport } from '@/hooks/useReport';
 import { useMuteList } from '@/hooks/useMuteList';
-import { REPORT_TYPES, type ReportType } from '@/lib/reactions';
+import {
+  PROFILE_ONLY_TYPES,
+  REPORT_TYPES,
+  reportableBlobs,
+  type ReportType,
+} from '@/lib/reports';
 
 interface ReportDialogProps {
   open: boolean;
@@ -41,14 +46,39 @@ export function ReportDialog({
   const [type, setType] = useState<ReportType>('spam');
   const [reason, setReason] = useState('');
   const [alsoMute, setAlsoMute] = useState(true);
+  /** Index into `blobs`, or -1 for the whole note. */
+  const [blobIndex, setBlobIndex] = useState(-1);
+
+  const blobs = useMemo(() => (event ? reportableBlobs(event) : []), [event]);
+
+  /**
+   * Impersonation is about an account, not a post, and offering it while a
+   * note is selected produces a report that reads as "this note is pretending
+   * to be someone". The option stays, it just stops being attached to the
+   * note.
+   */
+  const options = REPORT_TYPES.filter(
+    (option) => !event || !PROFILE_ONLY_TYPES.has(option.value)
+  );
+
+  /**
+   * The same dialog is reused for a profile and for a note, so a type chosen
+   * while looking at a profile can outlive the option that offered it. Falling
+   * back keeps the group from rendering with nothing selected and a Send
+   * button that would publish the vanished choice anyway.
+   */
+  const selected = options.some((option) => option.value === type)
+    ? type
+    : 'spam';
 
   const submit = async () => {
     await report({
       pubkey,
       eventId: event?.id,
       kind: event?.kind,
-      type,
+      type: selected,
       reason,
+      blob: blobIndex >= 0 ? blobs[blobIndex] : undefined,
     });
 
     // Reporting rarely means "and keep showing me this"
@@ -58,6 +88,7 @@ export function ReportDialog({
 
     onOpenChange(false);
     setReason('');
+    setBlobIndex(-1);
   };
 
   return (
@@ -76,11 +107,11 @@ export function ReportDialog({
 
         <div className="space-y-4">
           <RadioGroup
-            value={type}
+            value={selected}
             onValueChange={(value) => setType(value as ReportType)}
             className="gap-2"
           >
-            {REPORT_TYPES.map((option) => (
+            {options.map((option) => (
               <Label
                 key={option.value}
                 htmlFor={`report-${option.value}`}
@@ -102,6 +133,60 @@ export function ReportDialog({
               </Label>
             ))}
           </RadioGroup>
+
+          {/*
+            Naming the file rather than the note. A post can carry one bad
+            image among several, and a report that says which one is the
+            difference between a moderator removing a file and removing a
+            person.
+          */}
+          {blobs.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-sm">What are you reporting?</Label>
+              <RadioGroup
+                value={String(blobIndex)}
+                onValueChange={(value) => setBlobIndex(Number(value))}
+                className="gap-1.5"
+              >
+                <Label
+                  htmlFor="report-blob-all"
+                  className="flex cursor-pointer items-center gap-3 rounded-lg border p-2 font-normal transition-colors hover:bg-accent/60 has-[:checked]:border-primary/40 has-[:checked]:bg-primary/5"
+                >
+                  <RadioGroupItem id="report-blob-all" value="-1" />
+                  <span className="text-sm">The whole post</span>
+                </Label>
+
+                {blobs.map((blob, index) => (
+                  <Label
+                    key={blob.hash}
+                    htmlFor={`report-blob-${blob.hash}`}
+                    className="flex cursor-pointer items-center gap-3 rounded-lg border p-2 font-normal transition-colors hover:bg-accent/60 has-[:checked]:border-primary/40 has-[:checked]:bg-primary/5"
+                  >
+                    <RadioGroupItem
+                      id={`report-blob-${blob.hash}`}
+                      value={String(index)}
+                    />
+                    {blob.url && (
+                      <img
+                        src={blob.url}
+                        alt=""
+                        className="h-9 w-9 shrink-0 rounded object-cover"
+                        loading="lazy"
+                      />
+                    )}
+                    <span className="min-w-0">
+                      <span className="block text-sm">
+                        {blobs.length === 1 ? 'The attached file' : `File ${index + 1}`}
+                      </span>
+                      <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                        {blob.hash.slice(0, 16)}…
+                      </span>
+                    </span>
+                  </Label>
+                ))}
+              </RadioGroup>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="report-reason" className="text-sm">

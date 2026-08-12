@@ -26,6 +26,7 @@ import { useSeo } from '@/hooks/useSeo';
 import { genUserName } from '@/lib/genUserName';
 import { Post } from '@/components/Post';
 import { NoteContent } from '@/components/NoteContent';
+import { ReportNotice } from '@/components/ReportNotice';
 import { EmptyState } from '@/components/EmptyState';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { FollowButton } from '@/components/FollowButton';
@@ -275,6 +276,13 @@ export function Profile({ pubkey }: ProfileProps) {
             </div>
             <p className="text-sm text-muted-foreground">@{username}</p>
           </div>
+
+          {/*
+            What people this reader follows have reported, if enough of them
+            did. Above the bio rather than below it: an impersonation report
+            is about the very thing the bio is trying to convince you of.
+          */}
+          <ReportNotice pubkey={pubkey} />
 
           {metadata?.about && (
             /* The bio is plaintext, so it gets the same link/mention treatment as notes */
