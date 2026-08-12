@@ -34,6 +34,9 @@ import {
   useGroupRelaySupport,
   useGroups,
 } from '@/hooks/useGroups';
+import { useCachedGroupAdmins, useGroupMoves } from '@/hooks/useGroupMoves';
+import { GroupMoveNotice } from '@/components/groups/GroupMoveNotice';
+import { GroupModerationPanel } from '@/components/groups/GroupModerationPanel';
 import { GROUP_CHAT, acceptsKind, type GroupNode } from '@/lib/nip29';
 import { genUserName } from '@/lib/genUserName';
 import { relativeTime } from '@/lib/time';
@@ -80,6 +83,7 @@ export function GroupsPage() {
             relayUrl={relayUrl}
             groupId={groupId}
             onBack={() => setParams({})}
+            onSwitch={setRelayUrl}
           />
         ) : (
           <GroupList
@@ -264,15 +268,26 @@ function GroupView({
   relayUrl,
   groupId,
   onBack,
+  onSwitch,
 }: {
   relayUrl: string;
   groupId: string;
   onBack: () => void;
+  /** Point the whole page at another relay, keeping the group id. */
+  onSwitch: (relay: string) => void;
 }) {
   const { user } = useCurrentUser();
-  const { group, admins, isLoading } = useGroup(relayUrl, groupId);
+  const { group, admins, roles, isLoading } = useGroup(relayUrl, groupId);
   const { messages } = useGroupMessages(relayUrl, groupId);
   const membership = useGroupMembership(relayUrl, groupId);
+
+  /**
+   * Admins are remembered locally so the move check still works once this
+   * relay stops answering — which is exactly when the spec makes that check
+   * mandatory, and exactly when the relay can no longer tell us who they are.
+   */
+  const cachedAdmins = useCachedGroupAdmins(relayUrl, groupId, admins);
+  const { report } = useGroupMoves(groupId, relayUrl, cachedAdmins);
 
   const [draft, setDraft] = useState('');
 
@@ -355,6 +370,17 @@ function GroupView({
           )}
         </CardContent>
       </Card>
+
+      {report && (
+        <GroupMoveNotice report={report} onSwitch={onSwitch} />
+      )}
+
+      <GroupModerationPanel
+        relayUrl={relayUrl}
+        group={group}
+        admins={admins}
+        roles={roles}
+      />
 
       <Card>
         <CardContent className="space-y-4 pt-6">

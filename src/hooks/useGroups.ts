@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { NostrEvent } from '@nostrify/nostrify';
+import type { NostrEvent, NostrSigner } from '@nostrify/nostrify';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useRelayInfo } from '@/hooks/useRelayInfo';
 import { useToast } from '@/hooks/useToast';
 import { queryGroupRelay, publishToGroupRelay } from '@/lib/groupRelay';
 import { describeSignerError } from '@/lib/signerErrors';
+import type { SignerMethod } from '@/lib/session';
 import { clearSignerFailure, recordSignerFailure } from '@/lib/signerStatus';
 import {
   GROUP_ADMINS,
@@ -26,8 +27,41 @@ import {
   parseGroupMetadata,
   parseGroupPins,
   parseGroupRoles,
+  readJoinRejection,
   type GroupMetadata,
 } from '@/lib/nip29';
+
+/**
+ * Signs an event and publishes it to the group's relay, and nowhere else.
+ *
+ * Deliberately not `useNostrPublish`. That hook fans out to the account's
+ * write relays, which for a group event is wrong twice over: the `h` tag and
+ * the timeline references mean nothing anywhere else, and the spec asks those
+ * relays to reject it. Shared between membership and moderation so the two
+ * cannot drift apart on the point.
+ */
+export async function signToGroupRelay(
+  user: { pubkey: string; signer: NostrSigner; method?: SignerMethod },
+  relayUrl: string,
+  template: { kind: number; content: string; tags: string[][] }
+): Promise<NostrEvent> {
+  let event: NostrEvent;
+
+  try {
+    event = await user.signer.signEvent({
+      ...template,
+      created_at: Math.floor(Date.now() / 1000),
+    });
+    clearSignerFailure(user.pubkey);
+  } catch (error) {
+    const problem = describeSignerError(error, { method: user.method });
+    recordSignerFailure(user.pubkey, problem.kind);
+    throw new Error(`${problem.title}. ${problem.description}`);
+  }
+
+  await publishToGroupRelay(relayUrl, event, AbortSignal.timeout(6000));
+  return event;
+}
 
 /**
  * Whether a relay runs groups at all.
@@ -248,35 +282,13 @@ export function useGroupMembership(
     staleTime: 15_000,
   });
 
-  /**
-   * Signs here rather than through `useNostrPublish`.
-   *
-   * That hook publishes to the account's write relays, which for a group
-   * event is wrong twice over: the `h` tag and timeline references mean
-   * nothing on any other relay, and the spec asks those relays to reject it.
-   */
   const send = async (
     template: { kind: number; content: string; tags: string[][] }
   ) => {
     if (!user) throw new Error('Log in first');
     if (!relayUrl) throw new Error('No relay for this group');
 
-    let event: NostrEvent;
-
-    try {
-      event = await user.signer.signEvent({
-        ...template,
-        created_at: Math.floor(Date.now() / 1000),
-      });
-      clearSignerFailure(user.pubkey);
-    } catch (error) {
-      const problem = describeSignerError(error, { method: user.method });
-      recordSignerFailure(user.pubkey, problem.kind);
-      throw new Error(`${problem.title}. ${problem.description}`);
-    }
-
-    await publishToGroupRelay(relayUrl, event, AbortSignal.timeout(6000));
-    return event;
+    return await signToGroupRelay(user, relayUrl, template);
   };
 
   const invalidate = () => {
@@ -303,13 +315,29 @@ export function useGroupMembership(
       });
     },
     onError: (error: Error) => {
+      const outcome = readJoinRejection(error.message);
+
       /**
        * `duplicate:` is the spec's prefix for "you are already in", which is
        * not a failure worth an error toast — it usually means our view of
        * membership is stale, so it is refreshed instead.
        */
-      if (/^duplicate:/i.test(error.message)) {
+      if (outcome === 'already-member') {
         invalidate();
+        return;
+      }
+
+      /**
+       * A request held for review is not a rejection either. The spec asks
+       * relays to say which of the two it is, and showing "could not join" in
+       * red for a request an admin is about to approve tells the user to give
+       * up on something that is working.
+       */
+      if (outcome === 'pending') {
+        toast({
+          title: 'Waiting for approval',
+          description: error.message,
+        });
         return;
       }
 
