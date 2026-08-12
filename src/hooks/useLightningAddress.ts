@@ -7,7 +7,11 @@ import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import { LnbitsError, lnbitsRequest, withExtension } from '@/lib/lnbits';
-import { buildPayLinkBody, formatAddress } from '@/lib/lightningAddress';
+import {
+  ADDRESS_DOMAIN,
+  buildPayLinkBody,
+  linkAddress,
+} from '@/lib/lightningAddress';
 import { listAddresses, pickPrimaryLink } from '@/lib/identity';
 import { generateFreeName, mayClaim } from '@/lib/freeAddress';
 
@@ -17,6 +21,14 @@ export interface PayLink {
   wallet: string;
   description: string;
   username?: string;
+  /**
+   * Which domain this one answers under.
+   *
+   * Absent on an instance serving a single domain, and on every link made
+   * before one was chosen — so it is read as "the default", never assumed to
+   * be present.
+   */
+  domain?: string | null;
   zaps?: boolean;
   disposable: boolean;
   min: number;
@@ -55,7 +67,7 @@ export function useLightningAddress({
 }: LightningAddressOptions = {}) {
   const { user } = useCurrentUser();
   const { token } = useLnbitsAuth();
-  const { wallet } = useLnbitsWallet();
+  const { wallet, wallets } = useLnbitsWallet();
   const { mutateAsync: createEvent } = useNostrPublish();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -63,11 +75,24 @@ export function useLightningAddress({
   const author = useAuthor(user?.pubkey);
   const metadata = author.data?.metadata;
 
+  /**
+   * Every pay link on the account, not only the active wallet's.
+   *
+   * An LNbits account can hold several wallets and an address belongs to a
+   * wallet, so reading one wallet's links means somebody who switches wallets
+   * watches half their addresses disappear — and a name they handed out looks
+   * like it was never created. `all_wallets` is LNbits' own answer to that:
+   * the key still authenticates one wallet, and the extension expands the
+   * query to every wallet its owner has.
+   *
+   * Harmless on an instance that does not support the parameter, which ignores
+   * it and answers with the active wallet's links exactly as before.
+   */
   const links = useQuery<PayLink[]>({
     queryKey: ['lnurlp-links', wallet?.id ?? ''],
     queryFn: ({ signal }) =>
       withExtension('lnurlp', token, () =>
-        lnbitsRequest<PayLink[]>('/lnurlp/api/v1/links', {
+        lnbitsRequest<PayLink[]>('/lnurlp/api/v1/links?all_wallets=true', {
           apiKey: wallet!.inkey,
           signal,
         })
@@ -86,7 +111,7 @@ export function useLightningAddress({
     () => pickPrimaryLink(links.data ?? [], preferredUsername),
     [links.data, preferredUsername]
   );
-  const address = link?.username ? formatAddress(link.username) : null;
+  const address = link ? linkAddress(link) : null;
 
   /**
    * All of them, not just the winner.
@@ -98,7 +123,7 @@ export function useLightningAddress({
   const addresses = useMemo(
     () =>
       listAddresses(links.data ?? [], {
-        format: formatAddress,
+        format: (entry) => linkAddress(entry) ?? '',
         profileLud16: metadata?.lud16,
         preferredUsername,
       }),
@@ -106,7 +131,10 @@ export function useLightningAddress({
   );
 
   const claim = useMutation({
-    mutationFn: async (username: string) => {
+    mutationFn: async (input: string | { username: string; domain?: string }) => {
+      const { username, domain } =
+        typeof input === 'string' ? { username: input, domain: undefined } : input;
+
       if (!wallet) throw new Error('Connect your wallet first');
 
       /**
@@ -117,8 +145,16 @@ export function useLightningAddress({
        * wallet with duplicates competing for the same name, and LNbits would
        * reject the second one anyway.
        */
+      /**
+       * Matched on the domain too. With several configured, the same name
+       * under two of them is two addresses, and treating the first as
+       * "already have it" would silently refuse to create the second.
+       */
+      const wanted = (domain || ADDRESS_DOMAIN).toLowerCase();
       const existing = links.data?.find(
-        (entry) => entry.username?.toLowerCase() === username.toLowerCase()
+        (entry) =>
+          entry.username?.toLowerCase() === username.toLowerCase() &&
+          (entry.domain || ADDRESS_DOMAIN).toLowerCase() === wanted
       );
       if (existing) return existing;
 
@@ -145,6 +181,7 @@ export function useLightningAddress({
           apiKey: wallet.adminkey,
           body: buildPayLinkBody({
             username,
+            domain,
             walletId: wallet.id,
             displayName: metadata?.display_name || metadata?.name,
           }),
@@ -157,8 +194,8 @@ export function useLightningAddress({
       queryClient.invalidateQueries({ queryKey: ['lnurlp-links'] });
       toast({
         title: 'Lightning address created',
-        description: created.username
-          ? `${formatAddress(created.username)} is yours.`
+        description: linkAddress(created)
+          ? `${linkAddress(created)} is yours.`
           : 'Your address is ready.',
       });
     },
@@ -251,11 +288,18 @@ export function useLightningAddress({
    */
   const setProfileAddress = publishToProfile.mutateAsync;
 
+  const walletNames = useMemo(
+    () => Object.fromEntries(wallets.map((entry) => [entry.id, entry.name])),
+    [wallets]
+  );
+
   return useMemo(() => ({
     address,
     link,
-    /** Every address on this wallet, not only the one shown as primary. */
+    /** Every address on the account, not only the active wallet's. */
     addresses,
+    /** Wallet id to name, so an address can say what it pays into. */
+    walletNames,
     isLoading: links.isLoading,
     /** Whether the profile already advertises this address for zaps. */
     isOnProfile: !!address && metadata?.lud16 === address,
@@ -271,6 +315,7 @@ export function useLightningAddress({
     address,
     link,
     addresses,
+    walletNames,
     links.isLoading,
     metadata?.lud16,
     metadata?.name,

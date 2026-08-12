@@ -1,4 +1,4 @@
-import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
+import { ADDRESS_DOMAINS, normalizeDomain } from '@/lib/lightningAddress';
 import { isGeneratedName } from '@/lib/freeAddress';
 
 /**
@@ -66,23 +66,33 @@ export function describeTier(tier: NameTier): TierCopy {
  * Which tier an address belongs to.
  *
  * Decided by domain first and shape second, because the domain is the thing
- * that cannot be faked by a name: an address at our own domain is assigned or
- * bought depending only on whether a person picked the local part, and one
+ * that cannot be faked by a name: an address at one of our domains is assigned
+ * or bought depending only on whether a person picked the local part, and one
  * from anywhere else is not ours to rank.
+ *
+ * Every domain we issue under counts equally. They are separate namespaces —
+ * `alice@one.example` and `alice@two.example` can belong to different people
+ * and pay different wallets — but they are all ours, and ranking one above
+ * another would tell somebody the address they chose is the lesser one.
  */
 export function tierOf(
   address: string,
-  domains: { named?: string } = {}
+  domains: { named?: string | string[] } = {}
 ): NameTier | null {
   const at = address.lastIndexOf('@');
   if (at <= 0) return null;
 
   const local = address.slice(0, at).toLowerCase();
-  const domain = address.slice(at + 1).toLowerCase();
+  const domain = normalizeDomain(address.slice(at + 1));
 
-  const named = (domains.named ?? ADDRESS_DOMAIN).toLowerCase();
+  const configured = domains.named ?? ADDRESS_DOMAINS;
+  const named = (Array.isArray(configured) ? configured : [configured]).map(
+    normalizeDomain
+  );
 
-  if (domain === named) return isGeneratedName(local) ? 'assigned' : 'named';
+  if (named.includes(domain)) {
+    return isGeneratedName(local) ? 'assigned' : 'named';
+  }
 
   // An address from somewhere else entirely. Real, and not one of our tiers.
   return null;
@@ -104,7 +114,7 @@ export interface TieredAddress {
  */
 export function rankAddresses(
   addresses: string[],
-  domains?: { named?: string }
+  domains?: { named?: string | string[] }
 ): TieredAddress[] {
   const seen = new Set<string>();
   const ranked: TieredAddress[] = [];
@@ -133,7 +143,7 @@ export function rankAddresses(
 export function leadAddress(
   addresses: string[],
   chosen?: string | null,
-  domains?: { named?: string }
+  domains?: { named?: string | string[] }
 ): TieredAddress | null {
   const ranked = rankAddresses(addresses, domains);
   if (!ranked.length) return null;

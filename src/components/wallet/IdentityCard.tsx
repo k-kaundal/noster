@@ -1,14 +1,26 @@
+import { useState } from 'react';
 import { AtSign, Check, Loader2, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NameTiers } from '@/components/wallet/NameTiers';
 import { ExternalAddress } from '@/components/wallet/ExternalAddress';
 import { Nip5Section } from '@/components/wallet/Nip5Section';
 import { useIdentity } from '@/hooks/useIdentity';
-import { ADDRESS_DOMAIN, formatAddress } from '@/lib/lightningAddress';
+import {
+  ADDRESS_DOMAIN,
+  ADDRESS_DOMAINS,
+  formatAddress,
+} from '@/lib/lightningAddress';
 
 /**
  * Someone's name here, in one place.
@@ -164,6 +176,17 @@ function ClaimForm() {
   const { freeName, claimFree, isClaimingFree, status } = useIdentity();
   const elsewhere = status.tier === 'external';
 
+  /**
+   * Which domain the free address lands under.
+   *
+   * Only asked when there is something to ask. One configured domain is not a
+   * choice, and a select with a single option is a decision put in front of
+   * somebody for no reason — so the picker appears with the second domain and
+   * not before.
+   */
+  const [domain, setDomain] = useState(ADDRESS_DOMAIN);
+  const choices = ADDRESS_DOMAINS;
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg bg-gradient-to-br from-blue-50 to-blue-50/50 p-4 dark:from-blue-950/30 dark:to-blue-950/10">
@@ -186,7 +209,7 @@ function ClaimForm() {
 
         <div className="rounded-lg border bg-muted/40 p-3">
           <p className="break-all font-mono text-sm">
-            {freeName ? formatAddress(freeName) : `…@${ADDRESS_DOMAIN}`}
+            {freeName ? formatAddress(freeName, domain) : `…@${domain}`}
           </p>
           {/* The trade said out loud: it works, it just is not a name */}
           <p className="mt-1 text-xs text-muted-foreground">
@@ -197,8 +220,37 @@ function ClaimForm() {
         </div>
       </div>
 
+      {choices.length > 1 && (
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Domain
+          </Label>
+
+          <Select value={domain} onValueChange={setDomain}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {choices.map((entry) => (
+                <SelectItem key={entry} value={entry}>
+                  {entry}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Both are real addresses at the same wallet; the only difference
+              is what people read. Said out loud because a domain choice looks
+              like it might be a tier choice, and it is not. */}
+          <p className="text-xs text-muted-foreground">
+            All of these work the same way and pay the same wallet. You can
+            claim your name under more than one.
+          </p>
+        </div>
+      )}
+
       <Button
-        onClick={() => void claimFree().catch(() => {})}
+        onClick={() => void claimFree(domain).catch(() => {})}
         disabled={!freeName || isClaimingFree}
         className="w-full"
         size="lg"
@@ -213,8 +265,8 @@ function ClaimForm() {
 
       <p className="text-center text-xs text-muted-foreground">
         Want <span className="font-medium text-foreground">your own name</span>{' '}
-        instead? A verified name gives you {`name@${ADDRESS_DOMAIN}`} for both
-        zaps and identity — see below.
+        instead? A verified name gives you {`name@${domain}`} for both zaps and
+        identity — see below.
       </p>
     </div>
   );

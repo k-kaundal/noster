@@ -216,6 +216,12 @@ export interface AddressEntry<T> {
   link: T;
   username: string;
   address: string;
+  /**
+   * The domain half, kept apart from the address so a list can group or label
+   * by it. With one domain configured this is the same for every entry and
+   * costs nothing; with several it is the difference between two addresses.
+   */
+  domain: string;
   /** Whether the published profile sends zaps here. */
   onProfile: boolean;
   /** Whether this is the address matching a verified NIP-05 name. */
@@ -237,7 +243,12 @@ export interface AddressEntry<T> {
 export function listAddresses<T extends { username?: string }>(
   links: T[],
   options: {
-    format: (username: string) => string;
+    /**
+     * Takes the whole link rather than the name, because a link carries the
+     * domain it answers under and two links with the same name under different
+     * domains are two different addresses.
+     */
+    format: (link: T) => string;
     profileLud16?: string;
     preferredUsername?: string | null;
   }
@@ -247,12 +258,14 @@ export function listAddresses<T extends { username?: string }>(
   const entries = links
     .filter((link): link is T & { username: string } => !!link.username)
     .map((link) => {
-      const address = options.format(link.username);
+      const address = options.format(link);
+      const at = address.lastIndexOf('@');
 
       return {
         link,
         username: link.username,
         address,
+        domain: at > 0 ? address.slice(at + 1) : '',
         onProfile: !!options.profileLud16 && options.profileLud16 === address,
         preferred: !!preferred && link.username.toLowerCase() === preferred,
       };
@@ -261,7 +274,15 @@ export function listAddresses<T extends { username?: string }>(
   const rank = (entry: AddressEntry<T>) =>
     entry.preferred ? 0 : entry.onProfile ? 1 : 2;
 
+  /**
+   * Name first, then domain. Sorting by the full address would scatter
+   * `alice@one.example` and `alice@two.example` apart, when the thing somebody
+   * is looking for is the name.
+   */
   return entries.sort(
-    (a, b) => rank(a) - rank(b) || a.username.localeCompare(b.username)
+    (a, b) =>
+      rank(a) - rank(b) ||
+      a.username.localeCompare(b.username) ||
+      a.domain.localeCompare(b.domain)
   );
 }

@@ -2,20 +2,66 @@
  * Lightning addresses (LUD-16) issued to our users by the LNbits `lnurlp`
  * extension.
  *
- * These are the `@ln.nostrfeed.com` ones, and since the outside wallet service
- * was dropped they are the only addresses this app issues.
+ * Not derived from the LNbits host: serving these under a nicer domain only
+ * needs that domain to proxy `/.well-known/lnurlp/*` through to LNbits, which
+ * answers the well-known route on its own origin only. See
+ * docs/lightning-addresses.md.
  *
- * Still configurable, and still not derived from the LNbits host: serving
- * these under a nicer domain only needs that domain to proxy
- * `/.well-known/lnurlp/*` through to LNbits, which answers the well-known
- * route on its own origin only. See docs/lightning-addresses.md.
+ * There can be several. One LNbits instance can answer for any number of
+ * domains, and the domain is part of the address — `alice@one.example` and
+ * `alice@two.example` are two different addresses that can pay two different
+ * wallets. So a domain is carried alongside a name everywhere rather than
+ * appended at the end, because the moment it is assumed, every address under
+ * the other domains renders as somebody else's.
  */
-export const ADDRESS_DOMAIN = (
-  import.meta.env.VITE_LIGHTNING_ADDRESS_DOMAIN || 'ln.nostrfeed.com'
-)
-  .replace(/^@/, '')
-  .replace(/^https?:\/\//, '')
-  .replace(/\/+$/, '');
+
+/** Trims off the things people paste around a domain but never mean. */
+export function normalizeDomain(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^@/, '')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/+$/, '');
+}
+
+/**
+ * Every domain this app issues addresses under, best first.
+ *
+ * Read from two settings so an existing deployment does not have to change:
+ * `VITE_LIGHTNING_ADDRESS_DOMAIN` still names the primary, and
+ * `VITE_LIGHTNING_ADDRESS_DOMAINS` adds the rest. Order matters — the first is
+ * what a new address gets unless somebody picks otherwise — so the singular
+ * setting is read first and duplicates are dropped rather than reordered.
+ */
+export const ADDRESS_DOMAINS: string[] = (() => {
+  const configured = [
+    import.meta.env.VITE_LIGHTNING_ADDRESS_DOMAIN,
+    import.meta.env.VITE_LIGHTNING_ADDRESS_DOMAINS,
+  ]
+    .filter((value): value is string => typeof value === 'string' && !!value)
+    .join(',')
+    .split(/[\s,]+/)
+    .map(normalizeDomain)
+    .filter(Boolean);
+
+  const unique = [...new Set(configured)];
+  return unique.length ? unique : ['ln.nostrfeed.com'];
+})();
+
+/**
+ * The one a new address gets by default.
+ *
+ * Kept as a single export because most of the app only ever needs to say "our
+ * domain" — an empty-state placeholder, a line of marketing copy. Anything
+ * handling a real address should use the address's own domain instead.
+ */
+export const ADDRESS_DOMAIN = ADDRESS_DOMAINS[0];
+
+/** Whether a domain is one of ours. */
+export function isOurDomain(domain: string): boolean {
+  return ADDRESS_DOMAINS.includes(normalizeDomain(domain));
+}
 
 /** Longest local part we will issue. Kept short enough to stay memorable. */
 export const MAX_USERNAME_LENGTH = 32;
@@ -94,14 +140,30 @@ export function describeUsernameProblem(problem: UsernameProblem): string {
   }
 }
 
-/** The full address a username resolves to. */
-export function formatAddress(username: string): string {
-  return `${username}@${ADDRESS_DOMAIN}`;
+/** The full address a username resolves to, under one of our domains. */
+export function formatAddress(username: string, domain?: string): string {
+  return `${username}@${domain ? normalizeDomain(domain) : ADDRESS_DOMAIN}`;
 }
 
 /** Where a wallet-app will actually fetch the LNURL-pay metadata from. */
-export function wellKnownUrl(username: string): string {
-  return `https://${ADDRESS_DOMAIN}/.well-known/lnurlp/${username}`;
+export function wellKnownUrl(username: string, domain?: string): string {
+  const host = domain ? normalizeDomain(domain) : ADDRESS_DOMAIN;
+  return `https://${host}/.well-known/lnurlp/${username}`;
+}
+
+/**
+ * The address a pay link answers to.
+ *
+ * The link's own domain wins, and the configured default only stands in when
+ * it has none — which is what an instance serving a single domain returns, and
+ * what every link created before multi-domain support looks like.
+ */
+export function linkAddress(link: {
+  username?: string;
+  domain?: string | null;
+}): string | null {
+  if (!link.username) return null;
+  return formatAddress(link.username, link.domain || undefined);
 }
 
 /**
@@ -119,6 +181,11 @@ export function wellKnownUrl(username: string): string {
 export function buildPayLinkBody(input: {
   username: string;
   walletId: string;
+  /**
+   * Which of our domains it answers under. Omitted rather than defaulted, so
+   * an instance serving one domain gets exactly the body it got before.
+   */
+  domain?: string;
   displayName?: string;
   minSats?: number;
   maxSats?: number;
@@ -129,6 +196,7 @@ export function buildPayLinkBody(input: {
       : 'NostrFeed',
     wallet: input.walletId,
     username: input.username,
+    ...(input.domain ? { domain: normalizeDomain(input.domain) } : {}),
     min: input.minSats ?? 1,
     max: input.maxSats ?? 10_000_000,
     // NIP-57: makes LNbits advertise allowsNostr and publish zap receipts
@@ -220,7 +288,14 @@ export function describeAddressProblem(problem: AddressProblem): string {
   }
 }
 
-/** Whether an address is one this app issues. */
+/** The domain half of an address, or empty when it has none. */
+export function addressDomain(address: string): string {
+  const at = address.lastIndexOf('@');
+  return at > 0 ? normalizeDomain(address.slice(at + 1)) : '';
+}
+
+/** Whether an address is one this app issues, under any of its domains. */
 export function isOurAddress(address: string): boolean {
-  return address.trim().toLowerCase().endsWith(`@${ADDRESS_DOMAIN.toLowerCase()}`);
+  const domain = addressDomain(address.trim());
+  return !!domain && isOurDomain(domain);
 }
