@@ -126,14 +126,17 @@ export function useIdentity() {
   /**
    * Claims the free address.
    *
-   * Takes no name, because there is none to take. Idempotent by construction —
-   * the name comes from the key, so pressing it twice returns the pay link
-   * that already exists rather than making a second one.
+   * Takes no name, because there is none to take — the name comes from the
+   * key. It does take a domain, when the instance serves more than one, and
+   * that is the only part of the pair somebody chooses here.
+   *
+   * Idempotent per domain: pressing it twice for the same one returns the pay
+   * link that already exists rather than making a second.
    */
   const claimFree = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (domain?: string) => {
       if (!freeName) throw new Error('Log in first');
-      return await lightning.claim(freeName);
+      return await lightning.claim({ username: freeName, domain });
     },
     onError: (error: Error) => {
       toast({

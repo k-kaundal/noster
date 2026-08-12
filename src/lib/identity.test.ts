@@ -174,7 +174,8 @@ describe('pickPrimaryLink', () => {
 });
 
 describe('listAddresses', () => {
-  const format = (username: string) => `${username}@nostrfeed.com`;
+  const format = (link: { username?: string; domain?: string }) =>
+    `${link.username}@${link.domain ?? 'nostrfeed.com'}`;
 
   const links = [
     { id: '1', username: 'zed' },

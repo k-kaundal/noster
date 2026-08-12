@@ -27,6 +27,24 @@ export function NameTiers() {
 
   const held = lightning.addresses.map((entry) => entry.address);
 
+  /**
+   * Which wallet each address pays into.
+   *
+   * Only worth showing once there are several. With one wallet the answer is
+   * the same for every row and adds a line of noise; with two it is the
+   * difference between money arriving where somebody expects it and money
+   * arriving somewhere they have to go looking for.
+   */
+  const wallets = Object.keys(lightning.walletNames);
+  const walletFor = new Map(
+    lightning.addresses.map((entry) => [
+      entry.address,
+      wallets.length > 1
+        ? lightning.walletNames[entry.link.wallet]
+        : undefined,
+    ])
+  );
+
   const ranked = rankAddresses(held);
   if (!ranked.length) return null;
 
@@ -65,8 +83,10 @@ export function NameTiers() {
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{entry.address}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {describeTier(entry.tier).blurb}
+                  <p className="truncate text-xs text-muted-foreground">
+                    {walletFor.get(entry.address)
+                      ? `Pays into ${walletFor.get(entry.address)}`
+                      : describeTier(entry.tier).blurb}
                   </p>
                 </div>
 
