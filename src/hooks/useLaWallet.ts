@@ -21,6 +21,7 @@ import {
   rememberQuote,
   requiresPayment,
   sessionLifetimeMs,
+  verifyPayment,
   type AddressMode,
   type AliasProbe,
   type LaWalletSession,
@@ -350,28 +351,53 @@ export function useLaWallet() {
     }
   };
 
-  const payForName = async (invoice: ServiceInvoice) => {
-    const option = preferredFor(0);
-    const result = await pay({ bolt11: invoice.pr, optionId: option.id });
+  /**
+   * Pays the invoice from a wallet here, and returns the proof.
+   *
+   * Only a wallet inside this app hands a preimage back. One paid elsewhere
+   * proves itself through LUD-21 instead — see `settle` — so the failure below
+   * is now narrow: a wallet that reported paying and returned nothing.
+   */
+  const payForName = async (invoice: ServiceInvoice, optionId?: string) => {
+    const option = optionId ?? preferredFor(0).id;
+    const result = await pay({ bolt11: invoice.pr, optionId: option });
 
-    /**
-     * The preimage is what proves the payment happened, and only a wallet
-     * inside this app can hand it back. Paying by QR elsewhere leaves nothing
-     * here to claim with, so that is said rather than left as a claim that
-     * silently fails.
-     */
     if (!result.preimage) {
       throw new Error(
         result.paid
-          ? 'That wallet paid but did not return a proof of payment, so the name could not be claimed. Contact support with the invoice.'
-          : 'This name has to be paid for from a wallet connected here — an invoice paid elsewhere cannot prove itself.'
+          ? 'That wallet paid but did not hand back a proof of payment. The invoice is settled — scan or copy it below and the name will be claimed as soon as the service confirms it.'
+          : 'That wallet did not complete the payment.'
       );
     }
 
-    await laWalletRequest<ServiceInvoice>(
-      `/api/invoices/${encodeURIComponent(invoice.id)}/claim`,
-      { method: 'POST', body: { preimage: result.preimage }, signer: signer! }
+    return result.preimage;
+  };
+
+  /**
+   * Turns a proof of payment into the name.
+   *
+   * Separate from paying because the proof can now arrive two ways: handed
+   * back by a wallet here, or read off the service's own LUD-21 endpoint
+   * after somebody paid from their phone.
+   */
+  const redeemName = async (quote: NamePrice, preimage: string) => {
+    await laWalletRequest<unknown>(
+      `/api/invoices/${encodeURIComponent(quote.invoice.id)}/claim`,
+      { method: 'POST', body: { preimage }, signer: signer! }
     );
+
+    return await claimName(quote.username, quote.mode);
+  };
+
+  const onBought = (created: WalletAddress) => {
+    // Spent: keeping it would offer a settled invoice on the next attempt
+    forgetQuote(user?.pubkey ?? '', created.username);
+
+    invalidate();
+    toast({
+      title: 'Address bought',
+      description: `${created.username} is yours. Point it somewhere to start receiving.`,
+    });
   };
 
   /**
@@ -429,34 +455,62 @@ export function useLaWallet() {
 
   /** Pays a price already shown to someone, then takes the name. */
   const buy = useMutation({
-    mutationFn: async (quote: NamePrice) => {
+    mutationFn: async ({
+      quote,
+      optionId,
+    }: {
+      quote: NamePrice;
+      optionId?: string;
+    }) => {
       /**
        * Provisioned up front here, not on the refusal.
        *
        * `withUser` retries the whole closure, and the closure pays an invoice
        * — so a missing user record discovered after the payment would charge
        * for the name twice. The account is made before any money moves, and
-       * the retry after payment is narrowed to the claim alone.
+       * the retry after payment is narrowed to redeeming it.
        */
       await ensureUser();
-      await payForName(quote.invoice);
+      const preimage = await payForName(quote.invoice, optionId);
 
-      return await withUser(() => claimName(quote.username, quote.mode));
+      return await withUser(() => redeemName(quote, preimage));
     },
-    onSuccess: (created) => {
-      // Spent: keeping it would offer a settled invoice on the next attempt
-      forgetQuote(user?.pubkey ?? '', created.username);
-
-      invalidate();
-      toast({
-        title: 'Address bought',
-        description: `${created.username} is yours. Point it somewhere to start receiving.`,
-      });
-    },
+    onSuccess: onBought,
     onError: (error: Error) => {
       toast({
         title: 'Could not buy that name',
         description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  /**
+   * Takes the name using a proof that came from somewhere other than a wallet
+   * here — in practice, the service's own LUD-21 endpoint reporting that an
+   * invoice scanned onto a phone has settled.
+   *
+   * This is what makes paying from anywhere possible at all. Claiming needs
+   * the preimage, an outside wallet never returns one to this page, and
+   * without a way to ask, "scan to pay" would take somebody's money and leave
+   * them without the name.
+   */
+  const settle = useMutation({
+    mutationFn: async ({
+      quote,
+      preimage,
+    }: {
+      quote: NamePrice;
+      preimage: string;
+    }) => {
+      await ensureUser();
+      return await withUser(() => redeemName(quote, preimage));
+    },
+    onSuccess: onBought,
+    onError: (error: Error) => {
+      toast({
+        title: 'Paid, but the name could not be claimed',
+        description: `${error.message} The payment went through — keep this page open and try again.`,
         variant: 'destructive',
       });
     },
@@ -645,6 +699,8 @@ export function useLaWallet() {
     isClaiming: claim.isPending,
     buy: buy.mutateAsync,
     isBuying: buy.isPending,
+    settle: settle.mutateAsync,
+    isSettling: settle.isPending,
     point: point.mutateAsync,
     isPointing: point.isPending,
     connectWallet: connectWallet.mutateAsync,
@@ -663,6 +719,8 @@ export function useLaWallet() {
     claim.isPending,
     buy.mutateAsync,
     buy.isPending,
+    settle.mutateAsync,
+    settle.isPending,
     point.mutateAsync,
     point.isPending,
     connectWallet.mutateAsync,
@@ -670,4 +728,29 @@ export function useLaWallet() {
     revokeWallet.mutateAsync,
     revokeWallet.isPending,
   ]);
+}
+
+/**
+ * Watches an invoice until the service says it has been paid.
+ *
+ * Polled rather than pushed: the service offers no socket for this, and the
+ * alternative — asking somebody to press "I've paid" — puts the one step that
+ * can lose their money behind a button they might not press.
+ *
+ * Stops the moment it settles. `gcTime: 0` because the answer is about one
+ * invoice at one moment, and a cached "not paid yet" shown against the next
+ * attempt would be worse than no answer.
+ */
+export function usePaymentVerification(
+  verifyUrl: string | undefined,
+  enabled: boolean
+) {
+  return useQuery({
+    queryKey: ['lawallet-verify', verifyUrl ?? ''],
+    enabled: enabled && !!verifyUrl,
+    queryFn: ({ signal }) => verifyPayment(verifyUrl!, signal),
+    refetchInterval: (query) => (query.state.data?.settled ? false : 3000),
+    retry: false,
+    gcTime: 0,
+  });
 }
