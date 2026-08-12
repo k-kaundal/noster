@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TokenCard } from '@/components/wallet/TokenCard';
 import { useSentTokens } from '@/hooks/useSentTokens';
+import { useTokenBackup } from '@/hooks/useTokenBackup';
 import { cn } from '@/lib/utils';
 
 /**
@@ -19,6 +20,12 @@ import { cn } from '@/lib/utils';
 export function SentTokens({ className }: { className?: string }) {
   const { tokens, isLoading, reclaim } = useSentTokens();
   const [showClaimed, setShowClaimed] = useState(false);
+
+  /**
+   * Anything this browser holds that the relays do not gets published once,
+   * so tokens made before backups existed stop being stuck on one machine.
+   */
+  useTokenBackup();
 
   if (!isLoading && !tokens.length) return null;
 
@@ -44,8 +51,10 @@ export function SentTokens({ className }: { className?: string }) {
           )}
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          A token is a bearer string — whoever holds it can claim it. These stay
-          here so you can send one again, or take it back if nobody did.
+          A token is a bearer string — whoever holds it can claim it. These are
+          saved to your relays, encrypted to your key, so they follow your
+          account to any browser: send one again, or take it back if nobody
+          claimed it.
         </p>
       </CardHeader>
 

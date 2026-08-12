@@ -1,7 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCashuWallet } from '@/hooks/useCashuWallet';
+import { useCashuHistory } from '@/hooks/useCashuHistory';
 import { useToast } from '@/hooks/useToast';
 import {
   readMovements,
@@ -13,6 +14,8 @@ import type { TokenState } from '@/lib/cashu';
 
 export interface SentToken {
   id: string;
+  /** True when this came from relays rather than this browser's storage. */
+  fromBackup?: boolean;
   token: string;
   amountSats: number;
   memo?: string;
@@ -52,7 +55,53 @@ export function useSentTokens() {
     staleTime: 0,
   });
 
-  const movements = stored.data ?? [];
+  /**
+   * The same tokens as this account's relays remember them.
+   *
+   * The local log is one browser's copy. A token cut on a laptop is invisible
+   * on a phone without this, and the sats behind it have already left the
+   * balance — so the string is the only way to get them back, and the browser
+   * that holds it is the only place it exists.
+   */
+  const { data: history, isLoading: isRestoring } = useCashuHistory(200);
+
+  const movements = useMemo(() => {
+    const local = (stored.data ?? []).filter(
+      (movement) => movement.type === 'cashu_send' && !!movement.token
+    );
+
+    const known = new Set(local.map((movement) => movement.token));
+    const restored: CashuMovement[] = [];
+
+    for (const entry of history ?? []) {
+      if (entry.direction !== 'out' || !entry.token) continue;
+      if (known.has(entry.token)) continue;
+      known.add(entry.token);
+
+      restored.push({
+        /**
+         * Keyed by the event, so the same token restored on two devices is
+         * one row rather than two — and so the id is stable across reloads,
+         * which the per-token state queries cache on.
+         */
+        id: `nostr:${entry.event.id}`,
+        type: 'cashu_send',
+        mint: entry.mint ?? mintUrl,
+        amountSats: entry.amount,
+        /**
+         * Always open until the mint says otherwise. The relay copy records
+         * that a token was cut, never that it was claimed — that answer only
+         * comes from the mint, and it is asked for below.
+         */
+        status: 'pending',
+        token: entry.token,
+        memo: entry.memo,
+        createdAt: entry.createdAt,
+      });
+    }
+
+    return [...local, ...restored].sort((a, b) => b.createdAt - a.createdAt);
+  }, [stored.data, history, mintUrl]);
 
   /**
    * One query per token rather than one for all of them.
@@ -72,7 +121,13 @@ export function useSentTokens() {
          * calling it pending. Only in that direction: a mint that could not be
          * reached must never turn a redeemed token back into an open one.
          */
-        if (state === 'redeemed' && pubkey && movement.status !== 'settled') {
+        if (
+          state === 'redeemed' &&
+          pubkey &&
+          movement.status !== 'settled' &&
+          // Restored rows have no local record to settle; the mint is the answer
+          !movement.id.startsWith('nostr:')
+        ) {
           settleMovement(pubkey, movement.id);
           queryClient.invalidateQueries({ queryKey: ['cashu-sent-tokens'] });
         }
@@ -86,6 +141,7 @@ export function useSentTokens() {
 
   const tokens: SentToken[] = movements.map((movement, index) => ({
     id: movement.id,
+    fromBackup: movement.id.startsWith('nostr:'),
     token: movement.token!,
     amountSats: movement.amountSats,
     memo: movement.memo,
@@ -122,7 +178,7 @@ export function useSentTokens() {
 
       if (pubkey) {
         // Kept in the history as what it became rather than deleted
-        settleMovement(pubkey, sent.id);
+        if (!sent.fromBackup) settleMovement(pubkey, sent.id);
         recordMovement(pubkey, {
           type: 'cashu_receive',
           mint: sent.mint,
@@ -145,7 +201,15 @@ export function useSentTokens() {
 
   return {
     tokens,
-    isLoading: stored.isLoading,
+    /**
+     * Both sources, not just the local one.
+     *
+     * On a browser that has never cut a token the local read finishes at once
+     * with nothing — so reporting only that would show "no tokens yet" for a
+     * second before the relay copy arrives, which is precisely the moment
+     * somebody concludes their money is gone.
+     */
+    isLoading: stored.isLoading || isRestoring,
     reclaim,
     mintUrl,
   };

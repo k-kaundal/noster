@@ -221,7 +221,17 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
    * events it replaces — and its failure is reported without undoing anything.
    */
   const commit = useCallback(
-    async (next: Proof[], spent: Proof[]) => {
+    async (
+      next: Proof[],
+      spent: Proof[],
+      /**
+       * Extra detail for the history entry, when the change produced a token.
+       *
+       * Carried so the token follows the account instead of the browser. See
+       * `HistoryEntry.token` in `nip60.ts`.
+       */
+      handout?: { token?: string; memo?: string; mint?: string }
+    ) => {
       if (!user || !pubkey || readOnly) {
         throw new Error(
           'Log in with your own key to hold ecash. This session can only read.'
@@ -300,6 +310,9 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
               unit: CASHU_UNIT,
               created: event.id,
               destroyed: previous,
+              token: handout?.token,
+              memo: handout?.memo,
+              mint: handout?.mint,
             }
           );
 
@@ -628,10 +641,20 @@ export function useCashuWallet(mintUrl: string = CASHU_MINT_URL) {
         { includeFees: true }
       );
 
-      // The swap spent inputs to make both sides; those originals are gone
-      await commit(keep, [...outgoing, ...consumedProofs(available, keep, outgoing)]);
-
+      /**
+       * Encoded before the commit, not after, so the token can go into the
+       * history entry that commit publishes. Encoding is pure — it reads the
+       * proofs and produces a string — so doing it first changes nothing
+       * about what the wallet holds.
+       */
       const token = encodeToken(outgoing, mintUrl, memo);
+
+      // The swap spent inputs to make both sides; those originals are gone
+      await commit(
+        keep,
+        [...outgoing, ...consumedProofs(available, keep, outgoing)],
+        { token, memo: memo?.trim() || undefined, mint: mintUrl }
+      );
 
       if (pubkey) {
         /**
