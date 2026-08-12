@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowDownLeft,
   ArrowUpRight,
   Banknote,
+  Clock,
+  Copy,
   KeyRound,
   Link2,
   Loader2,
@@ -19,9 +21,10 @@ import { EmptyState } from '@/components/EmptyState';
 import { FiatValue } from '@/components/FiatValue';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountCard } from '@/components/wallet/AccountCard';
+import { ActivityCard } from '@/components/wallet/ActivityCard';
 import { WalletKeys } from '@/components/wallet/WalletKeys';
 import { WalletSwitcher } from '@/components/wallet/WalletSwitcher';
 import { IdentityCard } from '@/components/wallet/IdentityCard';
@@ -32,12 +35,11 @@ import { SendDialog } from '@/components/wallet/SendDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLightningAddress } from '@/hooks/useLightningAddress';
 import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
-import { useLnbitsPayments, useLnbitsWallet } from '@/hooks/useLnbitsWallet';
+import { useToast } from '@/hooks/useToast';
+import { useWalletActivity } from '@/hooks/useWalletActivity';
+import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useSeo } from '@/hooks/useSeo';
 import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
-import { msatToSat, paymentTimeMs } from '@/lib/lnbits';
-import { formatSats } from '@/lib/zap';
-import { cn } from '@/lib/utils';
 
 /**
  * The wallet, as a place rather than a settings tab.
@@ -225,6 +227,8 @@ function ConnectedWallet() {
   const { wallet, balanceSats, isLoading, createWallet, isCreatingWallet } =
     useLnbitsWallet();
   const { address } = useLightningAddress();
+  const { openRequests } = useWalletActivity();
+  const { toast } = useToast();
 
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
@@ -276,11 +280,37 @@ function ConnectedWallet() {
             </>
           )}
 
+          {/* The one number the balance cannot show: money asked for and not
+              yet arrived. Put here because somebody checking their balance is
+              exactly who wants to know an invoice is still outstanding. */}
+          {openRequests.length > 0 && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning-strong">
+              <Clock className="h-3 w-3" />
+              {openRequests.length === 1
+                ? '1 request awaiting payment'
+                : `${openRequests.length} requests awaiting payment`}
+            </p>
+          )}
+
           {address && (
             <div className="mt-3 flex items-center gap-2">
               <code className="flex-1 truncate rounded bg-muted/50 px-2 py-1 text-xs font-mono">
                 {address}
               </code>
+              {/* It was displayed and not copyable, which makes an address
+                  something to retype by hand off a screen */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 shrink-0 p-0"
+                aria-label="Copy your lightning address"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(address);
+                  toast({ title: 'Address copied' });
+                }}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
             </div>
           )}
 
@@ -379,165 +409,6 @@ function ConnectedWallet() {
         balanceSats={balanceSats}
       />
     </div>
-  );
-}
-
-function ActivityCard() {
-  const { data: payments, isLoading } = useLnbitsPayments();
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  const sortedPayments = useMemo(() => {
-    return [...(payments || [])].sort(
-      (a, b) => paymentTimeMs(b.time) - paymentTimeMs(a.time)
-    );
-  }, [payments]);
-
-  const formatTime = (timestamp: string | number | undefined) => {
-    const ms = paymentTimeMs(timestamp);
-    if (!ms) return 'Unknown time';
-
-    const date = new Date(ms);
-
-    // Validate the date is valid
-    if (isNaN(date.getTime())) return 'Unknown time';
-
-    const now = new Date();
-    const diffSeconds = (now.getTime() - date.getTime()) / 1000;
-
-    if (diffSeconds < 60) return 'Just now';
-    if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
-    if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
-    if (diffSeconds < 604800) return `${Math.floor(diffSeconds / 86400)}d ago`;
-
-    try {
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-      });
-    } catch {
-      return 'Unknown time';
-    }
-  };
-
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader className="bg-gradient-to-br from-slate-50 to-transparent dark:from-slate-950/40 pb-4">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-            <ArrowDownLeft className="h-4 w-4 text-primary" />
-          </div>
-          Activity
-          {payments?.length ? (
-            <span className="ml-auto text-xs font-normal text-muted-foreground">
-              {payments.length} transaction{payments.length !== 1 ? 's' : ''}
-            </span>
-          ) : null}
-        </CardTitle>
-      </CardHeader>
-
-      <CardContent className="p-0">
-        {isLoading ? (
-          <div className="space-y-3 px-6 py-5">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <Skeleton key={index} className="h-16 rounded-lg" />
-            ))}
-          </div>
-        ) : !sortedPayments?.length ? (
-          <div className="px-6 py-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              Nothing yet. Zaps and transactions will appear here.
-            </p>
-          </div>
-        ) : (
-          <ul className="divide-y border-t">
-            {sortedPayments.slice(0, 10).map((payment) => {
-              const outgoing = payment.amount < 0;
-              const sats = Math.abs(msatToSat(payment.amount));
-              const isExpanded = expanded === payment.payment_hash;
-
-              return (
-                <li key={payment.payment_hash} className="overflow-hidden">
-                  <button
-                    onClick={() => setExpanded(isExpanded ? null : payment.payment_hash)}
-                    className="w-full flex items-center gap-3 px-6 py-3 hover:bg-muted/50 transition-colors text-left"
-                  >
-                    <span
-                      className={cn(
-                        'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
-                        outgoing ? 'bg-muted' : 'bg-success/10'
-                      )}
-                    >
-                      {outgoing ? (
-                        <ArrowUpRight className="h-5 w-5 text-muted-foreground" />
-                      ) : (
-                        <ArrowDownLeft className="h-5 w-5 text-success" />
-                      )}
-                    </span>
-
-                    <span className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">
-                        {payment.memo || (outgoing ? 'Sent' : 'Received')}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatTime(payment.time)}
-                      </p>
-                    </span>
-
-                    <span
-                      className={cn(
-                        'tabular shrink-0 text-sm font-semibold',
-                        outgoing ? 'text-muted-foreground' : 'text-success',
-                        payment.status === 'pending' && 'opacity-60'
-                      )}
-                    >
-                      {outgoing ? '−' : '+'}
-                      {formatSats(sats)}
-                    </span>
-                  </button>
-
-                  {isExpanded && (
-                    <div className="border-t bg-muted/30 px-6 py-3 text-xs space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Status</span>
-                        <span className={cn(
-                          'font-medium capitalize',
-                          payment.status === 'pending' ? 'text-yellow-600' : 'text-success'
-                        )}>
-                          {payment.status || 'completed'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Amount (msat)</span>
-                        <span className="font-mono">{Math.abs(payment.amount)}</span>
-                      </div>
-                      {payment.memo && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Note</span>
-                          <span className="font-medium truncate">{payment.memo}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Hash</span>
-                        <code className="font-mono text-[10px] truncate max-w-[200px]">
-                          {payment.payment_hash}
-                        </code>
-                      </div>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        {sortedPayments?.length > 10 && (
-          <div className="border-t px-6 py-3 text-center text-xs text-muted-foreground">
-            Showing latest 10 of {sortedPayments.length} transactions
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
