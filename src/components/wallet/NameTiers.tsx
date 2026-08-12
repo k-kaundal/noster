@@ -5,6 +5,7 @@ import { VerificationBadge, VerificationMark } from '@/components/VerificationBa
 import { AddressReceiveDialog } from '@/components/wallet/AddressReceiveDialog';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
+import { NIP5_DOMAIN, isNip5Configured } from '@/lib/nip5';
 import { describeTier, leadAddress, nextTier, rankAddresses } from '@/lib/tiers';
 import { cn } from '@/lib/utils';
 
@@ -176,9 +177,12 @@ export function NameTiers() {
       {/* Only when there is something above what they hold. An upsell shown to
           somebody already on the top tier reads as the app not knowing what
           they bought. */}
-      {upsell && (
+      {upsell && isNip5Configured() && (
         <p className="text-xs text-muted-foreground">
-          A verified name gets you your own name and a ✓ on every post — below.
+          {/* The domain named rather than implied: "a verified name" is an
+              abstraction, and `you@getzap.me` is the thing being sold. */}
+          A name at <span className="font-medium">{NIP5_DOMAIN}</span> is yours
+          alone, and puts a ✓ on every post — below.
         </p>
       )}
 

@@ -134,11 +134,19 @@ Several domains are written as pairs, separated by commas or spaces:
 VITE_NIP5_DOMAINS=1f3c…:nostrfeed.com, 9ab2…:zap.example
 ```
 
-Either order works — the half with a dot in it is read as the hostname. The
-first domain is the default: it is what the buy form opens on, and what a name
-falls back to reading as. The rest are offered in a picker, and every one of
-them needs its own `/.well-known/nostr.json` proxy rule (below) pointing at
+Either order works — the half with a dot in it is read as the hostname. Every
+domain needs its own `/.well-known/nostr.json` proxy rule (below) pointing at
 **that** domain's id.
+
+**Order is a product decision, not just a default.** The first domain is the
+one the app sells: the buy form opens on it, it carries a "Recommended" badge
+in the domain list, and it is the domain named in the copy that offers a
+verified name — on the free-address form, in the upsell under someone's
+addresses, and on the long-form composer's gate. Put the domain worth the most
+first.
+
+The others are offered underneath it, each priced for the name being typed,
+because the same local part can be free on one domain and taken on another.
 
 A user may hold names on any number of these, and several on one domain. Only
 one of them can go in the profile's `nip05` — the card lets them pick which.
