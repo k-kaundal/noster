@@ -195,18 +195,96 @@ export class LaWalletError extends Error {
 /**
  * Whether a refusal means "this key has no account here" specifically.
  *
+ * The same condition surfaces under two codes depending on which layer
+ * catches it. `AUTHENTICATION_ERROR` is the auth chain: the schema says every
+ * authenticated request runs through `resolveRole(pubkey)`, whose first step
+ * is to look up the `User` row, so a key with no row is turned away as though
+ * it had not signed at all. `NOT_FOUND` is a handler that got past the chain
+ * and then could not find the record itself.
+ *
  * The message is consulted as well as the code, which is not something to do
  * lightly. But `NOT_FOUND` is also what a write against a deleted *address*
  * answers with, and the two want opposite handling: one is fixed by
- * provisioning the account and retrying, the other is fixed by nothing and
- * would spend a signature discovering that.
+ * registering and retrying, the other is fixed by nothing and would spend a
+ * signature discovering that.
  */
 export function isMissingUser(error: unknown): boolean {
   return (
     error instanceof LaWalletError &&
-    error.code === 'NOT_FOUND' &&
-    /user/i.test(error.message)
+    (error.code === 'NOT_FOUND' || error.code === 'AUTHENTICATION_ERROR') &&
+    /user not found/i.test(error.message)
   );
+}
+
+/** A session token from `POST /api/jwt`, with what the service said about it. */
+export interface LaWalletSession {
+  token: string;
+  /** ISO 8601. Absent on an instance that does not report one. */
+  expiresAt?: string;
+  pubkey?: string;
+  role?: 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'USER';
+}
+
+/**
+ * Trades a NIP-98 signature for a session token — and, in doing so, gets a
+ * key through the door for the first time.
+ *
+ * This is the registration step, though nothing calls it that. `POST /api/jwt`
+ * is the only route in the schema that is both `PUBLIC` and NIP-98 signed,
+ * which makes it the only one whose auth chain does not first demand a `User`
+ * row. Every other route — `GET /api/users/me` included, despite being the one
+ * documented to "load or create" a user — is role `USER` and so refuses a key
+ * that has never been seen with "User not found".
+ *
+ * So a new key cannot reach the route that would create it by signing each
+ * request. It has to come through here first.
+ */
+export async function openSession(
+  signer: NostrSigner,
+  expiresIn = '1h'
+): Promise<LaWalletSession> {
+  /**
+   * The body is sent explicitly rather than omitted. NIP-98 hashes the payload
+   * into the signed event, so what is sent and what is signed have to be the
+   * same bytes — and "no body" and "an empty body" are not the same bytes.
+   */
+  const body = await laWalletRequest<Record<string, unknown>>('/api/jwt', {
+    method: 'POST',
+    body: { expiresIn },
+    signer,
+  });
+
+  const token = typeof body.token === 'string' ? body.token : '';
+  if (!token) {
+    throw new LaWalletError('The wallet service issued no session token.', 200);
+  }
+
+  return {
+    token,
+    expiresAt: typeof body.expiresAt === 'string' ? body.expiresAt : undefined,
+    pubkey: typeof body.pubkey === 'string' ? body.pubkey : undefined,
+    role: body.role as LaWalletSession['role'],
+  };
+}
+
+/**
+ * How long a session is worth caching, in milliseconds.
+ *
+ * Cut short of the real expiry, because a token that expires mid-request is
+ * indistinguishable from a token that was never valid — and the recovery from
+ * that is a signer prompt somebody did not ask for. An instance that reports
+ * no expiry gets the schema's own default of an hour, shortened the same way.
+ */
+export function sessionLifetimeMs(
+  session: LaWalletSession,
+  now = Date.now()
+): number {
+  const margin = 60_000;
+  const parsed = session.expiresAt ? Date.parse(session.expiresAt) : NaN;
+
+  if (Number.isNaN(parsed)) return 60 * 60_000 - margin;
+
+  return Math.max(0, parsed - now - margin);
 }
 
 /**
@@ -226,13 +304,16 @@ export function isMissingUser(error: unknown): boolean {
  * is most of the app. Answering empty is what turns a permanent stream of
  * refused requests into one request per cache window.
  *
- * 401 is deliberately not in this list. That means the signature itself did
- * not verify, which is worth telling somebody about rather than hiding behind
- * an empty list.
+ * 401 is deliberately not in this list, with one exception. A 401 normally
+ * means the signature itself did not verify, which is worth telling somebody
+ * about rather than hiding behind an empty list — but the auth chain also
+ * answers 401 for a key that signed perfectly and simply has no account yet,
+ * and that is the same ordinary state as the 404 above.
  */
 export function isExpectedDenial(error: unknown): boolean {
   if (!(error instanceof LaWalletError)) return false;
 
+  if (isMissingUser(error)) return true;
   if (error.status === 404 || error.code === 'NOT_FOUND') return true;
   return error.status === 403 || error.code === 'AUTHORIZATION_ERROR';
 }

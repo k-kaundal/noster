@@ -7,6 +7,7 @@ import {
   isExpectedDenial,
   isMissingUser,
   refusalReason,
+  sessionLifetimeMs,
   unwrapList,
   invoiceAmountSats,
   mergeHeldAddresses,
@@ -427,8 +428,21 @@ describe('isMissingUser', () => {
   /** The exact envelope the service answers a claim with, for a fresh key. */
   const noUser = new LaWalletError('User not found', 404, 'NOT_FOUND');
 
-  it('recognises the refusal that means "provision an account first"', () => {
+  it('recognises the refusal that means "register this key first"', () => {
     expect(isMissingUser(noUser)).toBe(true);
+  });
+
+  it('recognises the same thing when the auth chain catches it', () => {
+    /**
+     * The chain looks up the User row before anything else, so a key with no
+     * row is turned away as though it had not signed — a 401 carrying the
+     * same sentence as the handler's 404.
+     */
+    expect(
+      isMissingUser(
+        new LaWalletError('User not found', 401, 'AUTHENTICATION_ERROR')
+      )
+    ).toBe(true);
   });
 
   it('does not read a missing address as a missing user', () => {
@@ -443,8 +457,51 @@ describe('isMissingUser', () => {
   });
 
   it('ignores anything that is not that refusal', () => {
+    // No code at all: a bare 401 is a signature that did not verify
     expect(isMissingUser(new LaWalletError('User not found', 401))).toBe(false);
     expect(isMissingUser(new Error('User not found'))).toBe(false);
     expect(isMissingUser(undefined)).toBe(false);
+  });
+
+  it('is read as an ordinary state by the query guard', () => {
+    // Otherwise every read fails, and a failed query has nothing to go stale,
+    // so all of them refetch on every mount
+    expect(isExpectedDenial(noUser)).toBe(true);
+    expect(
+      isExpectedDenial(
+        new LaWalletError('User not found', 401, 'AUTHENTICATION_ERROR')
+      )
+    ).toBe(true);
+  });
+});
+
+describe('sessionLifetimeMs', () => {
+  const now = Date.parse('2026-01-01T00:00:00Z');
+
+  it('stops short of the real expiry', () => {
+    /**
+     * A token that expires mid-request is indistinguishable from one that was
+     * never valid, and recovering from that costs a signer prompt nobody
+     * asked for.
+     */
+    const life = sessionLifetimeMs(
+      { token: 't', expiresAt: '2026-01-01T01:00:00Z' },
+      now
+    );
+
+    expect(life).toBe(60 * 60_000 - 60_000);
+  });
+
+  it('falls back to the schema default when no expiry is reported', () => {
+    expect(sessionLifetimeMs({ token: 't' }, now)).toBe(60 * 60_000 - 60_000);
+    expect(sessionLifetimeMs({ token: 't', expiresAt: 'soon' }, now)).toBe(
+      60 * 60_000 - 60_000
+    );
+  });
+
+  it('never answers with a negative lifetime', () => {
+    expect(
+      sessionLifetimeMs({ token: 't', expiresAt: '2025-01-01T00:00:00Z' }, now)
+    ).toBe(0);
   });
 });
