@@ -36,28 +36,37 @@ function getLoader(nostr: Relay): BatchLoader<string, NoteStats> {
     windowMs: 80,
     maxBatchSize: 60,
     emptyValue: () => EMPTY,
-    async fetch(eventIds) {
-      // Replies, reposts, reactions and zaps in one request rather than four
+    async fetch(keys) {
+      /*
+       * Addressable events are referenced by coordinate, not by id. An
+       * article's zaps carry `a` = `30023:<pubkey>:<d>` and no `e` tag at
+       * all, so a query asking only for `#e` finds none of them — which is
+       * why articles showed no total however many they had been paid.
+       */
+      const eventIds = keys.filter((key) => !key.includes(':'));
+      const addresses = keys.filter((key) => key.includes(':'));
+
+      const kinds = [1, 6, 7, 16, 9735];
+      // Bounded so a full batch stays under typical relay max_limit
+      const limit = Math.min(keys.length * 40, 2000);
+
+      // Both filters in one request rather than two round trips
       const events = await nostr.query(
         [
-          {
-            kinds: [1, 6, 7, 16, 9735],
-            '#e': eventIds,
-            // Bounded so a full batch stays under typical relay max_limit
-            limit: Math.min(eventIds.length * 40, 2000),
-          },
+          ...(eventIds.length ? [{ kinds, '#e': eventIds, limit }] : []),
+          ...(addresses.length ? [{ kinds, '#a': addresses, limit }] : []),
         ],
         { signal: AbortSignal.timeout(8000) }
       );
 
       const results = new Map<string, NoteStats>();
-      for (const id of eventIds) {
-        results.set(id, { replies: [], reposts: [], reactions: [], zaps: [] });
+      for (const key of keys) {
+        results.set(key, { replies: [], reposts: [], reactions: [], zaps: [] });
       }
 
       for (const event of events) {
         for (const [name, value] of event.tags) {
-          if (name !== 'e') continue;
+          if (name !== 'e' && name !== 'a') continue;
 
           const bucket = results.get(value);
           if (!bucket) continue;

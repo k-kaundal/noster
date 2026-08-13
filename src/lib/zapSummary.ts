@@ -41,8 +41,20 @@ export const EMPTY_ZAP_SUMMARY: ZapSummary = {
 };
 
 export interface ZapSummaryOptions {
-  /** The note the receipts must be about. */
-  eventId: string;
+  /**
+   * The note the receipts must be about.
+   *
+   * Left undefined for an addressable event, which is referenced by
+   * coordinate instead — see `address`.
+   */
+  eventId?: string;
+  /**
+   * `30023:<pubkey>:<d>` for an addressable event.
+   *
+   * An article's zaps carry an `a` tag and often no `e` tag at all, so
+   * checking them against an event id rejects every one of them.
+   */
+  address?: string;
   /** Its author, who must be the one the payment named. */
   recipientPubkey: string;
   /**
@@ -75,7 +87,9 @@ export function summarizeZaps(
     if (seen.has(receipt.id)) continue;
 
     const valid = validateZapReceipt(receipt, {
-      eventId: options.eventId,
+      // One or the other: an addressable event is named by its coordinate
+      eventId: options.address ? undefined : options.eventId,
+      address: options.address,
       recipientPubkey: options.recipientPubkey,
       providerPubkey: options.providerPubkey,
     });

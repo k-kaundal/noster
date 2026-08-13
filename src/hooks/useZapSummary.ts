@@ -23,16 +23,34 @@ import {
 export function useZapSummary(event: NostrEvent | undefined): ZapSummary & {
   isLoading: boolean;
 } {
-  const { zaps, isLoading } = useNoteStats(event?.id);
+  /**
+   * An addressable event is referenced by coordinate, never by id.
+   *
+   * An article's zaps carry `a` = `30023:<pubkey>:<d>` and frequently no `e`
+   * tag at all, so asking for its id finds nothing — which is why articles
+   * showed no total however many times they had been paid.
+   */
+  const address = event && isAddressable(event.kind)
+    ? `${event.kind}:${event.pubkey}:${
+        event.tags.find(([name]) => name === 'd')?.[1] ?? ''
+      }`
+    : undefined;
+
+  const { zaps, isLoading } = useNoteStats(address ?? event?.id);
 
   const summary = useMemo(() => {
     if (!event) return EMPTY_ZAP_SUMMARY;
 
     return summarizeZaps(zaps, {
-      eventId: event.id,
+      eventId: address ? undefined : event.id,
+      address,
       recipientPubkey: event.pubkey,
     });
-  }, [zaps, event]);
+  }, [zaps, event, address]);
 
   return { ...summary, isLoading };
+}
+
+function isAddressable(kind: number): boolean {
+  return kind >= 30000 && kind < 40000;
 }

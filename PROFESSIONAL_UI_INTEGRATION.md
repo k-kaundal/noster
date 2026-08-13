@@ -1,5 +1,10 @@
 # Professional UI Integration Guide
 
+> **Design direction:** the visual identity is now specified in
+> [`docs/design.md`](docs/design.md) — *Premium Dark Social*. Where this
+> document disagrees with it about colour, elevation, radius or styling, that
+> one wins; this one is kept for the parts it still owns.
+
 This document describes the UI features integrated into NostrFeed, providing an overview of theme presets, typography and spacing, and UI customization options.
 
 > **Note:** the "Professional UI Mode" post layout was removed. The feed renders the standard `Post` component everywhere, so posts look and behave the same on Home, Explore, profiles and hashtag pages.
