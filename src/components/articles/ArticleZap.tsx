@@ -2,7 +2,7 @@ import { Zap } from 'lucide-react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ZapDialog } from '@/components/ZapDialog';
+import { ZapTrigger } from '@/components/ZapTrigger';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -107,12 +107,12 @@ export function ArticleZap({
             which beats a button that quietly is not there.
           */}
           {!isMine && payable && user && (
-            <ZapDialog target={article}>
+            <ZapTrigger target={article}>
               <Button className="gap-2">
                 <Zap className="h-4 w-4" />
                 Zap this article
               </Button>
-            </ZapDialog>
+            </ZapTrigger>
           )}
 
           {!isMine && payable && !user && (

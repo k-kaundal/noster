@@ -1,22 +1,28 @@
-import { ZapDialog } from '@/components/ZapDialog';
+import { Zap } from 'lucide-react';
+import type { NostrEvent } from '@nostrify/nostrify';
+import { ZapTrigger } from '@/components/ZapTrigger';
+import { Button } from '@/components/ui/button';
 import { useZaps } from '@/hooks/useZaps';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuthor } from '@/hooks/useAuthor';
-import { Zap } from 'lucide-react';
-import type { Event } from 'nostr-tools';
+import { cn } from '@/lib/utils';
 
 interface ZapButtonProps {
-  target: Event;
+  target: NostrEvent;
   className?: string;
   showCount?: boolean;
   zapData?: { count: number; totalSats: number; isLoading?: boolean };
 }
 
+/**
+ * Zapping whatever is on the page — an article, a listing, an event, a
+ * community — where there is no row of note actions to sit in.
+ */
 export function ZapButton({
   target,
-  className = "text-xs ml-1",
+  className,
   showCount = true,
-  zapData: externalZapData
+  zapData: externalZapData,
 }: ZapButtonProps) {
   const { user } = useCurrentUser();
   const { data: author } = useAuthor(target?.pubkey || '');
@@ -27,7 +33,12 @@ export function ZapButton({
   );
 
   // Don't show zap button if user is not logged in, is the author, or author has no lightning address
-  if (!user || !target || user.pubkey === target.pubkey || (!author?.metadata?.lud16 && !author?.metadata?.lud06)) {
+  if (
+    !user ||
+    !target ||
+    user.pubkey === target.pubkey ||
+    (!author?.metadata?.lud16 && !author?.metadata?.lud06)
+  ) {
     return null;
   }
 
@@ -36,19 +47,21 @@ export function ZapButton({
   const showLoading = externalZapData?.isLoading || isLoading;
 
   return (
-    <ZapDialog target={target}>
-      <div className={`flex items-center gap-1 ${className}`}>
+    <ZapTrigger target={target}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={cn('gap-1.5 text-zap hover:bg-zap/10', className)}
+      >
         <Zap className="h-4 w-4" />
-        <span className="text-xs">
-          {showLoading ? (
-            '...'
-          ) : showCount && totalSats > 0 ? (
-            `${totalSats.toLocaleString()}`
-          ) : (
-            'Zap'
-          )}
+        <span className="text-xs tabular-nums">
+          {showLoading
+            ? '...'
+            : showCount && totalSats > 0
+              ? totalSats.toLocaleString()
+              : 'Zap'}
         </span>
-      </div>
-    </ZapDialog>
+      </Button>
+    </ZapTrigger>
   );
 }

@@ -34,7 +34,7 @@ import { AvatarRingPicker } from '@/components/AvatarRingPicker';
 import { EmptyState } from '@/components/EmptyState';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { FollowButton } from '@/components/FollowButton';
-import { ZapDialog } from '@/components/ZapDialog';
+import { ZapTrigger } from '@/components/ZapTrigger';
 import { VerificationMark } from '@/components/VerificationBadge';
 import { tierOf } from '@/lib/tiers';
 import { EditProfileForm } from '@/components/EditProfileForm';
@@ -269,12 +269,12 @@ export function Profile({ pubkey }: ProfileProps) {
                       itself when they have no lightning address, so it never
                       offers to pay somebody who cannot be paid. */}
                   {user && author.data?.event && (
-                    <ZapDialog target={author.data.event}>
+                    <ZapTrigger target={author.data.event}>
                       <Button variant="outline" size="sm">
                         <Zap className="mr-2 h-4 w-4 text-zap" />
                         Zap
                       </Button>
-                    </ZapDialog>
+                    </ZapTrigger>
                   )}
                   {user && (
                     <Button asChild variant="outline" size="sm">
