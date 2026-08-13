@@ -14,7 +14,7 @@ import { CalendarEventCard } from '@/components/calendar/CalendarEventCard';
 import { CalendarEventEditor } from '@/components/calendar/CalendarEventEditor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCalendarEvents } from '@/hooks/useCalendar';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { hasPassed, startsAt, type CalendarEvent } from '@/lib/nip52';
 
 /**
@@ -65,11 +65,7 @@ function groupByWhen(events: CalendarEvent[]): [string, CalendarEvent[]][] {
 
 /** NIP-52 calendar events, browsable. */
 export function CalendarPage() {
-  useSeo({
-    title: 'Calendar',
-    description: 'Events happening on Nostr.',
-    path: '/calendar',
-  });
+  useRouteSeo('/calendar');
 
   const { user } = useCurrentUser();
   const [params, setParams] = useSearchParams();

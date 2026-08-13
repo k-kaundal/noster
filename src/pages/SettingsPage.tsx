@@ -42,19 +42,14 @@ import { useMachineEvents } from '@/hooks/useMachineEvents';
 import { TrustProviderSettings } from '@/components/trust/TrustProviderSettings';
 import { useDmRelayList } from '@/hooks/useDmRelayList';
 import { useRelays } from '@/hooks/useRelays';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { AdvancedThemeSwitcher } from '@/components/AdvancedThemeSwitcher';
 import { genUserName } from '@/lib/genUserName';
 import { relayDisplayName } from '@/lib/relay';
 import { getMuteValue } from '@/lib/mute';
 
 export function SettingsPage() {
-  useSeo({
-    title: 'Settings',
-    description: 'Appearance, muted content and private message relays.',
-    path: '/settings',
-    noindex: true,
-  });
+  useRouteSeo('/settings');
 
   const { user } = useCurrentUser();
 

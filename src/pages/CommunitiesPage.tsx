@@ -24,16 +24,12 @@ import { useCommunities, usePublishCommunity } from '@/hooks/useCommunities';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useToast } from '@/hooks/useToast';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { slugify } from '@/lib/article';
 import { communityAddress, type Community } from '@/lib/community';
 
 export function CommunitiesPage() {
-  useSeo({
-    title: 'Communities',
-    description: 'Moderated communities on Nostr — join one, or start your own.',
-    path: '/communities',
-  });
+  useRouteSeo('/communities');
 
   const { user } = useCurrentUser();
   const { communities, isLoading } = useCommunities();

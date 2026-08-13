@@ -15,15 +15,11 @@ import { ListingCard } from '@/components/market/ListingCard';
 import { ListingEditor } from '@/components/market/ListingEditor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useListings, useMyListings } from '@/hooks/useListings';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 
 /** NIP-99 classified listings, browsable. */
 export function MarketPage() {
-  useSeo({
-    title: 'Market',
-    description: 'Things for sale on Nostr.',
-    path: '/market',
-  });
+  useRouteSeo('/market');
 
   const { user } = useCurrentUser();
   const [params, setParams] = useSearchParams();

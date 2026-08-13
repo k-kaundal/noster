@@ -1,12 +1,66 @@
+# NostrFeed
+#
+# Notes, profiles and articles live at the root of the site under their NIP-19
+# identifier — /npub1…, /note1…, /naddr1…. These were disallowed here on the
+# grounds that their content is fetched from relays and so a crawl finds an
+# empty page.
+#
+# That reasoning cost more than it saved. Twitterbot, Slackbot, LinkedIn and
+# most other link-preview fetchers read robots.txt and honour it, so the rule
+# was not keeping thin pages out of an index — it was stopping every shared
+# link to a profile or an article from showing a preview at all. Google renders
+# JavaScript and sees the real content; anything that does not is served the
+# card tags in the HTML.
+#
+# What each page wants is decided by the page, through its robots meta tag.
+
 User-agent: *
 Allow: /
 
-# Individual notes and profiles are addressed by NIP-19 identifiers. They are
-# fetched from relays at runtime, so crawling them yields no indexable content.
-Disallow: /npub1
-Disallow: /note1
-Disallow: /nevent1
-Disallow: /nprofile1
-Disallow: /naddr1
+# Signed-in territory. Nothing here is another person's business, and a search
+# result promising somebody's wallet or messages is a bad result.
+Disallow: /settings
+Disallow: /notifications
+Disallow: /chat
+Disallow: /bookmarks
+Disallow: /wallet
+Disallow: /identity
+
+# Assistants and answer engines are welcome to read this site, on the same
+# terms as everybody else: it is a public client for a public protocol, and
+# being quoted accurately beats being described from memory. llms.txt is a map
+# written for exactly this purpose.
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
 
 Sitemap: https://nostrfeed.com/sitemap.xml

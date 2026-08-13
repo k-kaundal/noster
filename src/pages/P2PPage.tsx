@@ -18,16 +18,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { OrderCard } from '@/components/p2p/OrderCard';
 import { useP2POrders } from '@/hooks/useP2POrders';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { applyFilters, currenciesIn, type OrderSide } from '@/lib/nip69';
 
 /** NIP-69: the pooled p2p order book. */
 export function P2PPage() {
-  useSeo({
-    title: 'P2P',
-    description: 'Peer-to-peer bitcoin orders from across Nostr.',
-    path: '/p2p',
-  });
+  useRouteSeo('/p2p');
 
   const { orders, isLoading } = useP2POrders();
 

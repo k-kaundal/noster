@@ -4,7 +4,7 @@ import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { ServiceCard } from '@/components/promo/ServiceCard';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { SERVICES } from '@/lib/services';
 
 /**
@@ -18,12 +18,7 @@ import { SERVICES } from '@/lib/services';
  * bought.
  */
 const ServicesPage = () => {
-  useSeo({
-    title: 'Services',
-    description:
-      'What NostrFeed runs: names at getzap.me, a lightning wallet at ln.nostrfeed.com, a Cashu mint at mint.nostrfeed.com and the wallet on its own at wallet.nostrfeed.com.',
-    path: '/services',
-  });
+  useRouteSeo('/services');
 
   return (
     <Layout>

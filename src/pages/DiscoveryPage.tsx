@@ -4,7 +4,7 @@ import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { Trending } from '@/components/Trending';
 import { Button } from '@/components/ui/button';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 
 type TimeRange = 'now' | '24h' | '7d' | '30d';
 
@@ -12,12 +12,7 @@ type TimeRange = 'now' | '24h' | '7d' | '30d';
  * Discovery page showing trending content and communities
  */
 export function DiscoveryPage() {
-  useSeo({
-    title: 'Discovery',
-    description: 'Discover trending posts, topics, users, and communities on Nostr.',
-    path: '/discovery',
-    noindex: false,
-  });
+  useRouteSeo('/discovery');
 
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
 

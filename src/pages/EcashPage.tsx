@@ -43,7 +43,7 @@ import {
 import { useCashuMint } from '@/hooks/useCashuMint';
 import { useCashuWallet } from '@/hooks/useCashuWallet';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { mintHost } from '@/lib/cashu';
 import { clearCashu, type PendingQuote } from '@/lib/cashuStore';
 
@@ -56,12 +56,7 @@ import { clearCashu, type PendingQuote } from '@/lib/cashuStore';
  * moving between them is a payment, not a transfer.
  */
 export function EcashPage() {
-  useSeo({
-    title: 'Ecash',
-    description: 'Private, bearer ecash at the NostrFeed Cashu mint.',
-    path: '/ecash',
-    noindex: true,
-  });
+  useRouteSeo('/ecash');
 
   const { user } = useCurrentUser();
 

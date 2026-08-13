@@ -6,6 +6,7 @@ import { BadgeCheck, Clock, Pencil } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useSeo } from '@/hooks/useSeo';
+import { articleSchema } from '@/lib/structuredData';
 import { genUserName } from '@/lib/genUserName';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -68,6 +69,27 @@ export function ArticleView({ article }: { article: Article }) {
     nostrEntity: naddr,
     // Authorship, not identity: the page is the article, not the author
     nostrAuthor: nip19.npubEncode(article.event.pubkey),
+    /*
+     * Described as an article rather than left to be guessed at. A reader
+     * arriving from a search result gets the headline, the date and the author
+     * from here — none of which are in the HTML, because the article itself is
+     * fetched from a relay after the page loads.
+     */
+    structuredData: articleSchema({
+      title: article.title,
+      description: article.summary || undefined,
+      image: article.image,
+      identifier: naddr,
+      publishedAt: article.publishedAt,
+      updatedAt: article.updatedAt,
+      tags: article.hashtags,
+      author: {
+        name: displayName,
+        npub: nip19.npubEncode(article.event.pubkey),
+        image: metadata?.picture,
+        nip05: metadata?.nip05,
+      },
+    }),
   });
 
   return (

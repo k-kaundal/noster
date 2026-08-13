@@ -30,7 +30,7 @@ import { useArticle, useMyDrafts } from '@/hooks/useArticles';
 import { usePublishArticle } from '@/hooks/usePublishArticle';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useToast } from '@/hooks/useToast';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { MarkdownToolbar } from '@/components/articles/MarkdownToolbar';
 import {
   parseHashtagInput,
@@ -53,12 +53,7 @@ import { useAccountStored } from '@/hooks/useStore';
  * address, and changing it would orphan every link to the old one.
  */
 export function WritePage() {
-  useSeo({
-    title: 'Write',
-    description: 'Write and publish a long-form article on Nostr.',
-    path: '/write',
-    noindex: true,
-  });
+  useRouteSeo('/write');
 
   const { user } = useCurrentUser();
 
