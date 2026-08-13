@@ -209,8 +209,9 @@ export function CalendarEventEditor({
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Times are yours — {Intl.DateTimeFormat().resolvedOptions().timeZone}.
-                Everyone else sees this in their own zone.
+                Times are yours — {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                {' '}— and that zone is published with the event, so everyone
+                sees the time you typed with their own beside it.
               </p>
             </TabsContent>
 

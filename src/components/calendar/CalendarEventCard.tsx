@@ -9,10 +9,11 @@ import { useAuthor } from '@/hooks/useAuthor';
 import { readContentWarning } from '@/lib/contentWarning';
 import { genUserName } from '@/lib/genUserName';
 import {
+  formatInReaderZone,
   formatWhen,
   hasPassed,
   isDateBased,
-  toLocalDate,
+  startSquare,
   type CalendarEvent,
 } from '@/lib/nip52';
 import { cn } from '@/lib/utils';
@@ -47,9 +48,10 @@ export function CalendarEventCard({
   const warning = readContentWarning(event);
   const past = hasPassed(calendarEvent);
 
-  const startDate = isDateBased(calendarEvent)
-    ? toLocalDate(calendarEvent.start)
-    : new Date(calendarEvent.start * 1000);
+  const square = startSquare(calendarEvent);
+
+  /** The reader's own clock, when the event keeps a different one. */
+  const yourTime = formatInReaderZone(calendarEvent);
 
   const [location] = calendarEvent.locations;
 
@@ -71,10 +73,10 @@ export function CalendarEventCard({
           aria-hidden="true"
         >
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {startDate.toLocaleDateString(undefined, { month: 'short' })}
+            {square.month}
           </span>
           <span className="text-2xl font-bold leading-none tabular-nums">
-            {startDate.getDate()}
+            {square.day}
           </span>
         </div>
 
@@ -99,6 +101,17 @@ export function CalendarEventCard({
             )}
             <span className="truncate">{formatWhen(calendarEvent)}</span>
           </p>
+
+          {/*
+            The event's clock is the headline above; this is the reader's.
+            Shown only when they differ, and it is the line that answers "can
+            I actually be there for that".
+          */}
+          {yourTime && (
+            <p className="pl-5 text-xs text-muted-foreground">
+              {yourTime} your time
+            </p>
+          )}
 
           {location && (
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">

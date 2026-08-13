@@ -15,53 +15,7 @@ import { CalendarEventEditor } from '@/components/calendar/CalendarEventEditor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCalendarEvents } from '@/hooks/useCalendar';
 import { useRouteSeo } from '@/hooks/useSeo';
-import { hasPassed, startsAt, type CalendarEvent } from '@/lib/nip52';
-
-/**
- * Groups events under a heading a person thinks in.
- *
- * "Today" and "This week" beat a wall of dates, and the boundaries are local
- * — computed from the reader's own midnight, so an event at 23:00 tonight is
- * today rather than tomorrow for somebody east of the publisher.
- */
-function groupByWhen(events: CalendarEvent[]): [string, CalendarEvent[]][] {
-  const now = new Date();
-
-  const endOfToday = new Date(now);
-  endOfToday.setHours(23, 59, 59, 999);
-
-  const endOfWeek = new Date(endOfToday);
-  endOfWeek.setDate(endOfWeek.getDate() + 7);
-
-  const endOfMonth = new Date(endOfToday);
-  endOfMonth.setMonth(endOfMonth.getMonth() + 1);
-
-  const groups = new Map<string, CalendarEvent[]>([
-    ['Today', []],
-    ['This week', []],
-    ['This month', []],
-    ['Later', []],
-    ['Past', []],
-  ]);
-
-  for (const event of events) {
-    const at = startsAt(event) * 1000;
-
-    const bucket = hasPassed(event)
-      ? 'Past'
-      : at <= endOfToday.getTime()
-        ? 'Today'
-        : at <= endOfWeek.getTime()
-          ? 'This week'
-          : at <= endOfMonth.getTime()
-            ? 'This month'
-            : 'Later';
-
-    groups.get(bucket)!.push(event);
-  }
-
-  return [...groups].filter(([, list]) => list.length > 0);
-}
+import { groupByWhen } from '@/lib/calendarGroups';
 
 /** NIP-52 calendar events, browsable. */
 export function CalendarPage() {
