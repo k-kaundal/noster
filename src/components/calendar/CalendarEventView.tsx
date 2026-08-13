@@ -26,10 +26,10 @@ import { readContentWarning } from '@/lib/contentWarning';
 import { genUserName } from '@/lib/genUserName';
 import {
   foreignZone,
+  formatInReaderZone,
   formatWhen,
   hasPassed,
   isDateBased,
-  timeInZone,
   type CalendarEvent,
   type Participant,
 } from '@/lib/nip52';
@@ -74,20 +74,17 @@ export function CalendarEventView({
   });
 
   /**
-   * The host's own timezone, named only when it differs from the reader's.
-   * A conference at 09:00 in Costa Rica is 16:00 in Berlin, and a reader who
-   * sees only their own clock has no way to check they are looking at the
-   * right event.
+   * The reader's own clock, named only when the event keeps a different one.
+   *
+   * Which way round this goes is the whole point. The line above is the
+   * event's own time — 09:00 in Costa Rica stays 09:00, because that is what
+   * the schedule says and what everyone there will call it — and this is the
+   * translation, for a reader deciding whether they can make it.
    */
-  const hostZone = isDateBased(calendarEvent)
-    ? null
-    : (() => {
-        const zone = foreignZone(calendarEvent);
-        if (!zone) return null;
-
-        const clock = timeInZone(calendarEvent.start, zone);
-        return clock ? { zone, clock } : null;
-      })();
+  const readerTime = formatInReaderZone(calendarEvent);
+  const eventZoneName = isDateBased(calendarEvent)
+    ? undefined
+    : foreignZone(calendarEvent);
 
   return (
     <div className="space-y-6">
@@ -144,9 +141,10 @@ export function CalendarEventView({
                 </p>
               )}
 
-              {hostZone && (
+              {readerTime && (
                 <p className="text-xs text-muted-foreground">
-                  {hostZone.clock} in {hostZone.zone}
+                  {readerTime} your time
+                  {eventZoneName ? ` · event is in ${eventZoneName}` : ''}
                 </p>
               )}
             </div>

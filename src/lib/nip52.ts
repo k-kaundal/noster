@@ -751,73 +751,171 @@ export function formatDateRange(event: DateBasedEvent): string {
   })}`;
 }
 
-/**
- * Whether an event's own timezone is worth naming.
- *
- * Times are shown in the reader's zone, which is what they need. Naming the
- * publisher's zone as well only helps when the two differ — otherwise it is
- * clutter that says "09:00 (your time, which is also their time)".
- */
-export function foreignZone(event: TimeBasedEvent): string | undefined {
-  if (!event.startTzid) return undefined;
-
-  const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return event.startTzid === here ? undefined : event.startTzid;
+/** The reader's own IANA zone. */
+export function readerZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-/** The clock time in a named zone, for showing a host's local time. */
-export function timeInZone(seconds: number, timeZone: string): string | null {
+/** Whether a zone identifier is one this browser can actually format in. */
+function usableZone(timeZone: string | undefined): string | undefined {
+  if (!timeZone) return undefined;
+
   try {
-    return new Date(seconds * 1000).toLocaleTimeString(undefined, {
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZone,
-    });
+    // Throws RangeError on anything unrecognised, and a publisher can write
+    // whatever they like into the tag
+    new Intl.DateTimeFormat('en', { timeZone });
+    return timeZone;
   } catch {
-    /**
-     * An unrecognised IANA identifier throws rather than falling back, and a
-     * publisher can write anything into the tag. Returning null lets the
-     * caller drop the line instead of rendering "Invalid Date".
-     */
-    return null;
+    return undefined;
   }
 }
 
-/** How a time-based event reads: date, then clock, in the reader's zone. */
+/**
+ * The zone an event's times mean, when it named one.
+ *
+ * This is the whole fix for the bug that prompted it. A meetup publishes
+ * "doors 18:30" and `start_tzid: Europe/Lisbon`; rendering that instant in the
+ * reader's own zone showed "23:00" to somebody in India, directly above a
+ * description that said 18:30. The event's clock is the fact — it is what is
+ * on the poster, what the venue means, and what everyone there will say — so
+ * it is what gets shown, with the reader's own time offered alongside.
+ */
+export function eventZone(event: CalendarEvent): string | undefined {
+  if (isDateBased(event)) return undefined;
+  return usableZone(event.startTzid);
+}
+
+/**
+ * Whether an event's own timezone is worth naming.
+ *
+ * Only when it differs from the reader's — otherwise it is clutter that says
+ * "09:00 (their time, which is also your time)".
+ */
+export function foreignZone(event: TimeBasedEvent): string | undefined {
+  const zone = eventZone(event);
+  return zone && zone !== readerZone() ? zone : undefined;
+}
+
+/** `YYYY-MM-DD` in a given zone, for comparing two instants by calendar day. */
+function dayKey(seconds: number, timeZone?: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(seconds * 1000));
+}
+
+/**
+ * How a time-based event reads: date, then clock.
+ *
+ * In the event's own zone when it published one, and the reader's otherwise.
+ * The zone abbreviation is appended whenever the two differ, because "18:30"
+ * with no qualifier next to an address in another country is a time somebody
+ * will get wrong.
+ */
 export function formatTimeRange(event: TimeBasedEvent): string {
+  const timeZone = eventZone(event);
+  const foreign = !!timeZone && timeZone !== readerZone();
+
   const from = new Date(event.start * 1000);
 
   const date = from.toLocaleDateString(undefined, {
+    timeZone,
     weekday: 'short',
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   });
 
-  const startTime = from.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const clock = (seconds: number, withZone: boolean) =>
+    new Date(seconds * 1000).toLocaleTimeString(undefined, {
+      timeZone,
+      hour: 'numeric',
+      minute: '2-digit',
+      ...(withZone && foreign ? { timeZoneName: 'short' } : {}),
+    });
 
   // An instantaneous event, which the spec allows when `end` is omitted
-  if (event.end === undefined) return `${date}, ${startTime}`;
+  if (event.end === undefined) return `${date}, ${clock(event.start, true)}`;
 
-  const to = new Date(event.end * 1000);
-  const endTime = to.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const startTime = clock(event.start, false);
+  const endTime = clock(event.end, true);
 
-  const sameDay = from.toDateString() === to.toDateString();
-  if (sameDay) return `${date}, ${startTime} – ${endTime}`;
+  // Compared in the event's zone, so a night that ends after midnight there
+  // is one date range rather than two, whoever is reading it
+  if (dayKey(event.start, timeZone) === dayKey(event.end, timeZone)) {
+    return `${date}, ${startTime} – ${endTime}`;
+  }
 
-  const endDate = to.toLocaleDateString(undefined, {
+  const endDate = new Date(event.end * 1000).toLocaleDateString(undefined, {
+    timeZone,
     weekday: 'short',
     day: 'numeric',
     month: 'short',
   });
 
   return `${date}, ${startTime} – ${endDate}, ${endTime}`;
+}
+
+/**
+ * The same start, in the reader's own zone — or nothing when that adds nothing.
+ *
+ * The secondary half of showing event-local times. "18:30 WEST" answers what
+ * is happening at the venue; this answers whether the reader can be at their
+ * desk for it, which for anything online is the only question they have.
+ */
+export function formatInReaderZone(event: CalendarEvent): string | null {
+  if (isDateBased(event) || !foreignZone(event)) return null;
+
+  const from = new Date(event.start * 1000);
+
+  const sameDay =
+    dayKey(event.start, eventZone(event)) === dayKey(event.start);
+
+  const time = from.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  /*
+   * The date comes back whenever the zones disagree about which day it is —
+   * "20:00 your time" for an event the reader's calendar puts on the next day
+   * is worse than saying nothing.
+   */
+  if (sameDay) return time;
+
+  const date = from.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+
+  return `${date}, ${time}`;
+}
+
+/**
+ * The month and day for the tear-off calendar square.
+ *
+ * In the event's zone, for the same reason its times are: a 21:00 event in
+ * Lisbon is 01:30 the next morning in Delhi, and a square reading the 14th
+ * beside a poster reading the 13th is the kind of wrong that makes somebody
+ * miss it.
+ */
+export function startSquare(event: CalendarEvent): {
+  month: string;
+  day: string;
+} {
+  const timeZone = eventZone(event);
+
+  const at = isDateBased(event)
+    ? toLocalDate(event.start)
+    : new Date(event.start * 1000);
+
+  return {
+    month: at.toLocaleDateString(undefined, { timeZone, month: 'short' }),
+    day: at.toLocaleDateString(undefined, { timeZone, day: 'numeric' }),
+  };
 }
 
 /** One line describing when an event happens, whichever kind it is. */

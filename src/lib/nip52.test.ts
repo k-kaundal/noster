@@ -17,8 +17,14 @@ import {
   rsvpTags,
   tallyRsvps,
   timeEventTags,
+  eventZone,
+  foreignZone,
+  formatInReaderZone,
+  formatTimeRange,
+  startSquare,
   type DateBasedEvent,
   type Rsvp,
+  type TimeBasedEvent,
 } from './nip52';
 
 function event(kind: number, tags: string[][], overrides: Partial<NostrEvent> = {}): NostrEvent {
@@ -378,5 +384,126 @@ describe('parseCalendar', () => {
 
   it('requires a title', () => {
     expect(parseCalendar(event(31924, [['d', 'c']]))).toBeNull();
+  });
+});
+
+
+/**
+ * Times, in the zone the event actually means.
+ *
+ * Asserted against the same instant re-rendered in the target zone rather
+ * than against literal clock strings, so these hold under any locale and any
+ * `TZ` — the property that broke is the zone the formatting uses, not the
+ * digits a particular machine prints.
+ */
+describe('event-local times', () => {
+  /** 13 Aug 2026, 18:30 in Lisbon (17:30 UTC) — the meetup from the report. */
+  const LISBON_1830 = Date.UTC(2026, 7, 13, 17, 30) / 1000;
+
+  const clockIn = (seconds: number, timeZone?: string) =>
+    new Date(seconds * 1000).toLocaleTimeString(undefined, {
+      timeZone,
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+  function timeEvent(
+    start: number,
+    extra: Partial<TimeBasedEvent> = {}
+  ): TimeBasedEvent {
+    return {
+      kind: TIME_EVENT_KIND,
+      slug: 'x',
+      title: 'T',
+      content: '',
+      locations: [],
+      participants: [],
+      hashtags: [],
+      references: [],
+      start,
+      ...extra,
+      event: event(TIME_EVENT_KIND, []),
+    } as TimeBasedEvent;
+  }
+
+  it('shows the clock the event published, not the reader own', () => {
+    /**
+     * The bug this was written for. A Cascais meetup published doors at 18:30
+     * with `start_tzid: Europe/Lisbon`, and the card rendered 23:00 for a
+     * reader in India — directly above a description saying 18:30.
+     */
+    const shown = formatTimeRange(
+      timeEvent(LISBON_1830, { startTzid: 'Europe/Lisbon' })
+    );
+
+    expect(shown).toContain(clockIn(LISBON_1830, 'Europe/Lisbon'));
+  });
+
+  it('names the zone, so an unqualified time cannot be misread', () => {
+    const zoned = formatTimeRange(
+      timeEvent(LISBON_1830, { startTzid: 'Asia/Kolkata' })
+    );
+    const bare = formatTimeRange(timeEvent(LISBON_1830));
+
+    // The abbreviation the platform picks varies; that there is one does not
+    expect(zoned.length).toBeGreaterThan(bare.length);
+  });
+
+  it('falls back to the reader when the publisher named no zone', () => {
+    expect(formatTimeRange(timeEvent(LISBON_1830))).toContain(
+      clockIn(LISBON_1830)
+    );
+  });
+
+  it('ignores a zone identifier no browser can use', () => {
+    // A publisher can put anything in the tag, and `Intl` throws on nonsense
+    const broken = timeEvent(LISBON_1830, { startTzid: 'Mars/Olympus' });
+
+    expect(eventZone(broken)).toBeUndefined();
+    expect(() => formatTimeRange(broken)).not.toThrow();
+    expect(formatTimeRange(broken)).toContain(clockIn(LISBON_1830));
+  });
+
+  it('says nothing about the reader zone when it is the event zone', () => {
+    const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const same = timeEvent(LISBON_1830, { startTzid: here });
+
+    expect(foreignZone(same)).toBeUndefined();
+    expect(formatInReaderZone(same)).toBeNull();
+  });
+
+  it('translates into the reader zone when they differ', () => {
+    const far = timeEvent(LISBON_1830, { startTzid: 'Pacific/Auckland' });
+
+    expect(formatInReaderZone(far)).toContain(clockIn(LISBON_1830));
+  });
+
+  it('puts the calendar square on the event own day', () => {
+    /**
+     * A 21:00 event in Lisbon is after midnight further east. The square has
+     * to agree with the poster, or somebody reads the 14th and misses the
+     * 13th.
+     */
+    const lateNight = Date.UTC(2026, 7, 13, 20, 0) / 1000;
+
+    expect(
+      startSquare(timeEvent(lateNight, { startTzid: 'Europe/Lisbon' })).day
+    ).toBe('13');
+  });
+
+  it('keeps a night that ends after midnight as one date range', () => {
+    const endsAfterMidnight = Date.UTC(2026, 7, 14, 0, 30) / 1000;
+
+    const shown = formatTimeRange(
+      timeEvent(LISBON_1830, {
+        end: endsAfterMidnight,
+        startTzid: 'Europe/Lisbon',
+        endTzid: 'Europe/Lisbon',
+      })
+    );
+
+    expect(shown).toContain(clockIn(LISBON_1830, 'Europe/Lisbon'));
+    // The second date is spelled out, since it is not the first
+    expect(shown).toContain('14');
   });
 });
