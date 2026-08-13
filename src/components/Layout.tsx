@@ -39,9 +39,23 @@ interface LayoutProps {
   children: ReactNode;
   /** Drops the discovery rail — for pages that manage their own wide layout. */
   fullWidth?: boolean;
+  /**
+   * Gives the page the whole phone screen: no tab bar, no compose button, no
+   * bottom padding reserved for either.
+   *
+   * For the one shape they get in the way of — a screen with its own pinned
+   * bottom control, which on a phone means an open chat. A tab bar sitting
+   * over the message box is the difference between a chat that works and one
+   * that does not, and the screen has its own way back.
+   */
+  immersive?: boolean;
 }
 
-export function Layout({ children, fullWidth = false }: LayoutProps) {
+export function Layout({
+  children,
+  fullWidth = false,
+  immersive = false,
+}: LayoutProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,7 +96,7 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
   });
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div className={cn('bg-surface', immersive ? 'h-[100dvh] overflow-hidden' : 'min-h-screen')}>
       <LoadingBar />
 
       <a
@@ -92,13 +106,23 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
         Skip to content
       </a>
 
-      <AppHeader onSearch={openPalette} />
+      {/*
+        Immersive screens supply their own header. Two stacked headers — the
+        app's and the conversation's — is 7rem of chrome on a phone that only
+        has around 40 to spend, and the screen already has its own way back.
+      */}
+      {!immersive && <AppHeader onSearch={openPalette} />}
 
       {/* Under the header rather than over the page: a signer that has gone
           away only matters when you go to write, and reading works fine */}
       <SignerAlert />
 
-      <div className="container flex gap-8 pb-24 pt-6 lg:gap-12 lg:pb-16 lg:pt-8">
+      <div
+        className={cn(
+          'container flex gap-8 lg:gap-12 lg:pb-16 lg:pt-8',
+          immersive ? 'h-full max-w-none px-0 pb-0 pt-0 sm:px-0' : 'pb-24 pt-6'
+        )}
+      >
         <aside className="hidden w-52 shrink-0 lg:block">
           {/*
             Bounded to the viewport, like the discovery rail opposite. Without
@@ -142,9 +166,13 @@ export function Layout({ children, fullWidth = false }: LayoutProps) {
         )}
       </div>
 
-      <MobileNav onSearch={openPalette} />
-      <FloatingActionButton />
-      <BackToTop />
+      {!immersive && (
+        <>
+          <MobileNav onSearch={openPalette} />
+          <FloatingActionButton />
+          <BackToTop />
+        </>
+      )}
       <UpdatePrompt />
 
       <Suspense fallback={null}>

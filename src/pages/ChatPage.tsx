@@ -6,10 +6,12 @@ import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatThread } from '@/components/chat/ChatThread';
+import { NewChatSheet } from '@/components/chat/NewChatSheet';
 import { Card } from '@/components/ui/card';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { useDirectMessages } from '@/hooks/useDirectMessages';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { useRouteSeo } from '@/hooks/useSeo';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +36,18 @@ export function ChatPage() {
   const { user } = useCurrentUser();
   const peerPubkey = usePeerPubkey();
   const { conversations, isLoading, isError } = useDirectMessages();
+  const isMobile = useIsMobile();
+
+  /*
+   * An open conversation takes the whole phone.
+   *
+   * It used to be a card in a scrolling page, sized by subtracting the header,
+   * the page title and the tab bar from the viewport — three magic numbers
+   * that had already been wrong once and put the message box under the tab
+   * bar. A conversation is a screen, not a panel: no title above it, no tab
+   * bar below it, and nothing between the composer and the bottom edge.
+   */
+  const immersive = isMobile && !!peerPubkey;
 
   if (!user) {
     return (
@@ -51,6 +65,21 @@ export function ChatPage() {
     );
   }
 
+  if (immersive && peerPubkey) {
+    return (
+      <Layout fullWidth immersive>
+        {/*
+          The whole screen. `dvh` rather than `vh` so the collapsing address
+          bar on iOS and Android is accounted for; the keyboard, which neither
+          unit knows about, is handled inside the thread.
+        */}
+        <div className="h-full min-h-0 w-full">
+          <ChatThread peerPubkey={peerPubkey} immersive />
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout fullWidth>
       <div className="space-y-4">
@@ -58,6 +87,7 @@ export function ChatPage() {
           icon={MessagesSquare}
           title="Messages"
           description="Sealed and gift-wrapped with NIP-17, so relays can't see who you're talking to."
+          action={<NewChatSheet />}
         />
 
         {/* Below lg the list and thread swap places rather than sharing a row */}
@@ -67,14 +97,13 @@ export function ChatPage() {
            * the old single value allowed for. On a phone there is a 56px
            * header, the page title, and a 96px bottom gap for the tab bar —
            * about 276px in total against the 224px this assumed, so the card
-           * ran 52px past the bottom and took the message box with it. The
-           * composer was under the tab bar and could not be reached.
+           * ran 52px past the bottom and took the message box with it.
            */
           className="grid h-[calc(100dvh-18rem)] overflow-hidden sm:h-[calc(100dvh-16rem)] lg:h-[calc(100dvh-15rem)] lg:grid-cols-[20rem_1fr]"
         >
           <div
             className={cn(
-              'overflow-y-auto border-r scrollbar-thin',
+              'overflow-y-auto overscroll-contain border-r scrollbar-thin',
               peerPubkey && 'hidden lg:block'
             )}
           >
@@ -84,7 +113,7 @@ export function ChatPage() {
               </p>
             ) : !isLoading && conversations.length === 0 ? (
               <p className="p-6 text-center text-sm text-muted-foreground">
-                No conversations yet. Open someone's profile and start one.
+                No conversations yet. Start one with “New message”.
               </p>
             ) : (
               <ConversationList

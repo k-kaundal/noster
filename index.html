@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!--
+      `interactive-widget=resizes-content` makes Android shrink the layout
+      viewport when the keyboard opens, so a chat composer sized against the
+      viewport stays above it instead of behind it. iOS ignores the hint and is
+      handled by `useKeyboardInset` instead.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
 
     <title>NostrFeed — Decentralized Social Network on Nostr</title>
     <meta name="description" content="A fast, open Nostr client. Read and publish notes, watch short videos, zap creators over Lightning, and control exactly which relays you use." />
