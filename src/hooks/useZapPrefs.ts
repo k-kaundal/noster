@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import {
   DEFAULT_ZAP_PREFS,
+  ZAP_PREFS_VERSION,
   readZapPrefs,
   type ZapPrefs,
 } from '@/lib/zapPrefs';
@@ -24,7 +25,13 @@ export function useZapPrefs() {
 
   const update = useCallback(
     (patch: Partial<ZapPrefs>) => {
-      setStored((current) => ({ ...readZapPrefs(current), ...patch }));
+      setStored((current) => ({
+        ...readZapPrefs(current),
+        ...patch,
+        // Stamped on write, so what is stored is a choice rather than a copy
+        // of whatever the defaults happened to be that release
+        version: ZAP_PREFS_VERSION,
+      }));
     },
     [setStored]
   );

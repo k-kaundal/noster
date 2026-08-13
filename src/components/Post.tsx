@@ -528,12 +528,20 @@ export function Post({
           />
           <ActionButton
             icon={Zap}
+            /*
+             * The amount is in the label whenever a tap will send it. A
+             * button that spends money without saying how much is the thing
+             * one-tap must never become, and this is where somebody checks
+             * before pressing.
+             */
             label={
               isOwnPost
                 ? "You can't zap your own note"
-                : canZap
-                  ? 'Zap'
-                  : 'Author has no Lightning address'
+                : !canZap
+                  ? 'Author has no Lightning address'
+                  : quickZap.oneTap
+                    ? `Zap ${quickZap.amount.toLocaleString()} sats — hold to choose`
+                    : 'Zap'
             }
             count={zapSummary.totalSats || undefined}
             tone="zap"

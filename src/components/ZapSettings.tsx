@@ -51,9 +51,9 @@ export function ZapSettings() {
               Send instantly
             </Label>
             <p className="text-xs text-muted-foreground">
-              ⚡ pays the amount below straight away instead of opening the
+              ⚡ pays the amount below on a single tap, instead of opening the
               dialog. Hold the button — or right-click it — to open the dialog
-              anyway.
+              and choose. Turn this off to be asked every time.
             </p>
           </div>
 

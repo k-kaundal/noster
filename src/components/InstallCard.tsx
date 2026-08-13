@@ -3,11 +3,12 @@ import { Check, Download, Share, SquarePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { installRoute, type InstallRoute } from '@/lib/install';
-
-interface InstallEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
+import {
+  showInstallPrompt,
+  subscribeToInstallPrompt,
+  wasInstalled,
+  type InstallEvent,
+} from '@/lib/installPrompt';
 
 /**
  * Installing the app, wherever the reader happens to be.
@@ -19,27 +20,22 @@ interface InstallEvent extends Event {
  */
 export function InstallCard() {
   const [event, setEvent] = useState<InstallEvent | null>(null);
-  const [installed, setInstalled] = useState(false);
+  const [installed, setInstalled] = useState(wasInstalled);
 
-  useEffect(() => {
-    const onPrompt = (incoming: Event) => {
-      incoming.preventDefault();
-      setEvent(incoming as InstallEvent);
-    };
-
-    const onInstalled = () => {
-      setEvent(null);
-      setInstalled(true);
-    };
-
-    window.addEventListener('beforeinstallprompt', onPrompt);
-    window.addEventListener('appinstalled', onInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onPrompt);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
-  }, []);
+  /*
+   * Shared with the bottom strip, and captured back in `main.tsx`. Listening
+   * for `beforeinstallprompt` from here missed it on every warm cache —
+   * Chrome fires it before React mounts — which is why this card could show
+   * nothing on a phone that was perfectly able to install the app.
+   */
+  useEffect(
+    () =>
+      subscribeToInstallPrompt((incoming) => {
+        setEvent(incoming);
+        if (wasInstalled()) setInstalled(true);
+      }),
+    []
+  );
 
   const route: InstallRoute = installed ? 'installed' : installRoute(!!event);
 
@@ -68,17 +64,7 @@ export function InstallCard() {
               Opens in its own window, keeps working offline, and carries the
               unread count on its icon.
             </p>
-            <Button
-              onClick={async () => {
-                await event?.prompt();
-                /**
-                 * Cleared either way. The event is single-use — the browser
-                 * will not honour a second `prompt()` on it — so leaving the
-                 * button live would produce one that silently does nothing.
-                 */
-                setEvent(null);
-              }}
-            >
+            <Button onClick={() => void showInstallPrompt()}>
               <Download className="mr-2 h-4 w-4" />
               Install
             </Button>
