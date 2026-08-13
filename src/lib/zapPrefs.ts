@@ -7,14 +7,15 @@
  * small amount, sent because a post was good, and a dialog for those is three
  * taps where one would do.
  *
- * So one-tap sending is offered, off by default, with the amount and message
- * decided once in settings. Off by default because a control that spends money
- * on a single tap has to be asked for — somebody who enabled nothing should
- * never discover they have paid by brushing a button.
+ * So one-tap sending is on by default, with the amount and message decided
+ * once in settings. It stays honest about what it is: the button says what it
+ * will send, holding it opens the dialog instead, and the amount is small
+ * enough that a mis-tap costs less than a coffee. Anyone who would rather
+ * choose every time turns it off in one switch.
  */
 
 /** What a zap sends when nobody has changed anything. */
-export const DEFAULT_ZAP_SATS = 21;
+export const DEFAULT_ZAP_SATS = 50;
 
 /** Below this, no lightning invoice is payable at all. */
 export const MIN_ZAP_SATS = 1;
@@ -38,16 +39,28 @@ export interface ZapPrefs {
   /**
    * Whether tapping ⚡ pays immediately rather than opening the dialog.
    *
-   * Off until asked for. The dialog remains reachable either way — see
-   * `ZapButton`, where a long press opens it.
+   * On by default. The dialog remains reachable either way — holding the
+   * button opens it, on every surface.
    */
   oneTap: boolean;
 }
 
+/**
+ * Marks prefs as written by a version of the app that had these defaults.
+ *
+ * Without it there is no way to tell "chose 21 sats and no instant send" from
+ * "was given them", and changing a default would silently leave everybody on
+ * the old one — stored values always win, so an unmarked record has to be
+ * read as never configured.
+ *
+ * Bump only when a default changes in a way everyone should get.
+ */
+export const ZAP_PREFS_VERSION = 2;
+
 export const DEFAULT_ZAP_PREFS: ZapPrefs = {
   amount: DEFAULT_ZAP_SATS,
   message: '',
-  oneTap: false,
+  oneTap: true,
 };
 
 /**
@@ -77,7 +90,10 @@ export const MESSAGE_PRESETS = [
 export function readZapPrefs(stored: unknown): ZapPrefs {
   if (!stored || typeof stored !== 'object') return DEFAULT_ZAP_PREFS;
 
-  const prefs = stored as Partial<ZapPrefs>;
+  const prefs = stored as Partial<ZapPrefs> & { version?: number };
+
+  // Written before this version's defaults existed, so it records no choice
+  if (prefs.version !== ZAP_PREFS_VERSION) return DEFAULT_ZAP_PREFS;
 
   const amount = Number(prefs.amount);
   const usable = Number.isFinite(amount) && amount >= MIN_ZAP_SATS;
@@ -85,7 +101,8 @@ export function readZapPrefs(stored: unknown): ZapPrefs {
   return {
     amount: usable ? Math.floor(amount) : DEFAULT_ZAP_SATS,
     message: typeof prefs.message === 'string' ? prefs.message.slice(0, 200) : '',
-    oneTap: prefs.oneTap === true,
+    // Anything but an explicit false leaves it on, which is the default
+    oneTap: prefs.oneTap !== false,
   };
 }
 

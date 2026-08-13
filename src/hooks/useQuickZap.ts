@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -33,6 +33,16 @@ export function useQuickZap(target: NostrEvent | undefined) {
 
   const [isSending, setIsSending] = useState(false);
 
+  /*
+   * Guards against a second tap landing while the first is still paying.
+   *
+   * State is a frame behind on a phone — two quick taps both read `isSending`
+   * as false and both pay — and this is the one place where losing that race
+   * costs real money. A ref is written synchronously, so the second tap sees
+   * it.
+   */
+  const inFlight = useRef(false);
+
   const readiness = useMemo(
     () =>
       zapReadiness({
@@ -57,12 +67,16 @@ export function useQuickZap(target: NostrEvent | undefined) {
   const send = useCallback(async (): Promise<boolean> => {
     if (!target) return false;
 
+    // One send per tap. A second tap is not a second zap
+    if (inFlight.current) return true;
+
     if (!readiness.canOneTap) {
       const reason = describeBlocker(readiness.blocker, prefs.amount);
       if (reason) toast({ title: 'Cannot zap', description: reason });
       return false;
     }
 
+    inFlight.current = true;
     setIsSending(true);
 
     try {
@@ -89,6 +103,7 @@ export function useQuickZap(target: NostrEvent | undefined) {
       });
       return false;
     } finally {
+      inFlight.current = false;
       setIsSending(false);
     }
   }, [

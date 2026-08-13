@@ -3,42 +3,59 @@ import {
   DEFAULT_ZAP_PREFS,
   DEFAULT_ZAP_SATS,
   MAX_ONE_TAP_SATS,
+  ZAP_PREFS_VERSION,
   describeBlocker,
   readZapPrefs,
   zapReadiness,
 } from './zapPrefs';
 
+/** A stored record that counts as somebody's own choice. */
+const chosen = (prefs: Record<string, unknown>) => ({
+  version: ZAP_PREFS_VERSION,
+  ...prefs,
+});
+
 describe('readZapPrefs', () => {
-  it('defaults to 21 sats, no message, and one-tap off', () => {
-    /**
-     * Off by default is the important half. A control that spends money on a
-     * single tap has to be asked for — nobody should discover they have paid
-     * by brushing a button.
-     */
+  it('defaults to 50 sats, no message, and one-tap on', () => {
     expect(readZapPrefs(undefined)).toEqual(DEFAULT_ZAP_PREFS);
-    expect(DEFAULT_ZAP_SATS).toBe(21);
-    expect(DEFAULT_ZAP_PREFS.oneTap).toBe(false);
+    expect(DEFAULT_ZAP_SATS).toBe(50);
+    expect(DEFAULT_ZAP_PREFS.oneTap).toBe(true);
   });
 
   it('keeps what somebody chose', () => {
     expect(
-      readZapPrefs({ amount: 500, message: 'nice', oneTap: true })
-    ).toEqual({ amount: 500, message: 'nice', oneTap: true });
+      readZapPrefs(chosen({ amount: 500, message: 'nice', oneTap: false }))
+    ).toEqual({ amount: 500, message: 'nice', oneTap: false });
+  });
+
+  it('gives current defaults to a record written before them', () => {
+    /**
+     * The whole point of the version stamp. An unversioned record was written
+     * when the defaults were 21 sats and one-tap off, and cannot say whether
+     * those were chosen or handed over — so it is read as no choice at all,
+     * and everybody moves to the current defaults.
+     */
+    expect(readZapPrefs({ amount: 21, message: '', oneTap: false })).toEqual(
+      DEFAULT_ZAP_PREFS
+    );
   });
 
   it('repairs an amount nobody could pay', () => {
     // Storage is edited by hand and arrives from other devices
-    expect(readZapPrefs({ amount: 0 }).amount).toBe(DEFAULT_ZAP_SATS);
-    expect(readZapPrefs({ amount: -5 }).amount).toBe(DEFAULT_ZAP_SATS);
-    expect(readZapPrefs({ amount: 'lots' }).amount).toBe(DEFAULT_ZAP_SATS);
+    expect(readZapPrefs(chosen({ amount: 0 })).amount).toBe(DEFAULT_ZAP_SATS);
+    expect(readZapPrefs(chosen({ amount: -5 })).amount).toBe(DEFAULT_ZAP_SATS);
+    expect(readZapPrefs(chosen({ amount: 'lots' })).amount).toBe(
+      DEFAULT_ZAP_SATS
+    );
   });
 
   it('floors a fractional amount rather than refusing it', () => {
-    expect(readZapPrefs({ amount: 21.9 }).amount).toBe(21);
+    expect(readZapPrefs(chosen({ amount: 21.9 })).amount).toBe(21);
   });
 
-  it('treats anything but true as one-tap off', () => {
-    expect(readZapPrefs({ oneTap: 'yes' }).oneTap).toBe(false);
+  it('takes only an explicit false as one-tap off', () => {
+    expect(readZapPrefs(chosen({ oneTap: false })).oneTap).toBe(false);
+    expect(readZapPrefs(chosen({ oneTap: 'no' })).oneTap).toBe(true);
   });
 });
 

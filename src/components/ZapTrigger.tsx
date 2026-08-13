@@ -4,6 +4,8 @@ import type { NostrEvent } from '@nostrify/nostrify';
 import { ZapDialog } from '@/components/ZapDialog';
 import { useHoldGesture } from '@/hooks/useHoldGesture';
 import { useQuickZap } from '@/hooks/useQuickZap';
+import { useToast } from '@/hooks/useToast';
+import { describeBlocker } from '@/lib/zapPrefs';
 
 interface ZapTriggerProps {
   target: NostrEvent;
@@ -32,8 +34,30 @@ interface ZapTriggerProps {
 export function ZapTrigger({ target, children }: ZapTriggerProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const quickZap = useQuickZap(target);
+  const { toast } = useToast();
 
-  const openDialog = useCallback(() => setDialogOpen(true), []);
+  /**
+   * Falls back to the dialog, or says why there isn't one.
+   *
+   * `ZapDialog` renders nothing at all when nobody is logged in, when the note
+   * is your own, or when the author published no lightning address — so those
+   * three cannot be handled by opening it. Without this a logged-out tap did
+   * nothing whatsoever, which is the same thing a broken button does.
+   */
+  const openDialog = useCallback(() => {
+    const blocker = quickZap.blocker;
+
+    if (blocker === 'signed-out' || blocker === 'self' || blocker === 'no-address') {
+      toast({
+        title: blocker === 'signed-out' ? 'Login required' : 'Cannot zap',
+        description: describeBlocker(blocker, quickZap.amount) ?? undefined,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setDialogOpen(true);
+  }, [quickZap.amount, quickZap.blocker, toast]);
 
   const onTap = useCallback(async () => {
     if (!quickZap.oneTap) {
