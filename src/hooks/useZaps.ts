@@ -1,15 +1,16 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuthor } from '@/hooks/useAuthor';
+import { useNoteStats } from '@/hooks/useNoteStats';
+import { summarizeZaps } from '@/lib/zapSummary';
 import { useAppContext } from '@/hooks/useAppContext';
 import { useToast } from '@/hooks/useToast';
 import { nip57 } from 'nostr-tools';
 import type { Event } from 'nostr-tools';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent, NostrMetadata } from '@nostrify/nostrify';
 import { readRelays } from '@/lib/relay';
-import { validateZapReceipt } from '@/lib/zap';
 import { parseZapSplits, splitAmount } from '@/lib/zapSplit';
 import { GOAL_KIND, linkedGoal, parseZapGoal } from '@/lib/nip75';
 import { describeSignerError } from '@/lib/signerErrors';
@@ -58,6 +59,28 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
     'wss://nostr.wine',
   ];
 
+  /**
+   * The receipts, from the batched stats query every visible note already
+   * shares.
+   *
+   * This used to be a query of its own, which meant an article page issued
+   * two requests for exactly the same receipts — one from the zap control and
+   * one from the total beside it — and, worse, added them up with two
+   * different rules. `useZaps` read the receipt's own `amount` tag first
+   * while `summarizeZaps` reads the invoice, so the same note could show two
+   * different totals in two places on the same screen. There is one fetch and
+   * one calculation now.
+   */
+  const address =
+    actualTarget && actualTarget.kind >= 30000 && actualTarget.kind < 40000
+      ? `${actualTarget.kind}:${actualTarget.pubkey}:${
+          actualTarget.tags.find((t) => t[0] === 'd')?.[1] || ''
+        }`
+      : undefined;
+
+  const statsKey = address ?? actualTarget?.id;
+  const { zaps: zapEvents, isLoading: isLoadingZaps } = useNoteStats(statsKey);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -89,8 +112,19 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
               title: 'Zap successful!',
               description: `Your ${nip57.getSatoshisAmountFromBolt11(invoice)} sat zap was received!`,
             });
-            queryClient.invalidateQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
-            queryClient.refetchQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
+            /*
+             * The receipts live in the shared stats cache now, so that is
+             * what has to be refreshed — invalidating the old private key
+             * would refetch nothing and leave the total a payment behind.
+             */
+            queryClient.invalidateQueries({
+              queryKey: ['note-stats', statsKey ?? ''],
+              exact: true,
+            });
+            queryClient.refetchQueries({
+              queryKey: ['note-stats', statsKey ?? ''],
+              exact: true,
+            });
             onZapSuccess?.();
             return true;
           }
@@ -127,100 +161,38 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
       clearInterval(pollIntervalId);
       clearTimeout(timeoutId);
     };
-  }, [invoice, actualTarget, nostr, queryClient, toast, onZapSuccess]);
+  }, [invoice, actualTarget, nostr, queryClient, toast, onZapSuccess, statsKey]);
 
-  const { data: zapEvents, ...query } = useQuery<NostrEvent[], Error>({
-    queryKey: ['zaps', actualTarget?.id],
-    staleTime: 30000,
-    refetchInterval: (query) => (query.getObserversCount() > 0 ? 60000 : false),
-    queryFn: async (c) => {
-      if (!actualTarget) return [];
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
-      if (actualTarget.kind >= 30000 && actualTarget.kind < 40000) {
-        const identifier = actualTarget.tags.find((t) => t[0] === 'd')?.[1] || '';
-        const events = await nostr.query(
-          [{ kinds: [9735], '#a': [`${actualTarget.kind}:${actualTarget.pubkey}:${identifier}`] }],
-          { signal }
-        );
-        return events;
-      } else {
-        const events = await nostr.query([{ kinds: [9735], '#e': [actualTarget.id] }], { signal });
-        return events;
-      }
-    },
-    enabled: !!actualTarget?.id,
-  });
 
   const { zapCount, totalSats, zaps } = useMemo(() => {
-    if (!zapEvents || !Array.isArray(zapEvents) || !actualTarget) return { zapCount: 0, totalSats: 0, zaps: [] };
-    let count = 0;
-    let sats = 0;
+    if (!actualTarget) {
+      return { zapCount: 0, totalSats: 0, zaps: [] as NostrEvent[] };
+    }
 
     /**
-     * NIP-57 Appendix F. Every kind 9735 with a matching `#e` used to be
-     * counted, so anybody could publish a receipt naming any note and any
-     * amount and inflate its total — which is the number readers judge a post
-     * by. Checked now: the embedded zap request must be validly signed, must
-     * be about this target and this recipient, and its stated amount must
-     * match the invoice attached to the receipt.
+     * NIP-57 Appendix F, applied in one place.
      *
-     * The provider check — that the receipt is signed by the recipient's own
-     * lightning server — needs their lnurl endpoint and is applied where that
-     * is known. Everything checkable without a request is checked here.
+     * Every kind 9735 with a matching `#e` used to be counted, so anybody
+     * could publish a receipt naming any note and any amount and inflate the
+     * number readers judge a post by. `summarizeZaps` does the checking and
+     * the arithmetic, and it is the same function the totals in the feed use
+     * — so a note cannot report one figure here and another there.
      */
-    const address =
-      actualTarget.kind >= 30000 && actualTarget.kind < 40000
-        ? `${actualTarget.kind}:${actualTarget.pubkey}:${
-            actualTarget.tags.find((t) => t[0] === 'd')?.[1] || ''
-          }`
-        : undefined;
-
-    const trustworthy = zapEvents.filter((zap) =>
-      validateZapReceipt(zap, {
-        recipientPubkey: actualTarget.pubkey,
-        eventId: address ? undefined : actualTarget.id,
-        address,
-      })
-    );
-
-    trustworthy.forEach(zap => {
-      count++;
-      const amountTag = zap.tags.find(([name]) => name === 'amount')?.[1];
-      if (amountTag) {
-        const millisats = parseInt(amountTag);
-        sats += Math.floor(millisats / 1000);
-        return;
-      }
-      const bolt11Tag = zap.tags.find(([name]) => name === 'bolt11')?.[1];
-      if (bolt11Tag) {
-        try {
-          const invoiceSats = nip57.getSatoshisAmountFromBolt11(bolt11Tag);
-          sats += invoiceSats;
-          return;
-        } catch (error) {
-          console.warn('Failed to parse bolt11 amount:', error);
-        }
-      }
-      const descriptionTag = zap.tags.find(([name]) => name === 'description')?.[1];
-      if (descriptionTag) {
-        try {
-          const zapRequest = JSON.parse(descriptionTag);
-          const requestAmountTag = zapRequest.tags?.find(([name]) => name === 'amount')?.[1];
-          if (requestAmountTag) {
-            const millisats = parseInt(requestAmountTag);
-            sats += Math.floor(millisats / 1000);
-            return;
-          }
-        } catch (error) {
-          console.warn('Failed to parse description JSON:', error);
-        }
-      }
-      console.warn('Could not extract amount from zap receipt:', zap.id);
+    const summary = summarizeZaps(zapEvents, {
+      eventId: address ? undefined : actualTarget.id,
+      address,
+      recipientPubkey: actualTarget.pubkey,
     });
-    // Only the validated ones are handed out, so a list of zappers cannot
-    // name somebody who never sent one
-    return { zapCount: count, totalSats: sats, zaps: trustworthy };
-  }, [zapEvents, actualTarget]);
+
+    const counted = new Set(summary.zappers.map((zapper) => zapper.receiptId));
+
+    return {
+      zapCount: summary.count,
+      totalSats: summary.totalSats,
+      // The receipts that survived, for callers that want the events
+      zaps: zapEvents.filter((event) => counted.has(event.id)),
+    };
+  }, [zapEvents, actualTarget, address]);
 
   /**
    * Turns an amount into an invoice the caller can pay with any wallet.
@@ -445,9 +417,12 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
 
     setInvoice(null);
     setIsZapping(false);
-    queryClient.invalidateQueries({ queryKey: ['zaps', actualTarget.id], exact: true });
+    queryClient.invalidateQueries({
+      queryKey: ['note-stats', statsKey ?? ''],
+      exact: true,
+    });
     onZapSuccess?.();
-  }, [actualTarget, queryClient, onZapSuccess]);
+  }, [actualTarget, queryClient, onZapSuccess, statsKey]);
 
   const resetInvoice = useCallback(() => {
     setInvoice(null);
@@ -483,7 +458,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
     zaps,
     zapCount,
     totalSats,
-    ...query,
+    isLoading: isLoadingZaps,
     requestInvoice,
     confirmPaid,
     isZapping,
