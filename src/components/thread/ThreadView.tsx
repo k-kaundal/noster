@@ -8,6 +8,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useThread } from '@/hooks/useThread';
 import { useThreadAncestors } from '@/hooks/useThreadAncestors';
 import { genUserName } from '@/lib/genUserName';
+import { handleFor } from '@/lib/handle';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -115,7 +116,7 @@ function AncestorRow({ event }: { event: NostrEvent }) {
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
-  const username = metadata?.name || genUserName(event.pubkey);
+  const username = handleFor(metadata, event.pubkey);
   const npub = nip19.npubEncode(event.pubkey);
   const noteId = nip19.noteEncode(event.id);
 

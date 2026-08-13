@@ -5,6 +5,7 @@ import { useAuthor } from '@/hooks/useAuthor';
 import { useReactions } from '@/hooks/useReactions';
 import { useReposts } from '@/hooks/useReposts';
 import { useReplies } from '@/hooks/useReplies';
+import { useZapSummary } from '@/hooks/useZapSummary';
 import { useEvent } from '@/hooks/useEvent';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useBookmarks } from '@/hooks/useBookmarks';
@@ -14,6 +15,7 @@ import { useDeleteEvent } from '@/hooks/useDeleteEvent';
 import { useToast } from '@/hooks/useToast';
 import { useOnceOpened } from '@/hooks/useDeferredDialog';
 import { genUserName } from '@/lib/genUserName';
+import { handleFor } from '@/lib/handle';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserHoverCard } from '@/components/UserHoverCard';
@@ -41,6 +43,11 @@ import { NoteBody } from '@/components/notes/NoteBody';
  */
 const ReplyDialog = lazy(() =>
   import('@/components/ReplyDialog').then((m) => ({ default: m.ReplyDialog }))
+);
+const ZapActivityDialog = lazy(() =>
+  import('@/components/ZapActivityDialog').then((m) => ({
+    default: m.ZapActivityDialog,
+  }))
 );
 const ZapDialog = lazy(() =>
   import('@/components/ZapDialog').then((m) => ({ default: m.ZapDialog }))
@@ -136,6 +143,7 @@ export function Post({
 
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const [zapOpen, setZapOpen] = useState(false);
+  const [zapActivityOpen, setZapActivityOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [repliesOpen, setRepliesOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -145,6 +153,7 @@ export function Post({
   // animation and anything half-typed
   const replyMounted = useOnceOpened(replyDialogOpen);
   const zapMounted = useOnceOpened(zapOpen);
+  const zapActivityMounted = useOnceOpened(zapActivityOpen);
   const quoteMounted = useOnceOpened(quoteOpen);
   const reportMounted = useOnceOpened(reportOpen);
 
@@ -152,6 +161,13 @@ export function Post({
   const { deleteEvents, isDeleting } = useDeleteEvent();
   const { isReposted, repostCount, repost, isReposting } = useReposts(event.id);
   const { replyCount } = useReplies(event.id);
+  /**
+   * What the note earned. Free: the receipts arrive in the same batched query
+   * that already fetches replies, reposts and reactions — they were simply
+   * never read, which is why this was the one action in the row with no
+   * number on it.
+   */
+  const zapSummary = useZapSummary(event);
   const { isBookmarked, toggle: toggleBookmark, isToggling } = useBookmarks();
   const { isUserMuted, muteUser, unmuteUser, canBePrivate } = useMuteList();
   const { isPrivate } = useMutePrivacy();
@@ -161,7 +177,7 @@ export function Post({
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
-  const username = metadata?.name || genUserName(event.pubkey);
+  const username = handleFor(metadata, event.pubkey);
   const npub = nip19.npubEncode(event.pubkey);
   const noteId = nip19.noteEncode(event.id);
   const timeAgo = useTimeAgo(event.created_at);
@@ -508,6 +524,7 @@ export function Post({
                   ? 'Zap'
                   : 'Author has no Lightning address'
             }
+            count={zapSummary.totalSats || undefined}
             tone="zap"
             disabled={!canZap}
             onClick={() => {
@@ -531,6 +548,24 @@ export function Post({
             tone="reply"
             onClick={handleShare}
           />
+
+          {/*
+            Who paid, on its own tap target.
+            
+            The button beside it sends money and this one only looks, so they
+            cannot share a target — and the count sits here rather than beside
+            the total because "3,420 sats" twice in one row says nothing the
+            first one did not.
+          */}
+          {zapSummary.count > 0 && (
+            <button
+              type="button"
+              onClick={() => setZapActivityOpen(true)}
+              className="ml-auto rounded-full px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-zap/10 hover:text-zap"
+            >
+              {zapSummary.count === 1 ? '1 zap' : `${zapSummary.count} zaps`}
+            </button>
+          )}
         </div>
       )}
 
@@ -596,6 +631,13 @@ export function Post({
         )}
         {zapMounted && (
           <ZapDialog target={event} open={zapOpen} onOpenChange={setZapOpen} />
+        )}
+        {zapActivityMounted && (
+          <ZapActivityDialog
+            summary={zapSummary}
+            open={zapActivityOpen}
+            onOpenChange={setZapActivityOpen}
+          />
         )}
         {quoteMounted && (
           <QuoteDialog
@@ -666,8 +708,11 @@ function ReplyingTo({ event, noteId }: { event: NostrEvent; noteId: string }) {
     >
       <MessageCircle className="h-3.5 w-3.5 shrink-0 opacity-60" />
       <span>
+        {/* The handle rather than the display name: "Replying to @Keen
+            Eagle" names nobody, since that label is invented for anyone
+            without a profile and two strangers get the same one. */}
         {parentPubkey
-          ? `Replying to @${metadata?.name || genUserName(parentPubkey)}`
+          ? `Replying to @${handleFor(metadata, parentPubkey)}`
           : 'Replying to a thread'}
       </span>
     </Link>

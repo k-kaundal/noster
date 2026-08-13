@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { NotificationRow } from '@/components/notifications/NotificationRow';
+import { FilteredNotifications } from '@/components/notifications/FilteredNotifications';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,6 +28,8 @@ export function NotificationsPage() {
   const { user } = useCurrentUser();
   const {
     notifications,
+    spam,
+    spamReasons,
     isLoading,
     hasNextPage,
     isFetchingNextPage,
@@ -35,6 +38,14 @@ export function NotificationsPage() {
   const { lastSeen, markSeen } = useNotificationsSeen();
 
   const [filter, setFilter] = useState<NotificationFilter>('all');
+  /**
+   * Held-back notifications, off by default and one tap away.
+   *
+   * Never deleted: the filter catches an advert sent from a dozen fresh keys,
+   * and the one thing it gets wrong is the message somebody most needs to
+   * find.
+   */
+  const [showingSpam, setShowingSpam] = useState(false);
 
   // The marker is captured once so rows don't lose their unread tint while
   // the page is still open.
@@ -47,6 +58,11 @@ export function NotificationsPage() {
   const visible = useMemo(
     () => filterNotifications(notifications, filter),
     [notifications, filter]
+  );
+
+  const hiddenVisible = useMemo(
+    () => filterNotifications(spam, filter),
+    [spam, filter]
   );
 
   return (
@@ -82,7 +98,7 @@ export function NotificationsPage() {
 
             {isLoading ? (
               <NotificationSkeletonList />
-            ) : !visible.length ? (
+            ) : !visible.length && !hiddenVisible.length ? (
               <EmptyState
                 icon={Bell}
                 title={
@@ -105,6 +121,16 @@ export function NotificationsPage() {
                     ))}
                   </ul>
                 </Card>
+
+                {hiddenVisible.length > 0 && (
+                  <FilteredNotifications
+                    notifications={hiddenVisible}
+                    reasons={spamReasons}
+                    open={showingSpam}
+                    onToggle={() => setShowingSpam((current) => !current)}
+                    seenOnEntry={seenOnEntry}
+                  />
+                )}
 
                 {hasNextPage && (
                   <div className="flex justify-center">

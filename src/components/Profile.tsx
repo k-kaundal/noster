@@ -25,6 +25,7 @@ import { useToast } from '@/hooks/useToast';
 import { useSeo } from '@/hooks/useSeo';
 import { profilePageSchema } from '@/lib/structuredData';
 import { genUserName } from '@/lib/genUserName';
+import { handleFor } from '@/lib/handle';
 import { Post } from '@/components/Post';
 import { NoteContent } from '@/components/NoteContent';
 import { ReportNotice } from '@/components/ReportNotice';
@@ -96,7 +97,7 @@ export function Profile({ pubkey }: ProfileProps) {
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(pubkey);
-  const username = metadata?.name || genUserName(pubkey);
+  const username = handleFor(metadata, pubkey);
   const lightningAddress = metadata?.lud16 || metadata?.lud06;
   /**
    * Which of our tiers the address on their profile belongs to, if any.

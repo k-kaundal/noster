@@ -2,8 +2,10 @@ import { useMemo } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useFollows } from '@/hooks/useFollows';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useMuteList } from '@/hooks/useMuteList';
+import { partitionSpam, type SpamReason } from '@/lib/campaignSpam';
 import {
   NOTIFICATION_KINDS,
   buildNotifications,
@@ -24,6 +26,7 @@ export function useNotifications() {
   const { nostr } = useNostr();
   const { user } = useCurrentUser();
   const { list: muteList } = useMuteList();
+  const { followingList } = useFollows(user?.pubkey || '');
 
   const query = useInfiniteQuery({
     queryKey: ['notifications', user?.pubkey],
@@ -52,7 +55,12 @@ export function useNotifications() {
     refetchInterval: 60_000,
   });
 
-  const notifications = useMemo<Notification[]>(() => {
+  const following = useMemo(
+    () => new Set(followingList.map((follow) => follow.pubkey)),
+    [followingList]
+  );
+
+  const all = useMemo<Notification[]>(() => {
     if (!query.data || !user) return [];
 
     const events = query.data.pages
@@ -65,7 +73,40 @@ export function useNotifications() {
     );
   }, [query.data, user, muteList]);
 
-  return { ...query, notifications };
+  /**
+   * Held back rather than deleted.
+   *
+   * The attack this exists for is one advert sent from a dozen fresh keys —
+   * every per-author check passes it, because no single account did anything
+   * unusual. Matching across authors catches it; see `lib/campaignSpam`.
+   *
+   * The split is returned whole so the page can show a count and let somebody
+   * look. A filter nobody can inspect is indistinguishable from a bug, and the
+   * one message it gets wrong is the one they most need to find.
+   */
+  const { notifications, spam, spamReasons } = useMemo(() => {
+    if (!user) {
+      return {
+        notifications: all,
+        spam: [] as Notification[],
+        spamReasons: new Map<string, SpamReason[]>(),
+      };
+    }
+
+    const result = partitionSpam(
+      all,
+      (notification) => notification.event,
+      { following, self: user.pubkey }
+    );
+
+    return {
+      notifications: result.kept,
+      spam: result.filtered,
+      spamReasons: result.reasons,
+    };
+  }, [all, following, user]);
+
+  return { ...query, notifications, spam, spamReasons };
 }
 
 /**

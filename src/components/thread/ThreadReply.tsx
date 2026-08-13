@@ -9,6 +9,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useReactions } from '@/hooks/useReactions';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
+import { handleFor } from '@/lib/handle';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserHoverCard } from '@/components/UserHoverCard';
 import { NoteBody } from '@/components/notes/NoteBody';
@@ -52,7 +53,7 @@ export function ThreadReply({ node, depth }: ThreadReplyProps) {
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
-  const username = metadata?.name || genUserName(event.pubkey);
+  const username = handleFor(metadata, event.pubkey);
   const npub = nip19.npubEncode(event.pubkey);
   const noteId = nip19.noteEncode(event.id);
 
