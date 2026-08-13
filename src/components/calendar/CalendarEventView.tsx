@@ -18,6 +18,8 @@ import { NoteContent } from '@/components/NoteContent';
 import { CommentsSection } from '@/components/comments/CommentsSection';
 import { RsvpControls } from '@/components/calendar/RsvpControls';
 import { AddToCalendar } from '@/components/calendar/AddToCalendar';
+import { ZapButton } from '@/components/ZapButton';
+import { ZapStats } from '@/components/ZapStats';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useSeo } from '@/hooks/useSeo';
 import { readContentWarning } from '@/lib/contentWarning';
@@ -197,7 +199,17 @@ export function CalendarEventView({
         <CardContent className="space-y-4 py-4">
           <RsvpControls calendarEvent={calendarEvent} address={address} />
 
-          <div className="flex justify-end border-t pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+            {/*
+              Paying the host. A meetup costs somebody a room and an evening,
+              and the event is an addressable event like any other — so the
+              same control works here unchanged.
+            */}
+            <div className="flex flex-wrap items-center gap-2">
+              <ZapButton target={event} />
+              <ZapStats event={event} />
+            </div>
+
             <AddToCalendar address={address} />
           </div>
         </CardContent>
