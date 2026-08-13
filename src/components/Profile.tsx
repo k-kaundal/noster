@@ -40,6 +40,7 @@ import { tierOf } from '@/lib/tiers';
 import { EditProfileForm } from '@/components/EditProfileForm';
 import { LinkedAccounts } from '@/components/identity/LinkedAccounts';
 import { ProfileZapGoals } from '@/components/ZapGoalCard';
+import { SubscriptionTiers } from '@/components/subscriptions/SubscriptionTiers';
 import { TrustScore } from '@/components/trust/TrustScore';
 import { BadgeSettings, ProfileBadges } from '@/components/badges/ProfileBadges';
 import { LinkedAccountsEditor } from '@/components/identity/LinkedAccountsEditor';
@@ -396,6 +397,10 @@ export function Profile({ pubkey }: ProfileProps) {
 
           {/* NIP-75: "Clients MAY display funding goals on user profiles." */}
           <ProfileZapGoals pubkey={pubkey} />
+
+          {/* Recurring support, where somebody deciding to back a creator is
+              already looking. Renders nothing when none are offered. */}
+          <SubscriptionTiers pubkey={pubkey} />
 
           <div className="flex gap-5 text-sm">
             <Stat label="Notes" value={posts.length} />

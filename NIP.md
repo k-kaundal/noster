@@ -92,3 +92,69 @@ NIP-44 to the author's own key, which is the same protection NIP-60 already
 applies to the proofs in kind 7375 — those are bearer secrets too. A wallet
 that backs up its balance but not the tokens it has handed out is not safer for
 the omission; it just loses the unclaimed ones.
+
+## Subscription tiers (kind 37001) — an unmerged draft
+
+NostrFeed publishes subscription tiers as **kind 37001**, following the
+unmerged "recurring subscriptions" pull request against the NIPs repository.
+
+**This is not NIP-88.** NIP-88 is Polls (kinds 1068 and 1018). The subscription
+draft is frequently mislabelled as NIP-88 in secondary documentation; kinds
+37001 and 7001 appear nowhere in the NIPs list. The number is used here because
+it is the only convention that exists and it is what zap.stream implements —
+but nothing about it is settled, and a future NIP could claim 37001 for
+something else.
+
+### Tier
+
+```
+{
+  "kind": 37001,
+  "tags": [
+    ["d", "gold"],
+    ["title", "Gold"],
+    ["amount", "5000", "monthly"],
+    ["description", "Everything, a week early"],
+    ["perks", "Early access", "Direct messages"],
+    ["image", "https://…"],
+    ["alt", "Subscription tier: Gold — 5000 sats per month"]
+  ]
+}
+```
+
+`amount` is whole satoshis, with the period as its second value: `weekly`,
+`monthly` or `yearly`. An unrecognised period is read as monthly rather than
+dropping the tier. A tier without a usable amount is refused entirely, because
+that number becomes an invoice.
+
+### What we do not publish
+
+The draft also defines a kind 7001 subscription event and cancellation by
+deletion. NostrFeed publishes neither, and the omission is deliberate.
+
+**A subscription is a zap to the tier.** The receipt — kind 9735, signed by the
+creator's own lightning server, carrying the tier's `a` coordinate and a
+readable amount — is the whole record. A kind 7001 declares an intention and
+proves no payment; a deletion cancels the declaration and stops no money.
+Paying is the only act with meaning, and not paying again is the only
+cancellation that works.
+
+That choice has three consequences worth stating:
+
+- **Status is computed, not stored.** A subscriber is active if their most
+  recent payment of at least the tier price is inside the period it bought.
+  Payments below the price count as tips and buy no time; a creator who priced
+  a tier at 5,000 sats did not price it at whatever somebody felt like.
+- **Anyone can verify.** The creator gating something, the subscriber checking
+  their standing, and a third party auditing either reach the same answer from
+  the same public receipts. There is no membership table to trust.
+- **It cannot be forged**, for the same reason a zap total cannot: a receipt
+  the recipient's own lnurl provider did not sign is refused.
+
+### On the word "subscription"
+
+Nothing in this client charges anybody on a schedule, and the interface says
+so rather than implying otherwise. A browser tab that is closed pays nothing,
+and NIP-47 has no scheduling primitive — a wallet budget is a spending cap, not
+a standing order. Each payment buys one period; renewal is a person deciding
+again.
