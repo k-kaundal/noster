@@ -14,6 +14,7 @@ import { useDeleteEvent } from '@/hooks/useDeleteEvent';
 import { useToast } from '@/hooks/useToast';
 import { useOnceOpened } from '@/hooks/useDeferredDialog';
 import { genUserName } from '@/lib/genUserName';
+import { handleFor } from '@/lib/handle';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserHoverCard } from '@/components/UserHoverCard';
@@ -161,7 +162,7 @@ export function Post({
 
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
-  const username = metadata?.name || genUserName(event.pubkey);
+  const username = handleFor(metadata, event.pubkey);
   const npub = nip19.npubEncode(event.pubkey);
   const noteId = nip19.noteEncode(event.id);
   const timeAgo = useTimeAgo(event.created_at);
@@ -666,8 +667,11 @@ function ReplyingTo({ event, noteId }: { event: NostrEvent; noteId: string }) {
     >
       <MessageCircle className="h-3.5 w-3.5 shrink-0 opacity-60" />
       <span>
+        {/* The handle rather than the display name: "Replying to @Keen
+            Eagle" names nobody, since that label is invented for anyone
+            without a profile and two strangers get the same one. */}
         {parentPubkey
-          ? `Replying to @${metadata?.name || genUserName(parentPubkey)}`
+          ? `Replying to @${handleFor(metadata, parentPubkey)}`
           : 'Replying to a thread'}
       </span>
     </Link>

@@ -6,6 +6,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useFollows } from '@/hooks/useFollows';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
+import { handleFor } from '@/lib/handle';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -22,7 +23,7 @@ function SuggestedUserItem({ pubkey }: { pubkey: string }) {
   const metadata = author.data?.metadata;
 
   const displayName = metadata?.display_name || metadata?.name || genUserName(pubkey);
-  const username = metadata?.name || genUserName(pubkey);
+  const username = handleFor(metadata, pubkey);
   const profileImage = metadata?.picture;
   const bio = metadata?.about;
   const npub = nip19.npubEncode(pubkey);
