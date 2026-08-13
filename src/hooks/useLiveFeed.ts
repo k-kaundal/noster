@@ -3,6 +3,7 @@ import { useNostr } from '@nostrify/react';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import type { NostrEvent, NostrFilter } from '@nostrify/nostrify';
 import { isRenderableEvent } from '@/lib/eventKinds';
+import { createEventBatcher } from '@/lib/eventBatch';
 
 /** Newest-first pages, as `useInfiniteQuery` stores them. */
 type FeedPages = InfiniteData<NostrEvent[], number | undefined>;
@@ -57,6 +58,72 @@ export function useLiveFeed(
 
     const controller = new AbortController();
 
+    /**
+     * One cache write per window instead of one per event.
+     *
+     * Writing each event as it arrives notifies every subscriber of this query
+     * — which on a feed means re-running the mute filtering, the content
+     * filters and the render for a list of up to two hundred notes. At a few
+     * events a second that is invisible; on a busy global feed it is a few
+     * hundred renders a second and the page stops answering the main thread.
+     * The events still arrive as fast as they arrive; they are handed over in
+     * groups, which is all the cache and the list ever needed.
+     */
+    const batcher = createEventBatcher<NostrEvent>({
+      key: (event) => event.id,
+      // Newest first, matching how the feed stores a page
+      compare: (a, b) => b.created_at - a.created_at,
+      onFlush: (events) => {
+        queryClient.setQueryData<FeedPages>(
+          JSON.parse(cacheKey) as unknown[],
+          (current) => {
+            // Nothing has been fetched yet, so there is no feed to prepend
+            // to — the first page will include these notes anyway
+            if (!current?.pages.length) return current;
+
+            /**
+             * Checked against every page, not just the first.
+             *
+             * A note already further down the timeline arriving again — a
+             * relay replaying after a reconnect, a slow relay repeating what
+             * a fast one already delivered — was only compared against page
+             * one, so it was prepended a second time and the reader saw the
+             * same note twice in one list.
+             */
+            const known = new Set(
+              current.pages.flatMap((page) => page.map((event) => event.id))
+            );
+
+            const fresh = events.filter((event) => !known.has(event.id));
+            if (!fresh.length) return current;
+
+            const [first, ...rest] = current.pages;
+
+            /**
+             * Capped, because a busy global feed left open all day would
+             * otherwise grow the first page without limit.
+             *
+             * The cap stops accepting rather than dropping the tail, which
+             * is what it used to do. The tail of this page is the oldest
+             * notes on it — the ones the reader has scrolled to and is
+             * reading — and page two continues below where this page
+             * originally ended, so evicting them removed notes from under
+             * the reader and left a hole nothing would fill. Refusing new
+             * arrivals only understates a pill; the reader loses nothing
+             * they were looking at, and the next refetch catches up.
+             */
+            const room = MAX_LIVE_PAGE - first.length;
+            if (room <= 0) return current;
+
+            return {
+              ...current,
+              pages: [[...fresh.slice(0, room), ...first], ...rest],
+            };
+          }
+        );
+      },
+    });
+
     (async () => {
       const since = Math.floor(Date.now() / 1000);
       const live: NostrFilter = { ...JSON.parse(fingerprint), since };
@@ -70,36 +137,7 @@ export function useLiveFeed(
           const event = message[2] as NostrEvent;
           if (!event?.id || !isRenderableEvent(event)) continue;
 
-          queryClient.setQueryData<FeedPages>(
-            JSON.parse(cacheKey) as unknown[],
-            (current) => {
-              // Nothing has been fetched yet, so there is no feed to prepend
-              // to — the first page will include this note anyway
-              if (!current?.pages.length) return current;
-
-              const [first, ...rest] = current.pages;
-              if (first.some((existing) => existing.id === event.id)) {
-                return current;
-              }
-
-              /**
-               * Capped, because a busy global feed left open all day would
-               * otherwise grow the first page without limit.
-               *
-               * The cap stops accepting rather than dropping the tail, which
-               * is what it used to do. The tail of this page is the oldest
-               * notes on it — the ones the reader has scrolled to and is
-               * reading — and page two continues below where this page
-               * originally ended, so evicting them removed notes from under
-               * the reader and left a hole nothing would fill. Refusing new
-               * arrivals only understates a pill; the reader loses nothing
-               * they were looking at, and the next refetch catches up.
-               */
-              if (first.length >= MAX_LIVE_PAGE) return current;
-
-              return { ...current, pages: [[event, ...first], ...rest] };
-            }
-          );
+          batcher.push(event);
         }
       } catch {
         // An aborted subscription lands here on unmount, as does a pool that
@@ -108,6 +146,11 @@ export function useLiveFeed(
       }
     })();
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      // Anything still waiting is dropped rather than written into a cache
+      // this component has already stopped watching
+      batcher.dispose();
+    };
   }, [nostr, queryClient, fingerprint, cacheKey]);
 }

@@ -38,7 +38,7 @@ import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
 import { useToast } from '@/hooks/useToast';
 import { useWalletActivity } from '@/hooks/useWalletActivity';
 import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
 
 /**
@@ -49,12 +49,7 @@ import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
  * door.
  */
 export function WalletPage() {
-  useSeo({
-    title: 'Wallet',
-    description: 'Your NostrFeed lightning wallet: send, receive and get zapped.',
-    path: '/wallet',
-    noindex: true,
-  });
+  useRouteSeo('/wallet');
 
   const { user } = useCurrentUser();
   const { isConnected, isLoading } = useLnbitsAuth();

@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MiniAppCard, type MiniApp } from '@/components/miniapps/MiniAppCard';
 import { CreateMiniAppDialog } from '@/components/miniapps/CreateMiniAppDialog';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 
 /**
  * Mini Apps Page: Discover and manage community-built extensions.
@@ -18,11 +18,7 @@ import { useSeo } from '@/hooks/useSeo';
  * - Real-time updates as new apps are submitted
  */
 export function MiniAppsPage() {
-  useSeo({
-    title: 'Mini Apps',
-    description: 'Discover and install mini apps to extend NostrFeed.',
-    path: '/mini-apps',
-  });
+  useRouteSeo('/mini-apps');
 
   // Mock mini apps data
   const mockApps: MiniApp[] = [

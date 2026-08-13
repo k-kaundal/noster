@@ -1,4 +1,4 @@
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { Link } from 'react-router-dom';
 import { Bookmark } from 'lucide-react';
 import { Layout } from '@/components/Layout';
@@ -12,13 +12,7 @@ import { useBookmarkedEvents } from '@/hooks/useBookmarks';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 export function BookmarksPage() {
-  useSeo({
-    title: 'Bookmarks',
-    description:
-      'Notes you saved, stored as a NIP-51 bookmarks list on your Nostr account.',
-    path: '/bookmarks',
-    noindex: true,
-  });
+  useRouteSeo('/bookmarks');
 
   const { user } = useCurrentUser();
   const { events, isLoading, isEmpty } = useBookmarkedEvents();

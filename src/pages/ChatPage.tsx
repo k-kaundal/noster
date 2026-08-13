@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/card';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { useDirectMessages } from '@/hooks/useDirectMessages';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { cn } from '@/lib/utils';
 
 /** Decodes the `npub`/`nprofile` in the route to a raw pubkey. */
@@ -29,13 +29,7 @@ function usePeerPubkey(): string | undefined {
 }
 
 export function ChatPage() {
-  useSeo({
-    title: 'Messages',
-    description:
-      'End-to-end encrypted private messages on Nostr, using NIP-17 sealed and gift-wrapped events.',
-    path: '/chat',
-    noindex: true,
-  });
+  useRouteSeo('/chat');
 
   const { user } = useCurrentUser();
   const peerPubkey = usePeerPubkey();

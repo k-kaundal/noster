@@ -4,6 +4,7 @@ import { ThreadView } from '@/components/thread/ThreadView';
 import { PostSkeleton } from '@/components/PostSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { useSeo } from '@/hooks/useSeo';
+import { notePostingSchema } from '@/lib/structuredData';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
 import { getTagValue } from '@/lib/note';
@@ -53,6 +54,19 @@ function NoteSeo({ event }: { event: NostrEvent }) {
     // The note itself, for anyone arriving at the HTML rendering of it
     nostrEntity: note,
     nostrAuthor: nip19.npubEncode(event.pubkey),
+    // A short post, not an article: describing a sentence as a piece of
+    // writing produces a search result that promises more than it delivers
+    structuredData: notePostingSchema({
+      identifier: note,
+      text: event.content,
+      publishedAt: event.created_at,
+      author: {
+        name: displayName,
+        npub: nip19.npubEncode(event.pubkey),
+        image: metadata?.picture,
+        nip05: metadata?.nip05,
+      },
+    }),
   });
 
   return null;

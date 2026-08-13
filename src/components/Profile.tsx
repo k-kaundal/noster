@@ -23,6 +23,7 @@ import { useFollows } from '@/hooks/useFollows';
 import { useFollowers } from '@/hooks/useFollowers';
 import { useToast } from '@/hooks/useToast';
 import { useSeo } from '@/hooks/useSeo';
+import { profilePageSchema } from '@/lib/structuredData';
 import { genUserName } from '@/lib/genUserName';
 import { Post } from '@/components/Post';
 import { NoteContent } from '@/components/NoteContent';
@@ -157,6 +158,19 @@ export function Profile({ pubkey }: ProfileProps) {
     nostrEntity: npub,
     nostrAuthor: npub,
     authorIsSelf: true,
+    /*
+     * The person, described. Everything visible on this page arrives from
+     * relays after the HTML does, so without this there is nothing for a
+     * search engine or an assistant to read but an empty shell.
+     */
+    structuredData: profilePageSchema({
+      name: displayName,
+      npub,
+      about: metadata?.about?.slice(0, 300),
+      image: metadata?.picture,
+      nip05: metadata?.nip05,
+      website: metadata?.website,
+    }),
   });
 
   /**

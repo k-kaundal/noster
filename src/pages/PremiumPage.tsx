@@ -25,7 +25,7 @@ import { useFiatSubscription } from '@/hooks/useFiatSubscription';
 import { FIAT_PROVIDER_LABELS } from '@/lib/fiat';
 import { useToast } from '@/hooks/useToast';
 import { useRelayInfo } from '@/hooks/useRelayInfo';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import { HOUSE_RELAY } from '@/contexts/AppContext';
 import {
   isFixedPrice,
@@ -44,12 +44,7 @@ interface PreparedPayment {
 import { relayDisplayName } from '@/lib/relay';
 
 export function PremiumPage() {
-  useSeo({
-    title: 'Relay access',
-    description:
-      'Paid write access to the NostrFeed relay, monthly or lifetime.',
-    path: '/premium',
-  });
+  useRouteSeo('/premium');
 
   const { user } = useCurrentUser();
   const { plans, terms, hasPurchase, prepare, isPreparing, recordPurchase } =

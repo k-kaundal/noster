@@ -14,7 +14,7 @@ import {
   useNotifications,
   useNotificationsSeen,
 } from '@/hooks/useNotifications';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 import {
   NOTIFICATION_FILTERS,
   filterNotifications,
@@ -22,12 +22,7 @@ import {
 } from '@/lib/notifications';
 
 export function NotificationsPage() {
-  useSeo({
-    title: 'Notifications',
-    description: 'Mentions, replies, reactions, reposts and zaps.',
-    path: '/notifications',
-    noindex: true,
-  });
+  useRouteSeo('/notifications');
 
   const { user } = useCurrentUser();
   const {

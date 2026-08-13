@@ -1,5 +1,7 @@
 import { useHead, useSeoMeta } from '@unhead/react';
 import { useLocation } from 'react-router-dom';
+import { routeSeo } from '@/lib/siteRoutes';
+import type { JsonLd } from '@/lib/structuredData';
 
 /** Canonical origin used for absolute URLs in metadata. */
 export const SITE_URL = 'https://nostrfeed.com';
@@ -43,6 +45,15 @@ export interface SeoOptions {
   nostrAuthor?: string;
   /** Whether `nostrAuthor` also identifies the page itself. */
   authorIsSelf?: boolean;
+  /**
+   * Schema.org JSON-LD describing what this page is about.
+   *
+   * Worth more here than on an ordinary site: the content arrives from relays
+   * after the HTML does, so anything reading the markup finds an empty shell.
+   * A description of the subject is the one part that does not have to be
+   * inferred from prose that is not there yet.
+   */
+  structuredData?: JsonLd;
 }
 
 function absolute(url: string | undefined): string {
@@ -68,6 +79,7 @@ export function useSeo({
   nostrEntity,
   nostrAuthor,
   authorIsSelf = false,
+  structuredData,
 }: SeoOptions) {
   const location = useLocation();
   const canonical = `${SITE_URL}${path ?? location.pathname}`;
@@ -121,7 +133,47 @@ export function useSeo({
     if (authorIsSelf) links.push({ rel: 'me', href });
   }
 
-  useHead({ link: links });
+  useHead({
+    link: links,
+    /*
+     * Keyed, so a page that renders two of these — a profile inside a route
+     * that already described itself — replaces rather than appends. Two
+     * competing descriptions of one URL is worse than either alone.
+     */
+    script: structuredData
+      ? [
+          {
+            id: 'page-jsonld',
+            type: 'application/ld+json',
+            innerHTML: JSON.stringify(structuredData),
+          },
+        ]
+      : [],
+  });
+}
+
+/**
+ * A page's metadata, taken from the site's own route table.
+ *
+ * Pages used to spell this out inline, which meant the words a reader sees in
+ * a search result lived in one place, the sitemap in a second, and the tags
+ * baked into the served HTML in a third. They drifted immediately and the
+ * drift was invisible: the app looked right and only the crawler saw the old
+ * copy. One table now feeds all three.
+ *
+ * `overrides` is for what the table cannot know — a title carrying a hashtag,
+ * a description naming what is on screen.
+ */
+export function useRouteSeo(path: string, overrides?: Partial<SeoOptions>) {
+  const route = routeSeo(path);
+
+  useSeo({
+    title: route?.title ?? SITE_NAME,
+    description: route?.description ?? '',
+    path,
+    noindex: route?.noindex,
+    ...overrides,
+  });
 }
 
 /**

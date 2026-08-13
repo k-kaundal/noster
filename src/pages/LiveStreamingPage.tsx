@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LiveStreamCard, type LiveStream } from '@/components/creator/LiveStreamCard';
-import { useSeo } from '@/hooks/useSeo';
+import { useRouteSeo } from '@/hooks/useSeo';
 
 /**
  * Live Streaming Page: Stream content and earn sats in real-time.
@@ -17,11 +17,7 @@ import { useSeo } from '@/hooks/useSeo';
  * - Creator earnings dashboard
  */
 export function LiveStreamingPage() {
-  useSeo({
-    title: 'Live Streaming',
-    description: 'Broadcast live and earn sats from your audience.',
-    path: '/live',
-  });
+  useRouteSeo('/live');
 
   // Mock livestream data
   const mockStreams: LiveStream[] = [
