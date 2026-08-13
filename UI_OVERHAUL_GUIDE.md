@@ -1,5 +1,10 @@
 # NostrFeed UI Overhaul Guide
 
+> **Design direction:** the visual identity is now specified in
+> [`docs/design.md`](docs/design.md) — *Premium Dark Social*. Where this
+> document disagrees with it about colour, elevation, radius or styling, that
+> one wins; this one is kept for the parts it still owns.
+
 Complete documentation of the comprehensive UI improvements, including X-inspired design, advanced themes, modern login, and professional branding.
 
 ## Overview
