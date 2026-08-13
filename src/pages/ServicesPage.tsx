@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Banknote, Sparkles, Wallet, Zap } from 'lucide-react';
+import { BadgeCheck, Banknote, Sparkles, Wallet, Zap } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,18 +8,20 @@ import { useSeo } from '@/hooks/useSeo';
 import { SERVICES } from '@/lib/services';
 
 /**
- * The three services, in one place.
+ * Everything NostrFeed runs, in one place.
  *
- * They exist as separate sites because they are separate things — a relay-
- * agnostic lightning wallet, a Cashu mint, a standalone wallet — and none of
- * them should require this app to be useful. This page is where someone
- * finds out they exist at all.
+ * Listed as separate sites because that is how somebody meets them — a name to
+ * be zapped at, a lightning wallet, a Cashu mint, a wallet with no feed around
+ * it — and none of them needs this app to be useful. Some of them share an
+ * LNbits instance, which is an implementation detail everywhere except in the
+ * copy that says so: a domain stops being a detail when it is the thing being
+ * bought.
  */
 const ServicesPage = () => {
   useSeo({
     title: 'Services',
     description:
-      'The lightning wallet, Cashu mint and standalone wallet that NostrFeed runs: ln.nostrfeed.com, mint.nostrfeed.com and wallet.nostrfeed.com.',
+      'What NostrFeed runs: names at getzap.me, a lightning wallet at ln.nostrfeed.com, a Cashu mint at mint.nostrfeed.com and the wallet on its own at wallet.nostrfeed.com.',
     path: '/services',
   });
 
@@ -28,8 +30,8 @@ const ServicesPage = () => {
       <div className="space-y-6">
         <PageHeader
           icon={Sparkles}
-          title="Money, three ways"
-          description="NostrFeed runs its own lightning wallet, its own Cashu mint and a standalone wallet. All three work on their own, with or without this app."
+          title="What NostrFeed runs"
+          description="A name people can zap you at, a lightning wallet, a Cashu mint, and the wallet on a page of its own. Every one of them works with or without this app."
         />
 
         <div className="grid gap-5">
@@ -41,6 +43,14 @@ const ServicesPage = () => {
         <Card>
           <CardContent className="space-y-4 pt-6">
             <p className="text-sm font-semibold">Which one do I want?</p>
+
+            <Choice
+              icon={BadgeCheck}
+              title="A name of your own"
+              body="getzap.me. It takes zaps from any client and puts a ✓ on your posts — the one thing here nobody gets by default."
+              to="/wallet"
+              label="Claim a name"
+            />
 
             <Choice
               icon={Zap}
@@ -64,9 +74,9 @@ const ServicesPage = () => {
               body="wallet.nostrfeed.com. The same balance and the same key, on a page with no feed around it."
             />
 
-            {/* Said plainly rather than buried: all three hold money for
-                people, and none of them should be trusted with more than
-                someone can afford to lose */}
+            {/* Said plainly rather than buried: the wallet and the mint both
+                hold money for people, and neither should be trusted with more
+                than someone can afford to lose */}
             <p className="rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
               The lightning wallet and the mint both hold your balance for you.
               Treat either like cash in a pocket rather than savings — an

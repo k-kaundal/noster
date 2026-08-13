@@ -9,7 +9,7 @@
  * configuration in the secret sense.
  */
 export interface Service {
-  id: 'lightning' | 'mint' | 'wallet';
+  id: 'lightning' | 'mint' | 'wallet' | 'names';
   name: string;
   host: string;
   url: string;
@@ -28,6 +28,32 @@ export interface Service {
 
 export const SERVICES: Service[] = [
   {
+    /**
+     * The name, sold on its own terms.
+     *
+     * It was missing from this page entirely, which made the best thing here
+     * the hardest to find: the wallet and the mint are infrastructure people
+     * accept, and the name is the part somebody actually wants and pays for.
+     * It runs on the same LNbits instance as the wallet — one service on
+     * several hostnames — but a domain is not an implementation detail when
+     * it is the thing being bought.
+     */
+    id: 'names',
+    name: 'GetZap',
+    host: 'getzap.me',
+    url: 'https://getzap.me',
+    tagline: 'A name people can zap.',
+    body: 'Your own name at getzap.me — short, memorable, and yours. It takes zaps from any Nostr client and puts a ✓ against everything you post.',
+    points: [
+      'you@getzap.me, for zaps and identity',
+      'A ✓ on every post, verified by NIP-05',
+      'Paid into whichever wallet you choose',
+    ],
+    cta: 'Get your name',
+    internalPath: '/wallet',
+    internalLabel: 'Claim it here',
+  },
+  {
     id: 'lightning',
     name: 'NostrFeed Lightning',
     host: 'ln.nostrfeed.com',
@@ -36,7 +62,7 @@ export const SERVICES: Service[] = [
     body: 'No signup, no password, no email. Sign once to prove the key is yours and the wallet is there — with a lightning address people can zap from any Nostr client.',
     points: [
       'Your Nostr key is the account',
-      'name@ln.nostrfeed.com, free',
+      'A free address, at ln.nostrfeed.com or getzap.me',
       'Send and receive in seconds',
     ],
     cta: 'Open the wallet',
@@ -65,7 +91,7 @@ export const SERVICES: Service[] = [
     host: 'wallet.nostrfeed.com',
     url: 'https://wallet.nostrfeed.com',
     tagline: 'The whole wallet, in its own tab.',
-    body: 'The full wallet as a site of its own — open it on any device, on any browser, without the feed around it. The same balance, the same key, more room to work.',
+    body: 'The full wallet as a site of its own — open it on any device, on any browser, without the feed around it. The same wallet as ln.nostrfeed.com behind a different door: one balance, one key, more room to work.',
     points: [
       'Every device, one balance',
       'Nothing to install',

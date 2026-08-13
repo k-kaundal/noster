@@ -25,8 +25,27 @@ function pickService(pathname: string): Service {
   }
 
   const day = Math.floor(Date.now() / 86_400_000);
-  return SERVICES[day % SERVICES.length];
+  const id = ROTATION[day % ROTATION.length];
+
+  return SERVICES.find((entry) => entry.id === id) ?? SERVICES[0];
 }
+
+/**
+ * The rotation, weighted rather than round-robin.
+ *
+ * A name comes up twice as often as anything else, and deliberately: the
+ * wallet and the mint are infrastructure somebody reaches for when they
+ * already know they want it, while a name is the thing a reader does not know
+ * is available until it is put in front of them. Written out as a list so the
+ * weighting is visible and editable, instead of hidden in arithmetic.
+ */
+const ROTATION: Service['id'][] = [
+  'names',
+  'lightning',
+  'names',
+  'mint',
+  'wallet',
+];
 
 /**
  * The rail's promotional slot.
