@@ -1,12 +1,13 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import { AvatarStack } from '@/components/AvatarStack';
-import { ImagePlus, Loader2, Plus, Users } from 'lucide-react';
+import { ImagePlus, Loader2, Pencil, Plus, Users } from 'lucide-react';
 import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
@@ -26,13 +27,32 @@ import { useUploadFile } from '@/hooks/useUploadFile';
 import { useToast } from '@/hooks/useToast';
 import { useRouteSeo } from '@/hooks/useSeo';
 import { slugify } from '@/lib/article';
-import { communityAddress, type Community } from '@/lib/community';
+import {
+  communityAddress,
+  groupCommunities,
+  roleIn,
+  type Community,
+} from '@/lib/community';
+import { formatMonthYear } from '@/lib/time';
+import { CommunityEditor } from '@/components/communities/CommunityEditor';
 
 export function CommunitiesPage() {
   useRouteSeo('/communities');
 
   const { user } = useCurrentUser();
   const { communities, isLoading } = useCommunities();
+
+  /**
+   * What this person runs, above what merely exists.
+   *
+   * One flat grid meant a moderator arriving to tend their own community had
+   * to find it among fifty they have nothing to do with — and the only way to
+   * edit one was to open it first and find the control inside.
+   */
+  const { mine, rest } = useMemo(
+    () => groupCommunities(communities, user?.pubkey),
+    [communities, user?.pubkey]
+  );
 
   return (
     <Layout>
@@ -67,13 +87,46 @@ export function CommunitiesPage() {
             showRelaySelector
           />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {communities.map((community) => (
-              <CommunityCard
-                key={communityAddress(community)}
-                community={community}
-              />
-            ))}
+          <div className="space-y-6">
+            {mine.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Yours · {mine.length}
+                </h2>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {mine.map((community) => (
+                    <CommunityCard
+                      key={communityAddress(community)}
+                      community={community}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="space-y-3">
+              {mine.length > 0 && (
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Everywhere else
+                </h2>
+              )}
+
+              {rest.length > 0 ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {rest.map((community) => (
+                    <CommunityCard
+                      key={communityAddress(community)}
+                      community={community}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Nothing else on this relay yet.
+                </p>
+              )}
+            </section>
           </div>
         )}
       </div>
@@ -82,11 +135,16 @@ export function CommunitiesPage() {
 }
 
 function CommunityCard({ community }: { community: Community }) {
+  const { user } = useCurrentUser();
+  const [editing, setEditing] = useState(false);
+
   const naddr = nip19.naddrEncode({
     kind: community.event.kind,
     pubkey: community.creator,
     identifier: community.slug,
   });
+
+  const role = roleIn(community, user?.pubkey);
 
   return (
     <Card className="content-auto overflow-hidden hover-lift">
@@ -103,12 +161,39 @@ function CommunityCard({ community }: { community: Community }) {
         )}
 
         <CardContent className="space-y-1.5 pt-4">
-          <h3 className="font-semibold leading-snug">{community.name}</h3>
-          {community.description && (
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="font-semibold leading-snug">{community.name}</h3>
+
+            {/* Said on the card rather than discovered inside: whether this
+                is a place somebody tends or a place they visit changes what
+                they came here to do */}
+            {role && (
+              <Badge variant="secondary" className="shrink-0 capitalize">
+                {role}
+              </Badge>
+            )}
+          </div>
+
+          {community.description ? (
             <p className="line-clamp-2 text-sm text-muted-foreground">
               {community.description}
             </p>
+          ) : (
+            <p className="text-sm italic text-muted-foreground">
+              No description yet.
+            </p>
           )}
+
+          {/* The facts a card can state without a request of its own */}
+          <p className="text-xs text-muted-foreground">
+            {/* Seconds to milliseconds: a Nostr timestamp handed straight to a
+                date formatter renders January 1970 */}
+            Started {formatMonthYear(community.createdAt * 1000)}
+            {community.relays.length > 0 &&
+              ` · ${community.relays.length} ${
+                community.relays.length === 1 ? 'relay' : 'relays'
+              }`}
+          </p>
         </CardContent>
 
         {/* Outside the padded content so the faces sit on the card edge, and
@@ -121,6 +206,33 @@ function CommunityCard({ community }: { community: Community }) {
           </span>
         </CardContent>
       </Link>
+
+      {/*
+        Outside the link, because a control inside one is a control you cannot
+        press without navigating away. Editing was reachable only by opening
+        the community first and finding it in there, which is two steps past
+        where somebody with fifty communities is standing.
+      */}
+      {role && (
+        <CardContent className="pt-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => setEditing(true)}
+          >
+            <Pencil className="mr-2 h-3.5 w-3.5" />
+            Edit
+          </Button>
+        </CardContent>
+      )}
+
+      {editing && (
+        <CommunityEditor
+          community={community}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </Card>
   );
 }
