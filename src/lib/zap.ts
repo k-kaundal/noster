@@ -179,18 +179,38 @@ export function validateZapReceipt(
 
   if (Number.isFinite(claimed) && claimed > 0) {
     const invoiceSats = satsFromBolt11(bolt11);
-    if (invoiceSats === null) return false;
-    if (Math.round(claimed / 1000) !== invoiceSats) return false;
+
+    /*
+     * Only when the invoice actually states an amount. Plenty of real zaps
+     * are paid against an amountless invoice — the sum was agreed with the
+     * LNURL endpoint rather than written into the bolt11 — and an amount that
+     * cannot be read is an unknown, not a mismatch. Rejecting those dropped
+     * legitimate zaps silently, which is how a post ends up showing no total
+     * while its author is watching the sats arrive.
+     */
+    if (invoiceSats !== null && Math.round(claimed / 1000) !== invoiceSats) {
+      return false;
+    }
   }
 
-  // The request must be about the thing this receipt is being counted against
-  if (check.recipientPubkey && requestTag('p') !== check.recipientPubkey) {
+  /**
+   * Matched against every tag of that name, not just the first.
+   *
+   * A zap request commonly carries several `p` tags — clients copy the
+   * mentioned pubkeys from the note being zapped — and several `e` tags, since
+   * a reply references its root as well as its parent. Reading only the first
+   * meant a zap on any note that mentioned somebody was thrown away.
+   */
+  const requestHas = (name: string, value: string) =>
+    request.tags.some(([tagName, tagValue]) => tagName === name && tagValue === value);
+
+  if (check.recipientPubkey && !requestHas('p', check.recipientPubkey)) {
     return false;
   }
 
   if (check.address) {
-    if (requestTag('a') !== check.address) return false;
-  } else if (check.eventId && requestTag('e') !== check.eventId) {
+    if (!requestHas('a', check.address)) return false;
+  } else if (check.eventId && !requestHas('e', check.eventId)) {
     return false;
   }
 

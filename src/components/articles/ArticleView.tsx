@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { UserHoverCard } from '@/components/UserHoverCard';
 import { ZapButton } from '@/components/ZapButton';
+import { ZapStats } from '@/components/ZapStats';
 import { ArticleZap } from '@/components/articles/ArticleZap';
 import { CommentsSection } from '@/components/comments/CommentsSection';
 import { Markdown } from '@/components/articles/Markdown';
@@ -202,6 +203,12 @@ export function ArticleView({ article }: { article: Article }) {
           who decides before they start.
         */}
         <ArticleZap article={article.event} />
+
+        {/*
+          Who paid, and how much — the same control the feed carries, so an
+          article and a note answer the question the same way.
+        */}
+        <ZapStats event={article.event} className="-ml-2.5" />
 
         {/* NIP-75: the goal this article is raising for, if it names one */}
         <LinkedZapGoal event={article.event} />

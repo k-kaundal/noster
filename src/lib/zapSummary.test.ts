@@ -178,6 +178,50 @@ describe('summarizeZaps', () => {
   it('is empty for a note nobody zapped', () => {
     expect(summarizeZaps([], target)).toEqual(EMPTY_ZAP_SUMMARY);
   });
+
+  it('counts an article zap, which names a coordinate rather than an id', () => {
+    /**
+     * An addressable event is referenced by `30023:<pubkey>:<d>`, and its zap
+     * requests frequently carry no `e` tag at all — so checking them against
+     * an event id rejected every one, and an article showed no total however
+     * many times it had been paid.
+     */
+    const address = `30023:${AUTHOR}:my-article`;
+
+    const request = finalizeEvent(
+      {
+        kind: 9734,
+        created_at: 1_700_000_000,
+        content: '',
+        tags: [['p', AUTHOR], ['a', address], ['amount', '1000000']],
+      },
+      aliceKey
+    );
+
+    const articleReceipt = finalizeEvent(
+      {
+        kind: 9735,
+        created_at: 1_700_000_000,
+        content: '',
+        tags: [
+          ['p', AUTHOR],
+          ['a', address],
+          ['bolt11', ONE_K],
+          ['description', JSON.stringify(request)],
+        ],
+      },
+      providerKey
+    ) as NostrEvent;
+
+    const summary = summarizeZaps([articleReceipt], {
+      address,
+      recipientPubkey: AUTHOR,
+      providerPubkey: PROVIDER,
+    });
+
+    expect(summary.totalSats).toBe(1_000);
+    expect(summary.zappers[0].pubkey).toBe(ALICE);
+  });
 });
 
 describe('describeZapSummary', () => {
