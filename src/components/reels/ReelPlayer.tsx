@@ -28,6 +28,8 @@ import { Button } from '@/components/ui/button';
 import { FollowButton } from '@/components/FollowButton';
 import { ReplyDialog } from '@/components/ReplyDialog';
 import { ZapDialog } from '@/components/ZapDialog';
+import { useHoldGesture } from '@/hooks/useHoldGesture';
+import { useQuickZap } from '@/hooks/useQuickZap';
 import { cn } from '@/lib/utils';
 
 interface ReelPlayerProps {
@@ -56,6 +58,7 @@ export function ReelPlayer({
   const { showAdult } = useAdultContent();
   const [replyOpen, setReplyOpen] = useState(false);
   const [zapOpen, setZapOpen] = useState(false);
+  const quickZap = useQuickZap(event);
 
   const author = useAuthor(event.pubkey);
   const metadata = author.data?.metadata;
@@ -247,11 +250,20 @@ export function ReelPlayer({
         />
         <ReelAction
           icon={Zap}
-          label="Zap"
-          disabled={!canZap}
-          onClick={() => {
+          label={
+            quickZap.oneTap ? `Zap ${quickZap.amount} sats` : 'Zap'
+          }
+          disabled={!canZap || quickZap.isSending}
+          onClick={async () => {
             if (!user) return requireLogin('zap');
-            setZapOpen(true);
+            // Reels are the case one-tap was made for — a thumb already
+            // moving, with the dialog still a long press away
+            if (!quickZap.oneTap || !(await quickZap.send())) {
+              setZapOpen(true);
+            }
+          }}
+          onHold={() => {
+            if (user) setZapOpen(true);
           }}
         />
         <ReelAction icon={Share2} label="Share" onClick={handleShare} />
@@ -328,6 +340,7 @@ function ReelAction({
   active,
   disabled,
   onClick,
+  onHold,
 }: {
   icon: typeof Heart;
   label: string;
@@ -335,11 +348,15 @@ function ReelAction({
   active?: boolean;
   disabled?: boolean;
   onClick: () => void;
+  /** Long press or right-click, where a tap already does something. */
+  onHold?: () => void;
 }) {
+  const hold = useHoldGesture({ onTap: onClick, onHold });
+
   return (
     <button
       type="button"
-      onClick={onClick}
+      {...hold}
       disabled={disabled}
       aria-label={label}
       aria-pressed={active}

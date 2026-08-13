@@ -8,6 +8,8 @@ import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useZapSummary } from '@/hooks/useZapSummary';
 import { ZapDialog } from '@/components/ZapDialog';
+import { useHoldGesture } from '@/hooks/useHoldGesture';
+import { useQuickZap } from '@/hooks/useQuickZap';
 import { useReactions } from '@/hooks/useReactions';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
@@ -51,6 +53,7 @@ export function ThreadReply({ node, depth }: ThreadReplyProps) {
 
   const [zapOpen, setZapOpen] = useState(false);
   const zapSummary = useZapSummary(event);
+  const quickZap = useQuickZap(event);
 
   /** Nobody can be paid without an address to pay, on any surface. */
   const canZap =
@@ -203,12 +206,22 @@ export function ThreadReply({ node, depth }: ThreadReplyProps) {
                 {canZap && (
                   <RowAction
                     icon={Zap}
-                    label="Zap this reply"
+                    label={
+                      quickZap.oneTap
+                        ? `Zap ${quickZap.amount} sats — hold to choose`
+                        : 'Zap this reply'
+                    }
                     count={zapSummary.totalSats || undefined}
-                    onClick={() => {
+                    disabled={quickZap.isSending}
+                    onClick={async () => {
                       if (!user) return;
-                      setZapOpen(true);
+                      // Falls back rather than doing nothing: a tap that can't
+                      // pay should still get somewhere
+                      if (!quickZap.oneTap || !(await quickZap.send())) {
+                        setZapOpen(true);
+                      }
                     }}
+                    onHold={() => setZapOpen(true)}
                   />
                 )}
               </div>
@@ -296,6 +309,7 @@ function RowAction({
   disabled,
   fillWhenActive,
   onClick,
+  onHold,
 }: {
   icon: typeof Heart;
   label: string;
@@ -304,11 +318,15 @@ function RowAction({
   disabled?: boolean;
   fillWhenActive?: boolean;
   onClick: () => void;
+  /** Long press or right-click, where a tap already does something. */
+  onHold?: () => void;
 }) {
+  const hold = useHoldGesture({ onTap: onClick, onHold });
+
   return (
     <button
       type="button"
-      onClick={onClick}
+      {...hold}
       disabled={disabled}
       aria-label={label}
       aria-pressed={active}

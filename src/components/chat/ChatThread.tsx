@@ -13,7 +13,7 @@ import {
 } from '@/hooks/useDirectMessages';
 import { genUserName } from '@/lib/genUserName';
 import { NoteContent } from '@/components/NoteContent';
-import { ZapDialog } from '@/components/ZapDialog';
+import { ZapTrigger } from '@/components/ZapTrigger';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -124,12 +124,12 @@ export function ChatThread({ peerPubkey }: ChatThreadProps) {
           says only what a profile zap always says.
         */}
         {canZap && author.data?.event && (
-          <ZapDialog target={author.data.event}>
+          <ZapTrigger target={author.data.event}>
             <Button variant="ghost" size="sm" className="shrink-0 text-zap">
               <Zap className="h-4 w-4" />
               <span className="sr-only">Zap {displayName}</span>
             </Button>
-          </ZapDialog>
+          </ZapTrigger>
         )}
       </header>
 

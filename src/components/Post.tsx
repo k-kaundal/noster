@@ -6,6 +6,8 @@ import { useReactions } from '@/hooks/useReactions';
 import { useReposts } from '@/hooks/useReposts';
 import { useReplies } from '@/hooks/useReplies';
 import { useZapSummary } from '@/hooks/useZapSummary';
+import { useQuickZap } from '@/hooks/useQuickZap';
+import { useHoldGesture } from '@/hooks/useHoldGesture';
 import { useEvent } from '@/hooks/useEvent';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useBookmarks } from '@/hooks/useBookmarks';
@@ -168,6 +170,15 @@ export function Post({
    * number on it.
    */
   const zapSummary = useZapSummary(event);
+
+  /**
+   * One tap sends, when somebody has turned that on and it can go through.
+   *
+   * The dialog is never taken away: a long press opens it, and so does any
+   * state where an instant send cannot happen — no wallet, not enough in it —
+   * because an invoice can still be paid from a phone.
+   */
+  const quickZap = useQuickZap(event);
   const { isBookmarked, toggle: toggleBookmark, isToggling } = useBookmarks();
   const { isUserMuted, muteUser, unmuteUser, canBePrivate } = useMuteList();
   const { isPrivate } = useMutePrivacy();
@@ -527,7 +538,18 @@ export function Post({
             count={zapSummary.totalSats || undefined}
             tone="zap"
             disabled={!canZap}
+            busy={quickZap.isSending}
             onClick={() => {
+              if (!user) return requireLogin('zap');
+              if (!quickZap.oneTap) return setZapOpen(true);
+
+              // Falls back rather than leaving a paying button that did
+              // nothing, which is the worst failure available here
+              void quickZap.send().then((sent) => {
+                if (!sent) setZapOpen(true);
+              });
+            }}
+            onHold={() => {
               if (!user) return requireLogin('zap');
               setZapOpen(true);
             }}
@@ -729,6 +751,14 @@ interface ActionButtonProps {
   disabled?: boolean;
   fillWhenActive?: boolean;
   onClick: () => void;
+  /**
+   * A long press, where one exists.
+   *
+   * The zap button pays on a tap once somebody turns that on, so the way to
+   * choose a different amount has to be somewhere — and holding is the
+   * gesture every other client already uses for it.
+   */
+  onHold?: () => void;
 }
 
 const TONE_CLASSES = {
@@ -755,13 +785,16 @@ function ActionButton({
   disabled,
   fillWhenActive,
   onClick,
+  onHold,
 }: ActionButtonProps) {
+  const hold = useHoldGesture({ onTap: onClick, onHold });
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
-          onClick={onClick}
+          {...hold}
           disabled={busy || disabled}
           aria-label={label}
           aria-pressed={active}

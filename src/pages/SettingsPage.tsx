@@ -22,6 +22,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { AccentPicker } from '@/components/AccentPicker';
 import { CurrencySettings } from '@/components/CurrencySettings';
+import { ZapSettings } from '@/components/ZapSettings';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -114,6 +115,7 @@ export function SettingsPage() {
           </TabsContent>
           <TabsContent value="wallet">
             <div className="space-y-4">
+              <ZapSettings />
               <CurrencySettings />
               <WalletPointer />
             </div>
