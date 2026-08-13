@@ -13,8 +13,18 @@
  * used, so the first visit costs nothing extra.
  */
 
-/** Bump to retire every cache from the previous shape of this file. */
-const VERSION = 'v1';
+/**
+ * This build's identity, replaced by `scripts/sw-version.mjs` after `vite
+ * build` and left as the literal below in development.
+ *
+ * It is what makes an update detectable at all. A browser decides a worker is
+ * new by comparing bytes, and this file's bytes never used to change between
+ * deploys — so the "new version ready" path could not fire, no matter how much
+ * of the app had changed underneath it. Stamping the build hash in here is one
+ * byte-level difference per deploy, which is exactly the signal that machinery
+ * was waiting for.
+ */
+const VERSION = '__BUILD_ID__';
 
 const SHELL = `nostrfeed-shell-${VERSION}`;
 const ASSETS = `nostrfeed-assets-${VERSION}`;
@@ -47,9 +57,14 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-/** The app asks for this when someone accepts an update. */
 self.addEventListener('message', (event) => {
+  /** The app asks for this when an update is accepted, or applied for them. */
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+
+  /** Which build is answering, for the version shown in settings. */
+  if (event.data === 'VERSION') {
+    event.source?.postMessage({ type: 'VERSION', version: VERSION });
+  }
 });
 
 /** Keeps a cache from growing without limit, oldest entry first. */

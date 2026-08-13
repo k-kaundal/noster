@@ -38,6 +38,7 @@ import { useMuteList } from '@/hooks/useMuteList';
 import { useMutePrivacy } from '@/hooks/useMutePrivacy';
 import { NotificationSettings } from '@/components/NotificationSettings';
 import { InstallCard } from '@/components/InstallCard';
+import { AppVersionCard } from '@/components/AppVersionCard';
 import { useAdultContent } from '@/hooks/useAdultContent';
 import { useMachineEvents } from '@/hooks/useMachineEvents';
 import { TrustProviderSettings } from '@/components/trust/TrustProviderSettings';
@@ -94,14 +95,24 @@ export function SettingsPage() {
             <UISettings />
           </TabsContent>
           <TabsContent value="alerts">
-            {user ? (
-              <div className="space-y-4">
-                <NotificationSettings />
-                <InstallCard />
-              </div>
-            ) : (
-              <SignedOutNotice what="notification settings" />
-            )}
+            <div className="space-y-4">
+              {user ? (
+                <>
+                  <NotificationSettings />
+                  <InstallCard />
+                </>
+              ) : (
+                <SignedOutNotice what="notification settings" />
+              )}
+
+              {/*
+                Outside the login check. Which build is running and whether it
+                is current has nothing to do with having an account, and a
+                logged-out person hitting a bug needs to report a version as
+                much as anybody.
+              */}
+              <AppVersionCard />
+            </div>
           </TabsContent>
           <TabsContent value="muted">
             {user ? <MuteSettings /> : <SignedOutNotice what="mute list" />}
