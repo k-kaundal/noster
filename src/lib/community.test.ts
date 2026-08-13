@@ -10,6 +10,9 @@ import {
   isPostFor,
   parseAddress,
   parseCommunity,
+  groupCommunities,
+  roleIn,
+  type Community,
 } from './community';
 
 const ALICE = 'a'.repeat(64);
@@ -256,5 +259,79 @@ describe('isPostFor', () => {
         address
       )
     ).toBe(false);
+  });
+});
+
+describe('roleIn', () => {
+  const community = {
+    creator: 'creator-key',
+    moderators: ['creator-key', 'mod-key'],
+  };
+
+  it('ranks the creator above the moderators they appointed', () => {
+    // Somebody who made a place is not merely one of its moderators
+    expect(roleIn(community, 'creator-key')).toBe('creator');
+    expect(roleIn(community, 'mod-key')).toBe('moderator');
+  });
+
+  it('is nothing for a visitor, or for nobody', () => {
+    expect(roleIn(community, 'stranger')).toBeNull();
+    expect(roleIn(community, undefined)).toBeNull();
+  });
+});
+
+describe('groupCommunities', () => {
+  function make(overrides: Partial<Community>): Community {
+    return {
+      slug: 'slug',
+      name: 'name',
+      description: '',
+      creator: 'someone',
+      moderators: [],
+      relays: [],
+      createdAt: 0,
+      event: {
+        id: 'id',
+        pubkey: 'someone',
+        kind: 34550,
+        content: '',
+        tags: [],
+        created_at: 0,
+        sig: '',
+      },
+      ...overrides,
+    };
+  }
+
+  const mineOld = make({ slug: 'a', creator: 'me', createdAt: 100 });
+  const mineNew = make({ slug: 'b', creator: 'me', createdAt: 300 });
+  const modded = make({ slug: 'c', creator: 'other', moderators: ['me'], createdAt: 200 });
+  const theirs = make({ slug: 'd', creator: 'other', createdAt: 400 });
+
+  it('separates what somebody runs from what merely exists', () => {
+    /**
+     * One flat grid meant a moderator arriving to tend their own community
+     * had to find it among fifty they have nothing to do with.
+     */
+    const { mine, rest } = groupCommunities(
+      [theirs, modded, mineNew, mineOld],
+      'me'
+    );
+
+    expect(mine.map((c) => c.slug)).toEqual(['a', 'b', 'c']);
+    expect(rest.map((c) => c.slug)).toEqual(['d']);
+  });
+
+  it('puts creations above the ones they only help run', () => {
+    const { mine } = groupCommunities([modded, mineNew], 'me');
+
+    expect(mine.map((c) => c.slug)).toEqual(['b', 'c']);
+  });
+
+  it('gives a signed-out reader nothing of their own', () => {
+    const { mine, rest } = groupCommunities([mineOld, theirs], undefined);
+
+    expect(mine).toEqual([]);
+    expect(rest).toHaveLength(2);
   });
 });

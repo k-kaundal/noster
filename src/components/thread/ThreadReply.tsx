@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import { timeAgo as formatAge } from '@/lib/time';
-import { BadgeCheck, ChevronRight, Heart, MessageCircle } from 'lucide-react';
+import { BadgeCheck, ChevronRight, Heart, MessageCircle, Zap } from 'lucide-react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useZapSummary } from '@/hooks/useZapSummary';
+import { ZapDialog } from '@/components/ZapDialog';
 import { useReactions } from '@/hooks/useReactions';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
@@ -46,6 +48,13 @@ export function ThreadReply({ node, depth }: ThreadReplyProps) {
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const { isLiked, likeCount, like, isLiking } = useReactions(event.id);
+
+  const [zapOpen, setZapOpen] = useState(false);
+  const zapSummary = useZapSummary(event);
+
+  /** Nobody can be paid without an address to pay, on any surface. */
+  const canZap =
+    !!(metadata?.lud16 || metadata?.lud06) && user?.pubkey !== event.pubkey;
 
   const [collapsed, setCollapsed] = useState(false);
   const [replying, setReplying] = useState(false);
@@ -181,7 +190,36 @@ export function ThreadReply({ node, depth }: ThreadReplyProps) {
                   disabled={isLiking}
                   onClick={handleLike}
                 />
+
+                {/*
+                  A reply is a note, and somebody answering well in a thread is
+                  as worth paying as somebody starting one — this row had a
+                  like and no way to send anything.
+
+                  Hidden rather than disabled when the author has no lightning
+                  address: an offer to pay somebody who cannot be paid is worse
+                  than no offer.
+                */}
+                {canZap && (
+                  <RowAction
+                    icon={Zap}
+                    label="Zap this reply"
+                    count={zapSummary.totalSats || undefined}
+                    onClick={() => {
+                      if (!user) return;
+                      setZapOpen(true);
+                    }}
+                  />
+                )}
               </div>
+
+              {zapOpen && (
+                <ZapDialog
+                  target={event}
+                  open={zapOpen}
+                  onOpenChange={setZapOpen}
+                />
+              )}
 
               {replying && (
                 <ThreadComposer

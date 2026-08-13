@@ -22,6 +22,8 @@ import { Post } from '@/components/Post';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { canModerate, type Community } from '@/lib/community';
 import { CommunityEditor } from './CommunityEditor';
+import { ZapButton } from '@/components/ZapButton';
+import { ZapStats } from '@/components/ZapStats';
 import { CommunityVerificationBadge } from './CommunityVerificationBadge';
 
 /** A community: what it is, who runs it, and what has been approved into it. */
@@ -107,6 +109,19 @@ export function CommunityView({ community }: { community: Community }) {
             shows in the main tab — that is what NIP-72 means by moderated, and
             nothing stops an unapproved post existing on relays.
           </p>
+
+          {/*
+            Paying the place, not a post in it.
+
+            A community is an addressable event whose author is whoever made
+            it, so a zap here reaches the person keeping it running — which is
+            the only way to support the work of moderating, since moderating
+            produces no posts of its own to zap.
+          */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <ZapButton target={community.event} />
+            <ZapStats event={community.event} />
+          </div>
         </CardContent>
       </Card>
 
