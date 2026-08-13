@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import { formatDate, formatTime, isSameDay } from '@/lib/time';
-import { ArrowLeft, BadgeCheck, Loader2, Send, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Loader2, Send, ShieldCheck, Zap } from 'lucide-react';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/hooks/useDirectMessages';
 import { genUserName } from '@/lib/genUserName';
 import { NoteContent } from '@/components/NoteContent';
+import { ZapDialog } from '@/components/ZapDialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -32,6 +33,9 @@ export function ChatThread({ peerPubkey }: ChatThreadProps) {
 
   const author = useAuthor(peerPubkey);
   const metadata = author.data?.metadata;
+  /** Nobody can be paid without an address to pay. */
+  const canZap = !!(author.data?.metadata?.lud16 || author.data?.metadata?.lud06);
+
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(peerPubkey);
   const npub = nip19.npubEncode(peerPubkey);
@@ -109,6 +113,24 @@ export function ChatThread({ peerPubkey }: ChatThreadProps) {
             End-to-end encrypted · NIP-17
           </p>
         </div>
+
+        {/*
+          Paying the person you are talking to.
+
+          A profile zap rather than one attached to a message: the messages
+          here are encrypted, so a receipt naming one would publish the fact
+          that a particular sealed event exists between two people — which is
+          the one thing this screen is built not to leak. Zapping the profile
+          says only what a profile zap always says.
+        */}
+        {canZap && author.data?.event && (
+          <ZapDialog target={author.data.event}>
+            <Button variant="ghost" size="sm" className="shrink-0 text-zap">
+              <Zap className="h-4 w-4" />
+              <span className="sr-only">Zap {displayName}</span>
+            </Button>
+          </ZapDialog>
+        )}
       </header>
 
       {/* A recipient with no kind 10050 list may simply never receive this */}
