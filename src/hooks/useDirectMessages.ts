@@ -158,9 +158,25 @@ export function useDirectMessages() {
       .sort((a, b) => b.lastMessage.createdAt - a.lastMessage.createdAt);
   }, [messages, user, readAt]);
 
+  /*
+   * Which messages the relays have not echoed back yet. Kept as a set of ids
+   * rather than a flag on the message so the shape a relay returns and the
+   * shape we made locally stay identical — the difference is delivery state,
+   * which belongs to this client and not to the message.
+   */
+  const pendingIds = useMemo(() => {
+    const confirmed = new Set((query.data ?? []).map((message) => message.id));
+    return new Set(
+      (pending ?? [])
+        .map((message) => message.id)
+        .filter((id) => !confirmed.has(id))
+    );
+  }, [query.data, pending]);
+
   return {
     conversations,
     messages,
+    pendingIds,
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
@@ -199,7 +215,7 @@ export function useUnreadChatCount(): number {
 
 /** Messages exchanged with one peer, oldest first. */
 export function useChatThread(peerPubkey: string | undefined) {
-  const { conversations, isLoading, isError } = useDirectMessages();
+  const { conversations, pendingIds, isLoading, isError } = useDirectMessages();
 
   const conversation = useMemo(
     () => conversations.find((entry) => entry.key === peerPubkey),
@@ -208,6 +224,8 @@ export function useChatThread(peerPubkey: string | undefined) {
 
   return {
     messages: conversation?.messages ?? [],
+    /** Sent from here, not yet echoed back by a relay. */
+    pendingIds,
     isLoading,
     isError,
   };

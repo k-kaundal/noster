@@ -80,7 +80,13 @@ function ConversationRow({
       <Link
         to={`/chat/${nip19.npubEncode(primary)}`}
         className={cn(
-          'flex items-center gap-3 p-3 transition-colors hover:bg-accent/60',
+          /*
+           * `min-h-[64px]` and `active:` rather than `hover:` alone. A phone
+           * has no hover, so a tap on a row used to give no feedback at all
+           * until the next screen rendered — which over a slow relay read as
+           * a dead link and got tapped again.
+           */
+          'flex min-h-[64px] items-center gap-3 px-3 py-2.5 transition-colors active:bg-accent lg:hover:bg-accent/60',
           isActive && 'bg-accent'
         )}
       >
@@ -93,7 +99,14 @@ function ConversationRow({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5">
-            <span className="truncate text-sm font-semibold">{label}</span>
+            <span
+              className={cn(
+                'truncate text-sm',
+                conversation.unread ? 'font-bold' : 'font-semibold'
+              )}
+            >
+              {label}
+            </span>
             {metadata?.nip05 && !isGroup && (
               <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
             )}
@@ -104,7 +117,10 @@ function ConversationRow({
 
           <p
             className={cn(
-              'truncate text-xs',
+              // 13px rather than 12px: a preview line is the thing people
+              // actually read down the list, and 12px is below comfortable
+              // on a phone held at arm's length
+              'truncate text-[13px] sm:text-xs',
               conversation.unread
                 ? 'font-medium text-foreground'
                 : 'text-muted-foreground'
@@ -117,7 +133,7 @@ function ConversationRow({
 
         {conversation.unread && (
           <span
-            className="h-2 w-2 shrink-0 rounded-full bg-primary"
+            className="h-2.5 w-2.5 shrink-0 rounded-full bg-primary"
             aria-label="Unread"
           />
         )}
