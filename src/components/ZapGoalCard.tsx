@@ -1,11 +1,14 @@
+import { useState } from 'react';
 import type { NostrEvent } from '@nostrify/nostrify';
-import { CheckCircle2, Clock, Target, Users } from 'lucide-react';
+import { CheckCircle2, Clock, Plus, Target, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ZapDialog } from '@/components/ZapDialog';
 import { Button } from '@/components/ui/button';
+import { ZapGoalEditor } from '@/components/ZapGoalEditor';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useZapGoal, useZapGoals } from '@/hooks/useZapGoal';
 import { formatSats } from '@/lib/zap';
 import { linkedGoal, type ZapGoal } from '@/lib/nip75';
@@ -181,19 +184,56 @@ export function ProfileZapGoals({
   pubkey: string;
   className?: string;
 }) {
+  const { user } = useCurrentUser();
   const { data: goals } = useZapGoals(pubkey);
+  const [composing, setComposing] = useState(false);
+
+  const isOwn = user?.pubkey === pubkey;
 
   const open = (goals ?? []).filter(
     (goal) => !goal.closedAt || goal.closedAt * 1000 > Date.now()
   );
 
-  if (!open.length) return null;
+  /*
+   * Somebody else's profile with nothing to fund says nothing. Your own says
+   * you can start one — this section used to disappear entirely when empty,
+   * which is exactly the state a person is in the first time they want a
+   * goal, so there was nowhere to begin.
+   */
+  if (!open.length && !isOwn) return null;
 
   return (
     <div className={cn('space-y-3', className)}>
+      {isOwn && (
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Target className="h-4 w-4" />
+            Goals
+          </h2>
+          <Button size="sm" variant="outline" onClick={() => setComposing(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            New goal
+          </Button>
+        </div>
+      )}
+
       {open.slice(0, 3).map((goal) => (
         <ZapGoalCard key={goal.event.id} event={goal.event} />
       ))}
+
+      {isOwn && !open.length && (
+        <Card className="border-dashed">
+          <CardContent className="py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No open goals. Set a target and people can zap toward it.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {isOwn && composing && (
+        <ZapGoalEditor open={composing} onOpenChange={setComposing} />
+      )}
     </div>
   );
 }

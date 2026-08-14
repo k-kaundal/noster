@@ -25,6 +25,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountCard } from '@/components/wallet/AccountCard';
 import { TierEditor } from '@/components/subscriptions/TierEditor';
+import { GoalsCard } from '@/components/wallet/GoalsCard';
 import { ActivityCard } from '@/components/wallet/ActivityCard';
 import { WalletKeys } from '@/components/wallet/WalletKeys';
 import { WalletSwitcher } from '@/components/wallet/WalletSwitcher';
@@ -332,6 +333,9 @@ function ConnectedWallet() {
       <IdentityCard />
 
       <ActivityCard />
+
+      {/* A one-off ask, next to the standing one below it */}
+      <GoalsCard />
 
       {/* Offering recurring support, beside the wallet the sats arrive in */}
       <Card>
