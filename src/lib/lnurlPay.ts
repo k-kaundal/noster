@@ -15,10 +15,33 @@ export interface LnurlPayMetadata {
   maxSendableMsat: number;
   /** How long a comment the link accepts. Zero means none. */
   commentAllowed: number;
-  /** Whether it can produce NIP-57 zap receipts. */
+  /** Whether the server *says* it produces NIP-57 zap receipts. */
   allowsNostr: boolean;
+  /** The key it signs them with. Without it, nobody can validate one. */
   nostrPubkey?: string;
+  /**
+   * Whether a zap sent here will actually appear on Nostr.
+   *
+   * Both halves, as NIP-57 step 1 requires: "If `allowsNostr` exists and it is
+   * `true`, **and** if `nostrPubkey` exists and is a valid BIP 340 public key
+   * in hex". We were reading only the first, and the two come apart in a very
+   * ordinary way — an LNbits pay link with its `zaps` switch on advertises
+   * `allowsNostr` immediately, while the receipts are published by a separate
+   * extension that has to be installed, enabled and connected to relays. Until
+   * it is, the flag is a promise the server never keeps: the invoice is paid,
+   * no kind 9735 is ever written, and every count stays at zero — on posts, on
+   * articles, on goals — with nothing anywhere saying why.
+   *
+   * Believing the flag alone meant sending a zap request to a server that
+   * could not sign the receipt, and reporting it as a zap that would show up.
+   */
+  zapCapable: boolean;
   description: string;
+}
+
+/** A BIP-340 key, which is what `nostrPubkey` has to be to be usable. */
+function isValidNostrPubkey(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
 }
 
 /** Pulls the human-readable description out of the LNURL metadata blob. */
@@ -60,8 +83,11 @@ export function parsePayMetadata(body: unknown): LnurlPayMetadata | null {
     maxSendableMsat: max,
     commentAllowed: Number(record.commentAllowed ?? 0) || 0,
     allowsNostr: record.allowsNostr === true,
-    nostrPubkey:
-      typeof record.nostrPubkey === 'string' ? record.nostrPubkey : undefined,
+    nostrPubkey: isValidNostrPubkey(record.nostrPubkey)
+      ? record.nostrPubkey.toLowerCase()
+      : undefined,
+    zapCapable:
+      record.allowsNostr === true && isValidNostrPubkey(record.nostrPubkey),
     description: readMetadataDescription(record.metadata),
   };
 }

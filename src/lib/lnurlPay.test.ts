@@ -14,6 +14,7 @@ const metadata: LnurlPayMetadata = {
   maxSendableMsat: 100_000_000,
   commentAllowed: 255,
   allowsNostr: true,
+  zapCapable: true,
   description: 'Relay access',
 };
 
@@ -67,6 +68,66 @@ describe('readMetadataDescription', () => {
   it('survives a malformed blob rather than failing the payment', () => {
     expect(readMetadataDescription('not json')).toBe('');
     expect(readMetadataDescription(undefined)).toBe('');
+  });
+});
+
+describe('zapCapable', () => {
+  const base = {
+    callback: 'https://x/cb',
+    minSendable: 1000,
+    maxSendable: 5000,
+    metadata: '[["text/plain","x"]]',
+  };
+
+  it('trusts a server that advertises both halves', () => {
+    const parsed = parsePayMetadata({
+      ...base,
+      allowsNostr: true,
+      nostrPubkey: 'a'.repeat(64),
+    });
+
+    expect(parsed?.zapCapable).toBe(true);
+  });
+
+  it('refuses a promise with no key behind it', () => {
+    /**
+     * The LNbits shape, and the reason zaps could vanish without a trace. A
+     * pay link with its `zaps` switch on advertises `allowsNostr` straight
+     * away, while receipts are published by a separate extension that has to
+     * be installed, enabled and connected to relays. Until it is, the invoice
+     * is paid and no kind 9735 is ever written — so believing this flag alone
+     * meant reporting a zap that would never appear anywhere.
+     */
+    const parsed = parsePayMetadata({ ...base, allowsNostr: true });
+
+    expect(parsed?.allowsNostr).toBe(true);
+    expect(parsed?.zapCapable).toBe(false);
+  });
+
+  it('refuses a key that is not a BIP-340 pubkey', () => {
+    // NIP-57 step 1 is specific: "a valid BIP 340 public key in hex"
+    for (const nostrPubkey of ['', 'not-hex', 'a'.repeat(63), 'z'.repeat(64)]) {
+      const parsed = parsePayMetadata({ ...base, allowsNostr: true, nostrPubkey });
+
+      expect(parsed?.zapCapable).toBe(false);
+      expect(parsed?.nostrPubkey).toBeUndefined();
+    }
+  });
+
+  it('refuses a key with no promise in front of it', () => {
+    const parsed = parsePayMetadata({ ...base, nostrPubkey: 'a'.repeat(64) });
+
+    expect(parsed?.zapCapable).toBe(false);
+  });
+
+  it('normalises the key, which clients compare byte for byte', () => {
+    const parsed = parsePayMetadata({
+      ...base,
+      allowsNostr: true,
+      nostrPubkey: 'A'.repeat(64),
+    });
+
+    expect(parsed?.nostrPubkey).toBe('a'.repeat(64));
   });
 });
 

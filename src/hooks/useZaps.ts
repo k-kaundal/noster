@@ -398,7 +398,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
        */
       const lnurl = lnurlEncode(endpoint) ?? undefined;
 
-      if (payMetadata.allowsNostr) {
+      if (payMetadata.zapCapable) {
         const request = buildZapRequest({
           recipientPubkey: payeePubkey,
           amountMsat,
@@ -463,7 +463,11 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
       setInvoice(bolt11);
       setIsZapping(false);
 
-      return { bolt11, amountSats: amount, publishesReceipt: payMetadata.allowsNostr };
+      return {
+        bolt11,
+        amountSats: amount,
+        publishesReceipt: payMetadata.zapCapable,
+      };
     } catch (error) {
       setIsZapping(false);
       toast({
