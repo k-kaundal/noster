@@ -166,9 +166,11 @@ describe('buildGoalTags', () => {
 });
 
 describe('goalProgress', () => {
+  /** Published at the epoch, so the fixtures below are all "after" it. */
   const goal = {
     amountMsat: 100_000,
     closedAt: undefined,
+    event: { created_at: 0 },
   } as ZapGoal;
 
   const receipt = (amountMsat: number, senderPubkey?: string, createdAt = 0) => ({
@@ -211,7 +213,11 @@ describe('goalProgress', () => {
   });
 
   it('leaves out zaps that arrived after the deadline', () => {
-    const closing = { amountMsat: 100_000, closedAt: 500 } as ZapGoal;
+    const closing = {
+      amountMsat: 100_000,
+      closedAt: 500,
+      event: { created_at: 0 },
+    } as ZapGoal;
 
     const progress = goalProgress(
       closing,
@@ -227,6 +233,38 @@ describe('goalProgress', () => {
     expect(countsTowardGoal({ closedAt: 500 }, 500)).toBe(true);
     expect(countsTowardGoal({ closedAt: 500 }, 501)).toBe(false);
     expect(countsTowardGoal({ closedAt: undefined }, 9e9)).toBe(true);
+  });
+
+  it('leaves out zaps that arrived before the goal was published', () => {
+    /**
+     * The real case this was written for. A goal is announced in a note, the
+     * note's zaps count toward it — and the note is usually older than the
+     * goal. Without a lower bound a brand new goal credits itself with
+     * everything that note ever earned, and reads as part-funded by money
+     * nobody sent toward it.
+     */
+    expect(countsTowardGoal({ closedAt: undefined, startedAt: 500 }, 499)).toBe(
+      false
+    );
+    expect(countsTowardGoal({ closedAt: undefined, startedAt: 500 }, 500)).toBe(
+      true
+    );
+  });
+
+  it('ignores a zap sent before the goal existed', () => {
+    const later = {
+      amountMsat: 100_000,
+      closedAt: undefined,
+      event: { created_at: 1_000 },
+    } as ZapGoal;
+
+    const progress = goalProgress(later, [
+      receipt(40_000, undefined, 900),
+      receipt(10_000, undefined, 1_100),
+    ]);
+
+    expect(progress.raisedMsat).toBe(10_000);
+    expect(progress.contributorCount).toBe(0);
   });
 });
 

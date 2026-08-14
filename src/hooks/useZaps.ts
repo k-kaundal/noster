@@ -125,6 +125,17 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
               queryKey: ['note-stats', statsKey ?? ''],
               exact: true,
             });
+
+            /*
+             * Goals keep their own tally, on its own key, and nothing was
+             * refreshing it — so funding a goal left the bar exactly where it
+             * was and the zap looked like it had gone nowhere. Every goal
+             * rather than one: the zap may have named the goal itself, or a
+             * note announcing it, and both are counted by whichever card is
+             * on screen.
+             */
+            queryClient.invalidateQueries({ queryKey: ['zap-goal'] });
+
             onZapSuccess?.();
             return true;
           }

@@ -106,12 +106,26 @@ export function formatSats(sats: number): string {
 
 
 export interface ReceiptCheck {
-  /** The recipient the receipt claims to pay. */
-  recipientPubkey?: string;
-  /** The event it claims to be about, when zapping a note. */
-  eventId?: string;
+  /**
+   * The recipient the receipt claims to pay.
+   *
+   * Several are allowed, and mean "any of these". A NIP-75 goal can redirect
+   * its money to beneficiaries with `zap` tags, and the receipt then names one
+   * of them rather than the goal's author.
+   */
+  recipientPubkey?: string | string[];
+  /**
+   * The event it claims to be about, when zapping a note.
+   *
+   * Also a list, for the same reason in the other direction: a goal announced
+   * by a note is funded by zaps naming either, because clients that have never
+   * heard of NIP-75 tag the note they can see.
+   *
+   * An empty list matches nothing — pass `undefined` for "any event".
+   */
+  eventId?: string | string[];
   /** The coordinate, when zapping an addressable event. */
-  address?: string;
+  address?: string | string[];
   /**
    * The `nostrPubkey` from the recipient's lnurl provider.
    *
@@ -201,8 +215,13 @@ export function validateZapReceipt(
    * a reply references its root as well as its parent. Reading only the first
    * meant a zap on any note that mentioned somebody was thrown away.
    */
-  const requestHas = (name: string, value: string) =>
-    request.tags.some(([tagName, tagValue]) => tagName === name && tagValue === value);
+  const requestHas = (name: string, value: string | string[]) => {
+    const wanted = Array.isArray(value) ? value : [value];
+
+    return request.tags.some(
+      ([tagName, tagValue]) => tagName === name && wanted.includes(tagValue)
+    );
+  };
 
   if (check.recipientPubkey && !requestHas('p', check.recipientPubkey)) {
     return false;

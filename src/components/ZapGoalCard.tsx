@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock,
   Link as LinkIcon,
+  Megaphone,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -20,10 +21,19 @@ import { Button } from '@/components/ui/button';
 import { ZapGoalEditor } from '@/components/ZapGoalEditor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import {
+  useAnnounceZapGoal,
   useRetireZapGoal,
   useZapGoal,
   useZapGoals,
 } from '@/hooks/useZapGoal';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/useToast';
 import {
   DropdownMenu,
@@ -42,7 +52,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { formatSats } from '@/lib/zap';
-import { linkedGoal, type ZapGoal } from '@/lib/nip75';
+import { linkedGoal, type GoalProgress, type ZapGoal } from '@/lib/nip75';
 import { cn } from '@/lib/utils';
 
 /**
@@ -54,13 +64,16 @@ import { cn } from '@/lib/utils';
  */
 export function ZapGoalCard({
   event,
+  announcedBy,
   className,
 }: {
   /** The kind 9041 itself. */
   event: NostrEvent;
+  /** An event announcing it, whose zaps also count — see `useZapGoal`. */
+  announcedBy?: string;
   className?: string;
 }) {
-  const { data, isLoading } = useZapGoal(event);
+  const { data, isLoading } = useZapGoal(event, { announcedBy });
 
   if (isLoading) {
     return (
@@ -76,23 +89,42 @@ export function ZapGoalCard({
 
   if (!data) return null;
 
-  return <GoalBody goal={data.goal} className={className} />;
+  return (
+    <GoalBody
+      goal={data.goal}
+      progress={data.progress}
+      unreachable={data.unreachable}
+      className={className}
+    />
+  );
 }
 
-function GoalBody({ goal, className }: { goal: ZapGoal; className?: string }) {
-  const { user } = useCurrentUser();
-  const { data } = useZapGoal(goal.event);
-  const progress = data?.progress;
-
-  if (!progress) return null;
-
+/**
+ * Handed its numbers rather than fetching them.
+ *
+ * It used to call `useZapGoal` again for a goal its parent had already
+ * tallied — the same query key, so the same request, but a second component
+ * subscribed to it and a second copy of the reasoning about what to do when
+ * it came back empty.
+ */
+function GoalBody({
+  goal,
+  progress,
+  unreachable,
+  className,
+}: {
+  goal: ZapGoal;
+  progress: GoalProgress;
   /*
    * Said out loud, because "0 of 1M sats" looks identical whether nobody has
    * zapped or nothing could be asked. One of those is a fact about the goal
    * and the other is a fact about the network, and a bar that cannot tell
    * them apart quietly reports the wrong one.
    */
-  const unreachable = data?.unreachable ?? false;
+  unreachable: boolean;
+  className?: string;
+}) {
+  const { user } = useCurrentUser();
 
   const raisedSats = Math.round(progress.raisedMsat / 1000);
   const targetSats = Math.round(progress.targetMsat / 1000);
@@ -249,11 +281,26 @@ export function LinkedZapGoal({
   className?: string;
 }) {
   const link = linkedGoal(event);
-  const { data } = useZapGoal(link ? { id: link.id } : undefined);
+
+  /*
+   * The announcing event is this one, and saying so is what makes the bar
+   * move: a zap sent from any other client names the note it can see, not the
+   * goal the note points at.
+   */
+  const { data } = useZapGoal(link ? { id: link.id } : undefined, {
+    announcedBy: event.id,
+  });
 
   if (!link || !data) return null;
 
-  return <GoalBody goal={data.goal} className={className} />;
+  return (
+    <GoalBody
+      goal={data.goal}
+      progress={data.progress}
+      unreachable={data.unreachable}
+      className={className}
+    />
+  );
 }
 
 /**
@@ -265,6 +312,7 @@ export function LinkedZapGoal({
 function GoalMenu({ goal, raisedSats }: { goal: ZapGoal; raisedSats: number }) {
   const [editing, setEditing] = useState(false);
   const [retiring, setRetiring] = useState(false);
+  const [announcing, setAnnouncing] = useState(false);
   const { retire, isDeleting } = useRetireZapGoal();
   const { toast } = useToast();
 
@@ -279,6 +327,10 @@ function GoalMenu({ goal, raisedSats }: { goal: ZapGoal; raisedSats: number }) {
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setAnnouncing(true)}>
+            <Megaphone className="mr-2 h-4 w-4" />
+            Announce in a post
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setEditing(true)}>
             <Pencil className="mr-2 h-4 w-4" />
             Edit
@@ -299,6 +351,14 @@ function GoalMenu({ goal, raisedSats }: { goal: ZapGoal; raisedSats: number }) {
           onOpenChange={setEditing}
           goal={goal}
           raisedSats={raisedSats}
+        />
+      )}
+
+      {announcing && (
+        <AnnounceGoalDialog
+          goal={goal}
+          open={announcing}
+          onOpenChange={setAnnouncing}
         />
       )}
 
@@ -337,6 +397,81 @@ function GoalMenu({ goal, raisedSats }: { goal: ZapGoal; raisedSats: number }) {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+/**
+ * Posting a goal so people can actually fund it.
+ *
+ * A goal on its own is close to invisible: kind 9041 does not appear in a
+ * feed, and a client that has never heard of NIP-75 will not offer to zap
+ * one. A note will, everywhere — and with a `goal` tag on it, the zaps it
+ * collects are counted toward the goal.
+ *
+ * The text is editable rather than generated and posted, because this goes
+ * out under somebody's name to everybody who follows them.
+ */
+function AnnounceGoalDialog({
+  goal,
+  open,
+  onOpenChange,
+}: {
+  goal: ZapGoal;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { mutateAsync: announce, isPending } = useAnnounceZapGoal();
+
+  const targetSats = Math.round(goal.amountMsat / 1000);
+
+  const [content, setContent] = useState(() =>
+    [
+      goal.summary || 'I have a fundraising goal open.',
+      goal.description,
+      `Zap this post to chip in — I'm raising ${targetSats.toLocaleString()} sats.`,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Announce this goal</DialogTitle>
+          <DialogDescription>
+            Posts as an ordinary note, so it shows up in feeds and anyone can
+            zap it from any app. Those zaps count toward this goal.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Textarea
+          value={content}
+          onChange={(changed) => setContent(changed.target.value)}
+          rows={7}
+          className="resize-none"
+        />
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={isPending || !content.trim()}
+            onClick={async () => {
+              try {
+                await announce({ goal, content });
+                onOpenChange(false);
+              } catch {
+                // The hook has already said so
+              }
+            }}
+          >
+            {isPending ? 'Posting…' : 'Post it'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

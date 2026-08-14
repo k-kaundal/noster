@@ -18,6 +18,23 @@ import {
   type ZapGoal,
 } from '@/lib/nip75';
 
+export interface GoalTallyOptions {
+  /**
+   * An event that announces this goal, whose zaps also count.
+   *
+   * The reason a funded goal reads zero. NIP-75 counts receipts that name the
+   * kind 9041, but almost nobody zaps a kind 9041 — a goal is announced in a
+   * note, the note is what appears in a feed, and a client that has never
+   * heard of NIP-75 tags the note it can see. The money arrives, the receipt
+   * names the note, and the bar never moves.
+   *
+   * Only ever the event carrying a `goal` tag pointing back here, which is
+   * the author saying zaps on it are for this goal. That is a claim by the
+   * one person entitled to make it: the goal is theirs, and so is the note.
+   */
+  announcedBy?: string;
+}
+
 /**
  * A goal and how much it has raised.
  *
@@ -33,8 +50,12 @@ import {
  * Every receipt is then checked. A kind 9735 is an ordinary event anybody can
  * publish, and this one drives a progress bar about money.
  */
-export function useZapGoal(goalEvent: { id: string } | undefined) {
+export function useZapGoal(
+  goalEvent: { id: string } | undefined,
+  options: GoalTallyOptions = {}
+) {
   const { nostr } = useNostr();
+  const { announcedBy } = options;
 
   return useQuery<{
     goal: ZapGoal;
@@ -42,7 +63,7 @@ export function useZapGoal(goalEvent: { id: string } | undefined) {
     /** True when no relay answered, which is not the same as no zaps. */
     unreachable: boolean;
   } | null>({
-    queryKey: ['zap-goal', goalEvent?.id ?? ''],
+    queryKey: ['zap-goal', goalEvent?.id ?? '', announcedBy ?? ''],
     queryFn: async ({ signal }) => {
       const timeout = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
 
@@ -54,9 +75,20 @@ export function useZapGoal(goalEvent: { id: string } | undefined) {
       const goal = event ? parseZapGoal(event) : null;
       if (!goal) return null;
 
+      /**
+       * Every event a zap toward this goal might name.
+       *
+       * A receipt on the announcement is only counted when the announcement
+       * was published after the goal — the note is what points here, so a zap
+       * that landed before the goal existed was for something else, and
+       * counting it would credit a goal with money raised before it was asked
+       * for.
+       */
+      const targets = [goal.event.id, ...(announcedBy ? [announcedBy] : [])];
+
       const filter = {
         kinds: [ZAP_RECEIPT_KIND],
-        '#e': [goal.event.id],
+        '#e': targets,
         limit: 500,
       };
 
@@ -85,13 +117,17 @@ export function useZapGoal(goalEvent: { id: string } | undefined) {
        * goal and report zero for a goal that had been funded.
        */
       const summary = summarizeZaps(receipts, {
-        eventId: goal.event.id,
+        eventId: targets,
         recipientPubkey: [
           goal.event.pubkey,
           ...goal.beneficiaries.map((who) => who.pubkey),
         ],
       });
 
+      /*
+       * `goalProgress` drops anything outside the goal's window, which now
+       * has a start as well as a deadline — see `countsTowardGoal`.
+       */
       const counted = summary.zappers.map((zapper) => ({
         amountMsat: zapper.sats * 1000,
         senderPubkey: zapper.pubkey,
@@ -269,6 +305,54 @@ export function useReplaceZapGoal() {
     onError: (error: Error) => {
       toast({
         title: 'Could not update that goal',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+/**
+ * Announcing a goal as an ordinary note.
+ *
+ * The thing that makes a goal fundable by people who are not using this app.
+ * A kind 9041 does not appear in anybody's feed and most clients will not zap
+ * one — so the goal is announced in a kind 1, which every client renders and
+ * every client can zap, carrying a `goal` tag back to it. Zaps on that note
+ * are counted toward the goal by `useZapGoal`.
+ *
+ * The relay hint is not decoration here. It is often the only thing telling a
+ * reader's client where to find a goal it has never seen.
+ */
+export function useAnnounceZapGoal() {
+  const { user } = useCurrentUser();
+  const { mutateAsync: createEvent } = useNostrPublish();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({ goal, content }: { goal: ZapGoal; content: string }) => {
+      if (!user) throw new Error('Log in first');
+
+      const text = content.trim();
+      if (!text) throw new Error('Say something about what you are raising for');
+
+      return await createEvent({
+        kind: 1,
+        content: text,
+        tags: [['goal', goal.event.id, goal.relays[0] ?? '']],
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['zap-goal'] });
+      toast({
+        title: 'Goal announced',
+        description: 'Zaps on that post now count toward it.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Could not post that',
         description: error.message,
         variant: 'destructive',
       });

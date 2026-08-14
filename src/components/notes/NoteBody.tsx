@@ -3,14 +3,14 @@ import type { NostrEvent } from '@nostrify/nostrify';
 import { nip19 } from 'nostr-tools';
 import { FileQuestion, FileText, Film, Clock, Ban } from 'lucide-react';
 import { NoteContent } from '@/components/NoteContent';
-import { ZapGoalCard } from '@/components/ZapGoalCard';
+import { LinkedZapGoal, ZapGoalCard } from '@/components/ZapGoalCard';
 import { HighlightCard } from '@/components/HighlightCard';
 import { CodeSnippetCard } from '@/components/CodeSnippetCard';
 import { SNIPPET_KIND } from '@/lib/nipc0';
 import { ListingCard } from '@/components/market/ListingCard';
 import { LISTING_DRAFT_KIND, LISTING_KIND, parseListing } from '@/lib/nip99';
 import { HIGHLIGHT_KIND } from '@/lib/nip84';
-import { GOAL_KIND } from '@/lib/nip75';
+import { GOAL_KIND, linkedGoal } from '@/lib/nip75';
 import { StructuredPayload } from '@/components/notes/StructuredPayload';
 import { PollContent } from '@/components/notes/PollContent';
 import { parsePoll } from '@/lib/poll';
@@ -84,7 +84,23 @@ export function NoteBody({ event, className }: NoteBodyProps) {
 
   switch (renderKind) {
     case 'text':
-      return <NoteContent event={event} className={className} />;
+      /**
+       * A note that announces a goal shows the goal under it.
+       *
+       * This is how a goal actually gets funded. Almost nobody zaps a kind
+       * 9041 directly — it is the note that appears in a feed — so the note
+       * carries a `goal` tag, the bar appears with it, and the zaps on the
+       * note count toward it. Without this the note read as an ordinary post
+       * asking for money with no way to see how far along it was.
+       */
+      return linkedGoal(event) ? (
+        <div className={cn('space-y-3', className)}>
+          <NoteContent event={event} />
+          <LinkedZapGoal event={event} />
+        </div>
+      ) : (
+        <NoteContent event={event} className={className} />
+      );
 
     case 'structured':
       return (
