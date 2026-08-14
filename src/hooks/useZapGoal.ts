@@ -33,6 +33,15 @@ export interface GoalTallyOptions {
    * one person entitled to make it: the goal is theirs, and so is the note.
    */
   announcedBy?: string;
+  /**
+   * Where to look for the goal itself, from a `goal` tag's relay hint.
+   *
+   * Often the only thing that says where a goal lives. An event linking to a
+   * goal travels far beyond the relays that hold it, so a reader who finds the
+   * link on one relay has no other way to reach the goal on another — and a
+   * goal that cannot be fetched renders as nothing at all.
+   */
+  relay?: string;
 }
 
 /**
@@ -51,11 +60,11 @@ export interface GoalTallyOptions {
  * publish, and this one drives a progress bar about money.
  */
 export function useZapGoal(
-  goalEvent: { id: string } | undefined,
+  goalEvent: NostrEvent | { id: string } | undefined,
   options: GoalTallyOptions = {}
 ) {
   const { nostr } = useNostr();
-  const { announcedBy } = options;
+  const { announcedBy, relay } = options;
 
   return useQuery<{
     goal: ZapGoal;
@@ -65,12 +74,37 @@ export function useZapGoal(
   } | null>({
     queryKey: ['zap-goal', goalEvent?.id ?? '', announcedBy ?? ''],
     queryFn: async ({ signal }) => {
-      const timeout = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
+      const timeout = AbortSignal.any([signal, AbortSignal.timeout(6000)]);
 
-      const [event] = await nostr.query(
-        [{ ids: [goalEvent!.id], kinds: [GOAL_KIND], limit: 1 }],
-        { signal: timeout }
-      );
+      /**
+       * The goal we were handed, when we were handed one.
+       *
+       * Most callers already have it — a card in a feed is rendering the very
+       * event it passes in — and re-fetching it meant the card vanished
+       * whenever the reader's relays were slow to hand back an event that was
+       * already on screen. Only a `goal` tag's bare id needs looking up, and
+       * that lookup asks the hint first.
+       */
+      const known =
+        goalEvent && 'kind' in goalEvent ? (goalEvent as NostrEvent) : null;
+
+      const event =
+        known ??
+        (
+          await (relay ? nostr.group([relay]) : nostr)
+            .query([{ ids: [goalEvent!.id], kinds: [GOAL_KIND], limit: 1 }], {
+              signal: timeout,
+            })
+            .catch(() => [] as NostrEvent[])
+        )[0] ??
+        // The hint may be down, or wrong, or the goal may have spread past it
+        (
+          await nostr
+            .query([{ ids: [goalEvent!.id], kinds: [GOAL_KIND], limit: 1 }], {
+              signal: timeout,
+            })
+            .catch(() => [] as NostrEvent[])
+        )[0];
 
       const goal = event ? parseZapGoal(event) : null;
       if (!goal) return null;
@@ -92,21 +126,43 @@ export function useZapGoal(
         limit: 500,
       };
 
-      /*
-       * Both sources in parallel, and a failure of one is not a failure of
-       * the tally. `.catch(() => [])` on a single query used to make an
-       * unreachable relay indistinguishable from a goal nobody had funded —
-       * the bar read 0% either way, with nothing to say which.
+      /**
+       * One request per relay, and every answer kept.
+       *
+       * This used to be two: the reader's pool, and a single group query
+       * across all of the goal's relays at once. A group waits for the whole
+       * set, so one relay that never answers took the request past its
+       * deadline and the abort threw away the receipts the other four had
+       * already returned — a goal whose relay list included anything slow
+       * read zero no matter how well funded it was. Asked separately, a relay
+       * can only lose its own answer.
+       *
+       * The reader's pool is in the list because a receipt may be sitting on
+       * it whether or not the sender honoured the `relays` MUST, and finding
+       * the same receipt twice costs nothing: the total is deduplicated on the
+       * receipt id.
        */
-      const [fromGoal, fromReader] = await Promise.all([
-        nostr
-          .group(goal.relays)
-          .query([filter], { signal: timeout })
-          .catch(() => null),
-        nostr.query([filter], { signal: timeout }).catch(() => null),
-      ]);
+      const sources = [
+        nostr,
+        ...goal.relays.map((url) => nostr.group([url])),
+      ];
 
-      const receipts = [...(fromGoal ?? []), ...(fromReader ?? [])];
+      const answers = await Promise.allSettled(
+        sources.map((source) => source.query([filter], { signal: timeout }))
+      );
+
+      const receipts = answers.flatMap((answer) =>
+        answer.status === 'fulfilled' ? answer.value : []
+      );
+
+      /*
+       * Only when nothing at all came back. "0 of 1M sats" reads identically
+       * whether nobody has zapped or nothing could be asked, and one of those
+       * is a fact about the goal while the other is a fact about the network.
+       */
+      const unreachable = answers.every(
+        (answer) => answer.status === 'rejected'
+      );
 
       /**
        * The author, plus anyone the goal redirects its money to.
@@ -134,11 +190,7 @@ export function useZapGoal(
         createdAt: zapper.at,
       }));
 
-      return {
-        goal,
-        progress: goalProgress(goal, counted),
-        unreachable: fromGoal === null && fromReader === null,
-      };
+      return { goal, progress: goalProgress(goal, counted), unreachable };
     },
     enabled: !!goalEvent?.id,
     // Short, because somebody who has just zapped a goal is watching the bar

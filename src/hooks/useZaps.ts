@@ -329,13 +329,26 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
       let linkedRelays: string[] = [];
 
       if (link) {
-        const source = link.relay ? nostr.group([link.relay]) : nostr;
-        const [event] = await source
-          .query([{ ids: [link.id], kinds: [GOAL_KIND], limit: 1 }], {
-            signal: AbortSignal.timeout(4000),
-          })
-          .catch(() => [] as NostrEvent[]);
+        const find = (source: { query: typeof nostr.query }) =>
+          source
+            .query([{ ids: [link.id], kinds: [GOAL_KIND], limit: 1 }], {
+              signal: AbortSignal.timeout(4000),
+            })
+            .catch(() => [] as NostrEvent[]);
 
+        /*
+         * The hint and the reader's own relays, not one or the other. Naming
+         * the goal's relays is a MUST, and a hint that happened to be down
+         * used to mean the zap went out without them — money that leaves a
+         * wallet and lands where the goal's tally will never look. Both are
+         * asked, so it takes two failures rather than one to lose them.
+         */
+        const [hinted, own] = await Promise.all([
+          link.relay ? find(nostr.group([link.relay])) : Promise.resolve([]),
+          find(nostr),
+        ]);
+
+        const event = hinted[0] ?? own[0];
         linkedRelays = event ? (parseZapGoal(event)?.relays ?? []) : [];
       }
 

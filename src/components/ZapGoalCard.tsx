@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { nip19 } from 'nostr-tools';
 import type { NostrEvent } from '@nostrify/nostrify';
 import {
   CheckCircle2,
@@ -262,8 +264,45 @@ function GoalBody({
             </span>
           </a>
         )}
+
+        {/*
+          NIP-75's other link: "The goal MAY include an `r` or `a` tag linking
+          to a URL or addressable event." The `a` was parsed and then dropped
+          on the floor, so a goal raising for a specific article showed no way
+          to reach the article.
+        */}
+        <GoalAddressLink pointer={goal.addressPointer} />
       </CardContent>
     </Card>
+  );
+}
+
+/** The addressable event a goal is raising for, as a link to it. */
+function GoalAddressLink({ pointer }: { pointer?: string }) {
+  if (!pointer) return null;
+
+  const [kind, pubkey, ...rest] = pointer.split(':');
+  const identifier = rest.join(':');
+
+  // A coordinate that is not one is not worth a dead link
+  if (!/^\d+$/.test(kind ?? '') || !/^[0-9a-f]{64}$/i.test(pubkey ?? '')) {
+    return null;
+  }
+
+  const naddr = nip19.naddrEncode({
+    kind: Number(kind),
+    pubkey,
+    identifier,
+  });
+
+  return (
+    <Link
+      to={`/${naddr}`}
+      className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+    >
+      <LinkIcon className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">What this is for</span>
+    </Link>
   );
 }
 
@@ -289,6 +328,7 @@ export function LinkedZapGoal({
    */
   const { data } = useZapGoal(link ? { id: link.id } : undefined, {
     announcedBy: event.id,
+    relay: link?.relay,
   });
 
   if (!link || !data) return null;
