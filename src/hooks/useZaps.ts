@@ -26,6 +26,7 @@ import {
   buildZapRequest,
   describeZapTarget,
   lightningAddressUrl,
+  lnurlEncode,
   zapCallbackUrl,
 } from '@/lib/zapRequest';
 
@@ -359,10 +360,19 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
        */
       let bolt11: string;
 
+      /*
+       * NIP-57 recommends this on the request and on the callback, and has
+       * receivers check the two agree. Encoded from the endpoint we actually
+       * resolved, so it says what was really asked rather than what a profile
+       * claims.
+       */
+      const lnurl = lnurlEncode(endpoint) ?? undefined;
+
       if (payMetadata.allowsNostr) {
         const request = buildZapRequest({
           recipientPubkey: payeePubkey,
           amountMsat,
+          lnurl,
           relays,
           requiredRelays: goal?.relays ?? linkedRelays,
           comment,
@@ -398,7 +408,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
         }
 
         const response = await fetch(
-          zapCallbackUrl(payMetadata.callback, amountMsat, signed),
+          zapCallbackUrl(payMetadata.callback, amountMsat, signed, lnurl),
           { signal: AbortSignal.timeout(15000) }
         );
         const body = await response.json();

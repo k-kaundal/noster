@@ -10,7 +10,9 @@ import { LnbitsError, lnbitsRequest, withExtension } from '@/lib/lnbits';
 import {
   ADDRESS_DOMAIN,
   buildPayLinkBody,
+  buildZapsUpdateBody,
   linkAddress,
+  payLinkPublishesZaps,
 } from '@/lib/lightningAddress';
 import { listAddresses, pickPrimaryLink } from '@/lib/identity';
 import { generateFreeName, mayClaim } from '@/lib/freeAddress';
@@ -213,6 +215,52 @@ export function useLightningAddress({
     },
   });
 
+  /**
+   * Addresses that take payments but publish no zap receipt.
+   *
+   * The failure with no symptom at the wallet: sats arrive exactly as they
+   * should, and nothing anywhere on Nostr ever shows a zap — not the count on
+   * a post, not a fundraising goal's total — because all of those are counted
+   * from receipts and no receipt is written. See `payLinkPublishesZaps`.
+   */
+  const silentAddresses = useMemo(
+    () => (links.data ?? []).filter((entry) => !payLinkPublishesZaps(entry)),
+    [links.data]
+  );
+
+  const enableZaps = useMutation({
+    mutationFn: async (chosen?: PayLink) => {
+      if (!wallet) throw new Error('Connect your wallet first');
+
+      const targets = chosen ? [chosen] : silentAddresses;
+      if (!targets.length) return;
+
+      for (const entry of targets) {
+        await withExtension('lnurlp', token, () =>
+          lnbitsRequest<PayLink>(`/lnurlp/api/v1/links/${entry.id}`, {
+            method: 'PUT',
+            apiKey: wallet.adminkey,
+            body: buildZapsUpdateBody(entry),
+          })
+        );
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lnurlp-links'] });
+      toast({
+        title: 'Zaps switched on',
+        description: 'New zaps to this address will show up on Nostr.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Could not switch zaps on',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   /* There is deliberately no way to delete an address.
    *
    * `DELETE /lnurlp/api/v1/links/{id}` does not merely stop a name resolving —
@@ -301,6 +349,13 @@ export function useLightningAddress({
     /** Wallet id to name, so an address can say what it pays into. */
     walletNames,
     isLoading: links.isLoading,
+    /**
+     * Addresses that receive money but produce no zap receipt, so nothing
+     * they are paid ever appears as a zap anywhere.
+     */
+    silentAddresses,
+    enableZaps: enableZaps.mutateAsync,
+    isEnablingZaps: enableZaps.isPending,
     /** Whether the profile already advertises this address for zaps. */
     isOnProfile: !!address && metadata?.lud16 === address,
     profileAddress: metadata?.lud16,
@@ -317,6 +372,9 @@ export function useLightningAddress({
     addresses,
     walletNames,
     links.isLoading,
+    silentAddresses,
+    enableZaps.mutateAsync,
+    enableZaps.isPending,
     metadata?.lud16,
     metadata?.name,
     metadata?.display_name,

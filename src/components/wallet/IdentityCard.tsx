@@ -136,6 +136,39 @@ function CurrentIdentity() {
         </p>
       )}
 
+      {/*
+        The failure that looks like nothing is wrong. Money arrives, so the
+        wallet says everything works — while no zap receipt is ever published,
+        and so no post ever shows a zap count and no fundraising goal ever
+        moves. Worth its own notice rather than a line in a list, because
+        nothing else on this screen would ever hint at it.
+      */}
+      {lightning.silentAddresses.length > 0 && (
+        <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/8 p-4">
+          <p className="text-sm font-medium text-warning-strong">
+            {lightning.silentAddresses.length === 1
+              ? "This address doesn't publish zaps."
+              : "These addresses don't publish zaps."}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Payments arrive normally, but nothing you're paid shows up as a zap
+            — not the count on your posts, not a goal's total. Nostr counts
+            zaps from receipts, and this address publishes none.
+          </p>
+          <Button
+            size="sm"
+            onClick={() => void lightning.enableZaps(undefined).catch(() => {})}
+            disabled={lightning.isEnablingZaps}
+            className="w-full"
+          >
+            {lightning.isEnablingZaps && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            Switch zaps on
+          </Button>
+        </div>
+      )}
+
       {status.mismatched && (
         <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
           <p className="mb-3 text-sm text-foreground">

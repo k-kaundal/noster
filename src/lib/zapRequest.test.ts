@@ -7,6 +7,7 @@ import {
   buildZapRequest,
   describeZapTarget,
   lightningAddressUrl,
+  lnurlEncode,
   zapCallbackUrl,
 } from './zapRequest';
 
@@ -143,6 +144,68 @@ describe('buildZapRequest', () => {
     const request = buildZapRequest({ ...base, lnurl: 'lnurl1abc' });
 
     expect(request.tags).toContainEqual(['lnurl', 'lnurl1abc']);
+  });
+
+  describe('a goal the target links to', () => {
+    const GOAL = 'f'.repeat(64);
+    const NOTE = 'd'.repeat(64);
+
+    it('never emits two e tags, whatever the goal says', () => {
+      /**
+       * NIP-57 Appendix D is a rule servers are told to enforce: a zap request
+       * "MUST have 0 or 1 `e` tags". Naming the note and the goal made two,
+       * which a conforming LNURL server may refuse outright — turning "fund
+       * this goal" into a zap that never happens.
+       *
+       * The note is the one kept. `useZapGoal` counts receipts on an
+       * announcing event toward its goal, because a client that has never
+       * heard of NIP-75 can only ever tag the note in front of it.
+       */
+      const request = buildZapRequest({
+        ...base,
+        eventId: NOTE,
+        goalEventId: GOAL,
+      });
+
+      const eTags = request.tags.filter(([name]) => name === 'e');
+
+      expect(eTags).toEqual([['e', NOTE]]);
+    });
+
+    it('names the goal when the target is addressable', () => {
+      /**
+       * The case NIP-75 actually describes, and it does not conflict: an
+       * addressable target is named by `a`, so the goal is the only `e` there
+       * is and the count stays within Appendix D.
+       */
+      const request = buildZapRequest({
+        ...base,
+        addressPointer: `30023:${ALICE}:my-post`,
+        goalEventId: GOAL,
+      });
+
+      expect(request.tags.filter(([name]) => name === 'e')).toEqual([
+        ['e', GOAL],
+      ]);
+    });
+  });
+});
+
+describe('lnurlEncode', () => {
+  it('encodes a pay endpoint as a bech32 lnurl', () => {
+    const encoded = lnurlEncode(
+      'https://ln.example.com/.well-known/lnurlp/alice'
+    );
+
+    expect(encoded?.startsWith('lnurl1')).toBe(true);
+  });
+
+  it('carries a URL far past bech32 default length limit', () => {
+    // The 90-character default is for addresses; a real lnurlp URL blows
+    // through it, and a throw here would take the whole zap down with it
+    const long = `https://example.com/.well-known/lnurlp/${'a'.repeat(120)}`;
+
+    expect(lnurlEncode(long)).not.toBeNull();
   });
 });
 

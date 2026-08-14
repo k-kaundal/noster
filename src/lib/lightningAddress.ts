@@ -233,6 +233,61 @@ export function buildPayLinkBody(input: {
   };
 }
 
+/** The shape of a pay link, as much of it as repairing one needs. */
+export interface PayLinkFields {
+  id: string;
+  wallet: string;
+  description?: string;
+  username?: string;
+  domain?: string | null;
+  zaps?: boolean;
+  disposable?: boolean;
+  min?: number;
+  max?: number;
+  comment_chars?: number;
+}
+
+/**
+ * Whether an address is one that zaps will never appear from.
+ *
+ * `zaps` is what makes LNbits advertise `allowsNostr` and publish a kind 9735
+ * after a payment. Without it the money still arrives — so nothing looks
+ * broken to the person being paid — but no receipt is ever written, and a
+ * receipt is the only evidence a zap happened. Every count on Nostr is built
+ * from receipts, so an address in this state reads as zero zaps forever, on
+ * every post, in every client, including the totals a fundraising goal adds up.
+ *
+ * New addresses have been created with it on. Ones made before that, or made
+ * anywhere else, have not — and this flag has been sitting in the API response
+ * unread the whole time.
+ */
+export function payLinkPublishesZaps(link: PayLinkFields): boolean {
+  return link.zaps === true;
+}
+
+/**
+ * The body that turns zaps on for an existing pay link.
+ *
+ * Every field is sent back, not just the one being changed: LNbits' `PUT`
+ * replaces the link rather than patching it, so anything omitted reverts to an
+ * API default — and two of those defaults break an address outright.
+ * `disposable` defaults to true, which makes it single-use, and
+ * `comment_chars` to 0, which silently discards the message on every zap.
+ */
+export function buildZapsUpdateBody(link: PayLinkFields) {
+  return {
+    description: link.description || 'NostrFeed',
+    wallet: link.wallet,
+    ...(link.username ? { username: link.username } : {}),
+    ...(link.domain ? { domain: link.domain } : {}),
+    min: link.min ?? 1,
+    max: link.max ?? 10_000_000,
+    zaps: true,
+    comment_chars: link.comment_chars ?? 255,
+    disposable: link.disposable ?? false,
+  };
+}
+
 /** A lightning address someone holds somewhere other than here. */
 export interface ExternalAddress {
   /** The part before the `@`. */
