@@ -336,9 +336,14 @@ export function Profile({ pubkey }: ProfileProps) {
           <ReportNotice pubkey={pubkey} />
 
           {metadata?.about && (
-            /* The bio is plaintext, so it gets the same link/mention treatment as notes */
+            /*
+              The bio is plaintext, so it gets the same link/mention treatment
+              as notes — minus the link card, since the website row directly
+              below already shows that URL and the card made it three copies.
+            */
             <NoteContent
               className="text-sm"
+              linkCard={false}
               event={{
                 id: `${pubkey}-about`,
                 pubkey,

@@ -301,6 +301,8 @@ function MessageBubble({
         >
           {/* Links and mentions stay live inside a message */}
           <NoteContent
+            // A full-width card is bigger than most messages it would sit under
+            linkCard={false}
             event={{
               id: message.id,
               pubkey: message.pubkey,

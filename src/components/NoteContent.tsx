@@ -12,6 +12,16 @@ import { cn } from '@/lib/utils';
 
 interface NoteContentProps {
   event: NostrEvent;
+  /**
+   * Whether a link in the text gets its own card underneath.
+   *
+   * On by default, because in a note the link is usually the point. Off
+   * wherever the surrounding screen already shows the same link its own way —
+   * a profile bio sits directly above a website row, so the card there is the
+   * third copy of one URL — or where a full-width card would dwarf what it
+   * sits under, as in a chat bubble or a compose preview.
+   */
+  linkCard?: boolean;
   className?: string;
 }
 
@@ -47,7 +57,11 @@ function classifyUrl(url: string): Media | null {
  * hashtags become links, while images and videos are lifted out of the text
  * and embedded below it so the same URL is never shown twice.
  */
-export function NoteContent({ event, className }: NoteContentProps) {
+export function NoteContent({
+  event,
+  className,
+  linkCard = true,
+}: NoteContentProps) {
   const { inline, media, link } = useMemo(() => {
     const text = event.content.trim();
     const inline: React.ReactNode[] = [];
@@ -185,7 +199,7 @@ export function NoteContent({ event, className }: NoteContentProps) {
         picture already has something to look at, so the card is skipped there
         rather than stacking two blocks under one line of writing.
       */}
-      {link && media.length === 0 && <LinkCard url={link} />}
+      {linkCard && link && media.length === 0 && <LinkCard url={link} />}
     </div>
   );
 }
