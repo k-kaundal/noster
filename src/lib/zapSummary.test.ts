@@ -239,3 +239,62 @@ describe('describeZapSummary', () => {
     );
   });
 });
+
+
+/**
+ * A goal can redirect its money.
+ *
+ * NIP-75 lets a goal carry `zap` tags naming beneficiaries, and the receipt
+ * then names one of those rather than the goal's author. Checking against the
+ * author alone rejected every such receipt, so a goal that had really been
+ * funded sat at zero with nothing to say why.
+ */
+describe('summarizeZaps with several acceptable recipients', () => {
+  const BENEFICIARY = 'e'.repeat(64);
+
+  it('counts a zap that named a beneficiary rather than the author', () => {
+    const paid = receipt({ bolt11: ONE_K, recipient: BENEFICIARY });
+
+    expect(
+      summarizeZaps([paid], {
+        eventId: NOTE,
+        recipientPubkey: [AUTHOR, BENEFICIARY],
+      }).totalSats
+    ).toBe(1000);
+  });
+
+  it('still rejects one that named nobody on the list', () => {
+    const elsewhere = receipt({ bolt11: ONE_K, recipient: 'f'.repeat(64) });
+
+    expect(
+      summarizeZaps([elsewhere], {
+        eventId: NOTE,
+        recipientPubkey: [AUTHOR, BENEFICIARY],
+      }).totalSats
+    ).toBe(0);
+  });
+
+  it('takes a single pubkey exactly as before', () => {
+    const paid = receipt({ bolt11: ONE_K });
+
+    expect(
+      summarizeZaps([paid], { eventId: NOTE, recipientPubkey: AUTHOR })
+        .totalSats
+    ).toBe(1000);
+  });
+
+  it('counts a receipt found on two relays once', () => {
+    /**
+     * Reading the goal's relays and the reader's own means the same receipt
+     * arrives twice, and a total counted per copy is a total doubled.
+     */
+    const paid = receipt({ bolt11: ONE_K, recipient: BENEFICIARY });
+
+    expect(
+      summarizeZaps([paid, paid], {
+        eventId: NOTE,
+        recipientPubkey: [AUTHOR, BENEFICIARY],
+      })
+    ).toMatchObject({ totalSats: 1000, count: 1 });
+  });
+});

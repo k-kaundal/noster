@@ -54,6 +54,14 @@ function GoalBody({ goal, className }: { goal: ZapGoal; className?: string }) {
 
   if (!progress) return null;
 
+  /*
+   * Said out loud, because "0 of 1M sats" looks identical whether nobody has
+   * zapped or nothing could be asked. One of those is a fact about the goal
+   * and the other is a fact about the network, and a bar that cannot tell
+   * them apart quietly reports the wrong one.
+   */
+  const unreachable = data?.unreachable ?? false;
+
   const raisedSats = Math.round(progress.raisedMsat / 1000);
   const targetSats = Math.round(progress.targetMsat / 1000);
 
@@ -112,6 +120,13 @@ function GoalBody({ goal, className }: { goal: ZapGoal; className?: string }) {
             </span>
             <span className="text-muted-foreground">{progress.percent}%</span>
           </div>
+
+          {unreachable && (
+            <p className="text-xs text-muted-foreground">
+              Couldn't reach the relays this goal counts from, so the total may
+              be behind.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">

@@ -4,7 +4,8 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useRelays } from '@/hooks/useRelays';
 import { useToast } from '@/hooks/useToast';
-import { ZAP_RECEIPT_KIND, parseZapReceipt } from '@/lib/zap';
+import { ZAP_RECEIPT_KIND } from '@/lib/zap';
+import { summarizeZaps } from '@/lib/zapSummary';
 import {
   GOAL_KIND,
   buildGoalTags,
@@ -18,16 +19,27 @@ import {
 /**
  * A goal and how much it has raised.
  *
- * The tally is read from the relays the goal itself names, not from the
- * reader's. That is the whole mechanism: a goal declares where its receipts
- * live so that everyone counting arrives at the same number, and counting from
- * somewhere else produces a total that is quietly short by whatever those
- * relays never saw.
+ * Counted from the goal's own relays *and* the reader's, together. The goal's
+ * are what the spec names and what makes two people arrive at the same number,
+ * but reading only those is why a funded goal could sit at zero: those relays
+ * may be unreachable from here, or the sender's client may not have honoured
+ * the `relays` MUST — while the receipt is sitting on the reader's own relays,
+ * which the zap request also lists. Asking both can only find more, and the
+ * total is deduplicated on the receipt id so finding the same one twice does
+ * not count it twice.
+ *
+ * Every receipt is then checked. A kind 9735 is an ordinary event anybody can
+ * publish, and this one drives a progress bar about money.
  */
 export function useZapGoal(goalEvent: { id: string } | undefined) {
   const { nostr } = useNostr();
 
-  return useQuery<{ goal: ZapGoal; progress: GoalProgress } | null>({
+  return useQuery<{
+    goal: ZapGoal;
+    progress: GoalProgress;
+    /** True when no relay answered, which is not the same as no zaps. */
+    unreachable: boolean;
+  } | null>({
     queryKey: ['zap-goal', goalEvent?.id ?? ''],
     queryFn: async ({ signal }) => {
       const timeout = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
@@ -40,32 +52,59 @@ export function useZapGoal(goalEvent: { id: string } | undefined) {
       const goal = event ? parseZapGoal(event) : null;
       if (!goal) return null;
 
-      /**
-       * Asked of the goal's own relays specifically. `NPool.group` opens
-       * exactly these rather than routing through the reader's set, which is
-       * what makes two people looking at the same goal see the same total.
+      const filter = {
+        kinds: [ZAP_RECEIPT_KIND],
+        '#e': [goal.event.id],
+        limit: 500,
+      };
+
+      /*
+       * Both sources in parallel, and a failure of one is not a failure of
+       * the tally. `.catch(() => [])` on a single query used to make an
+       * unreachable relay indistinguishable from a goal nobody had funded —
+       * the bar read 0% either way, with nothing to say which.
        */
-      const receipts = await nostr
-        .group(goal.relays)
-        .query([{ kinds: [ZAP_RECEIPT_KIND], '#e': [goal.event.id], limit: 500 }], {
-          signal: timeout,
-        })
-        .catch(() => [] as never[]);
+      const [fromGoal, fromReader] = await Promise.all([
+        nostr
+          .group(goal.relays)
+          .query([filter], { signal: timeout })
+          .catch(() => null),
+        nostr.query([filter], { signal: timeout }).catch(() => null),
+      ]);
 
-      const parsed = receipts.map((receipt) => {
-        const zap = parseZapReceipt(receipt);
+      const receipts = [...(fromGoal ?? []), ...(fromReader ?? [])];
 
-        return {
-          amountMsat: (zap.amountSats ?? 0) * 1000,
-          senderPubkey: zap.senderPubkey ?? undefined,
-          createdAt: receipt.created_at,
-        };
+      /**
+       * The author, plus anyone the goal redirects its money to.
+       *
+       * A NIP-75 goal can raise for somebody else entirely through `zap`
+       * tags, and the receipt then names that person rather than the author —
+       * so checking against the author alone would reject every zap to such a
+       * goal and report zero for a goal that had been funded.
+       */
+      const summary = summarizeZaps(receipts, {
+        eventId: goal.event.id,
+        recipientPubkey: [
+          goal.event.pubkey,
+          ...goal.beneficiaries.map((who) => who.pubkey),
+        ],
       });
 
-      return { goal, progress: goalProgress(goal, parsed) };
+      const counted = summary.zappers.map((zapper) => ({
+        amountMsat: zapper.sats * 1000,
+        senderPubkey: zapper.pubkey,
+        createdAt: zapper.at,
+      }));
+
+      return {
+        goal,
+        progress: goalProgress(goal, counted),
+        unreachable: fromGoal === null && fromReader === null,
+      };
     },
     enabled: !!goalEvent?.id,
-    staleTime: 60_000,
+    // Short, because somebody who has just zapped a goal is watching the bar
+    staleTime: 15_000,
   });
 }
 
