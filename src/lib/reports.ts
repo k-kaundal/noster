@@ -108,6 +108,18 @@ export interface ReportInput {
  * only a `p` tag can act on the account; seeing an `e` tag too tells them
  * which post prompted it.
  *
+ * The type goes on the tag "being reported", and only that one. This used to
+ * be stamped on `p` as well, which quietly turned "this post is nudity" into
+ * "this account is nudity" — two very different claims, and the spec's own
+ * example leaves `p` bare for exactly that reason:
+ *
+ *     ["e", "<eventId>", "illegal"],
+ *     ["p", "<pubkey>"]
+ *
+ * It mattered beyond tidiness: a profile-level claim is what the NIP's
+ * suggested blur reads, so three friends reporting three separate posts used
+ * to cover everything the author had ever posted.
+ *
  * A blob report is the precise form: "this image is malware", not "this person
  * posts malware". The spec makes the `e` tag mandatory whenever `x` is present,
  * because a hash with no event is unresolvable — nobody can find the file to
@@ -115,16 +127,27 @@ export interface ReportInput {
  * report that cannot be checked.
  */
 export function buildReportTags(input: ReportInput): string[][] {
-  const tags: string[][] = [['p', input.pubkey, input.type]];
+  const hash = input.eventId ? input.blob?.hash?.trim().toLowerCase() : undefined;
+
+  /*
+   * Bare whenever something more specific is named. A report with no `e` is a
+   * report about the person, and then `p` is the tag being reported.
+   */
+  const tags: string[][] = [
+    input.eventId ? ['p', input.pubkey] : ['p', input.pubkey, input.type],
+  ];
 
   if (input.eventId) {
+    /*
+     * Typed even when a blob is named, following the spec's malware example,
+     * which types both: the hash says which file, the event says where to
+     * find it, and a moderator reaching either should learn what the claim is.
+     */
     tags.push(['e', input.eventId, input.type]);
 
     if (typeof input.kind === 'number') {
       tags.push(['k', String(input.kind)]);
     }
-
-    const hash = input.blob?.hash?.trim().toLowerCase();
 
     if (hash) {
       tags.push(['x', hash, input.type]);
@@ -209,11 +232,26 @@ export function reportableBlobs(event: NostrEvent): ReportBlob[] {
 export interface ParsedReport {
   event: NostrEvent;
   reporter: string;
-  /** The reported account. Always present — a report without one is not one. */
-  pubkey: string;
+  /**
+   * The reported account.
+   *
+   * The spec makes `p` a MUST, and its own malware example then omits it — so
+   * this is optional on the way in. A report naming only a note is still
+   * evidence about that note.
+   */
+  pubkey?: string;
   eventId?: string;
   blobHash?: string;
   type: ReportType;
+  /**
+   * Whether this is a claim about the account rather than one of its posts.
+   *
+   * The distinction the NIP's client-behavior section rests on: "if 3+ of your
+   * friends report a *profile* for nudity". Three reports of three different
+   * posts are not that, and treating them as one covers everything an author
+   * has ever posted on the strength of three posts.
+   */
+  aboutProfile: boolean;
   /** The reporter's own words, when they wrote any. */
   note?: string;
 }
@@ -232,8 +270,9 @@ function readType(value: string | undefined): ReportType {
  * example types `p`. Reading only one position would silently mis-file half
  * the reports on the network as "other".
  *
- * A report of its own author is dropped. That is either a mistake or an
- * attempt to pad somebody else's count, and it is never information.
+ * A report naming no account at all is still read. `p` is a MUST that the
+ * spec's own malware example does not keep, so requiring it would throw away
+ * exactly the reports the NIP demonstrates.
  */
 export function parseReport(event: NostrEvent): ParsedReport | null {
   if (event.kind !== REPORT_KIND) return null;
@@ -258,8 +297,14 @@ export function parseReport(event: NostrEvent): ParsedReport | null {
     }
   }
 
-  if (!pubkey) return null;
-  if (pubkey === event.pubkey) return null;
+  // Something has to be reported, even if the spec's required `p` is missing
+  if (!pubkey && !eventId && !blobHash) return null;
+
+  /*
+   * A report of its own author is dropped. That is either a mistake or an
+   * attempt to pad somebody else's count, and it is never information.
+   */
+  if (pubkey && pubkey === event.pubkey) return null;
 
   return {
     event,
@@ -268,14 +313,25 @@ export function parseReport(event: NostrEvent): ParsedReport | null {
     eventId,
     blobHash,
     type: type ?? 'other',
+    aboutProfile: !eventId && !blobHash,
     note: event.content.trim() || undefined,
   };
 }
 
 /** Reports about one target, counted by distinct reporter. */
 export interface ReportSummary {
+  /** What this summary is about, which decides how it may be acted on. */
+  scope: 'pubkey' | 'event' | 'blob';
   /** Distinct reporters per type. */
   counts: Partial<Record<ReportType, number>>;
+  /**
+   * The same, counting only reports about the account itself.
+   *
+   * Empty for an event or blob summary, where every report named the thing it
+   * is keyed by. It exists so the one automatic response in the NIP can ask
+   * the question the NIP actually asks — see `shouldBlurMedia`.
+   */
+  profileCounts: Partial<Record<ReportType, number>>;
   /** Distinct reporters overall — never the sum of `counts`. */
   reporters: string[];
   /** The loudest type, by reporter count. */
@@ -297,6 +353,7 @@ export const REPORT_THRESHOLD = 3;
 
 class Tally {
   readonly perType = new Map<ReportType, Set<string>>();
+  readonly perTypeAboutProfile = new Map<ReportType, Set<string>>();
   readonly all = new Set<string>();
   readonly notes: string[] = [];
 
@@ -315,17 +372,28 @@ class Tally {
       if (report.note) this.notes.push(report.note);
     }
 
+    if (report.aboutProfile) {
+      const profile =
+        this.perTypeAboutProfile.get(report.type) ?? new Set<string>();
+      profile.add(report.reporter);
+      this.perTypeAboutProfile.set(report.type, profile);
+    }
+
     this.all.add(report.reporter);
   }
 
-  summarise(): ReportSummary {
-    const counts: Partial<Record<ReportType, number>> = {};
+  summarise(scope: ReportSummary['scope']): ReportSummary {
+    const tally = (source: Map<ReportType, Set<string>>) => {
+      const counts: Partial<Record<ReportType, number>> = {};
+      for (const [type, reporters] of source) counts[type] = reporters.size;
+      return counts;
+    };
+
+    const counts = tally(this.perType);
     let leading: ReportType = 'other';
     let best = 0;
 
     for (const [type, reporters] of this.perType) {
-      counts[type] = reporters.size;
-
       if (reporters.size > best) {
         best = reporters.size;
         leading = type;
@@ -333,7 +401,9 @@ class Tally {
     }
 
     return {
+      scope,
       counts,
+      profileCounts: tally(this.perTypeAboutProfile),
       reporters: [...this.all],
       leading,
       notes: this.notes,
@@ -383,18 +453,20 @@ export function indexReports(
     if (!report) continue;
     if (options.viewer && report.pubkey === options.viewer) continue;
 
-    into(byPubkey, report.pubkey, report);
+    // A report may name no account at all — the spec's own malware example
+    // does not, and it is still evidence about the blob and the event
+    if (report.pubkey) into(byPubkey, report.pubkey, report);
     if (report.eventId) into(byEvent, report.eventId, report);
     if (report.blobHash) into(byBlob, report.blobHash, report);
   }
 
-  const collapse = (map: Map<string, Tally>) =>
-    new Map([...map].map(([key, tally]) => [key, tally.summarise()]));
+  const collapse = (map: Map<string, Tally>, scope: ReportSummary['scope']) =>
+    new Map([...map].map(([key, tally]) => [key, tally.summarise(scope)]));
 
   return {
-    byPubkey: collapse(byPubkey),
-    byEvent: collapse(byEvent),
-    byBlob: collapse(byBlob),
+    byPubkey: collapse(byPubkey, 'pubkey'),
+    byEvent: collapse(byEvent, 'event'),
+    byBlob: collapse(byBlob, 'blob'),
   };
 }
 
@@ -414,9 +486,25 @@ export function agreementOn(
  * a click and costs a reader nothing if the reports were wrong; hiding a post
  * or an account on the same evidence would make a gameable signal into a
  * silencing tool, which is exactly what the NIP warns relays away from.
+ *
+ * An account is covered only on reports about the account: "if 3+ of your
+ * friends report a profile for nudity". Reports of particular posts still
+ * cover those posts — they are keyed by event, and the summary for an event
+ * has every one of its reports in `counts` — but three reports of three posts
+ * no longer blur a decade of unrelated ones.
  */
 export function shouldBlurMedia(summary: ReportSummary | undefined): boolean {
-  return agreementOn(summary, 'nudity') >= REPORT_THRESHOLD;
+  if (!summary) return false;
+
+  /*
+   * An account is judged on what was said about the account. An event or a
+   * blob is judged on everything, because every report in those summaries
+   * named the thing they are keyed by.
+   */
+  const counts =
+    summary.scope === 'pubkey' ? summary.profileCounts : summary.counts;
+
+  return (counts.nudity ?? 0) >= REPORT_THRESHOLD;
 }
 
 /** Whether to say out loud that followed accounts have reported this. */

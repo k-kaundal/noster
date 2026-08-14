@@ -38,7 +38,17 @@ describe('buildReportTags', () => {
     ]);
   });
 
-  it('tags the note as well when one prompted the report', () => {
+  it('types the note and leaves the author untyped', () => {
+    /**
+     * The spec's own shape for a note report:
+     *
+     *     ["e", "<eventId>", "illegal"],
+     *     ["p", "<pubkey>"]
+     *
+     * The type belongs to the tag being reported. Stamping it on `p` too says
+     * the account is illegal rather than the post, which is a different and
+     * much larger claim — and it is the claim the suggested blur reads.
+     */
     const tags = buildReportTags({
       pubkey: THEM,
       eventId: NOTE,
@@ -47,7 +57,7 @@ describe('buildReportTags', () => {
     });
 
     expect(tags).toEqual([
-      ['p', THEM, 'illegal'],
+      ['p', THEM],
       ['e', NOTE, 'illegal'],
       ['k', '1'],
     ]);
@@ -157,8 +167,33 @@ describe('parseReport', () => {
     expect(parseReport(report({ tags: [['p', reporter(1), 'spam']] }))).toBeNull();
   });
 
-  it('ignores an event with no reported pubkey', () => {
-    expect(parseReport(report({ tags: [['e', NOTE, 'spam']] }))).toBeNull();
+  it('reads a report that names a note but no account', () => {
+    /**
+     * `p` is a MUST that the spec's own malware example does not keep, so
+     * requiring it here would throw away exactly the reports the NIP
+     * demonstrates. A report naming a note is still evidence about that note.
+     */
+    const parsed = parseReport(report({ tags: [['e', NOTE, 'spam']] }));
+
+    expect(parsed?.eventId).toBe(NOTE);
+    expect(parsed?.pubkey).toBeUndefined();
+    expect(parsed?.type).toBe('spam');
+  });
+
+  it('ignores an event that reports nothing at all', () => {
+    expect(parseReport(report({ tags: [['k', '1']] }))).toBeNull();
+  });
+
+  it('tells a report about an account from one about a post', () => {
+    expect(
+      parseReport(report({ tags: [['p', THEM, 'nudity']] }))?.aboutProfile
+    ).toBe(true);
+
+    expect(
+      parseReport(
+        report({ tags: [['p', THEM], ['e', NOTE, 'nudity']] })
+      )?.aboutProfile
+    ).toBe(false);
   });
 });
 
@@ -192,6 +227,47 @@ describe('indexReports', () => {
     ];
 
     expect(shouldBlurMedia(indexReports(events).byPubkey.get(THEM))).toBe(false);
+  });
+
+  it('does not blur an account because three of its posts were reported', () => {
+    /**
+     * The NIP is specific about what earns this: "if 3+ of your friends report
+     * a *profile* for nudity". Three reports of three separate posts are three
+     * claims about three posts, and covering everything the author has ever
+     * posted on that basis is a much larger response than any of them asked
+     * for. Each of those posts still comes up covered — see below.
+     */
+    const events = [1, 2, 3].map((n) =>
+      report({
+        id: String(n).repeat(64),
+        pubkey: reporter(n),
+        tags: [
+          ['p', THEM],
+          ['e', String(n).repeat(64), 'nudity'],
+        ],
+      })
+    );
+
+    const index = indexReports(events);
+
+    expect(shouldBlurMedia(index.byPubkey.get(THEM))).toBe(false);
+    // The account is still known to have been reported
+    expect(index.byPubkey.get(THEM)?.counts.nudity).toBe(3);
+  });
+
+  it('still blurs the one post three followed accounts reported', () => {
+    const events = [1, 2, 3].map((n) =>
+      report({
+        id: String(n).repeat(64),
+        pubkey: reporter(n),
+        tags: [
+          ['p', THEM],
+          ['e', NOTE, 'nudity'],
+        ],
+      })
+    );
+
+    expect(shouldBlurMedia(indexReports(events).byEvent.get(NOTE))).toBe(true);
   });
 
   it('leaves the reader out as a target', () => {
