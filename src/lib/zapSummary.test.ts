@@ -222,6 +222,74 @@ describe('summarizeZaps', () => {
     expect(summary.totalSats).toBe(1_000);
     expect(summary.zappers[0].pubkey).toBe(ALICE);
   });
+
+  /**
+   * A NIP-75 goal is funded by zaps that may name either the goal itself or
+   * the note announcing it — the goal is not a thing most clients will zap,
+   * and the note is what people actually see.
+   */
+  describe('several acceptable events', () => {
+    const GOAL = 'f'.repeat(64);
+
+    it('counts a zap that named the goal and one that named the note', () => {
+      const summary = summarizeZaps(
+        [
+          receipt({ senderKey: aliceKey, eventId: GOAL, bolt11: ONE_K }),
+          receipt({ senderKey: bobKey, eventId: NOTE, bolt11: FIVE_HUNDRED }),
+        ],
+        {
+          eventId: [GOAL, NOTE],
+          recipientPubkey: AUTHOR,
+          providerPubkey: PROVIDER,
+        }
+      );
+
+      expect(summary.totalSats).toBe(1_500);
+      expect(summary.count).toBe(2);
+    });
+
+    it('still refuses a zap that named neither', () => {
+      const summary = summarizeZaps(
+        [receipt({ senderKey: aliceKey, eventId: 'b'.repeat(64) })],
+        {
+          eventId: [GOAL, NOTE],
+          recipientPubkey: AUTHOR,
+          providerPubkey: PROVIDER,
+        }
+      );
+
+      expect(summary).toEqual(EMPTY_ZAP_SUMMARY);
+    });
+
+    it('counts a zap to any of several acceptable recipients', () => {
+      // A goal can redirect its money to beneficiaries with `zap` tags, and
+      // the receipt then names one of them rather than the goal's author
+      const BENEFICIARY = 'e'.repeat(64);
+
+      const summary = summarizeZaps(
+        [receipt({ senderKey: aliceKey, recipient: BENEFICIARY })],
+        {
+          eventId: NOTE,
+          recipientPubkey: [AUTHOR, BENEFICIARY],
+          providerPubkey: PROVIDER,
+        }
+      );
+
+      expect(summary.totalSats).toBe(1_000);
+    });
+
+    it('accepts nothing when the list of acceptable recipients is empty', () => {
+      // An empty list is "none of these", not "anybody" — a goal that somehow
+      // named no recipient must not count every receipt on the note
+      const summary = summarizeZaps([receipt({ senderKey: aliceKey })], {
+        eventId: NOTE,
+        recipientPubkey: [],
+        providerPubkey: PROVIDER,
+      });
+
+      expect(summary).toEqual(EMPTY_ZAP_SUMMARY);
+    });
+  });
 });
 
 describe('describeZapSummary', () => {

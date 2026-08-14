@@ -46,8 +46,13 @@ export interface ZapSummaryOptions {
    *
    * Left undefined for an addressable event, which is referenced by
    * coordinate instead — see `address`.
+   *
+   * More than one is allowed, and means "any of these". A NIP-75 goal
+   * announced by a note counts zaps naming either: the `goal` tag is the
+   * author saying zaps on that note are for this goal, and a client that has
+   * never heard of NIP-75 can only tag the note it is looking at.
    */
-  eventId?: string;
+  eventId?: string | string[];
   /**
    * `30023:<pubkey>:<d>` for an addressable event.
    *
@@ -91,22 +96,22 @@ export function summarizeZaps(
   const zappers: Zapper[] = [];
   let totalSats = 0;
 
-  const recipients = Array.isArray(options.recipientPubkey)
-    ? options.recipientPubkey
-    : [options.recipientPubkey];
-
   for (const receipt of receipts) {
     if (seen.has(receipt.id)) continue;
 
-    const valid = recipients.some((recipientPubkey) =>
-      validateZapReceipt(receipt, {
-        // One or the other: an addressable event is named by its coordinate
-        eventId: options.address ? undefined : options.eventId,
-        address: options.address,
-        recipientPubkey,
-        providerPubkey: options.providerPubkey,
-      })
-    );
+    /*
+     * One check per receipt, whatever the number of candidates. This used to
+     * loop, calling `validateZapReceipt` once per acceptable recipient — and
+     * every one of those calls verifies a signature, so a goal with three
+     * beneficiaries verified every receipt four times over.
+     */
+    const valid = validateZapReceipt(receipt, {
+      // One or the other: an addressable event is named by its coordinate
+      eventId: options.address ? undefined : options.eventId,
+      address: options.address,
+      recipientPubkey: options.recipientPubkey,
+      providerPubkey: options.providerPubkey,
+    });
     if (!valid) continue;
 
     const parsed = parseZapReceipt(receipt);

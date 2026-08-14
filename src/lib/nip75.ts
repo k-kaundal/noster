@@ -168,11 +168,26 @@ export function linkedGoal(
   return { id: tag[1].trim(), relay: tag[2]?.trim() || undefined };
 }
 
-/** Whether a receipt counts toward a goal that has a deadline. */
+/**
+ * Whether a receipt counts toward a goal.
+ *
+ * Both ends of the window, not just the deadline. A goal announced in a note
+ * counts the zaps on that note — and a note usually exists before the goal
+ * does, so without a lower bound the first thing a new goal would do is credit
+ * itself with every zap that note had ever collected. Money raised before
+ * anyone was asked for it is not money raised toward the asking.
+ *
+ * `startedAt` is optional so a caller that only has the parsed tags can still
+ * check the deadline.
+ */
 export function countsTowardGoal(
-  goal: Pick<ZapGoal, 'closedAt'>,
+  goal: Pick<ZapGoal, 'closedAt'> & { startedAt?: number },
   receiptCreatedAt: number
 ): boolean {
+  if (goal.startedAt !== undefined && receiptCreatedAt < goal.startedAt) {
+    return false;
+  }
+
   return goal.closedAt === undefined || receiptCreatedAt <= goal.closedAt;
 }
 
@@ -194,7 +209,10 @@ export function goalProgress(
   now: number = Math.floor(Date.now() / 1000)
 ): GoalProgress {
   const counted = receipts.filter((receipt) =>
-    countsTowardGoal(goal, receipt.createdAt)
+    countsTowardGoal(
+      { closedAt: goal.closedAt, startedAt: goal.event.created_at },
+      receipt.createdAt
+    )
   );
 
   const raisedMsat = counted.reduce(
