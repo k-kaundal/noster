@@ -417,10 +417,34 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
 
     setInvoice(null);
     setIsZapping(false);
-    queryClient.invalidateQueries({
-      queryKey: ['note-stats', statsKey ?? ''],
-      exact: true,
-    });
+
+    const refresh = () => {
+      queryClient.invalidateQueries({
+        queryKey: ['note-stats', statsKey ?? ''],
+        exact: true,
+      });
+
+      /*
+       * The goal's own tally, when the thing zapped was a goal. Without this
+       * the progress bar sat where it was until something else happened to
+       * refetch it, so the person who had just paid saw no change at all.
+       */
+      queryClient.invalidateQueries({
+        queryKey: ['zap-goal', actualTarget.id],
+        exact: true,
+      });
+    };
+
+    refresh();
+
+    /*
+     * And again shortly after. The receipt is published by the recipient's
+     * lightning server once the invoice settles, not by us — refetching only
+     * at the moment of payment asks the relays for an event that does not
+     * exist yet, and finds the same zero.
+     */
+    window.setTimeout(refresh, 4000);
+
     onZapSuccess?.();
   }, [actualTarget, queryClient, onZapSuccess, statsKey]);
 

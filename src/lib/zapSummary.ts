@@ -55,8 +55,16 @@ export interface ZapSummaryOptions {
    * checking them against an event id rejects every one of them.
    */
   address?: string;
-  /** Its author, who must be the one the payment named. */
-  recipientPubkey: string;
+  /**
+   * Who the payment must have named.
+   *
+   * A list, because a payment can legitimately name one of several people: a
+   * NIP-75 goal may carry `zap` tags redirecting the money to beneficiaries,
+   * so a receipt naming one of those is as valid as one naming the author.
+   * Checking against the author alone rejected every zap to such a goal and
+   * left it reading zero.
+   */
+  recipientPubkey: string | string[];
   /**
    * The recipient's lnurl provider key, when it is known.
    *
@@ -83,16 +91,22 @@ export function summarizeZaps(
   const zappers: Zapper[] = [];
   let totalSats = 0;
 
+  const recipients = Array.isArray(options.recipientPubkey)
+    ? options.recipientPubkey
+    : [options.recipientPubkey];
+
   for (const receipt of receipts) {
     if (seen.has(receipt.id)) continue;
 
-    const valid = validateZapReceipt(receipt, {
-      // One or the other: an addressable event is named by its coordinate
-      eventId: options.address ? undefined : options.eventId,
-      address: options.address,
-      recipientPubkey: options.recipientPubkey,
-      providerPubkey: options.providerPubkey,
-    });
+    const valid = recipients.some((recipientPubkey) =>
+      validateZapReceipt(receipt, {
+        // One or the other: an addressable event is named by its coordinate
+        eventId: options.address ? undefined : options.eventId,
+        address: options.address,
+        recipientPubkey,
+        providerPubkey: options.providerPubkey,
+      })
+    );
     if (!valid) continue;
 
     const parsed = parseZapReceipt(receipt);
