@@ -60,6 +60,15 @@ const QuoteDialog = lazy(() =>
 const ReportDialog = lazy(() =>
   import('@/components/ReportDialog').then((m) => ({ default: m.ReportDialog }))
 );
+/*
+ * Split out for its own reason: it pulls in the canvas renderer, which is
+ * dead weight in a feed where almost nobody shares almost any given note.
+ */
+const ShareNoteDialog = lazy(() =>
+  import('@/components/ShareNoteDialog').then((m) => ({
+    default: m.ShareNoteDialog,
+  }))
+);
 import { RepliesSection } from '@/components/RepliesSection';
 import { QuotedNote } from '@/components/QuotedNote';
 import { MaybeWarned } from '@/components/ContentWarning';
@@ -150,6 +159,7 @@ export function Post({
   const [repliesOpen, setRepliesOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // Each stays mounted after its first open, so closing keeps the exit
   // animation and anything half-typed
@@ -158,6 +168,7 @@ export function Post({
   const zapActivityMounted = useOnceOpened(zapActivityOpen);
   const quoteMounted = useOnceOpened(quoteOpen);
   const reportMounted = useOnceOpened(reportOpen);
+  const shareMounted = useOnceOpened(shareOpen);
 
   const { isLiked, likeCount, like, isLiking, groups } = useReactions(event.id);
   const { deleteEvents, isDeleting } = useDeleteEvent();
@@ -269,22 +280,16 @@ export function Post({
     }
   };
 
-  const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `Note by ${displayName}`,
-          text: event.content.slice(0, 120),
-          url: postUrl,
-        });
-        return;
-      } catch (error) {
-        // A cancelled share sheet is not an error worth reporting
-        if ((error as Error)?.name === 'AbortError') return;
-      }
-    }
-    await copy(postUrl, 'Link');
-  };
+  /**
+   * Opens the share screen rather than the browser's sheet.
+   *
+   * The sheet only carries a link, and a link to a note previews as nothing —
+   * every crawler is served the same `index.html`, so a note posted to X or
+   * Facebook shows the site's front door whatever was shared. The screen
+   * offers a picture of the note, which every one of those places renders
+   * correctly because none of them is rendering it.
+   */
+  const handleShare = () => setShareOpen(true);
 
   const body = (
     <article className={cn('p-4 sm:p-5', embedded && 'p-3')}>
@@ -683,6 +688,14 @@ export function Post({
             pubkey={event.pubkey}
             displayName={displayName}
             event={event}
+          />
+        )}
+        {shareMounted && (
+          <ShareNoteDialog
+            event={event}
+            url={postUrl}
+            open={shareOpen}
+            onOpenChange={setShareOpen}
           />
         )}
       </Suspense>
