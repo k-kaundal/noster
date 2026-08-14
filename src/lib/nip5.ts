@@ -403,11 +403,39 @@ export function lnAddressConfig(
   return config?.wallet ? config : null;
 }
 
-/** Whether a name receives payments as well as verifying a key. */
+/**
+ * Whether a name actually receives payments.
+ *
+ * `wallet` is the request; `pay_link_id` is the pay link LNbits created to
+ * honour it, and only that second field means money can arrive. The extension
+ * stores the two independently — its own schema defaults `pay_link_id` to the
+ * empty string — so a name whose attachment was asked for and never completed
+ * carries a wallet and nothing behind it.
+ *
+ * Reading `wallet` alone is how the wallet page came to announce that a name
+ * "receives payments" when no pay link had ever been made for it: the claim
+ * was about a stored preference rather than about anything payable, and
+ * nothing on the screen could tell the two apart.
+ */
 export function isZappable(
   address: Pick<Nip5Address, 'extra'> | null | undefined
 ): boolean {
-  return !!lnAddressConfig(address);
+  return !!lnAddressConfig(address)?.pay_link_id;
+}
+
+/**
+ * Asked for, but with no pay link behind it yet.
+ *
+ * The state worth naming rather than folding into either side. It is not "no
+ * address" — somebody chose a wallet — and it is not a working one, so a
+ * person told either of those things is told something false. It resolves on
+ * its own once the extension finishes, and stays put when it failed.
+ */
+export function isLnAddressPending(
+  address: Pick<Nip5Address, 'extra'> | null | undefined
+): boolean {
+  const config = lnAddressConfig(address);
+  return !!config && !config.pay_link_id;
 }
 
 /**

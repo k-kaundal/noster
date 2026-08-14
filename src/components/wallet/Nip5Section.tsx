@@ -43,6 +43,7 @@ import {
   nip5Host,
   nip5Identifier,
   nip5State,
+  isLnAddressPending,
   isZappable,
   lnAddressConfig,
   normalizeLocalPart,
@@ -319,6 +320,7 @@ function LightningDestination({
   const { attachLightning, isAttaching, wallets } = useNip5();
 
   const current = lnAddressConfig(address);
+  const pending = isLnAddressPending(address);
 
   /**
    * Only what somebody picked, so the default can still move under it.
@@ -337,6 +339,35 @@ function LightningDestination({
 
   const submit = () =>
     void attachLightning({ address, walletId }).catch(() => {});
+
+  /*
+   * Asked for and not finished. Saying "receives payments" here is the thing
+   * that sent somebody hunting for zaps that were never going to arrive — the
+   * wallet was stored, the pay link behind it was not made, and the address
+   * resolves to nothing payable. Retrying is the same call that created it.
+   */
+  if (pending) {
+    return (
+      <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/8 p-3">
+        <p className="text-sm font-medium text-warning-strong">
+          {identifier} isn't set up to receive yet.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          A wallet was chosen for it, but the payment link behind the name was
+          never created — so nothing sent to it arrives.
+        </p>
+        <Button
+          size="sm"
+          onClick={submit}
+          disabled={isAttaching}
+          className="w-full"
+        >
+          {isAttaching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Finish setting it up
+        </Button>
+      </div>
+    );
+  }
 
   if (current && wallets.length < 2) {
     /*
