@@ -5,7 +5,9 @@ import { nip19 } from 'nostr-tools';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useLightbox } from '@/hooks/useLightbox';
 import { UserHoverCard } from '@/components/UserHoverCard';
+import { LinkCard } from '@/components/notes/LinkCard';
 import { genUserName } from '@/lib/genUserName';
+import { primaryLink } from '@/lib/linkPreview';
 import { cn } from '@/lib/utils';
 
 interface NoteContentProps {
@@ -46,10 +48,11 @@ function classifyUrl(url: string): Media | null {
  * and embedded below it so the same URL is never shown twice.
  */
 export function NoteContent({ event, className }: NoteContentProps) {
-  const { inline, media } = useMemo(() => {
+  const { inline, media, link } = useMemo(() => {
     const text = event.content.trim();
     const inline: React.ReactNode[] = [];
     const media: Media[] = [];
+    const links: string[] = [];
     const seenMedia = new Set<string>();
 
     const pushMedia = (item: Media) => {
@@ -101,6 +104,8 @@ export function NoteContent({ event, className }: NoteContentProps) {
           pushMedia(asMedia);
           continue;
         }
+        links.push(url);
+
         inline.push(
           <a
             key={`url-${key++}`}
@@ -163,7 +168,7 @@ export function NoteContent({ event, className }: NoteContentProps) {
 
     pushText(text.slice(lastIndex));
 
-    return { inline, media };
+    return { inline, media, link: primaryLink(links) };
   }, [event.content, event.tags]);
 
   return (
@@ -174,6 +179,13 @@ export function NoteContent({ event, className }: NoteContentProps) {
         </div>
       )}
       {media.length > 0 && <MediaGrid media={media} />}
+
+      {/*
+        One card, under the text, for the link a note is about. A note with a
+        picture already has something to look at, so the card is skipped there
+        rather than stacking two blocks under one line of writing.
+      */}
+      {link && media.length === 0 && <LinkCard url={link} />}
     </div>
   );
 }
