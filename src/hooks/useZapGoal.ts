@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
+import type { NostrEvent } from '@nostrify/nostrify';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useDeleteEvent } from '@/hooks/useDeleteEvent';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useRelays } from '@/hooks/useRelays';
 import { useToast } from '@/hooks/useToast';
@@ -185,4 +187,105 @@ export function useCreateZapGoal() {
       });
     },
   });
+}
+
+/**
+ * Changing a goal, which the protocol does not really allow.
+ *
+ * Kind 9041 is a regular event: it has no `d` tag, so a second publish is a
+ * second goal rather than a new version of the first. There is no edit to
+ * make — what happens instead is a new goal published and a NIP-09 deletion
+ * requested for the old one.
+ *
+ * That has a consequence worth being loud about, and `ZapGoalEditor` is: every
+ * zap already received names the old event, and the tally follows the event.
+ * So editing a goal that has been funded starts its progress bar at zero,
+ * whatever it read a moment ago. Editing one nobody has zapped yet costs
+ * nothing, which is the case this is really for — a typo in the title, a
+ * target set an order of magnitude wrong.
+ *
+ * The deletion is a request, not an act. Relays are free to ignore it, so the
+ * old goal may keep appearing elsewhere; there is nothing this or any client
+ * can do about that beyond asking.
+ */
+export function useReplaceZapGoal() {
+  const { user } = useCurrentUser();
+  const { mutateAsync: createEvent } = useNostrPublish();
+  const { deleteEvents } = useDeleteEvent();
+  const { writeUrls } = useRelays();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({
+      previous,
+      ...input
+    }: Omit<GoalInput, 'relays'> & {
+      relays?: string[];
+      previous: NostrEvent;
+    }) => {
+      if (!user) throw new Error('Log in first');
+      if (previous.pubkey !== user.pubkey) {
+        throw new Error('You can only edit your own goals');
+      }
+
+      const relays = (input.relays?.length ? input.relays : writeUrls).filter(
+        (url) => url.startsWith('wss://') || url.startsWith('ws://')
+      );
+
+      if (!relays.length) {
+        throw new Error(
+          'A goal has to name at least one relay for its zaps to be counted at.'
+        );
+      }
+
+      const replacement = await createEvent({
+        kind: GOAL_KIND,
+        content: input.description,
+        tags: buildGoalTags({ ...input, relays }),
+      });
+
+      /*
+       * After the replacement is published, not before. A deletion that went
+       * first and a publish that then failed would leave somebody with no goal
+       * at all rather than the one they were trying to change.
+       */
+      await deleteEvents({
+        events: [previous],
+        reason: 'Replaced by an edited goal',
+      }).catch(() => {
+        // The new goal exists either way, which is the part that mattered
+      });
+
+      return replacement;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['zap-goals'] });
+      toast({
+        title: 'Goal updated',
+        description: 'The old one has been asked to be deleted.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Could not update that goal',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+/** Asks relays to drop a goal entirely. */
+export function useRetireZapGoal() {
+  const { deleteEvents, isDeleting } = useDeleteEvent();
+  const queryClient = useQueryClient();
+
+  return {
+    isDeleting,
+    retire: async (goal: NostrEvent) => {
+      await deleteEvents({ events: [goal], reason: 'Goal withdrawn' });
+      queryClient.invalidateQueries({ queryKey: ['zap-goals'] });
+    },
+  };
 }

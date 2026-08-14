@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ImagePlus, Loader2, Target, Zap } from 'lucide-react';
 import {
@@ -15,13 +15,14 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useCreateZapGoal } from '@/hooks/useZapGoal';
+import { useCreateZapGoal, useReplaceZapGoal } from '@/hooks/useZapGoal';
 import { useFiat } from '@/hooks/useFiat';
 import { useRelays } from '@/hooks/useRelays';
 import { useToast } from '@/hooks/useToast';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { HIDE_FIAT, formatFiat, satsToFiat } from '@/lib/currency';
 import { relayDisplayName } from '@/lib/relay';
+import type { ZapGoal } from '@/lib/nip75';
 import { cn } from '@/lib/utils';
 
 /** Round numbers people actually raise for, in sats. */
@@ -46,23 +47,52 @@ const TARGET_PRESETS = [10_000, 50_000, 100_000, 500_000, 1_000_000];
 export function ZapGoalEditor({
   open,
   onOpenChange,
+  goal,
+  raisedSats = 0,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The goal being edited. Omit to write a new one. */
+  goal?: ZapGoal;
+  /** What the goal being edited has already raised, for the warning. */
+  raisedSats?: number;
 }) {
   const { user } = useCurrentUser();
   const author = useAuthor(user?.pubkey);
   const { toast } = useToast();
   const { writeUrls } = useRelays();
   const { currency, rate } = useFiat();
-  const { mutateAsync: createGoal, isPending } = useCreateZapGoal();
+  const { mutateAsync: createGoal, isPending: isCreating } = useCreateZapGoal();
+  const { mutateAsync: replaceGoal, isPending: isReplacing } =
+    useReplaceZapGoal();
   const { mutateAsync: uploadFile, isPending: isUploading } = useUploadFile();
+
+  const editing = !!goal;
+  const isPending = isCreating || isReplacing;
 
   const [description, setDescription] = useState('');
   const [target, setTarget] = useState('');
   const [summary, setSummary] = useState('');
   const [image, setImage] = useState('');
   const [deadline, setDeadline] = useState('');
+
+  /*
+   * Seeded when the dialog opens rather than on every render, so typing into
+   * a field is not overwritten by the goal it was seeded from.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    setDescription(goal?.description ?? '');
+    setTarget(goal ? String(Math.round(goal.amountMsat / 1000)) : '');
+    setSummary(goal?.summary ?? '');
+    setImage(goal?.image ?? '');
+    setDeadline(
+      goal?.closedAt
+        ? new Date(goal.closedAt * 1000).toISOString().slice(0, 10)
+        : ''
+    );
+  }, [open, goal]);
 
   const targetSats = Number.parseInt(target, 10);
   const targetIsUsable = Number.isFinite(targetSats) && targetSats > 0;
@@ -133,20 +163,23 @@ export function ZapGoalEditor({
       }
     }
 
+    const fields = {
+      description: description.trim(),
+      // Sats in, millisats out — the tag's unit, not the reader's
+      amountMsat: targetSats * 1000,
+      summary: summary.trim() || undefined,
+      image: image.trim() || undefined,
+      closedAt,
+    };
+
     try {
-      await createGoal({
-        description: description.trim(),
-        // Sats in, millisats out — the tag's unit, not the reader's
-        amountMsat: targetSats * 1000,
-        summary: summary.trim() || undefined,
-        image: image.trim() || undefined,
-        closedAt,
-      });
+      if (goal) await replaceGoal({ ...fields, previous: goal.event });
+      else await createGoal(fields);
 
       reset();
       onOpenChange(false);
     } catch {
-      // `useCreateZapGoal` has already said what went wrong
+      // The hook has already said what went wrong
     }
   };
 
@@ -156,7 +189,7 @@ export function ZapGoalEditor({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Target className="h-4 w-4" />
-            New zap goal
+            {editing ? 'Edit goal' : 'New zap goal'}
           </DialogTitle>
           <DialogDescription>
             A target anyone can put sats toward by zapping it. The bar fills as
@@ -165,6 +198,24 @@ export function ZapGoalEditor({
         </DialogHeader>
 
         <div className="space-y-4">
+          {/*
+            The one thing somebody editing a funded goal has to know before
+            they press the button. A kind 9041 has no `d` tag, so it cannot be
+            replaced in place — editing publishes a new goal and asks for the
+            old one to be deleted, and every zap already received names the
+            old event. The bar starts again at zero.
+          */}
+          {editing && raisedSats > 0 && (
+            <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs">
+              <span className="font-semibold">
+                This goal has already raised {raisedSats.toLocaleString()} sats.
+              </span>{' '}
+              Nostr cannot edit a goal in place — saving publishes a new one and
+              retires this one, and the sats already sent stay with the old
+              goal. Its progress bar will start again at zero.
+            </p>
+          )}
+
           {!payable && (
             <p className="rounded-lg border border-dashed bg-warning/10 p-3 text-xs text-muted-foreground">
               You have no lightning address on your profile, so nobody can zap
@@ -348,7 +399,7 @@ export function ZapGoalEditor({
             disabled={isPending || isUploading || !writeUrls.length}
           >
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Publish goal
+            {editing ? 'Save as new goal' : 'Publish goal'}
           </Button>
         </DialogFooter>
       </DialogContent>
