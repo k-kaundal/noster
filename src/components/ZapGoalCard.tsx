@@ -71,15 +71,22 @@ function GoalBody({ goal, className }: { goal: ZapGoal; className?: string }) {
       <CardContent className="space-y-3 pt-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
+            {/*
+              The `summary` tag is the headline and `.content` is the prose,
+              and these were the wrong way round: a goal whose summary read
+              "Help Keep NostrFeed Open" showed three lines of description
+              truncated into the title slot, with the actual title demoted
+              underneath it.
+            */}
             <div className="flex items-center gap-2">
               <Target className="h-4 w-4 shrink-0 text-primary" />
               <p className="truncate font-medium">
-                {goal.description || goal.summary || 'Fundraising goal'}
+                {goal.summary || goal.description || 'Fundraising goal'}
               </p>
             </div>
             {goal.summary && goal.description && (
               <p className="line-clamp-2 text-sm text-muted-foreground">
-                {goal.summary}
+                {goal.description}
               </p>
             )}
           </div>

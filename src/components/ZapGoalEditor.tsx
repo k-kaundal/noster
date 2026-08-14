@@ -176,6 +176,26 @@ export function ZapGoalEditor({
             </p>
           )}
 
+          {/*
+            Title first, because it is the headline the card shows. NIP-75 has
+            no title tag — `summary` is what serves as one — so the label says
+            what it does and the tag it writes is a detail nobody filling this
+            in needs to know.
+          */}
+          <div className="space-y-2">
+            <Label htmlFor="goal-summary">Title</Label>
+            <Input
+              id="goal-summary"
+              value={summary}
+              onChange={(field) => setSummary(field.target.value)}
+              placeholder="Help keep NostrFeed running"
+              maxLength={120}
+            />
+            <p className="text-xs text-muted-foreground">
+              One line, shown as the heading on the goal.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="goal-description">What is it for?</Label>
             <Textarea
@@ -238,17 +258,6 @@ export function ZapGoalEditor({
                 About {fiat} at today's price.
               </p>
             )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="goal-summary">Short summary (optional)</Label>
-            <Input
-              id="goal-summary"
-              value={summary}
-              onChange={(field) => setSummary(field.target.value)}
-              placeholder="New mic fund"
-              maxLength={120}
-            />
           </div>
 
           <div className="space-y-2">

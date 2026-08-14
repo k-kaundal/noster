@@ -38,28 +38,45 @@ export function LinkCard({
        * underline and accent meant for inline text.
        */
       className={cn(
-        'group flex items-center gap-3 rounded-xl border bg-muted/30 p-3 no-underline transition-colors',
+        /*
+         * Sized to its contents. A bare domain is one short word, and the
+         * card was a tall block of empty space around it — the two-line
+         * padding only earns its place when there is a second line.
+         */
+        'group flex items-center gap-2.5 rounded-xl border bg-muted/30 px-3 no-underline transition-colors',
+        link.path ? 'py-2.5' : 'py-2',
         'active:bg-muted/60 lg:hover:border-primary/40 lg:hover:bg-muted/50',
         className
       )}
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-background">
+      <span
+        className={cn(
+          'flex shrink-0 items-center justify-center overflow-hidden rounded-md border bg-background',
+          link.path ? 'h-8 w-8' : 'h-7 w-7'
+        )}
+      >
         {iconFailed ? (
-          <Globe className="h-4 w-4 text-muted-foreground" />
+          <Globe className="h-3.5 w-3.5 text-muted-foreground" />
         ) : (
           <img
             src={link.faviconUrl}
             alt=""
-            width={20}
-            height={20}
+            width={16}
+            height={16}
             loading="lazy"
+            /*
+             * Not `crossOrigin`. Nothing reads these pixels back, and asking
+             * for CORS would fail on the many sites that serve an icon
+             * without the header — for no benefit.
+             */
+            referrerPolicy="no-referrer"
             /*
              * A site with no favicon, or one that blocks the request, is the
              * common case rather than the exception — the globe is the design,
              * not a fallback nobody sees.
              */
             onError={() => setIconFailed(true)}
-            className="h-5 w-5 object-contain"
+            className="h-4 w-4 object-contain"
           />
         )}
       </span>
@@ -75,7 +92,7 @@ export function LinkCard({
         )}
       </span>
 
-      <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform lg:group-hover:-translate-y-0.5 lg:group-hover:translate-x-0.5 lg:group-hover:text-primary" />
+      <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform lg:group-hover:-translate-y-0.5 lg:group-hover:translate-x-0.5 lg:group-hover:text-primary" />
     </a>
   );
 }
