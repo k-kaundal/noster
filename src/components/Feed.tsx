@@ -318,7 +318,7 @@ export function Feed() {
         />
       ) : (
         <>
-          <div className="stagger-in space-y-4">
+          <div className="stagger-in space-y-3">
             {visiblePosts?.map((post, index) => (
               <div
                 key={post.id}

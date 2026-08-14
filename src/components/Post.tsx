@@ -292,7 +292,7 @@ export function Post({
   const handleShare = () => setShareOpen(true);
 
   const body = (
-    <article className={cn('p-4 sm:p-5', embedded && 'p-3')}>
+    <article className={cn('p-3.5 sm:p-4', embedded && 'p-3')}>
       {/* Identity is a row; the note below it is not trapped in the column
           beside the avatar, which on a phone costs a quarter of the width */}
       <div className="flex items-start gap-2.5 sm:gap-3">
