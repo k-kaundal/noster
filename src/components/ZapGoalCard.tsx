@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import type { NostrEvent } from '@nostrify/nostrify';
-import { CheckCircle2, Clock, Plus, Target, Users } from 'lucide-react';
+import {
+  CheckCircle2,
+  Clock,
+  Link as LinkIcon,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Target,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -9,7 +19,28 @@ import { ZapDialog } from '@/components/ZapDialog';
 import { Button } from '@/components/ui/button';
 import { ZapGoalEditor } from '@/components/ZapGoalEditor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useZapGoal, useZapGoals } from '@/hooks/useZapGoal';
+import {
+  useRetireZapGoal,
+  useZapGoal,
+  useZapGoals,
+} from '@/hooks/useZapGoal';
+import { useToast } from '@/hooks/useToast';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { formatSats } from '@/lib/zap';
 import { linkedGoal, type ZapGoal } from '@/lib/nip75';
 import { cn } from '@/lib/utils';
@@ -49,6 +80,7 @@ export function ZapGoalCard({
 }
 
 function GoalBody({ goal, className }: { goal: ZapGoal; className?: string }) {
+  const { user } = useCurrentUser();
   const { data } = useZapGoal(goal.event);
   const progress = data?.progress;
 
@@ -65,20 +97,29 @@ function GoalBody({ goal, className }: { goal: ZapGoal; className?: string }) {
   const raisedSats = Math.round(progress.raisedMsat / 1000);
   const targetSats = Math.round(progress.targetMsat / 1000);
 
+  const isOwn = user?.pubkey === goal.event.pubkey;
+
   return (
     <Card className={cn('overflow-hidden', className)}>
-      {goal.image && (
-        <img
-          src={goal.image}
-          alt=""
-          loading="lazy"
-          className="h-32 w-full object-cover"
-        />
-      )}
-
       <CardContent className="space-y-3 pt-6">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1">
+        <div className="flex items-start gap-3">
+          {/*
+            Beside the text, not a banner above it. A full-width strip cropped
+            to 128px cut the top off most artwork and pushed the number people
+            came to read below the fold — the picture is context, and context
+            belongs at thumbnail size.
+          */}
+          {goal.image && (
+            <img
+              src={goal.image}
+              alt=""
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              className="h-16 w-16 shrink-0 rounded-lg border object-cover sm:h-20 sm:w-20"
+            />
+          )}
+
+          <div className="min-w-0 flex-1 space-y-1">
             {/*
               The `summary` tag is the headline and `.content` is the prose,
               and these were the wrong way round: a goal whose summary read
@@ -99,17 +140,21 @@ function GoalBody({ goal, className }: { goal: ZapGoal; className?: string }) {
             )}
           </div>
 
-          {progress.isReached ? (
-            <Badge className="shrink-0 gap-1 bg-success/15 text-success-strong">
-              <CheckCircle2 className="h-3 w-3" />
-              Reached
-            </Badge>
-          ) : progress.isClosed ? (
-            <Badge variant="outline" className="shrink-0 gap-1">
-              <Clock className="h-3 w-3" />
-              Closed
-            </Badge>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-1">
+            {progress.isReached ? (
+              <Badge className="gap-1 bg-success/15 text-success-strong">
+                <CheckCircle2 className="h-3 w-3" />
+                Reached
+              </Badge>
+            ) : progress.isClosed ? (
+              <Badge variant="outline" className="gap-1">
+                <Clock className="h-3 w-3" />
+                Closed
+              </Badge>
+            ) : null}
+
+            {isOwn && <GoalMenu goal={goal} raisedSats={raisedSats} />}
+          </div>
         </div>
 
         <div className="space-y-1.5">
@@ -166,6 +211,25 @@ function GoalBody({ goal, className }: { goal: ZapGoal; className?: string }) {
             {new Date((goal.closedAt ?? 0) * 1000).toLocaleDateString()}.
           </p>
         )}
+
+        {/*
+          NIP-75's `r` tag: somewhere with the detail a goal cannot hold — the
+          issue being bountied, the page explaining the project. Parsed all
+          along and never shown.
+        */}
+        {goal.url && (
+          <a
+            href={goal.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+          >
+            <LinkIcon className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              {goal.url.replace(/^https?:\/\/(www\.)?/, '')}
+            </span>
+          </a>
+        )}
       </CardContent>
     </Card>
   );
@@ -190,6 +254,90 @@ export function LinkedZapGoal({
   if (!link || !data) return null;
 
   return <GoalBody goal={data.goal} className={className} />;
+}
+
+/**
+ * Editing and retiring a goal of your own.
+ *
+ * Kept behind a menu rather than sat on the card as buttons: this is the
+ * author's own maintenance, and the card exists to be read by everybody else.
+ */
+function GoalMenu({ goal, raisedSats }: { goal: ZapGoal; raisedSats: number }) {
+  const [editing, setEditing] = useState(false);
+  const [retiring, setRetiring] = useState(false);
+  const { retire, isDeleting } = useRetireZapGoal();
+  const { toast } = useToast();
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+            <MoreHorizontal className="h-4 w-4" />
+            <span className="sr-only">Goal options</span>
+          </Button>
+        </DropdownMenuTrigger>
+
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => setEditing(true)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setRetiring(true)}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Retire goal
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {editing && (
+        <ZapGoalEditor
+          open={editing}
+          onOpenChange={setEditing}
+          goal={goal}
+          raisedSats={raisedSats}
+        />
+      )}
+
+      <AlertDialog open={retiring} onOpenChange={setRetiring}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Retire this goal?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Relays are asked to delete it, and it stops appearing here. That
+              is a request rather than a guarantee — a relay is free to keep
+              serving it, and anyone who already has a copy keeps theirs.
+              {raisedSats > 0 &&
+                ` The ${raisedSats.toLocaleString()} sats already sent are yours and are not affected.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeleting}
+              onClick={async () => {
+                try {
+                  await retire(goal.event);
+                  toast({ title: 'Goal retired' });
+                } catch (error) {
+                  toast({
+                    title: 'Could not retire that goal',
+                    description: (error as Error)?.message,
+                    variant: 'destructive',
+                  });
+                }
+              }}
+            >
+              Retire
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
 }
 
 /**
