@@ -89,9 +89,19 @@ export function useQuickZap(target: NostrEvent | undefined) {
       if (!result?.paid) return false;
 
       confirmPaid();
+
+      /*
+       * A one-tap zap has no pay screen, which is where this is said in the
+       * dialog — so without it here the commonest way to zap is also the one
+       * that never mentions the money went somewhere no receipt will ever be
+       * published from. That is the difference between "your zap is on its
+       * way" and a count that stays at zero forever with no explanation.
+       */
       toast({
         title: `Zapped ${prefs.amount.toLocaleString()} sats`,
-        description: prefs.message || undefined,
+        description: invoice.publishesReceipt
+          ? prefs.message || undefined
+          : "Their server doesn't publish zap receipts, so this won't show on the post.",
       });
 
       return true;

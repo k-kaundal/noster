@@ -1,3 +1,4 @@
+import { bech32 } from '@scure/base';
 import type { NostrEvent } from '@nostrify/nostrify';
 
 /**
@@ -43,6 +44,29 @@ export function lightningAddressUrl(address: string): string | null {
   const scheme = domain.endsWith('.onion') ? 'http' : 'https';
 
   return `${scheme}://${domain}/.well-known/lnurlp/${name}`;
+}
+
+/**
+ * A pay endpoint as the bech32 `lnurl` string NIP-57 asks for.
+ *
+ * Appendix A recommends it as a tag on the request and Appendix B as a query
+ * parameter on the callback; Appendix F has receivers check that it matches.
+ * We were sending neither, which is legal but leaves the recipient's server
+ * one fewer way to tell that the request it was handed is about itself — and
+ * some of them care.
+ *
+ * Returns null rather than throwing on a URL bech32 cannot carry, because a
+ * zap that goes out without an optional tag is better than one that does not
+ * go out.
+ */
+export function lnurlEncode(url: string): string | null {
+  try {
+    const words = bech32.toWords(new TextEncoder().encode(url));
+    // The default 90-character limit is for addresses; an lnurl is far longer
+    return bech32.encode('lnurl', words, 1023);
+  } catch {
+    return null;
+  }
 }
 
 /** The coordinate of an addressable event, which zaps reference with `a`. */
@@ -129,13 +153,26 @@ export function buildZapRequest(input: ZapRequestInput) {
   }
 
   /**
-   * The one case where both are right. NIP-75: "When zapping an addressable
-   * event with a `goal` tag, clients SHOULD tag the goal event id in the `e`
-   * tag of the zap request." The `a` attaches the receipt to the article; the
-   * `e` is what the goal's tally queries on, and without it the zap funds
-   * nothing even though it was sent to fund something.
+   * The goal, but only when nothing else has claimed the `e` tag.
+   *
+   * NIP-75: "When zapping an addressable event with a `goal` tag, clients
+   * SHOULD tag the goal event id in the `e` tag of the zap request." That case
+   * is safe — an addressable target is named by `a`, so the goal is the only
+   * `e` there is.
+   *
+   * A plain note linking a goal is not safe, and this used to emit both. NIP-57
+   * Appendix D is a validation rule servers are told to apply: a zap request
+   * "MUST have 0 or 1 `e` tags". Two of them is a request a conforming LNURL
+   * server is entitled to refuse outright, which turns "fund this goal" into a
+   * zap that never happens.
+   *
+   * Nothing is lost by naming only the note: `useZapGoal` counts receipts on
+   * the announcing event toward the goal precisely because other clients can
+   * only ever tag the note they can see.
    */
-  if (input.goalEventId && input.goalEventId !== input.eventId) {
+  const hasEventTag = tags.some(([name]) => name === 'e');
+
+  if (input.goalEventId && !hasEventTag) {
     tags.push(['e', input.goalEventId]);
   }
 
