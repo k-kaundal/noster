@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useNoteStats } from '@/hooks/useNoteStats';
 import { summarizeZaps } from '@/lib/zapSummary';
+import { ZAP_RECEIPT_KIND } from '@/lib/zap';
 import { useAppContext } from '@/hooks/useAppContext';
 import { useToast } from '@/hooks/useToast';
 import { nip57 } from 'nostr-tools';
@@ -82,11 +83,17 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
   const statsKey = address ?? actualTarget?.id;
   const { zaps: zapEvents, isLoading: isLoadingZaps } = useNoteStats(statsKey);
 
+  /** Pending post-payment refetches, so they can be cancelled on unmount. */
+  const refreshTimers = useRef<number[]>([]);
+
   // Cleanup on unmount
   useEffect(() => {
+    const timers = refreshTimers.current;
+
     return () => {
       setIsZapping(false);
       setInvoice(null);
+      timers.forEach(window.clearTimeout);
     };
   }, []);
 
@@ -100,8 +107,22 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
     const pollForZapReceipt = async () => {
       try {
         const signal = AbortSignal.timeout(5000);
+
+        /*
+         * By coordinate for an addressable event, by id for everything else.
+         * Our own request tags an article with `a` and no `e` at all, so this
+         * asked for a tag the receipt does not carry — the poll could never
+         * match, and zapping an article never refreshed its total however long
+         * anyone waited.
+         */
         const events = await nostr.query(
-          [{ kinds: [9735], '#e': [actualTarget.id], since: Math.floor(Date.now() / 1000) - 60 }],
+          [
+            {
+              kinds: [ZAP_RECEIPT_KIND],
+              ...(address ? { '#a': [address] } : { '#e': [actualTarget.id] }),
+              since: Math.floor(Date.now() / 1000) - 60,
+            },
+          ],
           { signal }
         );
         if (events.length > 0) {
@@ -173,7 +194,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
       clearInterval(pollIntervalId);
       clearTimeout(timeoutId);
     };
-  }, [invoice, actualTarget, nostr, queryClient, toast, onZapSuccess, statsKey]);
+  }, [invoice, actualTarget, address, nostr, queryClient, toast, onZapSuccess, statsKey]);
 
 
   const { zapCount, totalSats, zaps } = useMemo(() => {
@@ -190,10 +211,19 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
      * the arithmetic, and it is the same function the totals in the feed use
      * — so a note cannot report one figure here and another there.
      */
+    /*
+     * The author plus any Appendix G split recipient, matching
+     * `useZapSummary` — a note that routes its zaps elsewhere is paid to
+     * somebody the receipt names instead of the author, and checking only the
+     * author reported zero for exactly those notes.
+     */
     const summary = summarizeZaps(zapEvents, {
       eventId: address ? undefined : actualTarget.id,
       address,
-      recipientPubkey: actualTarget.pubkey,
+      recipientPubkey: [
+        actualTarget.pubkey,
+        ...parseZapSplits(actualTarget).map((share) => share.pubkey),
+      ],
     });
 
     const counted = new Set(summary.zappers.map((zapper) => zapper.receiptId));
@@ -458,26 +488,40 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
         exact: true,
       });
 
-      /*
-       * The goal's own tally, when the thing zapped was a goal. Without this
-       * the progress bar sat where it was until something else happened to
-       * refetch it, so the person who had just paid saw no change at all.
+      /**
+       * Every goal tally, not one keyed by this event.
+       *
+       * `exact` against `['zap-goal', id]` matched nothing: the key carries a
+       * third segment for the announcing event, so the one invalidation meant
+       * to move the progress bar after a payment quietly matched no query at
+       * all. A prefix match costs a refetch of any goal on screen, which is at
+       * most a handful, and it catches the case that actually matters — a zap
+       * on a note that funds a goal, where the goal is keyed by neither of the
+       * ids involved in this payment.
        */
-      queryClient.invalidateQueries({
-        queryKey: ['zap-goal', actualTarget.id],
-        exact: true,
-      });
+      queryClient.invalidateQueries({ queryKey: ['zap-goal'] });
     };
 
+    /**
+     * Checked repeatedly, because the receipt is not ours to write.
+     *
+     * The recipient's lightning server publishes it once the invoice settles,
+     * and then it has to reach a relay we read. That is seconds away at best,
+     * so asking at the moment of payment asks for an event that does not exist
+     * yet and finds the same zero — and this is also where the polling that
+     * would have caught it stops, since confirming payment clears the invoice.
+     *
+     * Spread out rather than hammered: a receipt that has not appeared in
+     * half a minute is usually one that never will, and by then the ordinary
+     * staleness rules take over.
+     */
     refresh();
 
-    /*
-     * And again shortly after. The receipt is published by the recipient's
-     * lightning server once the invoice settles, not by us — refetching only
-     * at the moment of payment asks the relays for an event that does not
-     * exist yet, and finds the same zero.
-     */
-    window.setTimeout(refresh, 4000);
+    for (const delay of [3000, 8000, 15000, 30000]) {
+      // Tracked so navigating away cancels them rather than refetching into
+      // an unmounted screen
+      refreshTimers.current.push(window.setTimeout(refresh, delay));
+    }
 
     onZapSuccess?.();
   }, [actualTarget, queryClient, onZapSuccess, statsKey]);

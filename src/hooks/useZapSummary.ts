@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { useNoteStats } from '@/hooks/useNoteStats';
+import { parseZapSplits } from '@/lib/zapSplit';
 import {
   EMPTY_ZAP_SUMMARY,
   summarizeZaps,
@@ -41,10 +42,24 @@ export function useZapSummary(event: NostrEvent | undefined): ZapSummary & {
   const summary = useMemo(() => {
     if (!event) return EMPTY_ZAP_SUMMARY;
 
+    /**
+     * The author, and anyone the note routes its zaps to instead.
+     *
+     * NIP-57 Appendix G: a `zap` tag redirects payment away from the author,
+     * and the receipt then names the recipient it was actually paid to. This
+     * checked against the author alone, so a note with a zap split — the one
+     * kind of note where the author deliberately gave the money away — showed
+     * nothing at all, however much it earned.
+     */
+    const recipientPubkey = [
+      event.pubkey,
+      ...parseZapSplits(event).map((share) => share.pubkey),
+    ];
+
     return summarizeZaps(zaps, {
       eventId: address ? undefined : event.id,
       address,
-      recipientPubkey: event.pubkey,
+      recipientPubkey,
     });
   }, [zaps, event, address]);
 

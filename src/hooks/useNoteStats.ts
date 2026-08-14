@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { createBatchLoader, type BatchLoader } from '@/lib/batchLoader';
 import { getThreadPosition } from '@/lib/thread';
+import { ZAP_RECEIPT_KIND } from '@/lib/zap';
+import { buildStatsFilters } from '@/lib/noteStats';
 
 export interface NoteStats {
   replies: NostrEvent[];
@@ -37,27 +39,10 @@ function getLoader(nostr: Relay): BatchLoader<string, NoteStats> {
     maxBatchSize: 60,
     emptyValue: () => EMPTY,
     async fetch(keys) {
-      /*
-       * Addressable events are referenced by coordinate, not by id. An
-       * article's zaps carry `a` = `30023:<pubkey>:<d>` and no `e` tag at
-       * all, so a query asking only for `#e` finds none of them — which is
-       * why articles showed no total however many they had been paid.
-       */
-      const eventIds = keys.filter((key) => !key.includes(':'));
-      const addresses = keys.filter((key) => key.includes(':'));
-
-      const kinds = [1, 6, 7, 16, 9735];
-      // Bounded so a full batch stays under typical relay max_limit
-      const limit = Math.min(keys.length * 40, 2000);
-
-      // Both filters in one request rather than two round trips
-      const events = await nostr.query(
-        [
-          ...(eventIds.length ? [{ kinds, '#e': eventIds, limit }] : []),
-          ...(addresses.length ? [{ kinds, '#a': addresses, limit }] : []),
-        ],
-        { signal: AbortSignal.timeout(8000) }
-      );
+      // Still one request; the filters are separate so the budgets are
+      const events = await nostr.query(buildStatsFilters(keys), {
+        signal: AbortSignal.timeout(8000),
+      });
 
       const results = new Map<string, NoteStats>();
       for (const key of keys) {
@@ -77,7 +62,7 @@ function getLoader(nostr: Relay): BatchLoader<string, NoteStats> {
             bucket.reposts.push(event);
           } else if (event.kind === 7) {
             bucket.reactions.push(event);
-          } else if (event.kind === 9735) {
+          } else if (event.kind === ZAP_RECEIPT_KIND) {
             bucket.zaps.push(event);
           }
         }
