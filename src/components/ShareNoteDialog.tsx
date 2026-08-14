@@ -19,6 +19,10 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthor } from '@/hooks/useAuthor';
+import { useReactions } from '@/hooks/useReactions';
+import { useReplies } from '@/hooks/useReplies';
+import { useReposts } from '@/hooks/useReposts';
+import { useZapSummary } from '@/hooks/useZapSummary';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { handleFor } from '@/lib/handle';
@@ -60,6 +64,26 @@ export function ShareNoteDialog({
   const displayName =
     metadata?.display_name || metadata?.name || genUserName(event.pubkey);
 
+  /*
+   * The same hooks the note's own action row uses, so these are already in the
+   * query cache by the time anyone opens this — reading them here costs
+   * nothing and the card shows exactly the numbers the post does.
+   */
+  const { likeCount } = useReactions(event.id);
+  const { replyCount } = useReplies(event.id);
+  const { repostCount } = useReposts(event.id);
+  const zapSummary = useZapSummary(event);
+
+  const stats = useMemo(
+    () => ({
+      reactions: likeCount,
+      replies: replyCount,
+      reposts: repostCount,
+      zapSats: zapSummary.totalSats,
+    }),
+    [likeCount, replyCount, repostCount, zapSummary.totalSats]
+  );
+
   const [card, setCard] = useState<{ blob: Blob; preview: string } | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<'share' | 'save' | 'copy' | null>(null);
@@ -88,6 +112,7 @@ export function ShareNoteDialog({
           imageUrl,
           createdAt: event.created_at,
           url,
+          stats,
         });
 
         if (cancelled) return;
@@ -113,7 +138,7 @@ export function ShareNoteDialog({
         setCard(null);
       }
     };
-  }, [open, event, displayName, metadata, url]);
+  }, [open, event, displayName, metadata, url, stats]);
 
   const filename = `nostrfeed-${event.id.slice(0, 8)}.png`;
 

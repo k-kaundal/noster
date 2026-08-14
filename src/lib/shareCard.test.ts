@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_LINES, truncateLines, wrapText } from './shareCard';
+import {
+  MAX_LINES,
+  compactCount,
+  describeStats,
+  fitText,
+  truncateLines,
+  wrapText,
+} from './shareCard';
 
 /**
  * A stand-in for canvas text measurement.
@@ -86,5 +93,72 @@ describe('truncateLines', () => {
   it('defaults to a length that still reads in a feed', () => {
     const long = Array.from({ length: 40 }, (_, index) => `line ${index}`);
     expect(truncateLines(long)).toHaveLength(MAX_LINES);
+  });
+});
+
+
+describe('describeStats', () => {
+  it('reads as a sentence of counts', () => {
+    expect(
+      describeStats({ reactions: 87, replies: 12, reposts: 8, zapSats: 2100 })
+    ).toBe('87 likes  ·  12 replies  ·  8 reposts  ·  2.1k sats');
+  });
+
+  it('leaves out what a note has none of', () => {
+    /**
+     * "0 likes" is a fact nobody wanted to publish. A card with one number on
+     * it reads better than one advertising three absences.
+     */
+    expect(describeStats({ reactions: 3, replies: 0, reposts: 0 })).toBe(
+      '3 likes'
+    );
+  });
+
+  it('says nothing at all for a note with no engagement', () => {
+    expect(describeStats({})).toBe('');
+    expect(describeStats(undefined)).toBe('');
+    expect(describeStats({ reactions: 0, zapSats: 0 })).toBe('');
+  });
+
+  it('counts one of something in the singular', () => {
+    expect(describeStats({ reactions: 1, replies: 1, reposts: 1 })).toBe(
+      '1 like  ·  1 reply  ·  1 repost'
+    );
+  });
+});
+
+describe('compactCount', () => {
+  it('leaves small numbers alone', () => {
+    expect(compactCount(0)).toBe('0');
+    expect(compactCount(999)).toBe('999');
+  });
+
+  it('shortens the ones that would crowd a line', () => {
+    expect(compactCount(1000)).toBe('1.0k');
+    expect(compactCount(2100)).toBe('2.1k');
+    expect(compactCount(1_500_000)).toBe('1.5M');
+  });
+});
+
+describe('fitText', () => {
+  const monospace = (text: string) => text.length;
+
+  it('leaves text that already fits', () => {
+    expect(fitText('short', 10, monospace)).toBe('short');
+  });
+
+  it('cuts to the width, ellipsis included', () => {
+    /**
+     * The footer bug. A `note1` URL is 63 characters and used to be drawn at
+     * full width straight through the right-aligned brand, smearing both.
+     */
+    const fitted = fitText('nostrfeed.com/note17jsfscncajc7mf', 10, monospace);
+
+    expect(fitted).toHaveLength(10);
+    expect(fitted.endsWith('…')).toBe(true);
+  });
+
+  it('survives a width too small for anything', () => {
+    expect(() => fitText('abcdef', 1, monospace)).not.toThrow();
   });
 });

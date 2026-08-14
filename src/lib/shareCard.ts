@@ -28,6 +28,14 @@ const AVATAR = 96;
 /** Beyond this the note is a wall of text in a feed, so it is cut. */
 export const MAX_LINES = 14;
 
+/** What a note earned, for the line above the footer. */
+export interface ShareCardStats {
+  replies?: number;
+  reposts?: number;
+  reactions?: number;
+  zapSats?: number;
+}
+
 export interface ShareCardInput {
   displayName: string;
   /** Shown under the name, without the leading `@`. */
@@ -40,6 +48,65 @@ export interface ShareCardInput {
   createdAt: number;
   /** Printed along the bottom, so somebody can find the original. */
   url: string;
+  stats?: ShareCardStats;
+}
+
+/** `2.1k` rather than `2100`, which is a lot of digits on one line. */
+export function compactCount(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(value);
+}
+
+/**
+ * The engagement line, or nothing when a note has none.
+ *
+ * Zero is left out rather than printed. "0 likes" on a shared note is a fact
+ * nobody wanted to publish, and a card with one number on it reads better than
+ * one advertising three absences.
+ */
+export function describeStats(stats: ShareCardStats | undefined): string {
+  if (!stats) return '';
+
+  const parts: string[] = [];
+
+  const add = (count: number | undefined, one: string, many: string) => {
+    if (!count || count <= 0) return;
+    parts.push(`${compactCount(count)} ${count === 1 ? one : many}`);
+  };
+
+  add(stats.reactions, 'like', 'likes');
+  add(stats.replies, 'reply', 'replies');
+  add(stats.reposts, 'repost', 'reposts');
+
+  if (stats.zapSats && stats.zapSats > 0) {
+    parts.push(`${compactCount(stats.zapSats)} sats`);
+  }
+
+  return parts.join('  ·  ');
+}
+
+/**
+ * Shortens text from the end until it fits a width.
+ *
+ * The footer used to print a full note URL — a `note1` is 63 characters — at
+ * whatever width it wanted, straight through the brand drawn right-aligned on
+ * the same line. The two overlapped into an unreadable smear on every card.
+ */
+export function fitText(
+  text: string,
+  maxWidth: number,
+  measure: (text: string) => number
+): string {
+  if (measure(text) <= maxWidth) return text;
+
+  let cut = text;
+
+  while (cut.length > 1 && measure(`${cut}…`) > maxWidth) {
+    cut = cut.slice(0, -1);
+  }
+
+  return `${cut}…`;
 }
 
 export interface CardTheme {
@@ -181,7 +248,16 @@ export function cardTheme(): CardTheme {
 function loadImage(url: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const image = new Image();
+
+    /*
+     * `crossOrigin` is required — a drawn cross-origin image without it taints
+     * the canvas and `toBlob` throws — and it is also why some avatars cannot
+     * be drawn at all: a host that sends no `Access-Control-Allow-Origin` will
+     * fail this load, and the card falls back to initials. `no-referrer` wins
+     * back the hosts that block on the referring page rather than on CORS.
+     */
     image.crossOrigin = 'anonymous';
+    image.referrerPolicy = 'no-referrer';
 
     // Some hosts hang rather than fail, and a share sheet that never opens is
     // worse than one that opens without a picture
@@ -282,6 +358,8 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     )
   );
 
+  const statsLine = describeStats(input.stats);
+
   const lineHeight = 48;
   const headerHeight = AVATAR;
   const textHeight = lines.length ? lines.length * lineHeight : 0;
@@ -299,6 +377,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     headerHeight +
     (textHeight ? 40 + textHeight : 0) +
     (pictureHeight ? 36 + pictureHeight : 0) +
+    (statsLine ? 36 + 32 : 0) +
     44 +
     footerHeight +
     PADDING;
@@ -395,6 +474,21 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     y += pictureHeight;
   }
 
+  /*
+   * What the note earned, when it earned anything. Above the rule rather than
+   * beside the brand: these are facts about the note, and the footer line is
+   * about where it lives.
+   */
+  if (statsLine) {
+    y += 36;
+
+    ctx.fillStyle = theme.foreground;
+    ctx.font = `600 28px ${FONT}`;
+    ctx.fillText(statsLine, PADDING, y, textWidth);
+
+    y += 32;
+  }
+
   y += 44;
 
   ctx.strokeStyle = theme.border;
@@ -406,14 +500,31 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   y += 24;
 
-  ctx.fillStyle = theme.muted;
-  ctx.font = `500 26px ${FONT}`;
-  ctx.fillText(input.url.replace(/^https?:\/\//, ''), PADDING, y);
+  /*
+   * The brand is measured first and the URL is cut to what is left. Drawing
+   * both from their own edges printed a 63-character `note1` straight through
+   * the right-aligned name, which turned every card's footer into a smear.
+   */
+  ctx.font = `700 26px ${FONT}`;
+  const brand = 'NostrFeed';
+  const brandWidth = ctx.measureText(brand).width;
 
   ctx.fillStyle = theme.accent;
-  ctx.font = `700 26px ${FONT}`;
   ctx.textAlign = 'right';
-  ctx.fillText('NostrFeed', CARD_WIDTH - PADDING, y);
+  ctx.fillText(brand, CARD_WIDTH - PADDING, y);
+  ctx.textAlign = 'left';
+
+  ctx.fillStyle = theme.muted;
+  ctx.font = `500 26px ${FONT}`;
+  ctx.fillText(
+    fitText(
+      input.url.replace(/^https?:\/\/(www\.)?/, ''),
+      textWidth - brandWidth - 32,
+      (text) => ctx.measureText(text).width
+    ),
+    PADDING,
+    y
+  );
 
   return new Promise((resolve, reject) => {
     canvas.toBlob(
