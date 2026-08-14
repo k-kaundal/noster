@@ -114,7 +114,15 @@ export interface GoalInput {
   addressPointer?: string;
 }
 
-/** The tags for a kind 9041. */
+/**
+ * The tags for a kind 9041.
+ *
+ * Throws when nothing usable is left after filtering, rather than emitting a
+ * bare `["relays"]` with no values in it. That published cleanly, parsed as
+ * null in every client including this one, and left the author holding a goal
+ * that could not be read or funded — a failure with no symptom until somebody
+ * tried to zap it.
+ */
 export function buildGoalTags(input: GoalInput): string[][] {
   const relays = [
     ...new Set(
@@ -123,6 +131,12 @@ export function buildGoalTags(input: GoalInput): string[][] {
         .filter((url) => url.startsWith('wss://') || url.startsWith('ws://'))
     ),
   ];
+
+  if (!relays.length) {
+    throw new Error(
+      'A goal needs at least one websocket relay to count its zaps at.'
+    );
+  }
 
   const tags: string[][] = [
     ['relays', ...relays],

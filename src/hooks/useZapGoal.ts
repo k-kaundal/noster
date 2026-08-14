@@ -109,8 +109,16 @@ export function useCreateZapGoal() {
        * published and where anyone tallying it will look. A goal published
        * with relays its author does not actually write to counts nothing.
        */
-      const relays = input.relays?.length ? input.relays : writeUrls;
+      const relays = (input.relays?.length ? input.relays : writeUrls).filter(
+        (url) => url.startsWith('wss://') || url.startsWith('ws://')
+      );
 
+      /*
+       * Filtered before the check, not after. `buildGoalTags` drops anything
+       * that is not a websocket URL, so a list of https entries passed a
+       * length check here and produced a goal with an empty relays tag —
+       * publishable, unreadable, unfundable.
+       */
       if (!relays.length) {
         throw new Error(
           'A goal has to name at least one relay for its zaps to be counted at.'
