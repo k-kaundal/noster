@@ -418,20 +418,11 @@ function LightningDestination({
           {identifier} receives payments.
         </p>
         <p className="text-xs text-muted-foreground">
-          It is answered by your own pay link rather than by the name itself.
-          That works — recording it against the name keeps it working if that
-          link is ever retired.
+          It is answered by your own pay link rather than by the name's own
+          record. Nothing needs doing — the two resolve to the same place, and
+          the extension cannot adopt an existing link: asking it to tries to
+          create a second one under the same name, which is refused.
         </p>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={submit}
-          disabled={isAttaching}
-          className="w-full"
-        >
-          {isAttaching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Record it against the name
-        </Button>
       </div>
     );
   }
