@@ -8,11 +8,12 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import { LnbitsError, lnbitsRequest, withExtension } from '@/lib/lnbits';
 import {
-  DEFAULT_LINK_DOMAIN,
   buildPayLinkBody,
   buildZapsUpdateBody,
   linkAddress,
   payLinkPublishesZaps,
+  readNameTaken,
+  wellKnownUrl,
 } from '@/lib/lightningAddress';
 import { listAddresses, pickPrimaryLink } from '@/lib/identity';
 import { generateFreeName, mayClaim } from '@/lib/freeAddress';
@@ -174,15 +175,18 @@ export function useLightningAddress({
        * reject the second one anyway.
        */
       /**
-       * Matched on the domain too. With several configured, the same name
-       * under two of them is two addresses, and treating the first as
-       * "already have it" would silently refuse to create the second.
+       * Matched on the name alone, because that is all the instance matches on.
+       *
+       * This compared the domain too, on the reasonable-sounding theory that
+       * the same name under two domains is two addresses. It is not one here:
+       * `GET /lnurlp/api/v1/well-known/{username}` takes no domain, so a link
+       * named `alice` already answers for `alice@` everywhere this instance
+       * serves. Asking for the second domain therefore tried to create a
+       * duplicate, and `lnurlp` refused it with a 409 — the same conflict that
+       * reaches the NIP-05 side as a bare 500.
        */
-      const wanted = (domain || DEFAULT_LINK_DOMAIN).toLowerCase();
       const existing = links.data?.find(
-        (entry) =>
-          entry.username?.toLowerCase() === username.toLowerCase() &&
-          (entry.domain || DEFAULT_LINK_DOMAIN).toLowerCase() === wanted
+        (entry) => entry.username?.toLowerCase() === username.toLowerCase()
       );
       if (existing) return existing;
 
@@ -200,6 +204,30 @@ export function useLightningAddress({
       ) {
         throw new Error(
           'That name has to be bought. Reserve it as a verified name and the matching address comes with it.'
+        );
+      }
+
+      /**
+       * Somebody else's, checked before creating rather than after.
+       *
+       * Everything above only knows about this account's own links, and the
+       * namespace is the whole instance — so a name held by another user is
+       * invisible here and collides all the same. `lnurlp` answers that with a
+       * 409 and no explanation worth showing, so it is asked first, of the
+       * public resolver that decides it. A lookup that fails to answer is not
+       * treated as taken: refusing a name because a network call wobbled is
+       * worse than letting the server have the final say.
+       */
+      const held = await fetch(wellKnownUrl(username), {
+        signal: AbortSignal.timeout(6000),
+      })
+        .then((response) => response.json())
+        .then(readNameTaken)
+        .catch(() => false);
+
+      if (held) {
+        throw new Error(
+          'That name is already taken here. Try a different one.'
         );
       }
 
