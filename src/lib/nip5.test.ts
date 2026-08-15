@@ -15,6 +15,7 @@ import {
   parseNip5Domains,
   normalizeLocalPart,
   normalizePromoCode,
+  outstandingPaymentHash,
   promoOutcome,
   readClaimedAddress,
   readPaymentHash,
@@ -426,5 +427,35 @@ describe('nip5Identifier', () => {
   it('has nothing to say about a missing address', () => {
     expect(nip5Identifier(null)).toBeNull();
     expect(nip5Identifier(undefined)).toBeNull();
+  });
+});
+
+describe('outstandingPaymentHash', () => {
+  const unpaid = (extra: Record<string, unknown> = {}) => ({
+    active: false,
+    extra: { payment_hash: 'abc123', ...extra },
+  });
+
+  it('finds the invoice an unpaid name is waiting on', () => {
+    // The extension stores it on the address itself, which is the only record
+    // that survives a reload or a payment made on another device
+    expect(outstandingPaymentHash(unpaid())).toBe('abc123');
+  });
+
+  it('answers nothing once the name is live', () => {
+    expect(outstandingPaymentHash({ ...unpaid(), active: true })).toBeUndefined();
+  });
+
+  it('answers nothing when no invoice was ever raised', () => {
+    // A free name settles immediately and carries no hash
+    expect(outstandingPaymentHash({ active: false, extra: {} })).toBeUndefined();
+    expect(
+      outstandingPaymentHash({ active: false, extra: { payment_hash: '' } })
+    ).toBeUndefined();
+  });
+
+  it('answers nothing for a missing address', () => {
+    expect(outstandingPaymentHash(null)).toBeUndefined();
+    expect(outstandingPaymentHash(undefined)).toBeUndefined();
   });
 });

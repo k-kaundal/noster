@@ -548,3 +548,19 @@ export function readClaimedAddress(body: unknown): Nip5Address | null {
     ? (body as Nip5Address)
     : null;
 }
+
+/**
+ * The invoice an unpaid name is still waiting on, if it remembers one.
+ *
+ * The extension stores the payment hash on the address itself, which is the
+ * only durable record of the purchase: the claim response lived in component
+ * state, so paying from a phone, another browser, or simply after a reload
+ * left a settled invoice that nothing in this app was watching. The name stayed
+ * "awaiting payment" and the only button offered to pay for it again.
+ */
+export function outstandingPaymentHash(
+  address: Pick<Nip5Address, 'active' | 'extra'> | null | undefined
+): string | undefined {
+  if (!address || address.active) return undefined;
+  return address.extra?.payment_hash || undefined;
+}
