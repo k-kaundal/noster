@@ -15,6 +15,8 @@ import {
   parseNip5Domains,
   normalizeLocalPart,
   normalizePromoCode,
+  attachedWalletIsForeign,
+  defaultAttachWallet,
   outstandingPaymentHash,
   promoOutcome,
   readClaimedAddress,
@@ -457,5 +459,50 @@ describe('outstandingPaymentHash', () => {
   it('answers nothing for a missing address', () => {
     expect(outstandingPaymentHash(null)).toBeUndefined();
     expect(outstandingPaymentHash(undefined)).toBeUndefined();
+  });
+});
+
+describe('a name pointed at somebody else’s wallet', () => {
+  const attached = (wallet: string) => ({
+    extra: { ln_address: { wallet, pay_link_id: 'link-1' } },
+  });
+
+  const mine = ['wallet-a', 'wallet-b'];
+
+  it('spots a wallet this account does not have', () => {
+    // The id outlives the account that owned it, and sending it back is what
+    // makes the extension raise and answer a bare 500
+    expect(attachedWalletIsForeign(attached('someone-elses'), mine)).toBe(true);
+  });
+
+  it('accepts a wallet the account holds', () => {
+    expect(attachedWalletIsForeign(attached('wallet-b'), mine)).toBe(false);
+  });
+
+  it('says nothing about a name with no wallet at all', () => {
+    expect(attachedWalletIsForeign({ extra: {} }, mine)).toBe(false);
+    expect(attachedWalletIsForeign(null, mine)).toBe(false);
+  });
+
+  it('does not accuse anything while the wallet list is still empty', () => {
+    // Wallets arrive from a query; an empty list is "not yet", not "not yours"
+    expect(attachedWalletIsForeign(attached('wallet-a'), [])).toBe(true);
+  });
+
+  it('keeps a usable stored wallet as the default', () => {
+    expect(defaultAttachWallet(attached('wallet-b'), mine)).toBe('wallet-b');
+  });
+
+  it('never defaults to a foreign wallet', () => {
+    // Defaulting to it is how the dead id got resent on every retry
+    expect(defaultAttachWallet(attached('someone-elses'), mine)).toBe('wallet-a');
+  });
+
+  it('falls back to the first wallet when none is stored', () => {
+    expect(defaultAttachWallet({ extra: {} }, mine)).toBe('wallet-a');
+  });
+
+  it('answers empty when there is nothing to choose', () => {
+    expect(defaultAttachWallet({ extra: {} }, [])).toBe('');
   });
 });

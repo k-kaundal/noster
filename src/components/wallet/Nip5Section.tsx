@@ -47,6 +47,8 @@ import {
   isLnAddressPending,
   isZappable,
   lnAddressConfig,
+  attachedWalletIsForeign,
+  defaultAttachWallet,
   normalizeLocalPart,
   outstandingPaymentHash,
   promoOutcome,
@@ -350,7 +352,18 @@ function LightningDestination({
    * query — leaving the form permanently pointed at an empty id.
    */
   const [picked, setPicked] = useState<string | null>(null);
-  const walletId = picked ?? current?.wallet ?? wallets[0]?.id ?? '';
+
+  const walletIds = wallets.map((entry) => entry.id);
+
+  /**
+   * Never the stored wallet when it belongs to another account.
+   *
+   * Defaulting to it is how a foreign id got sent back on every retry — the
+   * server raises looking it up and answers a bare 500, so the repair button
+   * failed identically however many times it was pressed.
+   */
+  const foreign = attachedWalletIsForeign(address, walletIds);
+  const walletId = picked ?? defaultAttachWallet(address, walletIds);
 
   /**
    * Nothing about receiving, until the name exists.
@@ -417,6 +430,55 @@ function LightningDestination({
         >
           {isAttaching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Record it against the name
+        </Button>
+      </div>
+    );
+  }
+
+  /*
+   * Pointed at a wallet this account cannot reach.
+   *
+   * The id on the address outlives the account that owned it, so a name
+   * attached under one LNbits login keeps naming that login's wallet after
+   * signing in as another. Every retry sent the same dead id and collected the
+   * same empty 500, which is why "Finish setting it up" looked like a button
+   * that does nothing. Pointing it at a real wallet is the fix, and that is a
+   * choice, so it drops through to the form below rather than offering a
+   * repair that would repeat the failure.
+   */
+  if (foreign) {
+    return (
+      <div className="space-y-3 rounded-lg border border-warning/40 bg-warning/8 p-3">
+        <p className="text-sm font-medium text-warning-strong">
+          {identifier} pays into a wallet this account no longer has.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          It was attached while signed in to a different LNbits account, so
+          nothing sent to it can arrive here. Choose one of your wallets and it
+          starts receiving again.
+        </p>
+
+        <Select value={walletId} onValueChange={setPicked}>
+          <SelectTrigger className="bg-background">
+            <SelectValue placeholder="Choose a wallet" />
+          </SelectTrigger>
+          <SelectContent>
+            {wallets.map((entry) => (
+              <SelectItem key={entry.id} value={entry.id}>
+                {entry.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Button
+          size="sm"
+          onClick={submit}
+          disabled={isAttaching || !walletId}
+          className="w-full"
+        >
+          {isAttaching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Point it at this wallet
         </Button>
       </div>
     );

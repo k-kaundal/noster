@@ -385,6 +385,23 @@ export function useNip5() {
       if (!target) throw new Error('Connect your wallet first');
 
       /**
+       * Refused here rather than by the server, which refuses badly.
+       *
+       * A wallet id that is not on the signed-in account makes the extension
+       * raise while looking it up, and the answer comes back as a bare 500
+       * with an empty body — nothing to show anyone, and identical to the
+       * failure for an extension that is switched off. The id gets there
+       * honestly: the address remembers whichever wallet it was attached to,
+       * and that account can be a different one after signing in with a
+       * password, a `?usr=` link, or a second Nostr key.
+       */
+      if (wallets.length && !wallets.some((entry) => entry.id === target)) {
+        throw new Error(
+          'That name pays into a wallet this account no longer has. Choose one of yours below.'
+        );
+      }
+
+      /**
        * The other extension this needs, enabled before asking.
        *
        * Attaching a lightning address to a name is `nostrnip5` on the outside
