@@ -105,6 +105,8 @@ export function useNip5Payment(
   paymentHash: string | undefined,
   domainId = NIP5_DOMAIN_ID
 ) {
+  const queryClient = useQueryClient();
+
   return useQuery<boolean>({
     // Keyed by the domain too. The route is per-domain, so the same key
     // serving two domains would answer one from the other's cached result
@@ -115,13 +117,29 @@ export function useNip5Payment(
         { signal }
       );
 
-      return body.paid === true || body.status === 'success';
+      const paid = body.paid === true || body.status === 'success';
+
+      /**
+       * The name is live the moment this turns true, and nothing else would
+       * notice.
+       *
+       * `active` flips server-side when the invoice settles, so the list this
+       * app is holding is stale from that instant — and it is cached for a
+       * minute. Without this, a name paid a second ago still reads "reserved
+       * for you and not live yet", with a button offering to pay again.
+       */
+      if (paid) {
+        queryClient.invalidateQueries({ queryKey: ['nip5-addresses'] });
+      }
+
+      return paid;
     },
     enabled: isNip5Configured() && !!paymentHash && !!domainId,
     refetchInterval: (query) => (query.state.data ? false : 3000),
     retry: false,
   });
 }
+
 
 /**
  * The user's NIP-05 identifiers, and buying one.

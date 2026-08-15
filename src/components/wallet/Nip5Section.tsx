@@ -48,6 +48,7 @@ import {
   isZappable,
   lnAddressConfig,
   normalizeLocalPart,
+  outstandingPaymentHash,
   promoOutcome,
   validateLocalPart,
   yearOptions,
@@ -351,6 +352,19 @@ function LightningDestination({
   const [picked, setPicked] = useState<string | null>(null);
   const walletId = picked ?? current?.wallet ?? wallets[0]?.id ?? '';
 
+  /**
+   * Nothing about receiving, until the name exists.
+   *
+   * A name whose invoice has not settled cannot have a pay link — the
+   * extension will not build one for a name it has not activated — so the
+   * missing link is the expected state, not a fault. Reporting it as one put
+   * "the payment link behind the name was never created … nothing sent to it
+   * arrives" under a name whose only real problem is that it is unpaid, and
+   * offered a repair button that cannot work yet. The card above already says
+   * the true thing and offers the invoice.
+   */
+  if (nip5State(address) === 'inactive') return null;
+
   const named = wallets.find((entry) => entry.id === current?.wallet);
   const changed = !!current && walletId !== current.wallet;
 
@@ -526,7 +540,19 @@ function LightningDestination({
 function UnpaidName({ address }: { address: Nip5Address }) {
   const { claim, isClaiming, pay, isPaying } = useNip5();
   const [pending, setPending] = useState<PendingNip5 | null>(null);
-  const paid = useNip5Payment(pending?.paymentHash, pending?.domainId);
+
+  /**
+   * The invoice from this session if there is one, otherwise the one the
+   * address itself remembers.
+   *
+   * That fallback is what makes a payment made anywhere else land here: from a
+   * phone, from another browser, or from a wallet opened after this page was
+   * reloaded. Watching only the session's own claim meant an invoice could
+   * settle with nothing looking, and the name sat at "awaiting payment"
+   * offering to sell itself again.
+   */
+  const watched = pending?.paymentHash ?? outstandingPaymentHash(address);
+  const paid = useNip5Payment(watched, pending?.domainId ?? address.domain_id);
 
   if (nip5State(address) !== 'inactive') return null;
 
