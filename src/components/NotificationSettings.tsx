@@ -88,7 +88,7 @@ export function NotificationSettings() {
             <Label className="flex cursor-pointer items-start justify-between gap-4 font-normal">
               <span className="space-y-1">
                 <span className="block text-sm font-medium">
-                  Alert me about zaps, replies and mentions
+                  Alert me about zaps, payments, follows, replies and mentions
                 </span>
                 <span className="block text-sm text-muted-foreground">
                   Shown only when you are looking at something else — never for

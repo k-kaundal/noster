@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import { relativeTime } from '@/lib/time';
-import { AtSign, MessageCircle, Quote, Repeat2, Zap } from 'lucide-react';
+import { AtSign, MessageCircle, Quote, Repeat2, UserPlus, Zap } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
@@ -16,6 +16,7 @@ const TYPE_META = {
   reaction: { icon: null, label: 'reacted to your note', tone: 'text-like' },
   repost: { icon: Repeat2, label: 'reposted your note', tone: 'text-repost' },
   zap: { icon: Zap, label: 'zapped you', tone: 'text-zap' },
+  follow: { icon: UserPlus, label: 'followed you', tone: 'text-primary' },
 } as const;
 
 interface NotificationRowProps {
@@ -44,10 +45,14 @@ export function NotificationRow({
       : meta.label;
 
   // Reactions, reposts and zaps point at the note they targeted. A mention has
-  // no target, so it links to itself.
-  const href = notification.targetEventId
-    ? `/${nip19.noteEncode(notification.targetEventId)}`
-    : `/${nip19.noteEncode(notification.event.id)}`;
+  // no target, so it links to itself. A follow points at the person: its event
+  // is a contact list, and opening one as a note shows an empty page.
+  const href =
+    notification.type === 'follow'
+      ? `/${nip19.npubEncode(notification.pubkey)}`
+      : notification.targetEventId
+        ? `/${nip19.noteEncode(notification.targetEventId)}`
+        : `/${nip19.noteEncode(notification.event.id)}`;
 
   return (
     <li className={cn(unread && 'bg-primary/5')}>

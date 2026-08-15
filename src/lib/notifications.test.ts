@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { NostrEvent } from '@nostrify/nostrify';
 import {
+  FOLLOW_KIND,
   buildNotifications,
   filterNotifications,
   repostedContent,
@@ -337,5 +338,98 @@ describe('quotes', () => {
 
   it('is still a mention when nothing is referenced', () => {
     expect(toNotification(kind1([['p', me]]), me)?.type).toBe('mention');
+  });
+});
+
+describe('follows', () => {
+  const contactList = (overrides: Partial<NostrEvent> = {}) =>
+    event({
+      kind: FOLLOW_KIND,
+      tags: [['p', ME]],
+      // A contact list's content is a relay blob, never a message to anyone
+      content: '{"wss://relay.example":{"read":true,"write":true}}',
+      ...overrides,
+    });
+
+  it('reads a contact list naming you as a follow', () => {
+    const notification = toNotification(contactList(), ME);
+
+    expect(notification?.type).toBe('follow');
+    expect(notification?.pubkey).toBe(THEM);
+  });
+
+  it('carries no content, so the row does not print a relay blob', () => {
+    expect(toNotification(contactList(), ME)?.content).toBe('');
+  });
+
+  it('ignores a list that does not actually name you', () => {
+    // A relay's #p filter matches any p tag, and reporting a loose match would
+    // announce a follow that did not happen
+    expect(
+      toNotification(contactList({ tags: [['p', THEM]] }), ME)
+    ).toBeNull();
+  });
+
+  it('ignores your own contact list', () => {
+    expect(
+      toNotification(contactList({ pubkey: ME, tags: [['p', ME]] }), ME)
+    ).toBeNull();
+  });
+
+  it('keeps one row per follower when a relay holds several versions', () => {
+    // Kind 3 is replaceable and people edit their follows, so without this a
+    // single reader reorganising their list fills your notifications
+    const built = buildNotifications(
+      [
+        contactList({ id: '2'.repeat(64), created_at: 1_700_000_100 }),
+        contactList({ id: '3'.repeat(64), created_at: 1_700_000_200 }),
+        contactList({ id: '4'.repeat(64), created_at: 1_700_000_050 }),
+      ],
+      ME
+    );
+
+    expect(built).toHaveLength(1);
+    expect(built[0].createdAt).toBe(1_700_000_200);
+  });
+
+  it('keeps a row each for two different followers', () => {
+    const other = 'e'.repeat(64);
+
+    const built = buildNotifications(
+      [
+        contactList({ id: '2'.repeat(64) }),
+        contactList({ id: '3'.repeat(64), pubkey: other }),
+      ],
+      ME
+    );
+
+    expect(built.map((entry) => entry.pubkey).sort()).toEqual(
+      [THEM, other].sort()
+    );
+  });
+
+  it('does not collapse anything that is not a follow', () => {
+    const built = buildNotifications(
+      [
+        event({ id: '2'.repeat(64), kind: 7, tags: [['e', NOTE]], content: '+' }),
+        event({ id: '3'.repeat(64), kind: 7, tags: [['e', NOTE]], content: '🔥' }),
+      ],
+      ME
+    );
+
+    expect(built).toHaveLength(2);
+  });
+
+  it('has a filter of its own', () => {
+    const built = buildNotifications(
+      [
+        contactList({ id: '2'.repeat(64) }),
+        event({ id: '3'.repeat(64), kind: 7, tags: [['e', NOTE]], content: '+' }),
+      ],
+      ME
+    );
+
+    expect(filterNotifications(built, 'follows')).toHaveLength(1);
+    expect(filterNotifications(built, 'follows')[0].type).toBe('follow');
   });
 });

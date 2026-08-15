@@ -13,6 +13,7 @@ import { useIdlePrefetch, useOnceOpened } from '@/hooks/useDeferredDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useOutboxDrain } from '@/hooks/useOutbox';
 import { useSystemNotifications } from '@/hooks/useSystemNotifications';
+import { useWalletNotifications } from '@/hooks/useWalletNotifications';
 import { cn } from '@/lib/utils';
 
 /**
@@ -89,6 +90,16 @@ export function Layout({
    * it has to keep working whichever page the reader is on.
    */
   useSystemNotifications();
+
+  /**
+   * The wallet's own arrivals, which the relays cannot tell you about.
+   *
+   * A payment to a lightning address is not a zap and writes no receipt, and a
+   * real zap's receipt is published to the sender's relays rather than yours —
+   * so money can land with nothing on Nostr to notice. Mounted here for the
+   * same reason as the line above: once, for the whole app.
+   */
+  useWalletNotifications();
 
   useKeyboardShortcuts({
     onSearch: openPalette,
