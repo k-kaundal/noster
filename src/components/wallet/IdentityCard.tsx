@@ -18,8 +18,8 @@ import { Nip5Section } from '@/components/wallet/Nip5Section';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useAddressCheck } from '@/hooks/useAddressCheck';
 import {
-  ADDRESS_DOMAIN,
-  ADDRESS_DOMAINS,
+  FREE_ADDRESS_DOMAIN,
+  FREE_ADDRESS_DOMAINS,
   formatAddress,
 } from '@/lib/lightningAddress';
 import { NIP5_DOMAIN, isNip5Configured } from '@/lib/nip5';
@@ -291,8 +291,17 @@ function ClaimForm() {
    * somebody for no reason — so the picker appears with the second domain and
    * not before.
    */
-  const [domain, setDomain] = useState(ADDRESS_DOMAIN);
-  const choices = ADDRESS_DOMAINS;
+  const [domain, setDomain] = useState(FREE_ADDRESS_DOMAIN);
+
+  /**
+   * Only the domains that give names away.
+   *
+   * Not every domain we serve is free — a premium one exists to be sold, and
+   * offering it here would have somebody claim a paid name by pressing the
+   * free button. The paid domains are still reachable, through the form that
+   * charges for them and prices each one.
+   */
+  const choices = FREE_ADDRESS_DOMAINS;
 
   return (
     <div className="space-y-4">

@@ -18,6 +18,14 @@ interface ImportMetaEnv {
   readonly VITE_CASHU_MINT_URL?: string;
   /** Domain for user lightning addresses. Defaults to the LNbits host. */
   readonly VITE_LIGHTNING_ADDRESS_DOMAIN?: string;
+  /** Any further domains we issue lightning addresses under, comma separated. */
+  readonly VITE_LIGHTNING_ADDRESS_DOMAINS?: string;
+  /**
+   * Which of those domains give away assigned addresses. The rest are sold.
+   * Defaults to the LNbits host, the one domain that answers for free.
+   */
+  readonly VITE_FREE_LIGHTNING_ADDRESS_DOMAIN?: string;
+  readonly VITE_FREE_LIGHTNING_ADDRESS_DOMAINS?: string;
   /** LNbits pay link id for monthly relay access. */
   readonly VITE_PREMIUM_MONTHLY_LINK?: string;
   /** LNbits pay link id for lifetime relay write access. */

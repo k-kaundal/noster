@@ -8,7 +8,7 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import { LnbitsError, lnbitsRequest, withExtension } from '@/lib/lnbits';
 import {
-  ADDRESS_DOMAIN,
+  DEFAULT_LINK_DOMAIN,
   buildPayLinkBody,
   buildZapsUpdateBody,
   linkAddress,
@@ -152,11 +152,11 @@ export function useLightningAddress({
        * under two of them is two addresses, and treating the first as
        * "already have it" would silently refuse to create the second.
        */
-      const wanted = (domain || ADDRESS_DOMAIN).toLowerCase();
+      const wanted = (domain || DEFAULT_LINK_DOMAIN).toLowerCase();
       const existing = links.data?.find(
         (entry) =>
           entry.username?.toLowerCase() === username.toLowerCase() &&
-          (entry.domain || ADDRESS_DOMAIN).toLowerCase() === wanted
+          (entry.domain || DEFAULT_LINK_DOMAIN).toLowerCase() === wanted
       );
       if (existing) return existing;
 

@@ -13,7 +13,12 @@ import {
   suggestIdentityName,
   withIdentity,
 } from '@/lib/identity';
-import { suggestUsername } from '@/lib/lightningAddress';
+import {
+  FREE_ADDRESS_DOMAIN,
+  isFreeAddressDomain,
+  normalizeDomain,
+  suggestUsername,
+} from '@/lib/lightningAddress';
 import { generateFreeName, hasChosenName } from '@/lib/freeAddress';
 
 /**
@@ -136,7 +141,23 @@ export function useIdentity() {
   const claimFree = useMutation({
     mutationFn: async (domain?: string) => {
       if (!freeName) throw new Error('Log in first');
-      return await lightning.claim({ username: freeName, domain });
+
+      /**
+       * Pinned to a domain that actually gives names away.
+       *
+       * Not `ADDRESS_DOMAIN`: that is whichever domain happens to be listed
+       * first, and on a deployment that also sells a premium one it is the
+       * premium one — so the free button was handing out paid inventory. A
+       * domain outside the free list is corrected rather than refused, because
+       * the only caller is a picker that offers free domains and nothing else,
+       * which makes anything else a bug here rather than a choice made there.
+       */
+      const target =
+        domain && isFreeAddressDomain(domain)
+          ? normalizeDomain(domain)
+          : FREE_ADDRESS_DOMAIN;
+
+      return await lightning.claim({ username: freeName, domain: target });
     },
     onError: (error: Error) => {
       toast({

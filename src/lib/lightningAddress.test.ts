@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   ADDRESS_DOMAIN,
+  ADDRESS_DOMAINS,
+  DEFAULT_LINK_DOMAIN,
+  FREE_ADDRESS_DOMAIN,
+  FREE_ADDRESS_DOMAINS,
   buildPayLinkBody,
+  formatAddress,
+  isFreeAddressDomain,
+  linkAddress,
   isOurAddress,
   parseLightningAddress,
   suggestUsername,
@@ -192,5 +199,52 @@ describe('isOurAddress', () => {
 
   it('does not claim an address from elsewhere', () => {
     expect(isOurAddress('bob@getalby.com')).toBe(false);
+  });
+});
+
+/**
+ * These assert the shape of the free/paid split rather than the names in it:
+ * which domains a deployment sells is configuration, read at import time, and
+ * a test that hard-codes one only proves what this checkout's `.env` says.
+ * What has to hold everywhere is that the free tier can never hand out a
+ * domain we do not serve, and never leaves nothing to hand out at all.
+ */
+describe('free address domains', () => {
+  it('only ever offers domains this app actually serves', () => {
+    for (const entry of FREE_ADDRESS_DOMAINS) {
+      expect(ADDRESS_DOMAINS).toContain(entry);
+    }
+  });
+
+  it('always has one to give away', () => {
+    expect(FREE_ADDRESS_DOMAINS.length).toBeGreaterThan(0);
+    expect(FREE_ADDRESS_DOMAIN).toBe(FREE_ADDRESS_DOMAINS[0]);
+  });
+
+  it('recognises a free domain however it is written', () => {
+    expect(isFreeAddressDomain(FREE_ADDRESS_DOMAIN)).toBe(true);
+    expect(isFreeAddressDomain(FREE_ADDRESS_DOMAIN.toUpperCase())).toBe(true);
+    expect(isFreeAddressDomain(`@${FREE_ADDRESS_DOMAIN}`)).toBe(true);
+  });
+
+  it('does not treat a stranger as free', () => {
+    expect(isFreeAddressDomain('getalby.com')).toBe(false);
+  });
+});
+
+describe('DEFAULT_LINK_DOMAIN', () => {
+  it('is a domain we serve', () => {
+    expect(ADDRESS_DOMAINS).toContain(DEFAULT_LINK_DOMAIN);
+  });
+
+  it('labels a link that carries no domain of its own', () => {
+    expect(formatAddress('bob')).toBe(`bob@${DEFAULT_LINK_DOMAIN}`);
+    expect(linkAddress({ username: 'bob' })).toBe(`bob@${DEFAULT_LINK_DOMAIN}`);
+  });
+
+  it('never overrides a domain the link does carry', () => {
+    expect(linkAddress({ username: 'bob', domain: 'zap.example' })).toBe(
+      'bob@zap.example'
+    );
   });
 });
