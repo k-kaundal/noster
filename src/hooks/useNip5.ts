@@ -473,10 +473,29 @@ export function useNip5() {
       });
     },
     onError: (error: Error) => {
+      /**
+       * A conflict here is not a fault to retry — it is the name already
+       * existing as a pay link.
+       *
+       * `update_ln_address` does not adopt a link, it POSTs a new one to
+       * `lnurlp/api/v1/links`, and that route resolves a username across the
+       * whole instance. So when a link with this name exists — issued by the
+       * plain lightning-address flow, or by hand — the create is refused with
+       * a 409 and the extension raises rather than reporting, which is what
+       * turned it into a bare 500. Retrying repeats it exactly.
+       */
+      const conflict =
+        error instanceof LnbitsError &&
+        (error.status === 409 || /conflict|already exists/i.test(error.message));
+
       toast({
-        title: 'Could not enable zaps for that name',
-        description: error.message,
-        variant: 'destructive',
+        title: conflict
+          ? 'That address already exists'
+          : 'Could not enable zaps for that name',
+        description: conflict
+          ? 'A pay link of yours already answers for this name, so the extension cannot make a second one. Money sent to the address arrives at that link — nothing needs fixing to be paid.'
+          : error.message,
+        variant: conflict ? 'default' : 'destructive',
       });
     },
   });
