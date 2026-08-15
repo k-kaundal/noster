@@ -85,6 +85,72 @@ export const ADDRESS_DOMAINS: string[] = (() => {
  */
 export const ADDRESS_DOMAIN = ADDRESS_DOMAINS[0];
 
+/**
+ * The domains a free, assigned address may be issued under.
+ *
+ * Serving a domain and giving names away under it are separate decisions. A
+ * deployment can answer for a second, premium domain that is only ever sold —
+ * and reading the free domain off the top of `ADDRESS_DOMAINS` hands that
+ * inventory to anyone who presses the free button, which is exactly what
+ * happened here: with `getzap.me,ln.nostrfeed.com` configured, every free
+ * address was issued at the paid name.
+ *
+ * `VITE_FREE_LIGHTNING_ADDRESS_DOMAIN(S)` names them. Unconfigured, this falls
+ * back to the LNbits host when we serve it, because that is the one domain
+ * that costs nothing to answer for: LNbits serves `/.well-known/lnurlp/*` on
+ * its own origin, so an address there works without a proxy rule and without
+ * anybody having bought anything. Every other domain we list is a nicer name
+ * pointed at it, which is the thing worth selling.
+ *
+ * Filtered to domains we actually serve — a free domain we do not answer for
+ * issues addresses nobody can pay.
+ */
+export const FREE_ADDRESS_DOMAINS: string[] = (() => {
+  const configured = [
+    import.meta.env.VITE_FREE_LIGHTNING_ADDRESS_DOMAIN,
+    import.meta.env.VITE_FREE_LIGHTNING_ADDRESS_DOMAINS,
+  ]
+    .filter((value): value is string => typeof value === 'string' && !!value)
+    .join(',')
+    .split(/[\s,]+/)
+    .map(normalizeDomain)
+    .filter((entry) => ADDRESS_DOMAINS.includes(entry));
+
+  const unique = [...new Set(configured)];
+  if (unique.length) return unique;
+
+  const host = lnbitsHost();
+  return ADDRESS_DOMAINS.includes(host) ? [host] : [ADDRESS_DOMAINS[0]];
+})();
+
+/** Where an assigned address lands unless somebody picks another free one. */
+export const FREE_ADDRESS_DOMAIN = FREE_ADDRESS_DOMAINS[0];
+
+/**
+ * What a pay link with no domain of its own answers to.
+ *
+ * LNbits stores a domain per link, and a link made before the instance served
+ * more than one has none. That link is reachable at the LNbits host, which
+ * answers the well-known route on its own origin — so that is the honest name
+ * to print for it. Taking the first configured domain instead labels it at
+ * whichever name happens to be listed first, and on a deployment that serves
+ * two, that is a domain which has never heard of the link: the address reads
+ * fine and resolves nowhere.
+ *
+ * Falls back to the default domain when the LNbits host is not one we issue
+ * under, which is the single-domain deployment behind a proxy — there the
+ * configured name is the only one anybody was ever given.
+ */
+export const DEFAULT_LINK_DOMAIN: string = (() => {
+  const host = lnbitsHost();
+  return ADDRESS_DOMAINS.includes(host) ? host : ADDRESS_DOMAIN;
+})();
+
+/** Whether a domain gives names away, rather than selling every one of them. */
+export function isFreeAddressDomain(domain: string): boolean {
+  return FREE_ADDRESS_DOMAINS.includes(normalizeDomain(domain));
+}
+
 /** Whether a domain is one of ours. */
 export function isOurDomain(domain: string): boolean {
   return ADDRESS_DOMAINS.includes(normalizeDomain(domain));
@@ -169,12 +235,12 @@ export function describeUsernameProblem(problem: UsernameProblem): string {
 
 /** The full address a username resolves to, under one of our domains. */
 export function formatAddress(username: string, domain?: string): string {
-  return `${username}@${domain ? normalizeDomain(domain) : ADDRESS_DOMAIN}`;
+  return `${username}@${domain ? normalizeDomain(domain) : DEFAULT_LINK_DOMAIN}`;
 }
 
 /** Where a wallet-app will actually fetch the LNURL-pay metadata from. */
 export function wellKnownUrl(username: string, domain?: string): string {
-  const host = domain ? normalizeDomain(domain) : ADDRESS_DOMAIN;
+  const host = domain ? normalizeDomain(domain) : DEFAULT_LINK_DOMAIN;
   return `https://${host}/.well-known/lnurlp/${username}`;
 }
 

@@ -41,7 +41,7 @@ import { useToast } from '@/hooks/useToast';
 import { useWalletActivity } from '@/hooks/useWalletActivity';
 import { useLnbitsWallet } from '@/hooks/useLnbitsWallet';
 import { useRouteSeo } from '@/hooks/useSeo';
-import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
+import { FREE_ADDRESS_DOMAIN } from '@/lib/lightningAddress';
 
 /**
  * The wallet, as a place rather than a settings tab.
@@ -123,7 +123,7 @@ function CreateWalletCard() {
         </p>
         {/* The real domain, so the promise is checkable before it is accepted */}
         <p className="mt-2 font-mono text-sm font-medium text-foreground">
-          you@{ADDRESS_DOMAIN}
+          you@{FREE_ADDRESS_DOMAIN}
         </p>
         <p className="mx-auto mt-2 max-w-sm text-base leading-relaxed text-muted-foreground">
           that people can zap from any Nostr client.

@@ -10,6 +10,7 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useToast } from '@/hooks/useToast';
 import {
   LnbitsError,
+  enableExtension,
   lnbitsRequest,
   readBolt11,
   withExtension,
@@ -351,6 +352,23 @@ export function useNip5() {
     }) => {
       const target = walletId || wallet?.id;
       if (!target) throw new Error('Connect your wallet first');
+
+      /**
+       * The other extension this needs, enabled before asking.
+       *
+       * Attaching a lightning address to a name is `nostrnip5` on the outside
+       * and `lnurlp` underneath: the endpoint creates a pay link to receive
+       * with. A new account has neither switched on — LNbits gives it only
+       * what `lnbits_user_default_extensions` lists, which is empty by default
+       * — and the extension does not report the missing one, it raises, so the
+       * request comes back as a bare 500 with nothing in it to act on.
+       *
+       * `withExtension` cannot rescue that: it retries on "extension not
+       * enabled", which a 500 never says. So this is done up front, and a
+       * failure here is swallowed because it is only ever a precaution — the
+       * real error, if there still is one, belongs to the call below.
+       */
+      await enableExtension('lnurlp', token).catch(() => {});
 
       await withExtension(EXTENSION, token, () =>
         lnbitsRequest(
