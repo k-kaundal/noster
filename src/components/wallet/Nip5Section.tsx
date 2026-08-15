@@ -33,6 +33,7 @@ import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLightningAddress } from '@/hooks/useLightningAddress';
 import { useToast } from '@/hooks/useToast';
 import { servesAddress } from '@/lib/identity';
+import { ADDRESS_DOMAINS } from '@/lib/lightningAddress';
 import { cn } from '@/lib/utils';
 import {
   DEFAULT_MAX_YEARS,
@@ -277,7 +278,7 @@ function ZapsHere({
    * from exactly the people whose profile was still pointed at an older
    * address, which is the case it exists for.
    */
-  const payable = isZappable(address) || servesAddress(addresses, identifier);
+  const payable = isZappable(address) || servesAddress(addresses, identifier, ADDRESS_DOMAINS);
   if (!payable || nip5State(address) === 'inactive') return null;
 
   if (profileAddress?.trim().toLowerCase() === identifier.toLowerCase()) {
@@ -341,7 +342,7 @@ function LightningDestination({
   const { addresses: payable } = useLightningAddress();
 
   const current = lnAddressConfig(address);
-  const alreadyServed = servesAddress(payable, identifier);
+  const alreadyServed = servesAddress(payable, identifier, ADDRESS_DOMAINS);
   const pending = isLnAddressPending(address);
 
   /**

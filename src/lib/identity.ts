@@ -309,10 +309,49 @@ export function listAddresses<T extends { username?: string }>(
  */
 export function servesAddress(
   entries: Array<{ address: string }>,
-  identifier: string | null | undefined
+  identifier: string | null | undefined,
+  /**
+   * Every domain this LNbits instance answers for.
+   *
+   * Needed because a username is not scoped to one of them. LNbits resolves a
+   * lightning address through `GET /lnurlp/api/v1/well-known/{username}` — a
+   * route that takes the username and nothing else — and builds the callback
+   * from whichever host the request arrived on. So one pay link named `kk`
+   * answers for `kk@` on every domain pointed at the instance, whatever the
+   * `domain` field on that link happens to say.
+   *
+   * Left empty this compares whole addresses only, which is the strict reading
+   * and the right default for anything not on this instance.
+   */
+  instanceDomains: string[] = []
 ): boolean {
   const wanted = identifier?.trim().toLowerCase();
   if (!wanted) return false;
 
-  return entries.some((entry) => entry.address.trim().toLowerCase() === wanted);
+  const held = entries.map((entry) => entry.address.trim().toLowerCase());
+  if (held.includes(wanted)) return true;
+
+  const split = (address: string) => {
+    const at = address.lastIndexOf('@');
+    return at > 0
+      ? { name: address.slice(0, at), domain: address.slice(at + 1) }
+      : null;
+  };
+
+  const target = split(wanted);
+  if (!target || !instanceDomains.includes(target.domain)) return false;
+
+  /*
+   * Same name, and both sides on a domain this instance serves. Comparing the
+   * domains to each other would be the wrong test — the point is that neither
+   * of them is what the lookup uses.
+   */
+  return held.some((address) => {
+    const entry = split(address);
+    return (
+      !!entry &&
+      entry.name === target.name &&
+      instanceDomains.includes(entry.domain)
+    );
+  });
 }
