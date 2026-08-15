@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  readNameTaken,
   ADDRESS_DOMAIN,
   ADDRESS_DOMAINS,
   DEFAULT_LINK_DOMAIN,
@@ -246,5 +247,36 @@ describe('DEFAULT_LINK_DOMAIN', () => {
     expect(linkAddress({ username: 'bob', domain: 'zap.example' })).toBe(
       'bob@zap.example'
     );
+  });
+});
+
+describe('readNameTaken', () => {
+  it('reads a live offer as the name being held', () => {
+    // What kk@getzap.me actually returns — somebody has this name
+    expect(
+      readNameTaken({
+        tag: 'payRequest',
+        callback: 'https://getzap.me/lnurlp/api/v1/lnurl/cb/2MxAAS',
+        minSendable: 1000,
+        maxSendable: 10000000000,
+      })
+    ).toBe(true);
+  });
+
+  it('reads an LNURL error as the name being free', () => {
+    // LNbits answers an unknown name this way, often with a 200
+    expect(readNameTaken({ status: 'ERROR', reason: 'Address not found.' })).toBe(
+      false
+    );
+    expect(readNameTaken({ status: 'error', reason: 'nope' })).toBe(false);
+  });
+
+  it('does not read a half-formed reply as taken', () => {
+    // Refusing a name on the strength of a malformed answer would block a name
+    // nobody holds
+    expect(readNameTaken({ tag: 'payRequest' })).toBe(false);
+    expect(readNameTaken({})).toBe(false);
+    expect(readNameTaken(null)).toBe(false);
+    expect(readNameTaken('not json')).toBe(false);
   });
 });

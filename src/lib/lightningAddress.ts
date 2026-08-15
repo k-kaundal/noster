@@ -447,3 +447,33 @@ export function isOurAddress(address: string): boolean {
   const domain = addressDomain(address.trim());
   return !!domain && isOurDomain(domain);
 }
+
+/**
+ * Whether a name is already spoken for on this instance.
+ *
+ * Asked of the resolver itself rather than of a list, because the resolver is
+ * what decides. `GET /lnurlp/api/v1/well-known/{username}` — which is what a
+ * `/.well-known/lnurlp/{name}` request becomes — takes the username and
+ * nothing else, so a name is taken instance-wide the moment any link carries
+ * it, on any domain, under anybody's account. A list of our own links cannot
+ * see the ones that belong to other people, and those collide just the same.
+ *
+ * LNbits answers a live name with a `payRequest` and an unknown one with an
+ * LNURL error, so the two are told apart by shape rather than by status: the
+ * error comes back with a 200 as often as not.
+ */
+export function readNameTaken(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+
+  const record = body as Record<string, unknown>;
+
+  if (
+    typeof record.status === 'string' &&
+    record.status.toLowerCase() === 'error'
+  ) {
+    return false;
+  }
+
+  // A real offer is the only thing that means somebody holds this name
+  return record.tag === 'payRequest' && typeof record.callback === 'string';
+}
