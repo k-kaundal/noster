@@ -18,6 +18,7 @@ const ReelsPage = lazy(() => importChunk(() => import("./pages/ReelsPage")));
 const BookmarksPage = lazy(() => importChunk(() => import("./pages/BookmarksPage")));
 const ChatPage = lazy(() => importChunk(() => import("./pages/ChatPage")));
 const SettingsPage = lazy(() => importChunk(() => import("./pages/SettingsPage")));
+const DocsPage = lazy(() => importChunk(() => import("./pages/DocsPage")));
 const PremiumPage = lazy(() => importChunk(() => import("./pages/PremiumPage")));
 const WalletPage = lazy(() => importChunk(() => import("./pages/WalletPage")));
 const EcashPage = lazy(() => importChunk(() => import("./pages/EcashPage")));
@@ -137,6 +138,10 @@ export function AppRouter() {
           <Route path="/mini-apps" element={<MiniAppsPage />} />
           {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
           <Route path="/settings" element={<SettingsPage />} />
+
+          {/* Before the NIP-19 catch-all, which would otherwise swallow /docs */}
+          <Route path="/docs" element={<DocsPage />} />
+          <Route path="/docs/:slug" element={<DocsPage />} />
           {/* Follow pages */}
           <Route path="/:nip19/following" element={<FollowingPage />} />
           <Route path="/:nip19/followers" element={<FollowersPage />} />
