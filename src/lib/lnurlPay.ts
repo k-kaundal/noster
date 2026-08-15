@@ -44,6 +44,36 @@ function isValidNostrPubkey(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
 }
 
+/**
+ * Whether a callback is one we are willing to send a payment request to.
+ *
+ * The callback comes back from whatever host a `lud16` names, and it is not
+ * required to be on that host — so it is attacker-chosen in the ordinary case
+ * of zapping a stranger. Two things are worth refusing outright:
+ *
+ * - **Anything that is not http(s).** `new URL()` accepts `javascript:`,
+ *   `data:` and `file:` happily, and while `fetch` refuses most of them, a URL
+ *   built out of one has no business being constructed in the first place.
+ * - **Plaintext http.** The callback carries the signed zap request and returns
+ *   the invoice; over http both are readable and the invoice is replaceable in
+ *   flight, which redirects the payment. LUD-16 already makes this call for the
+ *   address itself — https everywhere except `.onion`, which is encrypted by
+ *   the transport — and the callback deserves the same rule.
+ */
+export function isUsableCallback(callback: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(callback);
+  } catch {
+    return false;
+  }
+
+  if (url.protocol === 'https:') return true;
+
+  // Onion services carry their own encryption, and LUD-16 serves them over http
+  return url.protocol === 'http:' && url.hostname.endsWith('.onion');
+}
+
 /** Pulls the human-readable description out of the LNURL metadata blob. */
 export function readMetadataDescription(metadata: unknown): string {
   if (typeof metadata !== 'string') return '';
@@ -72,6 +102,7 @@ export function parsePayMetadata(body: unknown): LnurlPayMetadata | null {
 
   const record = body as Record<string, unknown>;
   if (typeof record.callback !== 'string' || !record.callback) return null;
+  if (!isUsableCallback(record.callback)) return null;
 
   const min = Number(record.minSendable);
   const max = Number(record.maxSendable);
@@ -115,12 +146,65 @@ export function readLnurlError(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
 
   const record = body as Record<string, unknown>;
-  if (record.status === 'ERROR') {
+
+  // Compared without case. LUD-06 spells it `ERROR`, and enough servers in the
+  // wild answer `Error` or `error` that a case-sensitive check reads their
+  // rejection as a success and then fails on the missing invoice instead —
+  // reporting a malformed reply where the server had said exactly what was wrong
+  if (
+    typeof record.status === 'string' &&
+    record.status.toLowerCase() === 'error'
+  ) {
     return typeof record.reason === 'string' && record.reason
       ? record.reason
       : 'The payment request was rejected.';
   }
   return null;
+}
+
+/**
+ * Reads an LNURL reply, saying what happened when it is not one.
+ *
+ * These endpoints are somebody else's server, reached through whatever host a
+ * `lud16` names, and the failures that actually happen are not JSON: a domain
+ * that proxies `/.well-known/lnurlp/*` to LNbits but has no rule for the name
+ * returns its own 404 page, a misconfigured proxy returns a 502, and a
+ * suspended host returns a parking page. All three are HTML, so parsing first
+ * produced `Unexpected token '<'` — which names a bug in this app for a
+ * condition entirely on the other end, and tells the person nothing about the
+ * address they just tried to pay.
+ */
+export async function readLnurlJson(
+  response: Response,
+  what: 'offer' | 'invoice'
+): Promise<unknown> {
+  const text = await response.text();
+
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : undefined;
+  } catch {
+    body = undefined;
+  }
+
+  // A rejection is worth reporting in the server's own words even when it came
+  // with a failing status, since LNURL errors are often served with one
+  const stated = readLnurlError(body);
+  if (stated) throw new Error(stated);
+
+  if (!response.ok) {
+    throw new Error(
+      `Their lightning server answered ${response.status} instead of ${
+        what === 'offer' ? 'a payment offer' : 'an invoice'
+      }.`
+    );
+  }
+
+  if (body === undefined) {
+    throw new Error("Their lightning server didn't return a valid reply.");
+  }
+
+  return body;
 }
 
 /** Checks an amount against what the link will accept, in sats. */
@@ -148,10 +232,7 @@ export async function fetchPayMetadata(
   signal?: AbortSignal
 ): Promise<LnurlPayMetadata> {
   const response = await fetch(lnurlpUrl, { signal });
-  const body = await response.json();
-
-  const error = readLnurlError(body);
-  if (error) throw new Error(error);
+  const body = await readLnurlJson(response, 'offer');
 
   const parsed = parsePayMetadata(body);
   if (!parsed) throw new Error("That payment link didn't return a valid offer.");
@@ -174,10 +255,7 @@ export async function fetchInvoice(
     buildCallbackUrl(metadata.callback, amountMsat, allowed),
     { signal }
   );
-  const body = await response.json();
-
-  const error = readLnurlError(body);
-  if (error) throw new Error(error);
+  const body = await readLnurlJson(response, 'invoice');
 
   const invoice = (body as Record<string, unknown>)?.pr;
   if (typeof invoice !== 'string' || !invoice) {

@@ -19,7 +19,7 @@ import { clearSignerFailure, recordSignerFailure } from '@/lib/signerStatus';
 import {
   fetchInvoice,
   fetchPayMetadata,
-  readLnurlError,
+  readLnurlJson,
   validateAmount,
 } from '@/lib/lnurlPay';
 import {
@@ -441,10 +441,15 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
           zapCallbackUrl(payMetadata.callback, amountMsat, signed, lnurl),
           { signal: AbortSignal.timeout(15000) }
         );
-        const body = await response.json();
 
-        const failed = readLnurlError(body);
-        if (failed) throw new Error(failed);
+        /*
+         * Read the same way the plain LNURL path reads it. This branch called
+         * `.json()` on the raw response, so a recipient's server answering
+         * with an HTML error page — the ordinary shape of a proxy that has no
+         * rule for the name — surfaced as `Unexpected token '<'` after the
+         * person had already been asked to sign the request.
+         */
+        const body = await readLnurlJson(response, 'invoice');
 
         const returned = (body as Record<string, unknown>)?.pr;
         if (typeof returned !== 'string' || !returned) {

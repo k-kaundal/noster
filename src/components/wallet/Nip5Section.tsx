@@ -32,6 +32,7 @@ import { QrCode } from '@/components/wallet/QrCode';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLightningAddress } from '@/hooks/useLightningAddress';
 import { useToast } from '@/hooks/useToast';
+import { servesAddress } from '@/lib/identity';
 import { cn } from '@/lib/utils';
 import {
   DEFAULT_MAX_YEARS,
@@ -263,11 +264,18 @@ function ZapsHere({
   address: Nip5Address;
   identifier: string;
 }) {
-  const { profileAddress, setProfileAddress, isPublishing } =
+  const { addresses, profileAddress, setProfileAddress, isPublishing } =
     useLightningAddress();
 
-  // Nothing to publish until payments actually land somewhere
-  if (!isZappable(address) || nip5State(address) === 'inactive') return null;
+  /*
+   * Nothing to publish until payments actually land somewhere — but "somewhere"
+   * includes a pay link of theirs answering for this address, which the name's
+   * own record knows nothing about. Reading only the record hid this button
+   * from exactly the people whose profile was still pointed at an older
+   * address, which is the case it exists for.
+   */
+  const payable = isZappable(address) || servesAddress(addresses, identifier);
+  if (!payable || nip5State(address) === 'inactive') return null;
 
   if (profileAddress?.trim().toLowerCase() === identifier.toLowerCase()) {
     return (
@@ -319,7 +327,18 @@ function LightningDestination({
 }) {
   const { attachLightning, isAttaching, wallets } = useNip5();
 
+  /**
+   * What the account can already be paid at.
+   *
+   * The name's own record is not the whole picture: a pay link made through
+   * the plain lightning flow answers for the same address without the NIP-05
+   * extension ever noting it, and reading only the extension's note is what
+   * produced "nothing sent to it arrives" about an address that arrives fine.
+   */
+  const { addresses: payable } = useLightningAddress();
+
   const current = lnAddressConfig(address);
+  const alreadyServed = servesAddress(payable, identifier);
   const pending = isLnAddressPending(address);
 
   /**
@@ -335,10 +354,59 @@ function LightningDestination({
   const named = wallets.find((entry) => entry.id === current?.wallet);
   const changed = !!current && walletId !== current.wallet;
 
-  if (!wallets.length) return null;
+  /*
+   * No wallet, said rather than hidden. This returned null, so somebody who
+   * bought a name before making a wallet saw nothing at all about being paid
+   * at it — no explanation, and no clue that a wallet is what it waits on.
+   * Nothing is offered here because there is nothing to press: every button
+   * this component has writes into a wallet by id.
+   */
+  if (!wallets.length) {
+    return (
+      <p className="rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
+        {identifier} verifies you, and needs a wallet before it can be paid.
+        Set one up above and it can receive zaps under the same name.
+      </p>
+    );
+  }
 
   const submit = () =>
     void attachLightning({ address, walletId }).catch(() => {});
+
+  /*
+   * Half-finished, but the address works anyway.
+   *
+   * The extension never recorded its pay link, while a link of theirs already
+   * answers for this exact address — so money arrives and the only thing wrong
+   * is the bookkeeping. Worth offering to repair, because the extension needs
+   * that field to serve the name after the plain link is ever retired; not
+   * worth alarming anybody over, which the warning below would.
+   */
+  if (pending && alreadyServed) {
+    return (
+      <div className="space-y-2 rounded-lg border p-3">
+        <p className="flex items-center gap-2 text-sm text-success-strong">
+          <Zap className="h-4 w-4 shrink-0" />
+          {identifier} receives payments.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          It is answered by your own pay link rather than by the name itself.
+          That works — recording it against the name keeps it working if that
+          link is ever retired.
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={submit}
+          disabled={isAttaching}
+          className="w-full"
+        >
+          {isAttaching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Record it against the name
+        </Button>
+      </div>
+    );
+  }
 
   /*
    * Asked for and not finished. Saying "receives payments" here is the thing
@@ -353,8 +421,11 @@ function LightningDestination({
           {identifier} isn't set up to receive yet.
         </p>
         <p className="text-xs text-muted-foreground">
-          A wallet was chosen for it, but the payment link behind the name was
-          never created — so nothing sent to it arrives.
+          {named
+            ? `${named.name} was chosen for it, but the payment link behind the name was never created`
+            : 'A wallet was chosen for it, but the payment link behind the name was never created'}{' '}
+          — and nothing else of yours answers for this address either, so
+          nothing sent to it arrives.
         </p>
         <Button
           size="sm"
