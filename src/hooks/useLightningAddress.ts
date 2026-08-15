@@ -140,6 +140,32 @@ export function useLightningAddress({
       if (!wallet) throw new Error('Connect your wallet first');
 
       /**
+       * Nothing below is decidable until the account's existing links are in
+       * hand, and both things below read them.
+       *
+       * The dedupe returns the link somebody already has, and the entitlement
+       * check treats what they already hold as theirs. With `links.data` still
+       * undefined — a fresh load, a reconnect, the first render after
+       * switching wallets — the dedupe finds nothing and the entitlement list
+       * is empty, so re-claiming a name they bought last year is refused with
+       * "That name has to be bought". They own it; the app simply had not
+       * finished asking yet.
+       *
+       * An outright failure is refused rather than waved through. Not knowing
+       * which addresses exist is not the same as knowing there are none, and
+       * the alternative reading hands the paid tier to anyone whose request to
+       * list them happens to fail.
+       */
+      if (!links.isFetched) {
+        throw new Error('Still reading your addresses — try again in a moment.');
+      }
+      if (links.isError) {
+        throw new Error(
+          "Couldn't check which addresses you already have. Try again in a moment."
+        );
+      }
+
+      /**
        * An account that already has this address keeps it.
        *
        * People arrive here more than once — a second device, a reconnect, a

@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   buildCallbackUrl,
   parsePayMetadata,
+  isUsableCallback,
   readLnurlError,
+  readLnurlJson,
   readMetadataDescription,
   validateAmount,
   type LnurlPayMetadata,
@@ -188,5 +190,106 @@ describe('validateAmount', () => {
     expect(validateAmount(0, metadata)).toBeTruthy();
     expect(validateAmount(-5, metadata)).toBeTruthy();
     expect(validateAmount(NaN, metadata)).toBeTruthy();
+  });
+});
+
+describe('isUsableCallback', () => {
+  it('accepts https', () => {
+    expect(isUsableCallback('https://ln.example.com/cb/abc')).toBe(true);
+  });
+
+  it('refuses plaintext http', () => {
+    // The callback carries the signed zap request and returns the invoice;
+    // over http both are readable and the invoice is replaceable in flight
+    expect(isUsableCallback('http://ln.example.com/cb/abc')).toBe(false);
+  });
+
+  it('allows http for onion services, which encrypt at the transport', () => {
+    expect(isUsableCallback('http://abcdefg.onion/cb/abc')).toBe(true);
+  });
+
+  it('refuses schemes that are not http at all', () => {
+    expect(isUsableCallback('javascript:alert(1)')).toBe(false);
+    expect(isUsableCallback('data:text/plain,hi')).toBe(false);
+    expect(isUsableCallback('file:///etc/passwd')).toBe(false);
+  });
+
+  it('refuses something that is not a URL', () => {
+    expect(isUsableCallback('not a url')).toBe(false);
+  });
+});
+
+describe('parsePayMetadata callback checking', () => {
+  it('rejects an offer whose callback is plaintext', () => {
+    // A stranger's profile chooses this host, so the offer is attacker-shaped
+    // in the ordinary case and refusing beats downgrading the payment
+    expect(
+      parsePayMetadata({
+        callback: 'http://ln.example.com/cb',
+        minSendable: 1000,
+        maxSendable: 5000,
+      })
+    ).toBeNull();
+  });
+
+  it('accepts the offer our own instance returns', () => {
+    const parsed = parsePayMetadata({
+      tag: 'payRequest',
+      callback: 'https://ln.nostrfeed.com/lnurlp/api/v1/lnurl/cb/3a6b8a',
+      minSendable: 1000,
+      maxSendable: 10000000000,
+      metadata:
+        '[["text/plain", "Payment to help"], ["text/identifier", "help@ln.nostrfeed.com"]]',
+      commentAllowed: 255,
+      allowsNostr: true,
+      nostrPubkey:
+        'bad5595b406b685a64e997503b61ba1be88b39f20aebb0cf0dc151d17b0bee33',
+    });
+
+    expect(parsed?.zapCapable).toBe(true);
+    expect(parsed?.commentAllowed).toBe(255);
+    expect(parsed?.description).toBe('Payment to help');
+  });
+});
+
+describe('readLnurlError casing', () => {
+  it('reads a rejection however the server capitalised it', () => {
+    for (const status of ['ERROR', 'Error', 'error']) {
+      expect(readLnurlError({ status, reason: 'Nope' })).toBe('Nope');
+    }
+  });
+});
+
+describe('readLnurlJson', () => {
+  const reply = (body: string, init?: ResponseInit) =>
+    new Response(body, init);
+
+  it('returns the parsed body of a good reply', async () => {
+    await expect(
+      readLnurlJson(reply('{"pr":"lnbc1"}'), 'invoice')
+    ).resolves.toEqual({ pr: 'lnbc1' });
+  });
+
+  it('reports an HTML error page by its status, not as bad JSON', async () => {
+    // The ordinary failure: a domain proxying /.well-known/lnurlp/* with no
+    // rule for this name answers its own 404 page
+    await expect(
+      readLnurlJson(reply('<!doctype html><h1>Not Found</h1>', { status: 404 }), 'offer')
+    ).rejects.toThrow(/404/);
+  });
+
+  it('prefers the reason the server gave over the status', async () => {
+    await expect(
+      readLnurlJson(
+        reply('{"status":"ERROR","reason":"Amount too small"}', { status: 400 }),
+        'invoice'
+      )
+    ).rejects.toThrow('Amount too small');
+  });
+
+  it('refuses an empty 200 rather than returning undefined', async () => {
+    await expect(readLnurlJson(reply(''), 'offer')).rejects.toThrow(
+      /valid reply/
+    );
   });
 });

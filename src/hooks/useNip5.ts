@@ -106,7 +106,9 @@ export function useNip5Payment(
   domainId = NIP5_DOMAIN_ID
 ) {
   return useQuery<boolean>({
-    queryKey: ['nip5-payment', paymentHash ?? ''],
+    // Keyed by the domain too. The route is per-domain, so the same key
+    // serving two domains would answer one from the other's cached result
+    queryKey: ['nip5-payment', domainId, paymentHash ?? ''],
     queryFn: async ({ signal }) => {
       const body = await lnbitsRequest<Record<string, unknown>>(
         `${BASE}/domain/${domainId}/payments/${paymentHash}`,
@@ -308,7 +310,18 @@ export function useNip5() {
           preferredFor(amount)
         : preferredFor(amount);
 
-      await payAnyWallet({ bolt11: pending.bolt11, optionId: option.id });
+      /*
+       * The amount goes with it. Without it the custodial-wallet path skips
+       * its own balance check and hands the invoice straight to LNbits, which
+       * answers 402 — so somebody 40 sats short was told "Insufficient
+       * balance" by the API instead of how much they have and what it costs.
+       * Zero, which is what a free name quotes, disables the check as before.
+       */
+      await payAnyWallet({
+        bolt11: pending.bolt11,
+        optionId: option.id,
+        amountSats: amount || undefined,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nip5-addresses'] });
