@@ -137,6 +137,15 @@ export interface ReceiptCheck {
   /** The coordinate, when zapping an addressable event. */
   address?: string | string[];
   /**
+   * Only zaps on the person themselves.
+   *
+   * NIP-57 gives a profile zap a `p` tag and nothing else to point at, so it
+   * is recognised by what it lacks. Without this a profile total would sweep
+   * up every note zap its author ever received — the request names them with
+   * `p` there too — and read as the sum of their whole history.
+   */
+  profileOnly?: boolean;
+  /**
    * The `nostrPubkey` from the recipient's lnurl provider.
    *
    * The only thing that makes a receipt trustworthy: a zap receipt is signed
@@ -237,7 +246,12 @@ export function validateZapReceipt(
     return false;
   }
 
-  if (check.address) {
+  if (check.profileOnly) {
+    // Anything pointing at a note or an article is a zap on that, not on them
+    if (request.tags.some(([name]) => name === 'e' || name === 'a')) {
+      return false;
+    }
+  } else if (check.address) {
     if (!requestHas('a', check.address)) return false;
   } else if (check.eventId && !requestHas('e', check.eventId)) {
     return false;

@@ -5,7 +5,7 @@ import type { NostrEvent } from '@nostrify/nostrify';
 import { createBatchLoader, type BatchLoader } from '@/lib/batchLoader';
 import { getThreadPosition } from '@/lib/thread';
 import { ZAP_RECEIPT_KIND } from '@/lib/zap';
-import { buildStatsFilters } from '@/lib/noteStats';
+import { buildStatsFilters, profileStatsKey } from '@/lib/noteStats';
 
 export interface NoteStats {
   replies: NostrEvent[];
@@ -50,6 +50,25 @@ function getLoader(nostr: Relay): BatchLoader<string, NoteStats> {
       }
 
       for (const event of events) {
+        /**
+         * A zap on the person rather than on anything they wrote.
+         *
+         * NIP-57 gives a profile zap a `p` tag and no `e` or `a`, so it is
+         * filed under the recipient. The absence is what identifies it: a note
+         * zap also names the author with `p`, and counting that here would make
+         * every profile total the sum of everything that person was ever paid.
+         */
+        if (
+          event.kind === ZAP_RECEIPT_KIND &&
+          !event.tags.some(([name]) => name === 'e' || name === 'a')
+        ) {
+          for (const [name, value] of event.tags) {
+            if (name !== 'p') continue;
+            results.get(profileStatsKey(value))?.zaps.push(event);
+          }
+          continue;
+        }
+
         for (const [name, value] of event.tags) {
           if (name !== 'e' && name !== 'a') continue;
 

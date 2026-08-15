@@ -71,6 +71,15 @@ export interface ZapSummaryOptions {
    */
   recipientPubkey: string | string[];
   /**
+   * Count only zaps on the person, not on anything they published.
+   *
+   * What a profile page shows. A profile zap carries a `p` tag and no `e` or
+   * `a` — see `validateZapReceipt` — so it matches no note id, and every one
+   * ever sent from a profile page was falling through this function's checks
+   * unnoticed while the page beside it read zero.
+   */
+  profileOnly?: boolean;
+  /**
    * The recipient's lnurl provider key, when it is known.
    *
    * The only check that actually prevents forgery, and the only one that
@@ -109,6 +118,7 @@ export function summarizeZaps(
       // One or the other: an addressable event is named by its coordinate
       eventId: options.address ? undefined : options.eventId,
       address: options.address,
+      profileOnly: options.profileOnly,
       recipientPubkey: options.recipientPubkey,
       providerPubkey: options.providerPubkey,
     });

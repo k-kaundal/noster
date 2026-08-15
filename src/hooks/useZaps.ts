@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent, NostrMetadata } from '@nostrify/nostrify';
 import { readRelays } from '@/lib/relay';
+import { profileStatsKey } from '@/lib/noteStats';
 import { parseZapSplits, splitAmount } from '@/lib/zapSplit';
 import { GOAL_KIND, linkedGoal, parseZapGoal } from '@/lib/nip75';
 import { describeSignerError } from '@/lib/signerErrors';
@@ -80,7 +81,18 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
         }`
       : undefined;
 
-  const statsKey = address ?? actualTarget?.id;
+  /**
+   * Zapping the person rather than anything they wrote.
+   *
+   * The profile page passes their kind 0, and NIP-57 says a zap on a profile
+   * carries a `p` tag and no `e` — so every id-shaped question asked below is
+   * the wrong question for this case, and all of them were being asked.
+   */
+  const isProfileZap = actualTarget?.kind === 0;
+
+  const statsKey = isProfileZap
+    ? profileStatsKey(actualTarget.pubkey)
+    : address ?? actualTarget?.id;
   const { zaps: zapEvents, isLoading: isLoadingZaps } = useNoteStats(statsKey);
 
   /** Pending post-payment refetches, so they can be cancelled on unmount. */
@@ -109,17 +121,28 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
         const signal = AbortSignal.timeout(5000);
 
         /*
-         * By coordinate for an addressable event, by id for everything else.
-         * Our own request tags an article with `a` and no `e` at all, so this
-         * asked for a tag the receipt does not carry — the poll could never
-         * match, and zapping an article never refreshed its total however long
-         * anyone waited.
+         * Watched by whatever tag the receipt will actually carry: `a` for an
+         * addressable event, `p` for a profile, `e` for a note. Asking for the
+         * wrong one is a poll that can never match, and this has now been
+         * wrong twice — an article's receipt carries `a` and no `e`, and a
+         * profile's carries neither.
+         *
+         * Asking for `#e` on the kind 0's own id could never match — the
+         * receipt does not reference it — so a profile zap that had been paid
+         * and receipted was polled for five minutes and then declared a
+         * failure: "No payment detected. Please try again." On a control that
+         * moves money, an invitation to try again is the worst possible way to
+         * be wrong.
          */
         const events = await nostr.query(
           [
             {
               kinds: [ZAP_RECEIPT_KIND],
-              ...(address ? { '#a': [address] } : { '#e': [actualTarget.id] }),
+              ...(address
+                ? { '#a': [address] }
+                : isProfileZap
+                  ? { '#p': [actualTarget.pubkey] }
+                  : { '#e': [actualTarget.id] }),
               since: Math.floor(Date.now() / 1000) - 60,
             },
           ],
@@ -194,7 +217,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
       clearInterval(pollIntervalId);
       clearTimeout(timeoutId);
     };
-  }, [invoice, actualTarget, address, nostr, queryClient, toast, onZapSuccess, statsKey]);
+  }, [invoice, actualTarget, address, isProfileZap, nostr, queryClient, toast, onZapSuccess, statsKey]);
 
 
   const { zapCount, totalSats, zaps } = useMemo(() => {
@@ -218,8 +241,11 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
      * author reported zero for exactly those notes.
      */
     const summary = summarizeZaps(zapEvents, {
-      eventId: address ? undefined : actualTarget.id,
+      eventId: address || isProfileZap ? undefined : actualTarget.id,
       address,
+      // The kind 0's id names nothing a receipt will ever carry, so a profile
+      // zap is identified by having no target tag at all
+      profileOnly: isProfileZap,
       recipientPubkey: [
         actualTarget.pubkey,
         ...parseZapSplits(actualTarget).map((share) => share.pubkey),
@@ -234,7 +260,7 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
       // The receipts that survived, for callers that want the events
       zaps: zapEvents.filter((event) => counted.has(event.id)),
     };
-  }, [zapEvents, actualTarget, address]);
+  }, [zapEvents, actualTarget, address, isProfileZap]);
 
   /**
    * Turns an amount into an invoice the caller can pay with any wallet.
