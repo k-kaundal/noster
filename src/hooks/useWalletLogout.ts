@@ -20,6 +20,10 @@ export function useWalletLogout() {
       // and would be shown to the next person to sign in
       queryClient.removeQueries({ queryKey: ['lnbits-account'] });
       queryClient.removeQueries({ queryKey: ['lnbits-wallets'] });
+      // Names belong to the account too, and outlived it here — so the next
+      // account to sign in was greeted by the previous one's list
+      queryClient.removeQueries({ queryKey: ['nip5-addresses'] });
+      queryClient.removeQueries({ queryKey: ['lnurlp-links'] });
       queryClient.removeQueries({ queryKey: ['lnbits-payments'] });
       queryClient.removeQueries({ queryKey: ['lnbits-invoice'] });
     },
