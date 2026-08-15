@@ -16,6 +16,7 @@ import { NameTiers } from '@/components/wallet/NameTiers';
 import { ExternalAddress } from '@/components/wallet/ExternalAddress';
 import { Nip5Section } from '@/components/wallet/Nip5Section';
 import { useIdentity } from '@/hooks/useIdentity';
+import { useAddressCheck } from '@/hooks/useAddressCheck';
 import {
   ADDRESS_DOMAIN,
   ADDRESS_DOMAINS,
@@ -169,6 +170,13 @@ function CurrentIdentity() {
         </div>
       )}
 
+      {/*
+        The address the rest of Nostr will actually pay, checked against the
+        rest of Nostr's view of it — the profile's `lud16` first, since that
+        is what every other client reads.
+      */}
+      <ZapReadiness address={lightning.profileAddress ?? lightning.address} />
+
       {status.mismatched && (
         <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
           <p className="mb-3 text-sm text-foreground">
@@ -189,6 +197,71 @@ function CurrentIdentity() {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Whether zaps to this address will actually appear on Nostr.
+ *
+ * Asked of the address itself rather than of our database. The wallet knows
+ * what it configured; this knows what the network is served, and the two come
+ * apart exactly where it hurts — a pay link can be set up for zaps while the
+ * thing that publishes the receipts is not running, and then every count on
+ * every post stays at zero while the sats arrive perfectly.
+ *
+ * That is a silent failure by construction: the payment succeeding is what
+ * makes it invisible. So it is checked out loud, here, where the address is.
+ */
+function ZapReadiness({ address }: { address?: string | null }) {
+  const check = useAddressCheck(address ?? '', !!address);
+
+  if (!address || check.status === 'idle') return null;
+
+  if (check.status === 'checking') {
+    return (
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        Checking that zaps here will show up…
+      </p>
+    );
+  }
+
+  if (check.status === 'invalid' || check.status === 'unreachable') {
+    return (
+      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+        <p className="text-sm font-medium text-destructive">
+          Nobody can pay this address.
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{check.reason}</p>
+      </div>
+    );
+  }
+
+  if (check.zaps) {
+    return (
+      <p className="flex items-center gap-2 text-xs text-success-strong">
+        <Check className="h-3.5 w-3.5 shrink-0" />
+        Zaps here are published and will show on your posts.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1 rounded-lg border border-warning/40 bg-warning/8 p-3">
+      <p className="text-sm font-medium text-warning-strong">
+        Payments arrive, but zaps won't show anywhere.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {check.zapsMisconfigured
+          ? /*
+             * The specific shape our own LNbits takes when receipts are not
+             * being published: it advertises zap support and names no key to
+             * sign them with, so no client can produce or trust a receipt.
+             */
+            'This server says it supports zaps but publishes no key to sign the receipts with, so no zap receipt is ever written. On LNbits that means the extension that publishes them is not running — the pay link alone is not enough.'
+          : "This server doesn't support NIP-57 zap receipts, so payments to it arrive without ever appearing as zaps."}
+      </p>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   describePrice,
   expiresAt,
   formatNip5,
+  isLnAddressPending,
   isZappable,
   lnAddressConfig,
   nip5Identifier,
@@ -328,9 +329,39 @@ describe('lnAddressConfig', () => {
   });
 });
 
+describe('isLnAddressPending', () => {
+  it('names the half-finished state instead of guessing at it', () => {
+    /**
+     * Not "no address" — somebody chose a wallet — and not a working one, so
+     * a person told either of those is told something false.
+     */
+    expect(
+      isLnAddressPending({ extra: { ln_address: { wallet: 'w1' } } })
+    ).toBe(true);
+    expect(
+      isLnAddressPending({
+        extra: { ln_address: { wallet: 'w1', pay_link_id: 'p1' } },
+      })
+    ).toBe(false);
+    expect(isLnAddressPending({ extra: { ln_address: { wallet: '' } } })).toBe(
+      false
+    );
+    expect(isLnAddressPending(undefined)).toBe(false);
+  });
+});
+
 describe('isZappable', () => {
   it('is true only when payments actually have somewhere to land', () => {
-    expect(isZappable({ extra: { ln_address: { wallet: 'w1' } } })).toBe(true);
+    /**
+     * `wallet` is the request and `pay_link_id` is the pay link LNbits made to
+     * honour it. Only the second means money can arrive, and reading the first
+     * alone is how the wallet page announced that a name "receives payments"
+     * when nothing had ever been created for it.
+     */
+    expect(
+      isZappable({ extra: { ln_address: { wallet: 'w1', pay_link_id: 'p1' } } })
+    ).toBe(true);
+    expect(isZappable({ extra: { ln_address: { wallet: 'w1' } } })).toBe(false);
     expect(isZappable({ extra: { ln_address: { wallet: '' } } })).toBe(false);
     expect(isZappable(undefined)).toBe(false);
   });

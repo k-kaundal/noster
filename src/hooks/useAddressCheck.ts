@@ -29,6 +29,16 @@ export type AddressCheck =
       status: 'ok';
       /** Whether zaps, as opposed to plain payments, will work. */
       zaps: boolean;
+      /**
+       * The server said it does zaps but named no usable key to sign them
+       * with.
+       *
+       * Worth telling apart from a provider that simply does not do zaps,
+       * because it is a misconfiguration rather than a limitation — and it is
+       * the shape our own LNbits takes when the pay link has zaps switched on
+       * but nothing is actually publishing receipts.
+       */
+      zapsMisconfigured: boolean;
       minSats: number;
       maxSats: number;
       description: string;
@@ -88,7 +98,8 @@ export function useAddressCheck(input: string, enabled = true): AddressCheck {
 
   return {
     status: 'ok',
-    zaps: query.data.allowsNostr && !!query.data.nostrPubkey,
+    zaps: query.data.zapCapable,
+    zapsMisconfigured: query.data.allowsNostr && !query.data.zapCapable,
     minSats: Math.ceil(query.data.minSendableMsat / 1000),
     maxSats: Math.floor(query.data.maxSendableMsat / 1000),
     description: query.data.description,
