@@ -272,5 +272,15 @@ export function useLnbitsPayments(limit = 20) {
       ),
     enabled: !!wallet,
     staleTime: 30 * 1000,
+    /**
+     * Polled, because this is where an arrival is noticed.
+     *
+     * The balance beside it already refreshes on the same cadence, so the
+     * ledger going stale meant a payment could move the number without any row
+     * to explain it. It is also the source `useWalletNotifications` reads to
+     * tell somebody money landed — a lightning-address payment is not a zap
+     * and writes no Nostr receipt, so nothing else in the app would ever say so.
+     */
+    refetchInterval: 30 * 1000,
   });
 }

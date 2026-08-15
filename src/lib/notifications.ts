@@ -8,7 +8,8 @@ export type NotificationType =
   | 'quote'
   | 'reaction'
   | 'repost'
-  | 'zap';
+  | 'zap'
+  | 'follow';
 
 export interface Notification {
   /** The event that triggered it — also the React key. */
@@ -23,10 +24,24 @@ export interface Notification {
   content: string;
   /** Zaps only. */
   amountSats: number | null;
+  /** Zaps only: the invoice, for matching a receipt against a wallet's ledger. */
+  bolt11?: string | null;
 }
 
 /** Kinds worth notifying about, in one filter to keep the query count down. */
 export const NOTIFICATION_KINDS = [1, 6, 7, 16, ZAP_RECEIPT_KIND];
+
+/**
+ * NIP-02 contact list. Somebody following you is them republishing this with
+ * your key in it, so it is the only evidence a follow ever produces.
+ *
+ * Deliberately *not* in `NOTIFICATION_KINDS`. A contact list carries a `p` tag
+ * per person followed, so a single one from a well-connected account is tens of
+ * kilobytes, and asking for these in the same filter as mentions means one
+ * page of fifty can come back as fifty follow lists with every reply pushed off
+ * the end. It gets a filter and a limit of its own; see `useNotifications`.
+ */
+export const FOLLOW_KIND = 3;
 
 function referencedEventId(event: NostrEvent): string | null {
   // A reply's target is its last "e" tag under the positionless convention,
@@ -86,10 +101,36 @@ export function toNotification(
       targetEventId: zap.targetEventId,
       content: zap.comment,
       amountSats: zap.amountSats,
+      bolt11: zap.bolt11,
     };
   }
 
   if (event.pubkey === pubkey) return null;
+
+  if (event.kind === FOLLOW_KIND) {
+    /**
+     * Checked rather than assumed. A relay's `#p` filter matches any `p` tag,
+     * and this is the one kind where the tag means something specific — being
+     * named in somebody's contact list *is* the follow. A list that came back
+     * without your key in it is a relay being loose, and reporting it would
+     * announce a follow that did not happen.
+     */
+    const follows = event.tags.some(
+      ([name, value]) => name === 'p' && value === pubkey
+    );
+    if (!follows) return null;
+
+    return {
+      event,
+      type: 'follow',
+      pubkey: event.pubkey,
+      createdAt: event.created_at,
+      targetEventId: null,
+      // A contact list's content is a relay blob, never a message to anyone
+      content: '',
+      amountSats: null,
+    };
+  }
 
   const target = referencedEventId(event);
   const quoted = quotedEventId(event);
@@ -172,7 +213,46 @@ export function buildNotifications(
     if (notification) notifications.push(notification);
   }
 
-  return notifications.sort((a, b) => b.createdAt - a.createdAt);
+  return collapseFollows(notifications).sort(
+    (a, b) => b.createdAt - a.createdAt
+  );
+}
+
+/**
+ * One row per follower, however many contact lists of theirs came back.
+ *
+ * Kind 3 is replaceable, and people edit their follows — so the same person
+ * appears once per version a relay still holds, and paginating turns up older
+ * ones as you scroll. Without this a single reader who reorganises their
+ * following list fills your notifications with themselves.
+ *
+ * The newest is kept, which is also the one whose timestamp is closest to
+ * meaning anything. It still is not the moment they followed you — nothing on
+ * Nostr records that — it is when they last published the list you are in.
+ */
+export function collapseFollows(notifications: Notification[]): Notification[] {
+  const newest = new Map<string, number>();
+
+  for (const notification of notifications) {
+    if (notification.type !== 'follow') continue;
+
+    const held = newest.get(notification.pubkey);
+    if (held === undefined || notification.createdAt > held) {
+      newest.set(notification.pubkey, notification.createdAt);
+    }
+  }
+
+  const taken = new Set<string>();
+
+  return notifications.filter((notification) => {
+    if (notification.type !== 'follow') return true;
+    if (taken.has(notification.pubkey)) return false;
+    if (newest.get(notification.pubkey) !== notification.createdAt) return false;
+
+    // Two lists sharing a timestamp would otherwise both survive the check above
+    taken.add(notification.pubkey);
+    return true;
+  });
 }
 
 export const NOTIFICATION_FILTERS = [
@@ -181,6 +261,7 @@ export const NOTIFICATION_FILTERS = [
   { value: 'reactions', label: 'Reactions', types: ['reaction'] },
   { value: 'reposts', label: 'Reposts', types: ['repost'] },
   { value: 'zaps', label: 'Zaps', types: ['zap'] },
+  { value: 'follows', label: 'Follows', types: ['follow'] },
 ] as const satisfies readonly {
   value: string;
   label: string;

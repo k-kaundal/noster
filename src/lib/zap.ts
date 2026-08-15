@@ -22,6 +22,15 @@ export interface ParsedZap {
   targetEventId: string | null;
   /** Who was paid. */
   recipientPubkey: string | null;
+  /**
+   * The invoice that was settled, verbatim.
+   *
+   * The one field that ties a receipt to a row in a wallet's own ledger. Both
+   * sides hold the same bolt11 string, so comparing them says "this zap and
+   * this payment are the same event" without decoding anything — which is what
+   * stops one arrival of money being announced twice.
+   */
+  bolt11: string | null;
 }
 
 function tagValue(event: NostrEvent, name: string): string | undefined {
@@ -90,6 +99,7 @@ export function parseZapReceipt(event: NostrEvent): ParsedZap {
     comment: request?.content?.trim() ?? '',
     targetEventId: requestTag('e') ?? tagValue(event, 'e') ?? null,
     recipientPubkey: requestTag('p') ?? tagValue(event, 'p') ?? null,
+    bolt11: bolt11 ?? null,
   };
 }
 
