@@ -86,6 +86,114 @@ export const SITE_ROUTES: SiteRoute[] = [
     summary: 'Short vertical video, published to relays.',
   },
   {
+    path: '/docs',
+    title: 'Help',
+    description:
+      'How NostrFeed works: your keys, relays, the built-in Lightning wallet, lightning addresses, zaps and verified names.',
+    priority: 0.6,
+    changefreq: 'monthly',
+    summary: 'The user manual: keys, relays, wallet, addresses, zaps and names.',
+  },
+  {
+    path: '/docs/what-this-is',
+    title: 'What NostrFeed is',
+    description:
+      'A Nostr client with a Lightning wallet built in. Your account is a key, not a login.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'A Nostr client with a Lightning wallet built in. Your account is a key, not a login.',
+  },
+  {
+    path: '/docs/your-keys',
+    title: 'Your keys',
+    description:
+      'A public key is your name. A secret key is your account. Losing it is permanent.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'A public key is your name. A secret key is your account. Losing it is permanent.',
+  },
+  {
+    path: '/docs/relays',
+    title: 'Relays',
+    description:
+      'Where your posts go and where your feed comes from. Choosing badly makes the app look empty.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'Where your posts go and where your feed comes from. Choosing badly makes the app look empty.',
+  },
+  {
+    path: '/docs/wallet',
+    title: 'The wallet',
+    description:
+      'A Lightning wallet tied to your key. Custodial, and honest about it.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'A Lightning wallet tied to your key. Custodial, and honest about it.',
+  },
+  {
+    path: '/docs/lightning-address',
+    title: 'Your lightning address',
+    description:
+      'The `you@domain` that receives money. Free, permanent, and yours.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'The `you@domain` that receives money. Free, permanent, and yours.',
+  },
+  {
+    path: '/docs/zaps',
+    title: 'Zaps',
+    description:
+      'Paying someone for a post, and what has to happen for it to count.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'Paying someone for a post, and what has to happen for it to count.',
+  },
+  {
+    path: '/docs/verified-names',
+    title: 'Verified names',
+    description:
+      'The ✓ next to your posts. Rented by the year, and a different thing from your address.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'The ✓ next to your posts. Rented by the year, and a different thing from your address.',
+  },
+  {
+    path: '/docs/posting',
+    title: 'Posting and replying',
+    description:
+      'Writing, threads, quotes, and who actually sees it.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'Writing, threads, quotes, and who actually sees it.',
+  },
+  {
+    path: '/docs/notifications',
+    title: 'Notifications',
+    description:
+      'What you get told about, and the one thing this app genuinely cannot do.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'What you get told about, and the one thing this app genuinely cannot do.',
+  },
+  {
+    path: '/docs/zap-not-showing',
+    title: 'When a zap does not show',
+    description:
+      'The money arrived and the count did not. What that means and what to check.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'The money arrived and the count did not. What that means and what to check.',
+  },
+  {
+    path: '/docs/something-looks-broken',
+    title: 'Something looks broken',
+    description:
+      'The handful of failures worth recognising before reporting.',
+    priority: 0.4,
+    changefreq: 'monthly',
+    summary: 'The handful of failures worth recognising before reporting.',
+  },
+  {
     path: '/services',
     title: 'What NostrFeed runs',
     description:
