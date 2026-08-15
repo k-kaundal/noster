@@ -564,3 +564,42 @@ export function outstandingPaymentHash(
   if (!address || address.active) return undefined;
   return address.extra?.payment_hash || undefined;
 }
+
+/**
+ * Whether the wallet a name pays into is still one this account holds.
+ *
+ * The extension stores a wallet id on the address and never revisits it, so
+ * the id outlives the account that owned it: a name attached while signed in
+ * as one LNbits user keeps pointing at that user's wallet after signing in as
+ * another — with a `?usr=` link, with a password, or from a second Nostr key.
+ *
+ * Sending that id back is what produces a bare 500 from
+ * `PUT .../address/{id}/lnaddress`. The extension looks the wallet up against
+ * the authenticated account, finds nothing, and raises rather than reporting —
+ * so the failure arrives with no body and reads like the feature is broken,
+ * when what is wrong is that the name is pointed somewhere the person signed
+ * in can no longer reach.
+ */
+export function attachedWalletIsForeign(
+  address: Pick<Nip5Address, 'extra'> | null | undefined,
+  walletIds: string[]
+): boolean {
+  const wallet = lnAddressConfig(address)?.wallet;
+  return !!wallet && !walletIds.includes(wallet);
+}
+
+/**
+ * The wallet to offer for a name, given what the account actually has.
+ *
+ * Never the stored one when it belongs elsewhere — defaulting to it is how the
+ * broken id got sent back on every retry, including from the "Finish setting
+ * it up" button, which failed identically each time.
+ */
+export function defaultAttachWallet(
+  address: Pick<Nip5Address, 'extra'> | null | undefined,
+  walletIds: string[]
+): string {
+  const wallet = lnAddressConfig(address)?.wallet;
+  if (wallet && walletIds.includes(wallet)) return wallet;
+  return walletIds[0] ?? '';
+}

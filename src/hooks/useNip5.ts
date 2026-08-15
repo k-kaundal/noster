@@ -150,7 +150,7 @@ export function useNip5Payment(
  */
 export function useNip5() {
   const { user } = useCurrentUser();
-  const { token, isConnected } = useLnbitsAuth();
+  const { account, token, isConnected } = useLnbitsAuth();
   // `wallet` is still needed to attach a lightning address to a bought name,
   // which writes into a specific LNbits wallet by id
   const { wallet, wallets, isPaying } = useLnbitsWallet();
@@ -167,7 +167,29 @@ export function useNip5() {
   const metadata = author.data?.metadata;
 
   const addresses = useQuery<Nip5Address[]>({
-    queryKey: ['nip5-addresses', NIP5_DOMAIN_ID, user?.pubkey ?? ''],
+    /**
+     * Keyed by the LNbits account, because that is what the endpoint answers
+     * for.
+     *
+     * It was keyed by the Nostr pubkey, and the two are not the same thing:
+     * `/user/addresses` is scoped to whichever account the bearer token
+     * belongs to, and one Nostr key can sign in to several. Signing in to a
+     * second account with the same key therefore hit a cache entry filled by
+     * the first — so the names on screen belonged to an account that was no
+     * longer the one being used, which is a name list that cannot be acted on.
+     * Every other LNbits query here is keyed by account or wallet; this one
+     * was the exception.
+     *
+     * The pubkey stays in the key as well. It decides which names verify the
+     * person signed in, and switching Nostr identity inside one LNbits account
+     * changes the answer to that.
+     */
+    queryKey: [
+      'nip5-addresses',
+      NIP5_DOMAIN_ID,
+      account?.id ?? '',
+      user?.pubkey ?? '',
+    ],
     queryFn: ({ signal }) =>
       withExtension(EXTENSION, token, () =>
         lnbitsRequest<Nip5Address[]>(`${BASE}/user/addresses`, {
@@ -383,6 +405,23 @@ export function useNip5() {
     }) => {
       const target = walletId || wallet?.id;
       if (!target) throw new Error('Connect your wallet first');
+
+      /**
+       * Refused here rather than by the server, which refuses badly.
+       *
+       * A wallet id that is not on the signed-in account makes the extension
+       * raise while looking it up, and the answer comes back as a bare 500
+       * with an empty body — nothing to show anyone, and identical to the
+       * failure for an extension that is switched off. The id gets there
+       * honestly: the address remembers whichever wallet it was attached to,
+       * and that account can be a different one after signing in with a
+       * password, a `?usr=` link, or a second Nostr key.
+       */
+      if (wallets.length && !wallets.some((entry) => entry.id === target)) {
+        throw new Error(
+          'That name pays into a wallet this account no longer has. Choose one of yours below.'
+        );
+      }
 
       /**
        * The other extension this needs, enabled before asking.

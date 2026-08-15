@@ -361,4 +361,45 @@ describe('servesAddress', () => {
     expect(servesAddress(entries, '')).toBe(false);
     expect(servesAddress(entries, null)).toBe(false);
   });
+  /**
+   * The instance resolves a lightning address by username alone —
+   * `GET /lnurlp/api/v1/well-known/{username}` takes no domain — so one link
+   * answers on every domain pointed at it.
+   */
+  const OURS = ['getzap.me', 'ln.nostrfeed.com'];
+
+  it('counts a link as serving the same name on the instance’s other domain', () => {
+    // Proven by the live callback: kk@getzap.me resolves and returns a
+    // getzap.me callback, from a link this account holds under the other name
+    expect(
+      servesAddress([{ address: 'kk@ln.nostrfeed.com' }], 'kk@getzap.me', OURS)
+    ).toBe(true);
+  });
+
+  it('still refuses a different name on a domain we serve', () => {
+    expect(
+      servesAddress([{ address: 'kk@ln.nostrfeed.com' }], 'help@getzap.me', OURS)
+    ).toBe(false);
+  });
+
+  it('refuses a name on a domain this instance does not answer for', () => {
+    // Somebody else's host resolves it their way; holding the name here says
+    // nothing about that
+    expect(
+      servesAddress([{ address: 'kk@ln.nostrfeed.com' }], 'kk@getalby.com', OURS)
+    ).toBe(false);
+  });
+
+  it('does not let a foreign-domain link vouch for one of ours', () => {
+    expect(
+      servesAddress([{ address: 'kk@getalby.com' }], 'kk@getzap.me', OURS)
+    ).toBe(false);
+  });
+
+  it('compares whole addresses when no instance domains are given', () => {
+    expect(
+      servesAddress([{ address: 'kk@ln.nostrfeed.com' }], 'kk@getzap.me')
+    ).toBe(false);
+  });
 });
+
