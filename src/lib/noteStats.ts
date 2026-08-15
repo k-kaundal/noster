@@ -18,9 +18,37 @@ const SOCIAL_KINDS = [1, 6, 7, 16];
  * zaps carry `a` = `30023:<pubkey>:<d>` and often no `e` tag at all, so asking
  * only for `#e` finds none of them.
  */
+/**
+ * The key a person's own zaps are counted under.
+ *
+ * A profile zap — NIP-57 zapping the human rather than a note — carries a `p`
+ * tag and no `e` or `a` at all. So it is not findable by any note id, which is
+ * the only thing this loader knew how to ask for: every zap sent from a profile
+ * page landed in no bucket and the total on that page stayed at zero however
+ * many arrived.
+ *
+ * Prefixed rather than passed bare so a pubkey cannot be mistaken for an event
+ * id — both are 64 hex characters.
+ */
+export function profileStatsKey(pubkey: string): string {
+  return `profile:${pubkey}`;
+}
+
+/** An addressable event's coordinate, which always starts with its kind. */
+function isAddressKey(key: string): boolean {
+  return /^\d+:/.test(key);
+}
+
 export function buildStatsFilters(keys: string[]) {
-  const eventIds = keys.filter((key) => !key.includes(':'));
-  const addresses = keys.filter((key) => key.includes(':'));
+  const profiles = keys
+    .filter((key) => key.startsWith('profile:'))
+    .map((key) => key.slice('profile:'.length));
+
+  const addresses = keys.filter(isAddressKey);
+
+  const eventIds = keys.filter(
+    (key) => !key.startsWith('profile:') && !isAddressKey(key)
+  );
 
   // Bounded so a full batch stays under typical relay max_limit
   const limit = Math.min(keys.length * 40, 2000);
@@ -38,6 +66,15 @@ export function buildStatsFilters(keys: string[]) {
           { kinds: SOCIAL_KINDS, '#a': addresses, limit },
           { kinds: [ZAP_RECEIPT_KIND], '#a': addresses, limit: zapLimit },
         ]
+      : []),
+    /*
+     * Receipts only. The social kinds are deliberately not asked for by `p`:
+     * that tag means "mentioned" on a note, not "about this person", so the
+     * same filter would report every reply that name-dropped somebody as a
+     * reply to them.
+     */
+    ...(profiles.length
+      ? [{ kinds: [ZAP_RECEIPT_KIND], '#p': profiles, limit: zapLimit }]
       : []),
   ];
 }

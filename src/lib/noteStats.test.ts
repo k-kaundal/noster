@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildStatsFilters } from './noteStats';
+import { buildStatsFilters, profileStatsKey } from './noteStats';
 
 const NOTE = 'a'.repeat(64);
 const OTHER = 'b'.repeat(64);
@@ -68,5 +68,68 @@ describe('buildStatsFilters', () => {
       expect(filter.limit).toBeLessThanOrEqual(2000);
       expect(filter.limit).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('profile zaps', () => {
+  it('asks for receipts by p, not by any id', () => {
+    // A profile zap carries a p tag and no e or a, so no id-shaped question
+    // can ever find one
+    const filters = buildStatsFilters([profileStatsKey('a'.repeat(64))]);
+
+    expect(filters).toHaveLength(1);
+    expect(filters[0]).toMatchObject({
+      kinds: [9735],
+      '#p': ['a'.repeat(64)],
+    });
+  });
+
+  it('does not ask for social kinds by p', () => {
+    // On a note, p means "mentioned" — the same filter would report every
+    // reply that name-dropped somebody as a reply to them
+    const filters = buildStatsFilters([profileStatsKey('a'.repeat(64))]);
+
+    expect(filters.some((filter) => filter.kinds.includes(1))).toBe(false);
+  });
+
+  it('keeps a profile key out of the event-id filter', () => {
+    const eventId = 'b'.repeat(64);
+
+    const filters = buildStatsFilters([
+      eventId,
+      profileStatsKey('a'.repeat(64)),
+    ]);
+
+    for (const filter of filters) {
+      if ('#e' in filter) expect(filter['#e']).toEqual([eventId]);
+    }
+  });
+
+  it('tells an address apart from a profile key', () => {
+    // Both contain a colon; only a coordinate starts with its kind
+    const address = `30023:${'c'.repeat(64)}:my-article`;
+
+    const filters = buildStatsFilters([
+      address,
+      profileStatsKey('a'.repeat(64)),
+    ]);
+
+    const byAddress = filters.filter((filter) => '#a' in filter);
+    expect(byAddress).toHaveLength(2);
+    for (const filter of byAddress) {
+      expect(filter['#a']).toEqual([address]);
+    }
+  });
+
+  it('handles all three kinds of key at once', () => {
+    const filters = buildStatsFilters([
+      'b'.repeat(64),
+      `30023:${'c'.repeat(64)}:x`,
+      profileStatsKey('a'.repeat(64)),
+    ]);
+
+    expect(filters.some((filter) => '#e' in filter)).toBe(true);
+    expect(filters.some((filter) => '#a' in filter)).toBe(true);
+    expect(filters.some((filter) => '#p' in filter)).toBe(true);
   });
 });

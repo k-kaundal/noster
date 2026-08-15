@@ -225,3 +225,93 @@ describe('parseZapReceipt', () => {
     );
   });
 });
+
+describe('profile zaps', () => {
+  /**
+   * The shape our own client sends when the profile page's zap button is used
+   * — taken verbatim from a real one, minus the signature. `p`, `amount`,
+   * `relays`, `lnurl`, and nothing pointing at any event.
+   */
+  const profileRequestTags = [
+    ['relays', 'wss://relay.primal.net', 'wss://relay.nostr.band'],
+    ['amount', '1000000'],
+    ['p', AUTHOR],
+    ['lnurl', 'lnurl1dp68gurn8ghj7'],
+  ];
+
+  it('accepts a receipt with no event tag', () => {
+    expect(
+      validateZapReceipt(build({ requestTags: profileRequestTags }), {
+        recipientPubkey: AUTHOR,
+        providerPubkey: PROVIDER,
+        profileOnly: true,
+      })
+    ).toBe(true);
+  });
+
+  it('rejects a note zap, which also names the author with p', () => {
+    // Otherwise a profile total is the sum of everything its owner was ever
+    // paid, rather than what was sent to them directly
+    expect(
+      validateZapReceipt(build(), {
+        recipientPubkey: AUTHOR,
+        providerPubkey: PROVIDER,
+        profileOnly: true,
+      })
+    ).toBe(false);
+  });
+
+  it('rejects an article zap for the same reason', () => {
+    expect(
+      validateZapReceipt(
+        build({
+          requestTags: [
+            ['p', AUTHOR],
+            ['a', `30023:${AUTHOR}:x`],
+            ['amount', '1000000'],
+          ],
+        }),
+        {
+          recipientPubkey: AUTHOR,
+          providerPubkey: PROVIDER,
+          profileOnly: true,
+        }
+      )
+    ).toBe(false);
+  });
+
+  it('still checks who was paid', () => {
+    expect(
+      validateZapReceipt(build({ requestTags: profileRequestTags }), {
+        recipientPubkey: OTHER,
+        providerPubkey: PROVIDER,
+        profileOnly: true,
+      })
+    ).toBe(false);
+  });
+
+  it('still checks the signing server', () => {
+    expect(
+      validateZapReceipt(
+        build({ requestTags: profileRequestTags, signWith: impostorKey }),
+        {
+          recipientPubkey: AUTHOR,
+          providerPubkey: PROVIDER,
+          profileOnly: true,
+        }
+      )
+    ).toBe(false);
+  });
+
+  it('was invisible before: no event id matches one', () => {
+    // The old question, asked of the new shape — this is the state the profile
+    // page was in, counting zero however many arrived
+    expect(
+      validateZapReceipt(build({ requestTags: profileRequestTags }), {
+        eventId: NOTE,
+        recipientPubkey: AUTHOR,
+        providerPubkey: PROVIDER,
+      })
+    ).toBe(false);
+  });
+});
