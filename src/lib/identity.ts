@@ -286,3 +286,33 @@ export function listAddresses<T extends { username?: string }>(
       a.domain.localeCompare(b.domain)
   );
 }
+
+/**
+ * Whether anything on the account already answers for an address.
+ *
+ * A verified name and a pay link are two records in two extensions, and they
+ * can describe the same address without knowing about each other: `nostrnip5`
+ * stores a `pay_link_id` for the name, `lnurlp` stores the link itself, and a
+ * link made under the plain lightning flow satisfies the name without ever
+ * writing that field.
+ *
+ * Which matters because the field is what "this name isn't set up to receive"
+ * was read from — so a name that is paid, live, and reachable through its own
+ * pay link was being announced as broken, with the money supposedly going
+ * nowhere. It resolves; nobody is losing anything; the only thing missing is
+ * the extension's own note of it.
+ *
+ * Compared as whole addresses rather than by name, because the name is only
+ * half of one: `help` at the domain somebody bought and `help` at the domain
+ * they were given are two addresses, and one answering says nothing about the
+ * other.
+ */
+export function servesAddress(
+  entries: Array<{ address: string }>,
+  identifier: string | null | undefined
+): boolean {
+  const wanted = identifier?.trim().toLowerCase();
+  if (!wanted) return false;
+
+  return entries.some((entry) => entry.address.trim().toLowerCase() === wanted);
+}

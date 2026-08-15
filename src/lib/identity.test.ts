@@ -4,6 +4,7 @@ import {
   listAddresses,
   localPartOf,
   pickPrimaryLink,
+  servesAddress,
   suggestIdentityName,
   withIdentity,
 } from './identity';
@@ -327,5 +328,37 @@ describe('describeIdentity with an address from elsewhere', () => {
 
   it('says nothing is external when the profile has no address at all', () => {
     expect(describeIdentity({ lightningAddress: 'me@nostrfeed.com' }).external).toBeNull();
+  });
+});
+
+/**
+ * The rule behind "this name isn't set up to receive yet". It read one field
+ * on the name's own record, which a pay link made through the plain lightning
+ * flow never writes — so a live, paid, reachable address was announced as one
+ * that money disappears into.
+ */
+describe('servesAddress', () => {
+  const entries = [
+    { address: 'help@ln.nostrfeed.com' },
+    { address: 'u0123456789ab@ln.nostrfeed.com' },
+  ];
+
+  it('finds an address already answered by a pay link', () => {
+    expect(servesAddress(entries, 'help@ln.nostrfeed.com')).toBe(true);
+  });
+
+  it('ignores case and stray whitespace on either side', () => {
+    expect(servesAddress(entries, '  HELP@LN.NostrFeed.com ')).toBe(true);
+    expect(servesAddress([{ address: ' help@ln.nostrfeed.com' }], 'help@ln.nostrfeed.com')).toBe(true);
+  });
+
+  it('does not count the same name at another domain', () => {
+    expect(servesAddress(entries, 'help@getzap.me')).toBe(false);
+  });
+
+  it('answers no when there is nothing to compare', () => {
+    expect(servesAddress([], 'help@ln.nostrfeed.com')).toBe(false);
+    expect(servesAddress(entries, '')).toBe(false);
+    expect(servesAddress(entries, null)).toBe(false);
   });
 });
