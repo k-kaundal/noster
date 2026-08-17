@@ -3,11 +3,14 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "npm i && vite",
     "icons": "node scripts/generate-icons.mjs",
     "build": "npm i && vite build && node scripts/seo-build.mjs && node scripts/sw-version.mjs && cp dist/index.html dist/404.html",
-    "test": "npm i && tsc -p tsconfig.app.json --noEmit && eslint && vitest run && vite build",
+    "test": "npm i && tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.api.json && eslint && vitest run && vite build",
     "deploy": "npm run build && npx -y nostr-deploy-cli deploy --skip-setup",
     "seo": "node scripts/seo-build.mjs",
     "sw": "node scripts/sw-version.mjs"

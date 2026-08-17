@@ -35,27 +35,53 @@ table, so the three cannot drift.
 because the build script compiles and imports it directly — **do not add
 imports to that file.** Pages read it through `useRouteSeo('/path')`.
 
-### Notes, profiles and articles: not fixed, and cannot be here
+### Notes, profiles and articles: served by a function
 
-`/npub1…`, `/note1…`, `/naddr1…` have no build-time list — the content is on
-relays and the set is unbounded. Their metadata is applied in the browser by
-`useSeo`, which means:
+`/npub1…`, `/note1…`, `/nevent1…`, `/naddr1…` have no build-time list — the
+content is on relays and the set is unbounded. `useSeo` fills their tags in
+once the app boots, which is enough for Google and enough for nothing else:
+anything that does not run JavaScript cannot see a tag written by JavaScript.
 
-- **Google indexes them properly.** It renders the page first.
-- **A link shared into a chat app previews as the site, not the note.** No
-  amount of client-side code changes this. Nothing that does not run
-  JavaScript can see a tag written by JavaScript.
+`api/preview.ts` fixes it on the server. `vercel.json` routes those paths to
+it; it decodes the identifier, fetches the event from a relay, writes the
+title, description and image into the HTML and serves that. Everything about
+it degrades to the page as it was — a relay that does not answer, an
+identifier that does not decode, an event that does not exist — because a
+preview is worth a round trip and is never worth a blank page.
 
-The only fix is a server that renders those tags per request: an edge function
-matching `/npub1*`, `/note1*`, `/nevent1*` and `/naddr1*`, fetching the event
-from a relay, and returning HTML with the tags filled in. That is a hosting
-decision — Netlify Edge Functions, Cloudflare Pages Functions and a small
-Node/Deno service in front of the static files can all do it, and a purely
-static host (including Blossom or nostr-deploy) cannot do it at all.
+It replaces the generic tags rather than adding to them. Two `og:title` tags
+is not "the more specific one wins"; it is undefined, and several fetchers
+take the first.
 
-If you add one, it needs: the relay to query, a short timeout with the generic
-card as the fallback, and a cache — a preview fetcher will hit the same URL
-several times in a few seconds.
+The pure parts — identifier decoding, card building, tag injection — are
+tested in `api/preview.test.ts`, including against a real `naddr` from the
+site. The bech32 and TLV reading is written out rather than imported so the
+function stays dependency-free on a host that bills by the millisecond.
+
+### Articles, also baked at build time
+
+`scripts/seo-build.mjs` additionally queries relays during the build for
+recent long-form posts and writes `dist/<naddr>/index.html` for each, the same
+way it does for static routes. That covers article previews on any static host
+with no function involved, and it is what keeps working if the site ever moves
+off a host that can run one. It goes stale between builds and cannot cover
+notes, so it complements the function rather than replacing it.
+
+## Hosting
+
+The site is on **Vercel**, which is what `vercel.json` is for and why it
+matters more than it looks:
+
+- **Without it, every one of these routes returned HTTP 404.** Vercel serves
+  `dist/404.html` for a path that matches no file, and the build copies
+  `index.html` there — so the app booted and a person saw the article while
+  every crawler was told the page did not exist. A 404 is not a thin preview,
+  it is no preview, and no index entry either. The `rewrites` make the SPA
+  fallback a 200.
+- **`public/_headers` and `public/_redirects` do nothing on Vercel.** They are
+  Netlify and Cloudflare Pages formats. They are kept because they are correct
+  for those hosts and cost nothing, but the rules that are actually applied
+  are the ones in `vercel.json`, and the two have to be changed together.
 
 ## robots.txt
 

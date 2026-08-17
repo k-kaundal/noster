@@ -63,4 +63,4 @@ Allow: /
 User-agent: CCBot
 Allow: /
 
-Sitemap: https://nostrfeed.com/sitemap.xml
+Sitemap: https://www.nostrfeed.com/sitemap.xml

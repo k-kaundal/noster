@@ -4,7 +4,7 @@ import { routeSeo } from '@/lib/siteRoutes';
 import type { JsonLd } from '@/lib/structuredData';
 
 /** Canonical origin used for absolute URLs in metadata. */
-export const SITE_URL = 'https://nostrfeed.com';
+export const SITE_URL = 'https://www.nostrfeed.com';
 export const SITE_NAME = 'NostrFeed';
 export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`;
 

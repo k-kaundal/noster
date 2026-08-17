@@ -16,7 +16,7 @@
  * anything — `useSeo` does that.
  */
 
-export const SITE_URL = 'https://nostrfeed.com';
+export const SITE_URL = 'https://www.nostrfeed.com';
 export const SITE_NAME = 'NostrFeed';
 
 /** Anything JSON-LD can hold. Narrow enough to keep `any` out of the app. */
