@@ -50,7 +50,7 @@ export function AccountCard() {
 
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="bg-gradient-to-br from-slate-50 to-transparent dark:from-slate-950/40 pb-4">
+      <CardHeader className="border-b bg-muted/30 pb-4">
         <CardTitle className="flex items-center gap-3 text-base">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
             <User className="h-4 w-4 text-primary" />

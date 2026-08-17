@@ -38,7 +38,7 @@ export function IdentityCard() {
 
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="bg-gradient-to-br from-primary/5 via-transparent to-transparent pb-4">
+      <CardHeader className="border-b bg-muted/30 pb-4">
         <CardTitle className="flex items-center gap-2 text-base">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
             <AtSign className="h-4 w-4 text-primary" />
@@ -178,7 +178,7 @@ function CurrentIdentity() {
       <ZapReadiness address={lightning.profileAddress ?? lightning.address} />
 
       {status.mismatched && (
-        <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
+        <div className="rounded-lg border border-primary/25 bg-primary/[0.06] p-4">
           <p className="mb-3 text-sm text-foreground">
             Zaps go to{' '}
             <code className="inline rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
@@ -305,7 +305,7 @@ function ClaimForm() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg bg-gradient-to-br from-blue-50 to-blue-50/50 p-4 dark:from-blue-950/30 dark:to-blue-950/10">
+      <div className="rounded-lg border bg-muted/40 p-4">
         <p className="text-sm">
           <span className="font-medium">
             {elsewhere ? 'Want an address here as well?' : 'Start receiving zaps.'}

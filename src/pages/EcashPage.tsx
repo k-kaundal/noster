@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EcashReceiveDialog } from '@/components/wallet/EcashReceiveDialog';
 import { EcashSendDialog } from '@/components/wallet/EcashSendDialog';
@@ -92,6 +93,7 @@ function Ecash() {
     isLoading,
     mintUrl,
     pendingQuotes,
+    proofs,
     refresh,
   } = useCashuWallet();
 
@@ -118,8 +120,16 @@ function Ecash() {
 
   return (
     <div className="space-y-5">
+      {/*
+        No gradient flood.
+        
+        Nocturne's rule: saturated fills are not how a surface is raised — on a
+        dark ground elevation is an edge plus ambient darkness. The emerald
+        wash this had was also a colour from no palette at all, which made the
+        one page about money the one page that matched nothing else.
+      */}
       <Card className="overflow-hidden">
-        <div className="bg-gradient-to-br from-emerald-500/15 via-emerald-500/8 to-transparent px-6 py-8">
+        <div className="border-b bg-muted/30 px-6 py-8">
           <div className="flex items-start justify-between gap-3">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Ecash balance
@@ -139,7 +149,8 @@ function Ecash() {
             <Skeleton className="mt-3 h-12 w-48 rounded-lg" />
           ) : (
             <>
-              <p className="mt-2 text-5xl font-bold tracking-tight tabular">
+              {/* Weight 500: hierarchy here is size and space, not boldness */}
+              <p className="mt-2 text-5xl font-medium tracking-tight tabular">
                 {balanceSats.toLocaleString()}
                 <span className="ml-3 text-lg font-normal text-muted-foreground">
                   sats
@@ -149,8 +160,16 @@ function Ecash() {
             </>
           )}
 
-          <p className="mt-2 text-xs text-muted-foreground">
-            Held at {mintHost(mintUrl)}
+          {/*
+            What the balance is actually made of.
+            
+            A number on its own does not say that these are bearer tokens in
+            this browser rather than an account somewhere — which is the single
+            most important thing about them, and the thing people get wrong.
+          */}
+          <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+            {proofs.length} {proofs.length === 1 ? 'proof' : 'proofs'} ·{' '}
+            {mintHost(mintUrl)} · nobody but you can spend them
           </p>
 
           <div className="mt-6 grid grid-cols-2 gap-3">
@@ -176,23 +195,46 @@ function Ecash() {
         </div>
       </Card>
 
+      {/*
+        A pending deposit stays outside the tabs.
+        
+        It is money already paid for and not yet claimed — the one thing here
+        that is time-sensitive, and hiding it behind a tab is how somebody
+        loses it.
+      */}
       {pendingQuotes.length > 0 && <PendingDeposits quotes={pendingQuotes} />}
 
-      {/* Tokens still out there, with whether anyone has claimed them */}
-      <SentTokens />
+      {/*
+        Three tabs, for the same reason as the lightning wallet: this was nine
+        stacked cards, and the mint list and the safety notes are things people
+        come for deliberately rather than things they want between the balance
+        and their history.
+      */}
+      <Tabs defaultValue="activity">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="mints">Mints</TabsTrigger>
+          <TabsTrigger value="safety">Safety</TabsTrigger>
+        </TabsList>
 
-      <TransactionList />
+        <TabsContent value="activity" className="mt-4 space-y-5">
+          {/* Tokens still out there, with whether anyone has claimed them */}
+          <SentTokens />
+          <TransactionList />
+        </TabsContent>
 
-      <MintInfoCard />
+        <TabsContent value="mints" className="mt-4 space-y-5">
+          <MintInfoCard />
+          {/* NIP-87: who among the people you follow keeps money where */}
+          <MintDiscovery currentMintUrl={mintUrl} />
+          <RecommendMint mintUrl={mintUrl} />
+        </TabsContent>
 
-      {/* NIP-87: who among the people you follow keeps money where */}
-      <MintDiscovery currentMintUrl={mintUrl} />
-
-      <RecommendMint mintUrl={mintUrl} />
-
-      <HowItWorks />
-
-      <ForgetOnThisDevice balanceSats={balanceSats} />
+        <TabsContent value="safety" className="mt-4 space-y-5">
+          <HowItWorks />
+          <ForgetOnThisDevice balanceSats={balanceSats} />
+        </TabsContent>
+      </Tabs>
 
       <Card>
         <CardContent className="pt-6">
