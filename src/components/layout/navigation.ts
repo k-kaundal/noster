@@ -10,6 +10,7 @@ import {
   Flame,
   Home,
   KeyRound,
+  Radio,
   List,
   MessagesSquare,
   PenSquare,
@@ -109,6 +110,9 @@ export function getNavItems(pubkey?: string): NavItem[] {
     },
     // NIP-29: hosted by one relay, unlike the communities above
     { section: 'discover', href: '/groups', icon: MessagesSquare, label: 'Groups', secondary: true },
+    // NIP-53. Linked now that it reads real activities rather than a
+    // hardcoded list of streams that did not exist
+    { section: 'discover', href: '/live', icon: Radio, label: 'Live', secondary: true },
     {
       section: 'main',
       href: '/write',
