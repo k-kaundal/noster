@@ -190,6 +190,44 @@ export function knownProviders(): ProviderTable {
   return { ...readStore(providersKey) };
 }
 
+/**
+ * Drops entries written under the old domain-only key.
+ *
+ * They are inert — an address lookup never matches a bare domain — but leaving
+ * them means the table still holds a key that was, for a while, applied to
+ * receipts it had no business judging. Clearing them removes the doubt as well
+ * as the bytes, and costs one relearned key per address the next time somebody
+ * zaps it.
+ */
+export function pruneLegacyProviders(): void {
+  const table = readStore(providersKey);
+
+  const kept = Object.entries(table)
+    .filter(([name]) => !!providerAddress(name))
+    .map(([name, keys]) => [name, readKeys(keys)] as const)
+    .filter(([, keys]) => keys.length);
+
+  /*
+   * Rewritten whenever anything differs, not only when an entry is dropped —
+   * a valid address can still hold the old single-string value, and leaving it
+   * that way means the next reader has to know about both shapes.
+   */
+  const same =
+    kept.length === Object.keys(table).length &&
+    kept.every(([name, keys]) => {
+      const held = table[name];
+      return (
+        Array.isArray(held) &&
+        held.length === keys.length &&
+        held.every((key, index) => key === keys[index])
+      );
+    });
+
+  if (same) return;
+
+  writeStore(providersKey, Object.fromEntries(kept));
+}
+
 /** Forgets everything. For tests, which share a module instance. */
 export function resetProviders(): void {
   writeStore(providersKey, {});

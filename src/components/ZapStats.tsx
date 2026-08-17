@@ -1,8 +1,13 @@
 import { useState } from 'react';
-import { Zap } from 'lucide-react';
+import { Zap, ZapOff } from 'lucide-react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { ZapActivityDialog } from '@/components/ZapActivityDialog';
 import { useZapSummary } from '@/hooks/useZapSummary';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { describeZapSummary } from '@/lib/zapSummary';
 import { cn } from '@/lib/utils';
 
@@ -28,7 +33,42 @@ export function ZapStats({
   const summary = useZapSummary(event);
   const [open, setOpen] = useState(false);
 
-  if (!summary.count) return null;
+  /**
+   * A refused receipt is shown, not swallowed.
+   *
+   * This returned `null` whenever the count was zero, so a note whose only
+   * receipt failed validation rendered nothing at all — indistinguishable
+   * from a note nobody had zapped. That is the exact shape of "I paid and it
+   * does not show", and it left the person who paid with no thread to pull.
+   */
+  if (!summary.count) {
+    if (!summary.rejected.length) return null;
+
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm text-muted-foreground',
+              className
+            )}
+          >
+            <ZapOff className="h-4 w-4 shrink-0" />
+            {summary.rejected.length === 1
+              ? '1 zap not counted'
+              : `${summary.rejected.length} zaps not counted`}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          A zap receipt reached this app and failed a NIP-57 check, so it is
+          not in the total.{' '}
+          <span className="font-mono text-[11px]">
+            {[...new Set(summary.rejected.map((entry) => entry.reason))].join(', ')}
+          </span>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
 
   return (
     <>
