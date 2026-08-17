@@ -1,12 +1,15 @@
 import {
+  ArrowLeftRight,
   Banknote,
   Bell,
+  BookOpen,
   Bookmark,
   CalendarDays,
   Compass,
   Film,
   Flame,
   Home,
+  KeyRound,
   List,
   MessagesSquare,
   PenSquare,
@@ -14,6 +17,7 @@ import {
   PenLine,
   Settings,
   Sparkles,
+  Store,
   User,
   Users,
   Wallet,
@@ -133,9 +137,33 @@ export function getNavItems(pubkey?: string): NavItem[] {
       requiresAuth: true,
       secondary: true,
     },
+    /*
+     * Both were built, routed and then reachable only by typing the URL.
+     * Neither needs an account to look at — a marketplace nobody can browse
+     * without signing up is a marketplace with no sellers.
+     */
+    { section: 'money', href: '/market', icon: Store, label: 'Market', secondary: true },
+    {
+      section: 'money',
+      href: '/p2p',
+      icon: ArrowLeftRight,
+      label: 'P2P',
+      secondary: true,
+    },
     { section: 'manage', href: '/relays', icon: Server, label: 'Relays', shortcut: 'R', secondary: true },
+    {
+      section: 'manage',
+      href: '/identity',
+      icon: KeyRound,
+      label: 'Identity',
+      requiresAuth: true,
+      secondary: true,
+    },
     { section: 'money', href: '/premium', icon: Sparkles, label: 'Relay access', secondary: true },
     { section: 'manage', href: '/settings', icon: Settings, label: 'Settings', shortcut: ',', secondary: true },
+    // The manual was reachable from the footer alone, which is the one place
+    // somebody stuck on a page does not look
+    { section: 'manage', href: '/docs', icon: BookOpen, label: 'Help', secondary: true },
     { href: '/compose', icon: PenSquare, label: 'Compose', shortcut: 'C', requiresAuth: true },
   ];
 }
