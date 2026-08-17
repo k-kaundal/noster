@@ -148,8 +148,28 @@ function TierCard({ tier, isSelf }: { tier: Tier; isSelf: boolean }) {
                   : 'Pay another ' + describeCadence(tier.cadence)
                 : status.state === 'lapsed'
                   ? 'Renew'
-                  : `Subscribe · ${tier.amount.toLocaleString()} sats`}
+                  : status.shortfallSats > 0
+                    ? `Pay the full ${tier.amount.toLocaleString()} sats`
+                    : `Subscribe · ${tier.amount.toLocaleString()} sats`}
             </Button>
+          )}
+
+          {/*
+            The state somebody is stuck in without knowing it.
+            
+            A payment under the tier price buys nothing — a period is bought by
+            one payment covering the price — and until now the card said
+            "Subscribe" to somebody who had already paid, with no way to learn
+            why. It says what happened and what would fix it.
+          */}
+          {status.state === 'none' && status.shortfallSats > 0 && (
+            <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-strong">
+              You've sent {status.totalSats.toLocaleString()} sats, but a
+              period costs {tier.amount.toLocaleString()}. A subscription
+              starts on a single payment of the full price — sending the
+              remaining {status.shortfallSats.toLocaleString()} separately
+              will not start one.
+            </p>
           )}
 
           {status.totalSats > 0 && (

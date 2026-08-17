@@ -362,3 +362,66 @@ describe('rankTiers', () => {
     expect(rankTiers([junk])).toEqual([]);
   });
 });
+
+describe('an underpayment is visible', () => {
+  it('reports what is still owed', () => {
+    /*
+     * The failure this exists for: the dialog used to open on a tipping
+     * default of 100 sats, so somebody clicking "Subscribe · 5,000 sats" paid
+     * a fraction of it — money gone, nothing bought, and the card offered them
+     * the same button as somebody who had never paid at all.
+     */
+    const status = subscriptionStatus([payment({ bolt11: invoice('5u') })], {
+      tier: TIER,
+      subscriber: SUBSCRIBER,
+      now: NOW,
+    });
+
+    expect(status.state).toBe('none');
+    expect(status.totalSats).toBe(500);
+    expect(status.shortfallSats).toBe(4_500);
+  });
+
+  it('measures the shortfall against the largest single payment', () => {
+    /*
+     * A period is bought by one payment covering the price, so three separate
+     * tips do not add up to a subscription. Subtracting the sum would tell
+     * somebody they were nearly there when the next payment still has to be
+     * the whole price.
+     */
+    const status = subscriptionStatus(
+      [
+        payment({ at: NOW - 2 * DAY, bolt11: invoice('10u') }),
+        payment({ at: NOW - 1 * DAY, bolt11: invoice('20u') }),
+      ],
+      { tier: TIER, subscriber: SUBSCRIBER, now: NOW }
+    );
+
+    expect(status.totalSats).toBe(3_000);
+    expect(status.shortfallSats).toBe(3_000);
+  });
+
+  it('owes nothing once one payment covers the price', () => {
+    const status = subscriptionStatus([payment({ at: NOW - DAY })], {
+      tier: TIER,
+      subscriber: SUBSCRIBER,
+      now: NOW,
+    });
+
+    expect(status.state).toBe('active');
+    expect(status.shortfallSats).toBe(0);
+  });
+
+  it('owes nothing when nothing was ever paid', () => {
+    // Never having paid and having underpaid are different states, and only
+    // one of them needs explaining
+    const status = subscriptionStatus([], {
+      tier: TIER,
+      subscriber: SUBSCRIBER,
+      now: NOW,
+    });
+
+    expect(status.state).toBe('none');
+    expect(status.shortfallSats).toBe(0);
+  });
+});
