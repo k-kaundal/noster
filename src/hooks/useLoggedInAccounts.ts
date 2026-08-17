@@ -7,6 +7,7 @@ import { NSchema as n, NostrEvent, NostrMetadata } from '@nostrify/nostrify';
 import { useReadOnlySession } from './useReadOnlySession';
 import { useAccountLabels } from './useAccountLabels';
 import { signerMethod, type SignerMethod } from '@/lib/session';
+import { forgetAll } from '@/lib/eventStore';
 
 export interface Account {
   id: string;
@@ -136,6 +137,15 @@ export function useLoggedInAccounts() {
       } else {
         removeLogin(id);
       }
+
+      /**
+       * The durable store goes too.
+       *
+       * Everything in it can be refetched, and a browser someone else is about
+       * to use should not still be holding the last person's follower lists —
+       * public data or not, it is a record of who was signed in here.
+       */
+      void forgetAll();
     },
     [endBrowsing, removeLogin]
   );

@@ -15,6 +15,8 @@ import { ImageLightboxProvider } from '@/components/ImageLightbox';
 import { NWCProvider } from '@/contexts/NWCContext';
 import { AppConfig } from '@/contexts/AppContext';
 import { persistQueryCache, restoreQueryCache } from '@/lib/queryPersistence';
+import { recallSync, warmEventStore } from '@/lib/eventStore';
+import { RELAY_LIST_SCOPE, primeOutboxTable } from '@/lib/outboxRouting';
 import AppRouter from './AppRouter';
 
 const head = createHead({
@@ -51,6 +53,22 @@ const queryClient = new QueryClient({
  */
 restoreQueryCache(queryClient);
 persistQueryCache(queryClient);
+
+/**
+ * Loads the durable event store into memory alongside it.
+ *
+ * Deliberately not awaited. IndexedDB is where the things too big for
+ * localStorage live — follower sets, and whatever else grows past a couple of
+ * megabytes — and a slow disk should cost a later paint, never a blocked one.
+ */
+void warmEventStore().then(() => {
+  /*
+   * Relay lists learned on earlier visits go back into the routing table, so
+   * the first feed of a session is already routed to where people publish
+   * rather than having to rediscover it one profile at a time.
+   */
+  primeOutboxTable(recallSync(RELAY_LIST_SCOPE));
+});
 
 const defaultConfig: AppConfig = {
   theme: "system",

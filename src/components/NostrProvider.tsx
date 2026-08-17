@@ -15,6 +15,15 @@ import {
   withPrimaryFirst,
 } from '@/lib/relayRouting';
 import { getRelayHealthMonitor } from '@/lib/relayHealth';
+import {
+  RELAY_LIST_KIND,
+  RELAY_LIST_SCOPE,
+  authorsIn,
+  relayHintsFor,
+  rememberRelayLists,
+  withAuthorHints,
+} from '@/lib/outboxRouting';
+import { remember } from '@/lib/eventStore';
 
 /**
  * A pool that drops events whose moment has passed.
@@ -34,19 +43,60 @@ class ExpiryFilteringPool extends NPool {
     ...args: Parameters<NPool['query']>
   ): Promise<NostrEvent[]> {
     const events = await super.query(...args);
+    harvestRelayLists(events);
     return events.filter((event) => !isExpired(event));
   }
 
   async *req(...args: Parameters<NPool['req']>) {
     for await (const message of super.req(...args)) {
       // ["EVENT", <subscription id>, <event>]
-      if (message[0] === 'EVENT' && isExpired(message[2] as NostrEvent)) {
-        continue;
+      if (message[0] === 'EVENT') {
+        const event = message[2] as NostrEvent;
+        if (isExpired(event)) continue;
+        harvestRelayLists([event]);
       }
 
       yield message;
     }
   }
+}
+
+/**
+ * Relay lists seen since the last write, and the timer that will store them.
+ *
+ * Batched because a feed can carry several and each write is a transaction;
+ * the routing table is already updated by then, so the delay costs nothing
+ * but a few seconds of durability on a tab that closes immediately.
+ */
+let harvested: NostrEvent[] = [];
+let harvestTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Notices where people publish, from events that were being fetched anyway.
+ *
+ * Every kind 10002 that crosses the pool — from a profile view, a relay-list
+ * lookup, a feed that happens to carry one — makes the next read better
+ * routed, at the cost of no extra request. The alternative is a bootstrap
+ * that fetches relay lists for everyone you follow on login, which is a large
+ * query at the worst possible moment.
+ */
+function harvestRelayLists(events: readonly NostrEvent[]): void {
+  if (!rememberRelayLists(events)) return;
+
+  harvested.push(...events.filter((event) => event.kind === RELAY_LIST_KIND));
+
+  if (harvestTimer) return;
+
+  harvestTimer = setTimeout(() => {
+    harvestTimer = undefined;
+
+    const batch = harvested;
+    harvested = [];
+
+    // Stored as they arrived. `mergeEvents` knows kind 10002 is replaceable,
+    // so the newest list per author is what survives.
+    void remember(RELAY_LIST_SCOPE, batch);
+  }, 5000);
 }
 
 /**
@@ -172,11 +222,34 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
          * is often nothing or something years old — and the newest answer only
          * wins if somebody was asked who has it.
          */
-        const withIndexers = isIdentityRequest(filters)
-          ? canonicalTargets([...toQuery, ...INDEXER_RELAYS])
+        if (isIdentityRequest(filters)) {
+          const withIndexers = canonicalTargets([...toQuery, ...INDEXER_RELAYS]);
+          return new Map(withIndexers.map((url) => [url, filters]));
+        }
+
+        /**
+         * NIP-65. When the request names authors, some of the budget goes to
+         * the relays those authors publish to.
+         *
+         * This is what stops the app being only as good as its own relay.
+         * Someone who publishes to two relays of their own has always been
+         * invisible here unless one of them happened to be in the reader's
+         * list — not a bug in their setup, just the cost of asking the wrong
+         * places. Their notes are found now because they are asked for where
+         * they were put.
+         *
+         * The reader's own relays keep the rest of the budget rather than
+         * being replaced: a published relay list can be years stale or point
+         * at relays long gone, and trusting one exclusively turns a bad list
+         * into an unreadable person.
+         */
+        const hints = relayHintsFor(authorsIn(filters));
+
+        const routed = hints.length
+          ? withAuthorHints(toQuery, hints, MAX_READ_RELAYS)
           : toQuery;
 
-        return new Map(withIndexers.map((url) => [url, filters]));
+        return new Map(canonicalTargets(routed).map((url) => [url, filters]));
       },
 
       /**
