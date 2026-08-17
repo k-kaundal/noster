@@ -2,6 +2,17 @@ import { useQuery } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent, NostrMetadata } from '@nostrify/nostrify';
 import { genUserName } from '@/lib/genUserName';
+import { ZAP_RECEIPT_KIND } from '@/lib/zap';
+import { summarizeZaps } from '@/lib/zapSummary';
+import { parseZapSplits } from '@/lib/zapSplit';
+import { providerKeyForRecipients } from '@/lib/zapProviders';
+import { calculateEngagementScore } from '@/lib/trendingScore';
+
+/**
+ * How many candidates get their engagement fetched, and therefore how many can
+ * rank at all. Bounded because the engagement query names every one of them.
+ */
+const RANKED_CANDIDATES = 100;
 
 /**
  * Trending item with engagement metrics
@@ -15,31 +26,12 @@ export interface TrendingItem {
   replies?: number;
   reposts?: number;
   impressions?: number;
+  /** People who paid, which is the signal a like cannot fake. */
+  zaps?: number;
+  /** What they paid, in sats. */
+  zapSats?: number;
   author?: string;
   timestamp: number;
-}
-
-/**
- * Calculate engagement score for trending ranking
- */
-export function calculateEngagementScore(
-  likes: number = 0,
-  replies: number = 0,
-  reposts: number = 0,
-  impressions: number = 0,
-  ageHours: number = 1
-): number {
-  // Weight recent content more heavily
-  const ageWeight = Math.max(0.1, 1 - (ageHours / 168)); // Decay over 1 week
-
-  // Engagement weights (reposts valued highest, then likes, then replies)
-  const score =
-    (likes * 1) +
-    (replies * 2) +
-    (reposts * 3) +
-    (impressions * 0.1);
-
-  return Math.round(score * ageWeight * 100) / 100;
 }
 
 /**
@@ -71,47 +63,133 @@ export function useTrendingPosts(hours: number = 24, limit: number = 20) {
           return [];
         }
 
-        // Fetch reactions for all posts to calculate engagement
-        const eventIds = events.map(e => e.id);
-        const reactions = await nostr.query(
+        /**
+         * Only the posts we can actually score are ranked.
+         *
+         * Engagement is fetched for a bounded slice, and everything past it
+         * used to be scored as though nobody had touched it — so the tail of
+         * the candidate list was ranked at zero regardless of how popular it
+         * was, and "trending" partly meant "returned early by a relay".
+         */
+        const candidates = events.slice(0, RANKED_CANDIDATES);
+        const eventIds = candidates.map((event) => event.id);
+
+        /*
+         * Reactions, reposts, zap receipts and the authors' profiles in one
+         * request. Four round trips against a relay's rate limit for data
+         * that fits in one set of filters is how a page ends up rendering
+         * with half of its numbers missing.
+         */
+        const engagement = await nostr.query(
           [
+            // Kind 6 belongs here: the old filter asked for reactions only and
+            // then tested `kind === 6` on the results, so reposts — the
+            // highest-weighted signal in the score — were always zero
+            { kinds: [7, 6], '#e': eventIds, limit: 2000 },
+            { kinds: [ZAP_RECEIPT_KIND], '#e': eventIds, limit: 1000 },
             {
-              kinds: [7],           // Reactions
-              '#e': eventIds.slice(0, 50), // Limit reaction queries
-              limit: 1000,
+              kinds: [0],
+              authors: [...new Set(candidates.map((event) => event.pubkey))],
             },
           ],
           { signal }
-        ).catch(() => []);
+        ).catch(() => [] as NostrEvent[]);
 
-        const reactionCounts = new Map<string, { likes: number; reposts: number; replies: number }>();
-        eventIds.forEach(id => reactionCounts.set(id, { likes: 0, reposts: 0, replies: 0 }));
-
-        reactions.forEach(reaction => {
-          const eTag = reaction.tags.find(([name]) => name === 'e')?.[1];
-          if (eTag && reactionCounts.has(eTag)) {
-            const counts = reactionCounts.get(eTag)!;
-            if (reaction.content === '+' || reaction.content === '👍') {
-              counts.likes++;
-            } else if (reaction.content === '🔁' || reaction.kind === 6) {
-              counts.reposts++;
-            }
+        /**
+         * Each author's lightning address, so their receipts can be checked
+         * against the server that signs them.
+         *
+         * Worth a query here where it is not on a feed: this is one batched
+         * request for the whole page rather than one per visible post, and
+         * ranking is exactly where a forged total buys something.
+         */
+        const addresses = new Map<string, string | undefined>();
+        for (const profile of engagement.filter((event) => event.kind === 0)) {
+          try {
+            addresses.set(
+              profile.pubkey,
+              (JSON.parse(profile.content) as { lud16?: string }).lud16
+            );
+          } catch {
+            // A profile that will not parse tells us nothing about its owner
           }
-        });
+        }
+
+        const counts = new Map<
+          string,
+          { likes: number; reposts: number; replies: number }
+        >();
+        eventIds.forEach((id) =>
+          counts.set(id, { likes: 0, reposts: 0, replies: 0 })
+        );
+
+        for (const reaction of engagement) {
+          if (reaction.kind !== 7 && reaction.kind !== 6) continue;
+
+          // The last `e` tag is the event reacted to; earlier ones are thread
+          // context, and reading the first attributed replies to the root
+          const eTag = reaction.tags
+            .filter(([name]) => name === 'e')
+            .at(-1)?.[1];
+
+          const held = eTag ? counts.get(eTag) : undefined;
+          if (!held) continue;
+
+          if (reaction.kind === 6) held.reposts++;
+          else held.likes++;
+        }
+
+        const receipts = engagement.filter(
+          (event) => event.kind === ZAP_RECEIPT_KIND
+        );
 
         // Rank posts by engagement
-        const ranked = events.map((event) => {
-          const counts = reactionCounts.get(event.id) || { likes: 0, reposts: 0, replies: 0 };
+        const ranked = candidates.map((event) => {
+          const held = counts.get(event.id) ?? {
+            likes: 0,
+            reposts: 0,
+            replies: 0,
+          };
           const ageHours = (Math.floor(Date.now() / 1000) - event.created_at) / 3600;
-          const score = calculateEngagementScore(counts.likes, 0, counts.reposts, 0, ageHours);
+
+          /**
+           * Checked, not counted.
+           *
+           * A ranking built on unchecked receipts is a ranking anybody can buy
+           * a place in for the price of publishing an event, which is nothing.
+           * `summarizeZaps` applies every NIP-57 check including the provider
+           * key when this author's lightning server is one we have met — see
+           * `lib/zapProviders` for what happens when it is not.
+           */
+          const recipientPubkey = [
+            event.pubkey,
+            ...parseZapSplits(event).map((share) => share.pubkey),
+          ];
+
+          const zapped = summarizeZaps(receipts, {
+            eventId: event.id,
+            recipientPubkey,
+            providerPubkey: providerKeyForRecipients(
+              recipientPubkey,
+              addresses.get(event.pubkey)
+            ),
+          });
 
           return {
             id: event.id,
             title: event.content.substring(0, 100),
             type: 'post' as const,
-            engagementScore: score,
-            likes: counts.likes,
-            reposts: counts.reposts,
+            engagementScore: calculateEngagementScore({
+              likes: held.likes,
+              reposts: held.reposts,
+              zaps: zapped.count,
+              zapSats: zapped.totalSats,
+              ageHours,
+            }),
+            likes: held.likes,
+            reposts: held.reposts,
+            zaps: zapped.count,
+            zapSats: zapped.totalSats,
             author: event.pubkey,
             timestamp: event.created_at,
           };

@@ -29,7 +29,7 @@ import { transform } from 'esbuild';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
 
-const SITE_URL = 'https://nostrfeed.com';
+const SITE_URL = 'https://www.nostrfeed.com';
 const SITE_NAME = 'NostrFeed';
 const OG_IMAGE = `${SITE_URL}/og-image.png`;
 

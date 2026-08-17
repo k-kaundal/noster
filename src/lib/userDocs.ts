@@ -337,10 +337,27 @@ Like an address, a bought name does nothing until it is on your profile. You
 can hold several names and exactly one of them can carry the ✓, so the app asks
 which.
 
+## A link you can actually share
+
+Once a name is on your profile you get a readable web address for it:
+
+\`\`\`
+nostrfeed.com/@alice
+\`\`\`
+
+That is the one to put in a bio somewhere else, print, or read out loud. Your
+\`npub\` also works as a link and nobody can type it from memory. A name hosted
+somewhere other than here keeps its domain in the link —
+\`nostrfeed.com/@alice@example.com\` — and resolves the same way.
+
+The link works for anyone, signed in or not. Copy it from the QR button on
+your profile.
+
 ## Expiry
 
 Names are rented, not bought outright. You are warned as the date approaches.
-If one lapses the ✓ disappears until it is renewed.
+If one lapses the ✓ disappears until it is renewed — and so does the short
+link, since the name is what it resolves through.
 `,
   },
   {

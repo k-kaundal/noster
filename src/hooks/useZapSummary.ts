@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import type { NostrEvent } from '@nostrify/nostrify';
+import { useAuthor } from '@/hooks/useAuthor';
 import { useNoteStats } from '@/hooks/useNoteStats';
 import { parseZapSplits } from '@/lib/zapSplit';
+import { providerKeyForRecipients } from '@/lib/zapProviders';
 import {
   EMPTY_ZAP_SUMMARY,
   summarizeZaps,
@@ -16,10 +18,13 @@ import {
  * — the zaps came back and were dropped on the floor, which is why the zap
  * button was the only one in the row with no number on it.
  *
- * The provider key is deliberately not fetched here. Checking it means an
- * LNURL request to the author's lightning server per note, which on a feed is
- * a request per visible post to a third party that then knows what the reader
- * is looking at. Every other NIP-57 check is applied; see `summarizeZaps`.
+ * The provider key is never *fetched* here, and that constraint has not
+ * changed: checking it that way means an LNURL request per visible post to a
+ * third party who then knows what the reader is reading. It is instead read
+ * from the table `lib/zapProviders` fills from requests the app already makes,
+ * which costs nothing and leaks nothing. A server nobody here has paid stays
+ * unknown, and its receipts are judged as before — see `summarizeZaps` for the
+ * checks that never need the network.
  */
 export function useZapSummary(event: NostrEvent | undefined): ZapSummary & {
   isLoading: boolean;
@@ -38,6 +43,13 @@ export function useZapSummary(event: NostrEvent | undefined): ZapSummary & {
     : undefined;
 
   const { zaps, isLoading } = useNoteStats(address ?? event?.id);
+
+  /**
+   * The author's lightning address, which names the server whose key signs
+   * their receipts. Already loaded for the avatar and name beside the post, so
+   * reading it here adds no request.
+   */
+  const lud16 = useAuthor(event?.pubkey).data?.metadata?.lud16;
 
   const summary = useMemo(() => {
     if (!event) return EMPTY_ZAP_SUMMARY;
@@ -60,8 +72,9 @@ export function useZapSummary(event: NostrEvent | undefined): ZapSummary & {
       eventId: address ? undefined : event.id,
       address,
       recipientPubkey,
+      providerPubkey: providerKeyForRecipients(recipientPubkey, lud16),
     });
-  }, [zaps, event, address]);
+  }, [zaps, event, address, lud16]);
 
   return { ...summary, isLoading };
 }

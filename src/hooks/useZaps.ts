@@ -16,6 +16,10 @@ import { profileStatsKey } from '@/lib/noteStats';
 import { parseZapSplits, splitAmount } from '@/lib/zapSplit';
 import { GOAL_KIND, linkedGoal, parseZapGoal } from '@/lib/nip75';
 import { describeSignerError } from '@/lib/signerErrors';
+import {
+  providerKeyForRecipients,
+  rememberProvider,
+} from '@/lib/zapProviders';
 import { clearSignerFailure, recordSignerFailure } from '@/lib/signerStatus';
 import {
   fetchInvoice,
@@ -240,16 +244,27 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
      * somebody the receipt names instead of the author, and checking only the
      * author reported zero for exactly those notes.
      */
+    const recipientPubkey = [
+      actualTarget.pubkey,
+      ...parseZapSplits(actualTarget).map((share) => share.pubkey),
+    ];
+
     const summary = summarizeZaps(zapEvents, {
       eventId: address || isProfileZap ? undefined : actualTarget.id,
       address,
       // The kind 0's id names nothing a receipt will ever carry, so a profile
       // zap is identified by having no target tag at all
       profileOnly: isProfileZap,
-      recipientPubkey: [
-        actualTarget.pubkey,
-        ...parseZapSplits(actualTarget).map((share) => share.pubkey),
-      ],
+      recipientPubkey,
+      /**
+       * The forgery check, when this author's lightning server is one we have
+       * met. Read from a local table rather than fetched — see
+       * `lib/zapProviders` for why validation must never make a request.
+       */
+      providerPubkey: providerKeyForRecipients(
+        recipientPubkey,
+        author.data?.metadata?.lud16
+      ),
     });
 
     const counted = new Set(summary.zappers.map((zapper) => zapper.receiptId));
@@ -260,7 +275,13 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
       // The receipts that survived, for callers that want the events
       zaps: zapEvents.filter((event) => counted.has(event.id)),
     };
-  }, [zapEvents, actualTarget, address, isProfileZap]);
+  }, [
+    zapEvents,
+    actualTarget,
+    address,
+    isProfileZap,
+    author.data?.metadata?.lud16,
+  ]);
 
   /**
    * Turns an amount into an invoice the caller can pay with any wallet.
@@ -357,6 +378,15 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
         endpoint,
         AbortSignal.timeout(10000)
       );
+
+      /**
+       * The offer names the key this server signs receipts with, so learning
+       * it here costs nothing — the request was being made anyway to get an
+       * invoice. From now on every receipt claiming to come from this domain
+       * can be checked against it, including receipts for people nobody here
+       * has ever zapped: one server answers for all of its addresses.
+       */
+      rememberProvider(metadata.lud16, payMetadata.nostrPubkey);
 
       const amountMsat = amount * 1000;
       const invalid = validateAmount(amount, payMetadata);
