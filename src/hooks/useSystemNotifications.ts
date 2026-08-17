@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useAccountStored } from '@/hooks/useStore';
 import {
   countUnread,
   useNotifications,
@@ -14,6 +16,14 @@ import {
   unseenFollowers,
   type FollowerLedger,
 } from '@/lib/followNotify';
+import {
+  ANNOUNCED_KEY,
+  EMPTY_WATERMARK,
+  advanced,
+  newsFrom,
+  watermarkFor,
+  type Watermark,
+} from '@/lib/notifyWatermark';
 import type { Notification } from '@/lib/notifications';
 
 /**
@@ -64,6 +74,7 @@ function describe(notification: Notification): { title: string; body: string } {
  * twice.
  */
 export function useSystemNotifications() {
+  const { user } = useCurrentUser();
   const { notifications } = useNotifications();
   const { lastSeen } = useNotificationsSeen();
   const [enabled] = useLocalStorage(NOTIFY_PREF_KEY, false);
@@ -79,8 +90,12 @@ export function useSystemNotifications() {
    * Held in a ref as well as in storage so the effect below can read the
    * current value without listing it as a dependency — writing to it there
    * would otherwise re-run the effect that just wrote it.
+   *
+   * Namespaced per account: one browser can hold several, and account B's
+   * followers must not be treated as already-counted because account A had
+   * met them.
    */
-  const [followers, setFollowers] = useLocalStorage<FollowerLedger>(
+  const [followers, setFollowers] = useAccountStored<FollowerLedger>(
     FOLLOWERS_SEEN_KEY,
     EMPTY_LEDGER
   );
@@ -95,53 +110,60 @@ export function useSystemNotifications() {
   /**
    * The newest item already announced.
    *
-   * Seeded on the first run rather than starting at zero, so opening the app
-   * does not announce the entire backlog as if it had just happened. Only
-   * things that arrive *after* this session began are new.
+   * Stored rather than kept in memory, which is the fix for the same zap
+   * arriving as a fresh notification hours later. See `lib/notifyWatermark`
+   * for why a mark rebuilt at each launch cannot be trusted: it gets seeded
+   * from one fast relay's partial answer, and everything the slower relays
+   * add afterwards then looks new.
    */
-  const announcedThrough = useRef<number | null>(null);
+  const [storedMark, setStoredMark] = useLocalStorage<Watermark>(
+    ANNOUNCED_KEY,
+    EMPTY_WATERMARK
+  );
+
+  const mark = useRef(storedMark);
+  useEffect(() => {
+    mark.current = storedMark;
+  }, [storedMark]);
 
   useEffect(() => {
     setBadge(unread);
   }, [unread]);
 
   useEffect(() => {
-    if (!notifications.length) return;
-
-    const newest = notifications[0].createdAt;
+    if (!user?.pubkey || !notifications.length) return;
 
     /** Everyone currently visible as a follower, however old the list is. */
     const followerKeys = notifications
       .filter((notification) => notification.type === 'follow')
       .map((notification) => notification.pubkey);
 
-    if (announcedThrough.current === null) {
-      announcedThrough.current = newest;
+    const known = watermarkFor(mark.current, user.pubkey);
 
-      /*
-       * The ledger is seeded from everything on screen, not from what arrives
-       * next. On a device connecting for the first time this is the whole
-       * follower list, and none of it is news — announcing it would greet
-       * somebody with a notification per follower they have ever had.
-       */
+    /** Records how far we have looked, without announcing any of it. */
+    const settle = () => {
+      const next = advanced(known ?? EMPTY_WATERMARK, notifications, user.pubkey);
+
+      if (!known || next.through !== known.through) {
+        mark.current = next;
+        setStoredMark(next);
+      }
+
       setFollowers(rememberFollowers(followerKeys, ledger.current));
+    };
+
+    /*
+     * Nothing on screen the first time we look at an account is news, and the
+     * follower ledger is seeded from all of it rather than from what arrives
+     * next — otherwise a device connecting for the first time greets somebody
+     * with a notification per follower they have ever had.
+     */
+    if (!known) {
+      settle();
       return;
     }
 
-    if (newest <= announcedThrough.current) return;
-
-    const fresh = notifications.filter(
-      (notification) => notification.createdAt > announcedThrough.current!
-    );
-
-    announcedThrough.current = newest;
-
-    if (!enabled) {
-      // Still recorded, so switching notifications on later does not replay
-      // every follower as though they had just arrived
-      setFollowers(rememberFollowers(followerKeys, ledger.current));
-      return;
-    }
+    const fresh = newsFrom(notifications, known);
 
     /**
      * Follows are filtered by who, not by when.
@@ -149,6 +171,9 @@ export function useSystemNotifications() {
      * A republished contact list is a fresh timestamp carrying no news, and it
      * is the common case — people edit their follows far more often than they
      * gain new ones. Only a key we have never counted is a new follower.
+     *
+     * Read before `settle`, which is what writes those keys into the ledger:
+     * afterwards every one of them is known and none of them is new.
      */
     const newFollowers = new Set(
       unseenFollowers(
@@ -159,14 +184,16 @@ export function useSystemNotifications() {
       )
     );
 
-    setFollowers(rememberFollowers(followerKeys, ledger.current));
-
     const announceable = fresh.filter(
       (notification) =>
         notification.type !== 'follow' || newFollowers.has(notification.pubkey)
     );
 
-    if (!announceable.length) return;
+    // Recorded whether or not it gets announced, so switching notifications on
+    // later does not replay everything that happened while they were off
+    settle();
+
+    if (!enabled || !announceable.length) return;
 
     if (announceable.length > MAX_INDIVIDUAL) {
       showNotice({
@@ -194,5 +221,5 @@ export function useSystemNotifications() {
         tag: notification.event.id,
       });
     }
-  }, [enabled, notifications, setFollowers]);
+  }, [enabled, notifications, setFollowers, setStoredMark, user?.pubkey]);
 }
