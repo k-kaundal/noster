@@ -101,8 +101,15 @@ export function readPayment(
     hash: raw.payment_hash || '',
     direction,
     state: readState({ direction, status, expiresAt }, now),
-    sats: Math.abs(msatToSat(msat)),
-    feeSats: Math.abs(msatToSat(Number(raw.fee) || 0)),
+    /*
+     * Absolute first, then converted. `msatToSat` floors, and flooring a
+     * negative rounds away from zero — so an outgoing 50,500 msat read as 51
+     * sats and a 1,500 msat fee read as 2. Every outgoing figure in the app
+     * was rounded up, which is the wrong direction to be wrong about somebody
+     * else's money.
+     */
+    sats: msatToSat(Math.abs(msat)),
+    feeSats: msatToSat(Math.abs(Number(raw.fee) || 0)),
     memo: (raw.memo || '').trim(),
     bolt11: raw.bolt11 || '',
     preimage: raw.preimage || undefined,

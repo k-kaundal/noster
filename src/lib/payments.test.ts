@@ -1,16 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  DEFAULT_INVOICE_TTL_MS,
-  describePayment,
-  filterPayments,
-  groupByDay,
-  isOpenRequest,
-  isSettled,
-  minutesLeft,
-  readPayment,
-  totals,
-  type WalletPayment,
-} from './payments';
+import { DEFAULT_INVOICE_TTL_MS, describePayment, filterPayments, groupByDay, isOpenRequest, isSettled, minutesLeft, readPayment, totals, type WalletPayment } from './payments';
 import type { LnbitsPayment } from './lnbits';
 
 const NOW = Date.parse('2026-06-15T12:00:00Z');
@@ -309,5 +298,45 @@ describe('describePayment', () => {
     };
 
     expect(describePayment(expired).detail).toBe('Expired unpaid');
+  });
+});
+
+describe('outgoing amounts are not rounded up', () => {
+  /** An LNbits row as the API actually returns one: amount in millisats. */
+  const spend = (amount: number, fee: number) =>
+    readPayment({
+      checking_id: 'internal_x',
+      payment_hash: 'h',
+      amount,
+      fee,
+      bolt11: 'lnbc500n1p',
+      status: 'success',
+      memo: '',
+      time: '2026-08-17T18:01:42.454441+00:00',
+    } as Parameters<typeof readPayment>[0]);
+
+  it('reads a spend of 50 sats as 50', () => {
+    // -50000 is millisats. The whole field is, which is easy to forget when
+    // the number happens to look like a sat amount somebody would send
+    expect(spend(-50_000, -1_500).sats).toBe(50);
+  });
+
+  it('does not round a part-sat spend upwards', () => {
+    /*
+     * `msatToSat` floors, and flooring a negative rounds away from zero, so
+     * taking the absolute value afterwards turned 50.5 sats into 51. Every
+     * outgoing figure was overstated — the wrong direction to be wrong about
+     * somebody else's money.
+     */
+    expect(spend(-50_500, 0).sats).toBe(50);
+  });
+
+  it('does not round a part-sat fee upwards', () => {
+    expect(spend(-50_000, -1_500).feeSats).toBe(1);
+  });
+
+  it('still reads incoming the same way', () => {
+    expect(spend(50_500, 0).sats).toBe(50);
+    expect(spend(50_000, 0).direction).toBe('incoming');
   });
 });
