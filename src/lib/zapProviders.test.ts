@@ -40,7 +40,7 @@ describe('providerDomain', () => {
 describe('rememberProvider', () => {
   it('learns the key a server signs with', () => {
     expect(rememberProvider('alice@getzap.me', KEY)).toBe(true);
-    expect(providerKeyFor('alice@getzap.me')).toBe(KEY);
+    expect(providerKeyFor('alice@getzap.me')).toEqual([KEY]);
   });
 
   it('answers for every address on that server', () => {
@@ -48,7 +48,7 @@ describe('rememberProvider', () => {
     // worth keeping: zapping one person teaches us how to verify the rest
     rememberProvider('alice@getzap.me', KEY);
 
-    expect(providerKeyFor('bob@getzap.me')).toBe(KEY);
+    expect(providerKeyFor('bob@getzap.me')).toEqual([KEY]);
   });
 
   it('refuses a key that is not a BIP-340 pubkey', () => {
@@ -66,7 +66,7 @@ describe('rememberProvider', () => {
 
   it('stores the key in lower case, however it was served', () => {
     rememberProvider('alice@getzap.me', KEY.toUpperCase());
-    expect(providerKeyFor('alice@getzap.me')).toBe(KEY);
+    expect(providerKeyFor('alice@getzap.me')).toEqual([KEY]);
   });
 
   it('says nothing changed when the same key arrives again', () => {
@@ -74,19 +74,32 @@ describe('rememberProvider', () => {
     expect(rememberProvider('alice@getzap.me', KEY)).toBe(false);
   });
 
-  it('takes a new key when a server rotates it', () => {
+  it('keeps the old key when a server rotates', () => {
+    /*
+     * A rotation does not make last month's zaps forgeries. Dropping the old
+     * key invalidated every receipt the server had ever signed, which reads
+     * from the outside as "our own zaps stopped counting".
+     */
     rememberProvider('alice@getzap.me', KEY);
 
     expect(rememberProvider('alice@getzap.me', OTHER)).toBe(true);
-    expect(providerKeyFor('alice@getzap.me')).toBe(OTHER);
+    expect(providerKeyFor('alice@getzap.me')).toEqual([OTHER, KEY]);
+  });
+
+  it('does not hold the same key twice', () => {
+    rememberProvider('alice@getzap.me', KEY);
+    rememberProvider('alice@getzap.me', OTHER);
+    rememberProvider('alice@getzap.me', KEY);
+
+    expect(providerKeyFor('alice@getzap.me')).toEqual([KEY, OTHER]);
   });
 
   it('keeps servers apart', () => {
     rememberProvider('alice@getzap.me', KEY);
     rememberProvider('bob@ln.nostrfeed.com', OTHER);
 
-    expect(providerKeyFor('alice@getzap.me')).toBe(KEY);
-    expect(providerKeyFor('bob@ln.nostrfeed.com')).toBe(OTHER);
+    expect(providerKeyFor('alice@getzap.me')).toEqual([KEY]);
+    expect(providerKeyFor('bob@ln.nostrfeed.com')).toEqual([OTHER]);
   });
 });
 
@@ -110,7 +123,7 @@ describe('providerKeyForRecipients', () => {
   });
 
   it('checks a note paid to one person', () => {
-    expect(providerKeyForRecipients(['alice'], 'alice@getzap.me')).toBe(KEY);
+    expect(providerKeyForRecipients(['alice'], 'alice@getzap.me')).toEqual([KEY]);
   });
 
   it('withholds the check from a note with a zap split', () => {

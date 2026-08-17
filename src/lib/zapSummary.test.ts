@@ -109,7 +109,11 @@ describe('summarizeZaps', () => {
       target
     );
 
-    expect(summary).toEqual(EMPTY_ZAP_SUMMARY);
+    expect(summary.count).toBe(0);
+    expect(summary.totalSats).toBe(0);
+    // Counted as refused rather than silently dropped, so "I paid and it
+    // is not showing" has an answer
+    expect(summary.rejected.map((r) => r.reason)).toEqual(['wrong-provider']);
   });
 
   it('ignores receipts about a different note', () => {
@@ -258,7 +262,11 @@ describe('summarizeZaps', () => {
         }
       );
 
-      expect(summary).toEqual(EMPTY_ZAP_SUMMARY);
+      expect(summary.count).toBe(0);
+      expect(summary.totalSats).toBe(0);
+      // Counted as refused rather than silently dropped, so "I paid and it
+      // is not showing" has an answer
+      expect(summary.rejected.map((r) => r.reason)).toEqual(['wrong-target']);
     });
 
     it('counts a zap to any of several acceptable recipients', () => {
@@ -287,7 +295,11 @@ describe('summarizeZaps', () => {
         providerPubkey: PROVIDER,
       });
 
-      expect(summary).toEqual(EMPTY_ZAP_SUMMARY);
+      expect(summary.count).toBe(0);
+      expect(summary.totalSats).toBe(0);
+      // Counted as refused rather than silently dropped, so "I paid and it
+      // is not showing" has an answer
+      expect(summary.rejected.map((r) => r.reason)).toEqual(['wrong-recipient']);
     });
   });
 });
@@ -297,12 +309,12 @@ describe('describeZapSummary', () => {
     // One big zap and twelve small ones say very different things, and a
     // total alone cannot tell them apart
     expect(
-      describeZapSummary({ totalSats: 3_420, count: 12, zappers: [] })
+      describeZapSummary({ totalSats: 3_420, count: 12, zappers: [], rejected: [] })
     ).toBe('3,420 sats · 12 zaps');
   });
 
   it('does not say "1 zaps"', () => {
-    expect(describeZapSummary({ totalSats: 21, count: 1, zappers: [] })).toBe(
+    expect(describeZapSummary({ totalSats: 21, count: 1, zappers: [], rejected: [] })).toBe(
       '21 sats · 1 zap'
     );
   });

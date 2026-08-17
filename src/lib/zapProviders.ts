@@ -28,8 +28,20 @@ import { defineKey, readStore, writeStore } from '@/lib/store';
  * met yet.
  */
 
-/** domain -> the key its receipts are signed with. */
-export type ProviderTable = Record<string, string>;
+/**
+ * domain -> every key its receipts have been seen signed with, newest first.
+ *
+ * A list rather than one key, because servers rotate them. LNbits regenerates
+ * the Nostr Zaps keypair when the extension is reinstalled or reconfigured,
+ * and receipts signed by the old key are not forgeries — they are last month's
+ * zaps. Holding one key meant a rotation silently invalidated every zap the
+ * server had ever signed, which reads exactly like "our own zaps stopped
+ * counting".
+ *
+ * Forging still requires a key the server actually published at some point, so
+ * this is strictly stronger than the check being skipped.
+ */
+export type ProviderTable = Record<string, string[]>;
 
 const providersKey = defineKey<ProviderTable>('nostr:zap-providers', {});
 
@@ -40,6 +52,9 @@ const providersKey = defineKey<ProviderTable>('nostr:zap-providers', {});
  * the handful of lightning servers most of Nostr actually uses.
  */
 export const MAX_PROVIDERS = 200;
+
+/** How many past keys to keep per domain. Rotations are rare. */
+export const MAX_KEYS_PER_DOMAIN = 4;
 
 /** A BIP-340 key, which is what a `nostrPubkey` must be to be usable. */
 function isValidNostrPubkey(value: unknown): value is string {
@@ -80,10 +95,18 @@ export function rememberProvider(
   const key = nostrPubkey.toLowerCase();
   const table = readStore(providersKey);
 
-  if (table[domain] === key) return false;
+  if (table[domain]?.[0] === key) return false;
 
   writeStore(providersKey, (current) => {
-    const next: ProviderTable = { ...current, [domain]: key };
+    // Newest first, and the old ones kept: a rotation must not invalidate
+    // every receipt the server signed before it
+    const held = current[domain] ?? [];
+    const keys = [key, ...held.filter((held) => held !== key)].slice(
+      0,
+      MAX_KEYS_PER_DOMAIN
+    );
+
+    const next: ProviderTable = { ...current, [domain]: keys };
     const domains = Object.keys(next);
 
     if (domains.length <= MAX_PROVIDERS) return next;
@@ -112,11 +135,17 @@ export function rememberProvider(
  * "no opinion", and the receipt is then judged on the checks that do not need
  * a network round trip.
  */
-export function providerKeyFor(address: string | undefined): string | undefined {
+export function providerKeyFor(
+  address: string | undefined
+): string[] | undefined {
   const domain = providerDomain(address);
   if (!domain) return undefined;
 
-  return readStore(providersKey)[domain];
+  const keys = readStore(providersKey)[domain];
+
+  // Undefined rather than an empty list: "no opinion" and "no key matches"
+  // must not be the same answer
+  return keys?.length ? keys : undefined;
 }
 
 /**
@@ -131,7 +160,7 @@ export function providerKeyFor(address: string | undefined): string | undefined 
 export function providerKeyForRecipients(
   recipients: readonly string[],
   address: string | undefined
-): string | undefined {
+): string[] | undefined {
   if (recipients.length !== 1) return undefined;
 
   return providerKeyFor(address);

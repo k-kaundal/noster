@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools';
 import type { NostrEvent } from '@nostrify/nostrify';
-import { parseZapReceipt, satsFromBolt11, validateZapReceipt } from './zap';
+import {
+  explainZapReceipt,
+  parseZapReceipt,
+  satsFromBolt11,
+  validateZapReceipt,
+} from './zap';
 
 /**
  * Real signatures throughout.
@@ -313,5 +318,62 @@ describe('profile zaps', () => {
         providerPubkey: PROVIDER,
       })
     ).toBe(false);
+  });
+});
+
+describe('explainZapReceipt names the failing check', () => {
+  it('accepts a receipt that passes everything', () => {
+    expect(explainZapReceipt(build(), check)).toBeNull();
+  });
+
+  it('names a provider mismatch', () => {
+    /*
+     * The reason this is a name rather than `false`: a server that rotated its
+     * signing key produces exactly this, and so does a forgery. Telling them
+     * apart used to mean reading the validator and guessing which line ran.
+     */
+    expect(
+      explainZapReceipt(build(), { ...check, providerPubkey: OTHER })
+    ).toBe('wrong-provider');
+  });
+
+  it('accepts any key the server has been seen using', () => {
+    // A rotation does not make last month's zaps forgeries
+    expect(
+      explainZapReceipt(build(), { ...check, providerPubkey: [OTHER, PROVIDER] })
+    ).toBeNull();
+  });
+
+  it('names a target mismatch', () => {
+    expect(explainZapReceipt(build(), { ...check, eventId: OTHER })).toBe(
+      'wrong-target'
+    );
+  });
+
+  it('names a recipient mismatch', () => {
+    expect(
+      explainZapReceipt(build(), { ...check, recipientPubkey: OTHER })
+    ).toBe('wrong-recipient');
+  });
+
+  it('names a receipt with nothing to check', () => {
+    expect(explainZapReceipt(build({ omitDescription: true }), check)).toBe(
+      'missing-description'
+    );
+  });
+
+  it('names an event that is not a receipt at all', () => {
+    expect(explainZapReceipt({ ...build(), kind: 1 }, check)).toBe(
+      'not-a-receipt'
+    );
+  });
+
+  it('names a request somebody else signed', () => {
+    expect(
+      explainZapReceipt(build({ signWith: impostorKey }), {
+        ...check,
+        providerPubkey: undefined,
+      })
+    ).toBeNull();
   });
 });
