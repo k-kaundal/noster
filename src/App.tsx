@@ -17,6 +17,7 @@ import { AppConfig } from '@/contexts/AppContext';
 import { persistQueryCache, restoreQueryCache } from '@/lib/queryPersistence';
 import { recallSync, warmEventStore } from '@/lib/eventStore';
 import { RELAY_LIST_SCOPE, primeOutboxTable } from '@/lib/outboxRouting';
+import { pruneLegacyProviders } from '@/lib/zapProviders';
 import AppRouter from './AppRouter';
 
 const head = createHead({
@@ -53,6 +54,13 @@ const queryClient = new QueryClient({
  */
 restoreQueryCache(queryClient);
 persistQueryCache(queryClient);
+
+/*
+ * Zap provider keys were briefly stored per domain, where one pay link's key
+ * was applied to receipts from every other pay link on the same host — and
+ * refused them. See `lib/zapProviders`.
+ */
+pruneLegacyProviders();
 
 /**
  * Loads the durable event store into memory alongside it.

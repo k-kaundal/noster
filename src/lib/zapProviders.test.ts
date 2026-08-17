@@ -4,6 +4,7 @@ import {
   providerDomain,
   providerKeyFor,
   providerKeyForRecipients,
+  pruneLegacyProviders,
   rememberProvider,
   resetProviders,
 } from './zapProviders';
@@ -173,5 +174,38 @@ describe('providerKeyForRecipients', () => {
 
   it('withholds the check for an unknown server', () => {
     expect(providerKeyForRecipients(['carol'], 'carol@example.com')).toBeUndefined();
+  });
+});
+
+describe('pruneLegacyProviders', () => {
+  const table = defineKey<unknown>('nostr:zap-providers', {});
+
+  it('drops entries keyed by domain alone', () => {
+    /*
+     * The shape from the version that cached one key per host and applied it
+     * to receipts from every other pay link on it.
+     */
+    writeStore(table, { 'ln.nostrfeed.com': KEY, 'kk@ln.nostrfeed.com': [OTHER] });
+
+    pruneLegacyProviders();
+
+    expect(knownProviders()).toEqual({ 'kk@ln.nostrfeed.com': [OTHER] });
+  });
+
+  it('normalises what it keeps', () => {
+    writeStore(table, { 'kk@ln.nostrfeed.com': KEY });
+
+    pruneLegacyProviders();
+
+    expect(knownProviders()).toEqual({ 'kk@ln.nostrfeed.com': [KEY] });
+  });
+
+  it('leaves a clean table alone', () => {
+    rememberProvider('kk@ln.nostrfeed.com', KEY);
+    const before = knownProviders();
+
+    pruneLegacyProviders();
+
+    expect(knownProviders()).toEqual(before);
   });
 });

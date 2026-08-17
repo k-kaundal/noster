@@ -77,13 +77,16 @@ export function useZapSummary(event: NostrEvent | undefined): ZapSummary & {
   }, [zaps, event, address, lud16]);
 
   /*
-   * Said out loud, once, when a receipt arrived and was not counted.
+   * Said out loud whenever a receipt arrived and was not counted, in every
+   * build rather than only in development.
    *
-   * This is the whole reason the reasons exist: "I paid and it is not
-   * showing" was only ever answerable by reading the validator and guessing
-   * which line ran. Now the console names the check.
+   * Gating it behind DEV was a mistake: the person who needs it is looking at
+   * the deployed site with a payment they cannot find, and telling them to
+   * rebuild the app to learn why is not an answer. These are rare by
+   * construction — a line per refused receipt, and a refused receipt is
+   * already a bug.
    */
-  if (import.meta.env.DEV && summary.rejected.length) {
+  if (summary.rejected.length) {
     console.warn(
       `[zap] ${summary.rejected.length} receipt(s) not counted for ${
         address ?? event?.id
