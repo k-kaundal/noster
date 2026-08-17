@@ -88,7 +88,7 @@ export function SideNav({
         <Button
           asChild
           size="lg"
-          className="press mt-4 w-full shrink-0 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+          className="press mt-4 w-full shrink-0 rounded-lg"
         >
           <Link to="/compose">
             <PenSquare className="mr-2 h-4 w-4" />

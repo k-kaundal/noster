@@ -5,7 +5,20 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        /**
+         * The primary action is an outline, not a fill.
+         *
+         * Nocturne's rule, and the reason for it is legible once you look at a
+         * screen full of filled buttons: the accent stops meaning "this one"
+         * when six things wear it. As a 1px border and a tint on hover it
+         * still reads as the primary action and leaves the accent free to mean
+         * something where it is used solid — a zap, an active row, a focus
+         * ring.
+         */
+        default:
+          "border border-primary bg-primary/[0.06] text-primary hover:bg-primary/15 active:bg-primary/20",
+        /** A fill, for the rare place one is genuinely wanted. */
+        solid: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline:
