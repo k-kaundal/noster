@@ -39,9 +39,21 @@ export function NotificationRow({
   const meta = TYPE_META[notification.type];
   const Icon = meta.icon;
 
+  /**
+   * One row now stands for every zap on a note, so it says so.
+   *
+   * "and 3 others" rather than a bare total, because the number of people who
+   * paid is the part that means something — a hundred sats from twelve people
+   * is a different event from a hundred sats from one.
+   */
+  const others = (notification.zapperCount ?? 1) - 1;
+  const zapped = notification.totalSats ?? notification.amountSats;
+
   const label =
-    notification.type === 'zap' && notification.amountSats
-      ? `zapped you ${formatSats(notification.amountSats)} sats`
+    notification.type === 'zap' && zapped
+      ? others > 0
+        ? `and ${others} ${others === 1 ? 'other' : 'others'} zapped ${formatSats(zapped)} sats`
+        : `zapped you ${formatSats(zapped)} sats`
       : meta.label;
 
   // Reactions, reposts and zaps point at the note they targeted. A mention has

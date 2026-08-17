@@ -4,8 +4,10 @@ import {
   FOLLOW_KIND,
   buildNotifications,
   filterNotifications,
+  groupZaps,
   repostedContent,
   toNotification,
+  type Notification,
 } from './notifications';
 import { formatSats, parseZapReceipt } from './zap';
 
@@ -431,5 +433,131 @@ describe('follows', () => {
 
     expect(filterNotifications(built, 'follows')).toHaveLength(1);
     expect(filterNotifications(built, 'follows')[0].type).toBe('follow');
+  });
+});
+
+describe('groupZaps', () => {
+  const zap = (
+    id: string,
+    target: string | null,
+    pubkey: string,
+    sats: number,
+    createdAt: number
+  ): Notification => ({
+    event: { id, kind: 9735, pubkey, created_at: createdAt, content: '', tags: [], sig: '' },
+    type: 'zap',
+    pubkey,
+    createdAt,
+    targetEventId: target,
+    content: '',
+    amountSats: sats,
+  });
+
+  it('merges the zaps on one note into a single row', () => {
+    /*
+     * A note that does well produces a notification per zap, arriving
+     * together — so the list a creator most wants to read becomes a wall of
+     * the same note, with everything else pushed off the first screen.
+     */
+    const rows = groupZaps([
+      zap('a', 'note-1', 'alice', 1000, 300),
+      zap('b', 'note-1', 'bob', 2000, 200),
+      zap('c', 'note-1', 'carol', 3300, 100),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].zapperCount).toBe(3);
+    expect(rows[0].totalSats).toBe(6300);
+  });
+
+  it('keeps the newest zap as the row', () => {
+    // It carries the right timestamp and the most recent comment
+    const rows = groupZaps([
+      zap('old', 'note-1', 'alice', 100, 100),
+      zap('new', 'note-1', 'bob', 100, 900),
+    ]);
+
+    expect(rows[0].event.id).toBe('new');
+    expect(rows[0].createdAt).toBe(900);
+  });
+
+  it('totals correctly whichever order they arrive in', () => {
+    const forwards = groupZaps([
+      zap('a', 'n', 'alice', 100, 100),
+      zap('b', 'n', 'bob', 250, 900),
+    ]);
+    const backwards = groupZaps([
+      zap('b', 'n', 'bob', 250, 900),
+      zap('a', 'n', 'alice', 100, 100),
+    ]);
+
+    expect(forwards[0].totalSats).toBe(350);
+    expect(backwards[0].totalSats).toBe(350);
+  });
+
+  it('counts people, not payments', () => {
+    // Somebody zapping the same note three times is one person who liked it
+    const rows = groupZaps([
+      zap('a', 'n', 'alice', 100, 300),
+      zap('b', 'n', 'alice', 100, 200),
+      zap('c', 'n', 'alice', 100, 100),
+    ]);
+
+    expect(rows[0].zapperCount).toBe(1);
+    expect(rows[0].totalSats).toBe(300);
+  });
+
+  it('keeps different notes apart', () => {
+    const rows = groupZaps([
+      zap('a', 'note-1', 'alice', 100, 200),
+      zap('b', 'note-2', 'bob', 100, 100),
+    ]);
+
+    expect(rows).toHaveLength(2);
+  });
+
+  it('leaves profile zaps alone', () => {
+    /*
+     * They have no target to group by, and bucketing every zap somebody ever
+     * sent you into one row would collapse a history into a single line.
+     */
+    const rows = groupZaps([
+      zap('a', null, 'alice', 100, 200),
+      zap('b', null, 'bob', 100, 100),
+    ]);
+
+    expect(rows).toHaveLength(2);
+  });
+
+  it('leaves everything that is not a zap untouched', () => {
+    const reply: Notification = {
+      event: { id: 'r', kind: 1, pubkey: 'x', created_at: 5, content: 'hi', tags: [], sig: '' },
+      type: 'reply',
+      pubkey: 'x',
+      createdAt: 5,
+      targetEventId: 'note-1',
+      content: 'hi',
+      amountSats: null,
+    };
+
+    const rows = groupZaps([reply, zap('a', 'note-1', 'alice', 100, 200)]);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toBe(reply);
+  });
+
+  it('keeps the row in the place the newest zap held', () => {
+    // Otherwise a merged row jumps to wherever its oldest member was
+    const rows = groupZaps([
+      zap('a', 'note-1', 'alice', 100, 900),
+      zap('b', 'note-2', 'bob', 100, 500),
+      zap('c', 'note-1', 'carol', 100, 100),
+    ]);
+
+    expect(rows.map((row) => row.targetEventId)).toEqual(['note-1', 'note-2']);
+  });
+
+  it('has nothing to group in an empty list', () => {
+    expect(groupZaps([])).toEqual([]);
   });
 });

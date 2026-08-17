@@ -26,6 +26,15 @@ export interface Notification {
   amountSats: number | null;
   /** Zaps only: the invoice, for matching a receipt against a wallet's ledger. */
   bolt11?: string | null;
+  /**
+   * Zaps only: how many people this row stands for.
+   *
+   * Absent when it stands for one, so a row that was never merged reads
+   * exactly as it did before.
+   */
+  zapperCount?: number;
+  /** Zaps only: the total across those people, when several were merged. */
+  totalSats?: number | null;
 }
 
 /** Kinds worth notifying about, in one filter to keep the query count down. */
@@ -213,9 +222,72 @@ export function buildNotifications(
     if (notification) notifications.push(notification);
   }
 
-  return collapseFollows(notifications).sort(
+  return groupZaps(collapseFollows(notifications)).sort(
     (a, b) => b.createdAt - a.createdAt
   );
+}
+
+/**
+ * One row per note zapped, not one per payment.
+ *
+ * A note that does well produces a notification per zap, and they arrive
+ * together — so the list a creator most wants to read is the list most likely
+ * to be a wall of the same note repeated twenty times, with everything else
+ * pushed off the first screen. The zaps are the good news and they were
+ * burying it.
+ *
+ * Merged by what was paid for, keeping the newest as the row: it carries the
+ * right timestamp and the most recent comment. The total is what arrived
+ * across all of them, and the count is people rather than payments — somebody
+ * zapping the same note three times is one person who liked it a lot.
+ *
+ * Profile zaps are left alone. They have no target to group by, and bucketing
+ * every zap somebody ever sent you into one row would collapse a history into
+ * a single line.
+ */
+export function groupZaps(notifications: Notification[]): Notification[] {
+  const merged = new Map<string, Notification>();
+  const senders = new Map<string, Set<string>>();
+
+  for (const notification of notifications) {
+    if (notification.type !== 'zap' || !notification.targetEventId) continue;
+
+    const key = notification.targetEventId;
+    const held = merged.get(key);
+
+    const people = senders.get(key) ?? new Set<string>();
+    people.add(notification.pubkey);
+    senders.set(key, people);
+
+    const sats = (held?.totalSats ?? 0) + (notification.amountSats ?? 0);
+
+    /*
+     * The newest wins the row, so the timestamp and the comment shown are the
+     * most recent — but the total has to survive whichever way round they
+     * arrive, which is why it is carried rather than recomputed.
+     */
+    const row =
+      !held || notification.createdAt > held.createdAt ? notification : held;
+
+    merged.set(key, { ...row, totalSats: sats });
+  }
+
+  const taken = new Set<string>();
+
+  return notifications.flatMap((notification) => {
+    if (notification.type !== 'zap' || !notification.targetEventId) {
+      return [notification];
+    }
+
+    const key = notification.targetEventId;
+    if (taken.has(key)) return [];
+    taken.add(key);
+
+    const row = merged.get(key)!;
+    const count = senders.get(key)?.size ?? 1;
+
+    return [{ ...row, zapperCount: count }];
+  });
 }
 
 /**
