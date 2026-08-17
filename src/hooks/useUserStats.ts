@@ -1,5 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
+import type { NostrEvent } from '@nostrify/nostrify';
+import { ZAP_RECEIPT_KIND } from '@/lib/zap';
+import { summarizeZaps } from '@/lib/zapSummary';
+import { providerKeyForRecipients } from '@/lib/zapProviders';
+
+/** The lightning address out of a kind 0, when it has one that parses. */
+function readLud16(profile: NostrEvent | undefined): string | undefined {
+  if (!profile) return undefined;
+
+  try {
+    return (JSON.parse(profile.content) as { lud16?: string }).lud16;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * User engagement statistics
@@ -15,7 +30,42 @@ export interface UserStats {
   avgEngagementPerPost: number;
   accountAge: number;  // days
   lastActiveDate: number;  // unix timestamp
+  /**
+   * Zaps received that survived NIP-57 checking.
+   *
+   * Counted rather than trusted. This is the number a creator profile puts
+   * forward as a credential, so it is the number somebody has a reason to
+   * inflate — and inflating it costs nothing but publishing an event unless
+   * every receipt is verified. See `summarizeZaps`.
+   */
+  zapsReceived: number;
+  /**
+   * Sats received across those zaps.
+   *
+   * A floor, not a total: the receipts are fetched with a limit and relays
+   * hold different subsets, so this is what can be seen from here rather than
+   * everything that was ever paid.
+   */
+  satsEarned: number;
 }
+
+const EMPTY_STATS: UserStats = {
+  totalNotes: 0,
+  totalReplies: 0,
+  totalLikes: 0,
+  totalReposts: 0,
+  followerCount: 0,
+  followingCount: 0,
+  articlesPublished: 0,
+  avgEngagementPerPost: 0,
+  accountAge: 0,
+  lastActiveDate: 0,
+  zapsReceived: 0,
+  satsEarned: 0,
+};
+
+/** How many receipts to ask for. Beyond this the earnings figure is a floor. */
+const RECEIPT_LIMIT = 1000;
 
 /**
  * Hook to calculate user stats from their events
@@ -29,10 +79,39 @@ export function useUserStats(pubkey: string) {
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(3000)]);
 
       try {
-        // Query all events from user
-        const events = await nostr.query(
-          [{ authors: [pubkey], limit: 500 }],
+        /*
+         * Their events and the receipts paid to them, in one request. A second
+         * `nostr.query` for the zaps would be another round trip against the
+         * relay's rate limit for something the protocol lets us ask for in the
+         * same breath.
+         */
+        const all = await nostr.query(
+          [
+            { authors: [pubkey], limit: 500 },
+            { kinds: [ZAP_RECEIPT_KIND], '#p': [pubkey], limit: RECEIPT_LIMIT },
+          ],
           { signal }
+        );
+
+        const events = all.filter((event) => event.pubkey === pubkey);
+
+        /**
+         * Everything paid to them, whatever it was paid for.
+         *
+         * No target is named, so notes, articles and zaps on the person
+         * themselves all count — which is what "earned" means on a profile.
+         * Every other NIP-57 check still applies, including the provider key
+         * when their lightning server is one this browser has met.
+         */
+        const zapped = summarizeZaps(
+          all.filter((event) => event.kind === ZAP_RECEIPT_KIND),
+          {
+            recipientPubkey: [pubkey],
+            providerPubkey: providerKeyForRecipients(
+              [pubkey],
+              readLud16(events.find((event) => event.kind === 0))
+            ),
+          }
         );
 
         // Calculate stats
@@ -60,22 +139,13 @@ export function useUserStats(pubkey: string) {
           avgEngagementPerPost: 0,
           accountAge,
           lastActiveDate,
+          zapsReceived: zapped.count,
+          satsEarned: zapped.totalSats,
         };
 
         return stats;
       } catch {
-        return {
-          totalNotes: 0,
-          totalReplies: 0,
-          totalLikes: 0,
-          totalReposts: 0,
-          followerCount: 0,
-          followingCount: 0,
-          articlesPublished: 0,
-          avgEngagementPerPost: 0,
-          accountAge: 0,
-          lastActiveDate: 0,
-        };
+        return EMPTY_STATS;
       }
     },
   });

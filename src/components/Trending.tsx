@@ -266,14 +266,31 @@ function TrendingCard({
                   <div className="text-sm font-medium truncate group-hover:text-primary transition-colors">
                     {renderItem(item, index)}
                   </div>
-                  {item.engagementScore > 0 && (
+                  {/*
+                    * Sats when there are any, rather than the score.
+                    *
+                    * The bolt was already here, beside a number that had
+                    * nothing to do with payment — the ranking did not count
+                    * zaps at all. Now that it does, the honest thing to show
+                    * is what was actually paid; the score is an internal
+                    * ranking figure and means nothing to a reader.
+                    */}
+                  {item.zapSats ? (
                     <div className="flex items-center gap-1 mt-1">
                       <Zap className="h-3 w-3 text-yellow-500" />
+                      <p className="text-xs text-muted-foreground">
+                        {item.zapSats.toLocaleString()} sats
+                        {item.zaps ? ` · ${item.zaps} ${item.zaps === 1 ? 'zap' : 'zaps'}` : ''}
+                      </p>
+                    </div>
+                  ) : item.engagementScore > 0 ? (
+                    <div className="flex items-center gap-1 mt-1">
+                      <TrendingUp className="h-3 w-3 text-muted-foreground" />
                       <p className="text-xs text-muted-foreground">
                         {Math.round(item.engagementScore)} {item.engagementScore === 1 ? 'engagement' : 'engagements'}
                       </p>
                     </div>
-                  )}
+                  ) : null}
                 </div>
                 {index === 0 && (
                   <ArrowUp className="h-4 w-4 text-orange-500/60 shrink-0" />
