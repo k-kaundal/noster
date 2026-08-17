@@ -522,7 +522,7 @@ function LightningDestination({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
+    <div className="space-y-3 rounded-lg border border-primary/25 bg-primary/[0.06] p-4">
       <p className="text-sm">
         {current
           ? `${identifier} receives payments. Choose where they land.`
@@ -1123,7 +1123,7 @@ function PendingPayment({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-blue-200/50 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
+      <div className="rounded-lg border border-primary/25 bg-primary/[0.06] p-4">
         <p className="font-medium text-sm">
           {pending.address?.local_part
             ? `${nip5Identifier(pending.address)} is reserved`

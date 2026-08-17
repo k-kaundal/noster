@@ -111,12 +111,12 @@ function CreateWalletCard() {
 
   return (
     <Card className="overflow-hidden">
-      <div className="bg-gradient-to-br from-primary/15 via-primary/8 to-transparent px-6 py-12 text-center">
+      <div className="border-b bg-muted/30 px-6 py-12 text-center">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/20">
           <Zap className="h-8 w-8 text-primary" />
         </div>
 
-        <h2 className="text-3xl font-bold tracking-tight">Set up your wallet</h2>
+        <h2 className="text-3xl font-medium tracking-tight">Set up your wallet</h2>
 
         <p className="mx-auto mt-3 max-w-sm text-base leading-relaxed text-muted-foreground">
           One tap creates a lightning wallet and an address like
@@ -254,7 +254,8 @@ function ConnectedWallet() {
   return (
     <div className="space-y-5">
       <Card className="overflow-hidden">
-        <div className="bg-gradient-to-br from-primary/15 via-primary/8 to-transparent px-6 py-8">
+        {/* An edge and a quiet ground, not an accent wash. See EcashPage. */}
+        <div className="border-b bg-muted/30 px-6 py-8">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Balance
@@ -267,7 +268,7 @@ function ConnectedWallet() {
             <Skeleton className="mt-3 h-12 w-48 rounded-lg" />
           ) : (
             <>
-              <p className="mt-2 text-5xl font-bold tracking-tight tabular">
+              <p className="mt-2 text-5xl font-medium tracking-tight tabular">
                 {balanceSats.toLocaleString()}
                 <span className="ml-3 text-lg font-normal text-muted-foreground">
                   sats

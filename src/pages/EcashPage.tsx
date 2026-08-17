@@ -92,6 +92,7 @@ function Ecash() {
     isLoading,
     mintUrl,
     pendingQuotes,
+    proofs,
     refresh,
   } = useCashuWallet();
 
@@ -118,8 +119,16 @@ function Ecash() {
 
   return (
     <div className="space-y-5">
+      {/*
+        No gradient flood.
+        
+        Nocturne's rule: saturated fills are not how a surface is raised — on a
+        dark ground elevation is an edge plus ambient darkness. The emerald
+        wash this had was also a colour from no palette at all, which made the
+        one page about money the one page that matched nothing else.
+      */}
       <Card className="overflow-hidden">
-        <div className="bg-gradient-to-br from-emerald-500/15 via-emerald-500/8 to-transparent px-6 py-8">
+        <div className="border-b bg-muted/30 px-6 py-8">
           <div className="flex items-start justify-between gap-3">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Ecash balance
@@ -139,7 +148,8 @@ function Ecash() {
             <Skeleton className="mt-3 h-12 w-48 rounded-lg" />
           ) : (
             <>
-              <p className="mt-2 text-5xl font-bold tracking-tight tabular">
+              {/* Weight 500: hierarchy here is size and space, not boldness */}
+              <p className="mt-2 text-5xl font-medium tracking-tight tabular">
                 {balanceSats.toLocaleString()}
                 <span className="ml-3 text-lg font-normal text-muted-foreground">
                   sats
@@ -149,8 +159,16 @@ function Ecash() {
             </>
           )}
 
-          <p className="mt-2 text-xs text-muted-foreground">
-            Held at {mintHost(mintUrl)}
+          {/*
+            What the balance is actually made of.
+            
+            A number on its own does not say that these are bearer tokens in
+            this browser rather than an account somewhere — which is the single
+            most important thing about them, and the thing people get wrong.
+          */}
+          <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+            {proofs.length} {proofs.length === 1 ? 'proof' : 'proofs'} ·{' '}
+            {mintHost(mintUrl)} · nobody but you can spend them
           </p>
 
           <div className="mt-6 grid grid-cols-2 gap-3">
