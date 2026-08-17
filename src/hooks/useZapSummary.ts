@@ -76,6 +76,22 @@ export function useZapSummary(event: NostrEvent | undefined): ZapSummary & {
     });
   }, [zaps, event, address, lud16]);
 
+  /*
+   * Said out loud, once, when a receipt arrived and was not counted.
+   *
+   * This is the whole reason the reasons exist: "I paid and it is not
+   * showing" was only ever answerable by reading the validator and guessing
+   * which line ran. Now the console names the check.
+   */
+  if (import.meta.env.DEV && summary.rejected.length) {
+    console.warn(
+      `[zap] ${summary.rejected.length} receipt(s) not counted for ${
+        address ?? event?.id
+      }:`,
+      summary.rejected
+    );
+  }
+
   return { ...summary, isLoading };
 }
 

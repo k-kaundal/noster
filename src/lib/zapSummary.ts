@@ -13,7 +13,7 @@
  * total somebody's lightning server actually signed for.
  */
 import type { NostrEvent } from '@nostrify/nostrify';
-import { parseZapReceipt, validateZapReceipt } from '@/lib/zap';
+import { parseZapReceipt, explainZapReceipt, type ReceiptRejection } from '@/lib/zap';
 
 export interface Zapper {
   /** The receipt, for keys and for pointing at the evidence. */
@@ -32,12 +32,21 @@ export interface ZapSummary {
   count: number;
   /** Largest first — the list is read to see who gave most. */
   zappers: Zapper[];
+  /**
+   * Receipts that arrived and were not counted, with the check each failed.
+   *
+   * The number people actually ask about is this one: "I paid and it is not
+   * showing." Without it the only honest answer was that something, somewhere,
+   * decided not to count it.
+   */
+  rejected: { id: string; reason: ReceiptRejection }[];
 }
 
 export const EMPTY_ZAP_SUMMARY: ZapSummary = {
   totalSats: 0,
   count: 0,
   zappers: [],
+  rejected: [],
 };
 
 export interface ZapSummaryOptions {
@@ -87,7 +96,7 @@ export interface ZapSummaryOptions {
    * Without it the total is still worth more than no total, because every
    * other check has already been made.
    */
-  providerPubkey?: string;
+  providerPubkey?: string | string[];
 }
 
 /**
@@ -103,6 +112,7 @@ export function summarizeZaps(
 ): ZapSummary {
   const seen = new Set<string>();
   const zappers: Zapper[] = [];
+  const rejected: { id: string; reason: ReceiptRejection }[] = [];
   let totalSats = 0;
 
   for (const receipt of receipts) {
@@ -114,7 +124,7 @@ export function summarizeZaps(
      * every one of those calls verifies a signature, so a goal with three
      * beneficiaries verified every receipt four times over.
      */
-    const valid = validateZapReceipt(receipt, {
+    const rejection = explainZapReceipt(receipt, {
       // One or the other: an addressable event is named by its coordinate
       eventId: options.address ? undefined : options.eventId,
       address: options.address,
@@ -122,7 +132,15 @@ export function summarizeZaps(
       recipientPubkey: options.recipientPubkey,
       providerPubkey: options.providerPubkey,
     });
-    if (!valid) continue;
+    if (rejection) {
+      /*
+       * Recorded rather than dropped. A zap that does not appear is a payment
+       * somebody made and cannot find, and a silent `continue` is why that was
+       * only ever diagnosable by guessing.
+       */
+      rejected.push({ id: receipt.id, reason: rejection });
+      continue;
+    }
 
     const parsed = parseZapReceipt(receipt);
 
@@ -144,7 +162,7 @@ export function summarizeZaps(
 
   zappers.sort((a, b) => b.sats - a.sats || b.at - a.at);
 
-  return { totalSats, count: zappers.length, zappers };
+  return { totalSats, count: zappers.length, zappers, rejected };
 }
 
 /**

@@ -154,7 +154,7 @@ export interface ReceiptCheck {
    * lnurl endpoint, and a total computed without it is still worth more than
    * no total — but it is checked whenever it is known.
    */
-  providerPubkey?: string;
+  providerPubkey?: string | string[];
 }
 
 /**
@@ -170,35 +170,73 @@ export interface ReceiptCheck {
  * that the somebody is the recipient's own lightning server, and that the
  * amount and the target were not altered afterwards.
  */
+/**
+ * Why a receipt was not counted.
+ *
+ * The reason this exists: a zap that does not appear is a payment somebody
+ * made and cannot find, and until now every rejection here was a silent
+ * `false`. Nobody — not the person who paid, not the person who was paid, not
+ * whoever is debugging it — could tell a forged receipt from a relay serving
+ * a truncated one from a server that had rotated its key. Finding that out
+ * took several rounds of guessing, which is the cost of a boolean.
+ */
+export type ReceiptRejection =
+  | 'not-a-receipt'
+  | 'wrong-provider'
+  | 'missing-bolt11'
+  | 'missing-description'
+  | 'unreadable-request'
+  | 'bad-request-signature'
+  | 'amount-mismatch'
+  | 'wrong-recipient'
+  | 'wrong-target';
+
 export function validateZapReceipt(
   event: NostrEvent,
   check: ReceiptCheck = {}
 ): boolean {
-  if (event.kind !== ZAP_RECEIPT_KIND) return false;
+  return explainZapReceipt(event, check) === null;
+}
+
+/** The failing check, or null when a receipt should be counted. */
+export function explainZapReceipt(
+  event: NostrEvent,
+  check: ReceiptCheck = {}
+): ReceiptRejection | null {
+  if (event.kind !== ZAP_RECEIPT_KIND) return 'not-a-receipt';
 
   /**
    * "The zap receipt event's pubkey MUST be the same as the recipient's lnurl
    * provider's nostrPubkey." The one check that actually prevents forgery.
    */
-  if (check.providerPubkey && event.pubkey !== check.providerPubkey) {
-    return false;
+  if (check.providerPubkey?.length) {
+    const keys = Array.isArray(check.providerPubkey)
+      ? check.providerPubkey
+      : [check.providerPubkey];
+
+    // Any key the server has been seen using. See `lib/zapProviders` for why
+    // a rotation must not invalidate everything signed before it.
+    if (!keys.includes(event.pubkey)) return 'wrong-provider';
   }
 
   const bolt11 = tagValue(event, 'bolt11');
   const description = tagValue(event, 'description');
 
   // Both are MUSTs; a receipt without them carries no evidence of anything
-  if (!bolt11 || !description) return false;
+  if (!bolt11) return 'missing-bolt11';
+  if (!description) return 'missing-description';
 
   const request = parseZapRequest(event);
-  if (!request || request.kind !== ZAP_REQUEST_KIND) return false;
+  if (!request || request.kind !== ZAP_REQUEST_KIND) return 'unreadable-request';
 
   /**
    * The request inside the description is signed by the sender, and that
    * signature is what attributes the zap to them. An invalid one means the
    * receipt names a sender who never asked for it.
    */
-  if (!verifyEvent(request as Parameters<typeof verifyEvent>[0])) return false;
+  if (!verifyEvent(request as Parameters<typeof verifyEvent>[0])) {
+    return 'bad-request-signature';
+  }
 
   const requestTag = (name: string) =>
     request.tags.find(([tagName]) => tagName === name)?.[1];
@@ -222,7 +260,7 @@ export function validateZapReceipt(
      * while its author is watching the sats arrive.
      */
     if (invoiceSats !== null && Math.round(claimed / 1000) !== invoiceSats) {
-      return false;
+      return 'amount-mismatch';
     }
   }
 
@@ -243,19 +281,19 @@ export function validateZapReceipt(
   };
 
   if (check.recipientPubkey && !requestHas('p', check.recipientPubkey)) {
-    return false;
+    return 'wrong-recipient';
   }
 
   if (check.profileOnly) {
     // Anything pointing at a note or an article is a zap on that, not on them
     if (request.tags.some(([name]) => name === 'e' || name === 'a')) {
-      return false;
+      return 'wrong-target';
     }
   } else if (check.address) {
-    if (!requestHas('a', check.address)) return false;
+    if (!requestHas('a', check.address)) return 'wrong-target';
   } else if (check.eventId && !requestHas('e', check.eventId)) {
-    return false;
+    return 'wrong-target';
   }
 
-  return true;
+  return null;
 }
