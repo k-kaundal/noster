@@ -1,12 +1,17 @@
 import {
+  ArrowLeftRight,
   Banknote,
   Bell,
+  BookOpen,
   Bookmark,
   CalendarDays,
+  ChartLine,
   Compass,
   Film,
   Flame,
   Home,
+  KeyRound,
+  Radio,
   List,
   MessagesSquare,
   PenSquare,
@@ -14,6 +19,7 @@ import {
   PenLine,
   Settings,
   Sparkles,
+  Store,
   User,
   Users,
   Wallet,
@@ -31,8 +37,25 @@ import { nip19 } from 'nostr-tools';
  */
 export type NavSection = 'main' | 'discover' | 'money' | 'manage';
 
+/**
+ * A live figure shown at the end of a row.
+ *
+ * Named rather than carried as a value, because the table is a static list and
+ * these are read from hooks. The point is information scent: a rail that says
+ * "Relays 6/7" answers the question that would otherwise take a click, and a
+ * count beside Notifications is the difference between a menu and a dashboard.
+ *
+ * Deliberately only the two that cost nothing to know. A wallet balance would
+ * be the obvious third and it is not here on purpose — reading it means an
+ * authenticated request to LNbits, and putting that in the rail would make
+ * every page in the app fetch a wallet nobody asked to see.
+ */
+export type NavBadge = 'unread' | 'relays';
+
 export interface NavItem {
   section?: NavSection;
+  /** A live figure to show at the end of the row. */
+  badge?: NavBadge;
   href: string;
   icon: LucideIcon;
   label: string;
@@ -73,6 +96,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
       shortcut: 'N',
       requiresAuth: true,
       secondary: true,
+      badge: 'unread',
     },
     { section: 'discover', href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
     { section: 'discover', href: '/lists', icon: List, label: 'Lists', secondary: true },
@@ -87,6 +111,9 @@ export function getNavItems(pubkey?: string): NavItem[] {
     },
     // NIP-29: hosted by one relay, unlike the communities above
     { section: 'discover', href: '/groups', icon: MessagesSquare, label: 'Groups', secondary: true },
+    // NIP-53. Linked now that it reads real activities rather than a
+    // hardcoded list of streams that did not exist
+    { section: 'discover', href: '/live', icon: Radio, label: 'Live', secondary: true },
     {
       section: 'main',
       href: '/write',
@@ -116,6 +143,19 @@ export function getNavItems(pubkey?: string): NavItem[] {
       requiresAuth: true,
       secondary: true,
     },
+    /*
+     * Filed under Sats rather than beside Write: it is about what the writing
+     * earned, and somebody looking for their earnings looks where the money
+     * is.
+     */
+    {
+      section: 'money',
+      href: '/studio',
+      icon: ChartLine,
+      label: 'Studio',
+      requiresAuth: true,
+      secondary: true,
+    },
     {
       section: 'money',
       href: '/wallet',
@@ -133,9 +173,41 @@ export function getNavItems(pubkey?: string): NavItem[] {
       requiresAuth: true,
       secondary: true,
     },
-    { section: 'manage', href: '/relays', icon: Server, label: 'Relays', shortcut: 'R', secondary: true },
+    /*
+     * Both were built, routed and then reachable only by typing the URL.
+     * Neither needs an account to look at — a marketplace nobody can browse
+     * without signing up is a marketplace with no sellers.
+     */
+    { section: 'money', href: '/market', icon: Store, label: 'Market', secondary: true },
+    {
+      section: 'money',
+      href: '/p2p',
+      icon: ArrowLeftRight,
+      label: 'P2P',
+      secondary: true,
+    },
+    {
+      section: 'manage',
+      href: '/relays',
+      icon: Server,
+      label: 'Relays',
+      shortcut: 'R',
+      secondary: true,
+      badge: 'relays',
+    },
+    {
+      section: 'manage',
+      href: '/identity',
+      icon: KeyRound,
+      label: 'Identity',
+      requiresAuth: true,
+      secondary: true,
+    },
     { section: 'money', href: '/premium', icon: Sparkles, label: 'Relay access', secondary: true },
     { section: 'manage', href: '/settings', icon: Settings, label: 'Settings', shortcut: ',', secondary: true },
+    // The manual was reachable from the footer alone, which is the one place
+    // somebody stuck on a page does not look
+    { section: 'manage', href: '/docs', icon: BookOpen, label: 'Help', secondary: true },
     { href: '/compose', icon: PenSquare, label: 'Compose', shortcut: 'C', requiresAuth: true },
   ];
 }

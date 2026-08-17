@@ -8,6 +8,7 @@ import {
   isActiveRoute,
   type NavItem,
 } from '@/components/layout/navigation';
+import { useNavBadges } from '@/hooks/useNavBadges';
 import { cn } from '@/lib/utils';
 
 /**
@@ -32,6 +33,7 @@ export function SideNav({
 }) {
   const location = useLocation();
   const { user } = useCurrentUser();
+  const badges = useNavBadges();
 
   const navItems = getNavItems(user?.pubkey).filter(
     (item) => !item.requiresAuth || user
@@ -69,6 +71,7 @@ export function SideNav({
                 item={item}
                 active={isActiveRoute(location.pathname, item.href)}
                 compact={compact}
+                badge={item.badge ? badges[item.badge] : undefined}
                 onNavigate={onNavigate}
               />
             ))}
@@ -85,7 +88,7 @@ export function SideNav({
         <Button
           asChild
           size="lg"
-          className="press mt-4 w-full shrink-0 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+          className="press mt-4 w-full shrink-0 rounded-lg"
         >
           <Link to="/compose">
             <PenSquare className="mr-2 h-4 w-4" />
@@ -101,11 +104,14 @@ function NavLink({
   item,
   active,
   compact,
+  badge,
   onNavigate,
 }: {
   item: NavItem;
   active: boolean;
   compact: boolean;
+  /** A live figure for the end of the row, when this destination has one. */
+  badge?: string;
   onNavigate?: () => void;
 }) {
   return (
@@ -133,11 +139,26 @@ function NavLink({
       <item.icon className="h-[18px] w-[18px] shrink-0" />
       <span className="flex-1 truncate">{item.label}</span>
 
-      {/* Meaningless on a touch screen, so the sheet never shows them */}
-      {item.shortcut && !compact && (
-        <kbd className="hidden rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 xl:inline-block">
-          {item.shortcut}
-        </kbd>
+      {/*
+        The figure, and it displaces the shortcut rather than sitting beside
+        it: both at the end of one row is two things competing for the same
+        glance, and a hint about a key you already know is the one worth
+        losing.
+
+        Tabular numerals so a count that ticks 9 → 10 does not shift the row.
+      */}
+      {badge ? (
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+          {badge}
+        </span>
+      ) : (
+        /* Meaningless on a touch screen, so the sheet never shows them */
+        item.shortcut &&
+        !compact && (
+          <kbd className="hidden rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 xl:inline-block">
+            {item.shortcut}
+          </kbd>
+        )
       )}
     </Link>
   );

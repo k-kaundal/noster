@@ -171,6 +171,17 @@ function TierCard({ tier, isSelf }: { tier: Tier; isSelf: boolean }) {
           target={tier.event}
           open={zapOpen}
           onOpenChange={setZapOpen}
+          /*
+           * The tier's price, not a suggestion. Without this the dialog opened
+           * on its tipping default of 100 sats and offered 21 through 5,000 —
+           * so the button said "Subscribe · 5,000 sats" and the next screen
+           * happily took 21. That payment is not a cheap subscription, it is
+           * money that buys nothing: `describeStatus` measures what arrived
+           * against what the tier asks for, so an underpayment leaves the
+           * subscription inactive with the sats already gone.
+           */
+          amountSats={tier.amount}
+          purpose={`Subscribe to ${tier.title}`}
         />
       )}
     </Card>

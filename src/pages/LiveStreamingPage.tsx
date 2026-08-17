@@ -1,278 +1,187 @@
-import { Play, Zap } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { nip19 } from 'nostr-tools';
+import { Radio, Users } from 'lucide-react';
+
 import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
-import { Card, CardContent } from '@/components/ui/card';
+import { RelaySelector } from '@/components/RelaySelector';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { LiveStreamCard, type LiveStream } from '@/components/creator/LiveStreamCard';
+import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useAuthor } from '@/hooks/useAuthor';
+import { useLiveEvents } from '@/hooks/useLiveEvents';
 import { useRouteSeo } from '@/hooks/useSeo';
+import { genUserName } from '@/lib/genUserName';
+import { hostOf, isWatchable, type LiveEvent } from '@/lib/nip53';
+import { relativeTime } from '@/lib/time';
 
 /**
- * Live Streaming Page: Stream content and earn sats in real-time.
+ * Live activities, from NIP-53.
  *
- * Features:
- * - Live broadcasting with viewer count
- * - Real-time sats tips during stream
- * - Scheduled streams with reminders
- * - Stream replay and VOD support
- * - Creator earnings dashboard
+ * This page used to render a hardcoded list of streams that did not exist,
+ * with invented viewer counts. It reads kind 30311 now: an activity is an
+ * event a host publishes describing a stream, and the video comes from
+ * whatever `streaming` URL they put in it.
+ *
+ * That is the reason a page like this can exist here at all — hosting video is
+ * somebody else's problem, and announcing it is a Nostr event like any other.
  */
 export function LiveStreamingPage() {
   useRouteSeo('/live');
 
-  // Mock livestream data
-  const mockStreams: LiveStream[] = [
-    {
-      id: '1',
-      title: 'Building Bitcoin Apps with Nostr 🚀',
-      creatorName: 'bitcoindev',
-      creatorImage: 'https://i.pravatar.cc/150?u=bitcoindev',
-      viewers: 2547,
-      duration: 3661, // 1h 1m 1s in seconds
-      tipsReceived: 487_500, // sats
-      status: 'live',
-      startTime: new Date(Date.now() - 61 * 60 * 1000), // started 1 hour ago
-      description: 'Live coding session: Building a Bitcoin marketplace on Nostr',
-    },
-    {
-      id: '2',
-      title: 'Lightning Network Basics - Q&A Session',
-      creatorName: 'ln-educator',
-      creatorImage: 'https://i.pravatar.cc/150?u=ln-educator',
-      viewers: 0,
-      duration: 0,
-      tipsReceived: 0,
-      status: 'scheduled',
-      startTime: new Date(Date.now() + 2 * 60 * 60 * 1000), // starts in 2 hours
-      description: 'Learn how Lightning Network works and ask your questions live',
-    },
-    {
-      id: '3',
-      title: 'Nostr Protocol Deep Dive',
-      creatorName: 'nostr-researcher',
-      creatorImage: 'https://i.pravatar.cc/150?u=nostr-researcher',
-      viewers: 0,
-      duration: 5400, // 1.5 hours in seconds
-      tipsReceived: 325_000,
-      status: 'ended',
-      startTime: new Date(Date.now() - 24 * 60 * 60 * 1000), // ended yesterday
-      description: 'Comprehensive exploration of Nostr NIPs and event types',
-    },
-    {
-      id: '4',
-      title: 'Community AMA - Tips Fund Bounties',
-      creatorName: 'community-lead',
-      creatorImage: 'https://i.pravatar.cc/150?u=community-lead',
-      viewers: 1823,
-      duration: 1800, // 30 minutes
-      tipsReceived: 125_000,
-      status: 'live',
-      startTime: new Date(Date.now() - 30 * 60 * 1000), // started 30 min ago
-      description: 'Ask anything about our community. All tips go to bounty fund!',
-    },
-    {
-      id: '5',
-      title: 'Weekly Music Stream - Free Sats Drops',
-      creatorName: 'dj-bitcoin',
-      creatorImage: 'https://i.pravatar.cc/150?u=dj-bitcoin',
-      viewers: 0,
-      duration: 0,
-      tipsReceived: 0,
-      status: 'scheduled',
-      startTime: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // in 5 days
-      description: 'Chill beats while I host sats drops for chat participants',
-    },
-    {
-      id: '6',
-      title: 'Wallet Setup Tutorial',
-      creatorName: 'wallet-expert',
-      creatorImage: 'https://i.pravatar.cc/150?u=wallet-expert',
-      viewers: 0,
-      duration: 2700, // 45 minutes
-      tipsReceived: 50_000,
-      status: 'ended',
-      startTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 1 week ago
-      description: 'Step-by-step guide to setting up your first Lightning wallet',
-    },
-  ];
+  const { live, upcoming, past, isLoading } = useLiveEvents();
 
-  const liveStreams = mockStreams.filter(s => s.status === 'live');
-  const scheduledStreams = mockStreams.filter(s => s.status === 'scheduled');
-  const endedStreams = mockStreams.filter(s => s.status === 'ended');
-
-  const totalViewers = liveStreams.reduce((sum, s) => sum + s.viewers, 0);
-  const totalEarnings = mockStreams.reduce((sum, s) => sum + s.tipsReceived, 0);
+  const nothing = !isLoading && !live.length && !upcoming.length && !past.length;
 
   return (
     <Layout>
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <PageHeader
-            icon={Play}
-            title="Live Streaming"
-            description="Broadcast live content and earn sats from your viewers."
-          />
-          <Button size="sm">
-            <Play className="mr-2 h-4 w-4" />
-            Go Live
-          </Button>
-        </div>
+      <div className="space-y-6">
+        <PageHeader
+          icon={Radio}
+          title="Live"
+          description="Streams announced on Nostr. Anyone can host one; the video comes from wherever the host put it."
+        />
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <StatCard
-            label="Live Now"
-            value={String(liveStreams.length)}
-            subtitle="active streams"
-          />
-          <StatCard
-            label="Total Viewers"
-            value={totalViewers.toLocaleString()}
-            subtitle="watching now"
-          />
-          <StatCard
-            label="All Time Earnings"
-            value={`${(totalEarnings / 1_000_000).toFixed(1)}M`}
-            subtitle="sats"
-          />
-        </div>
-
-        {/* Live Streams */}
-        {liveStreams.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3">
-              🔴 Now Live ({liveStreams.length})
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {liveStreams.map((stream) => (
-                <LiveStreamCard key={stream.id} stream={stream} />
-              ))}
-            </div>
+        {isLoading && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Skeleton key={index} className="h-40 rounded-xl" />
+            ))}
           </div>
         )}
 
-        {/* Scheduled Streams */}
-        {scheduledStreams.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3">
-              📅 Scheduled ({scheduledStreams.length})
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {scheduledStreams.map((stream) => (
-                <LiveStreamCard key={stream.id} stream={stream} />
-              ))}
-            </div>
-          </div>
+        {nothing && (
+          <Card className="border-dashed">
+            <CardContent className="px-8 py-12 text-center">
+              <div className="mx-auto max-w-sm space-y-6">
+                <p className="text-muted-foreground">
+                  Nobody is streaming on these relays. Try another?
+                </p>
+                <RelaySelector className="w-full" />
+              </div>
+            </CardContent>
+          </Card>
         )}
 
-        {/* Past Streams */}
-        {endedStreams.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-muted-foreground mb-3">
-              ✓ Past Streams ({endedStreams.length})
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {endedStreams.map((stream) => (
-                <LiveStreamCard key={stream.id} stream={stream} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Info Card */}
-        <Card>
-          <CardContent className="p-6">
-            <h3 className="font-semibold mb-4">How Live Streaming Works</h3>
-            <div className="space-y-3 text-sm text-muted-foreground">
-              <div className="flex gap-3">
-                <span className="font-bold text-foreground">1.</span>
-                <span>
-                  Click "Go Live" to start broadcasting with your webcam or screen
-                </span>
-              </div>
-              <div className="flex gap-3">
-                <span className="font-bold text-foreground">2.</span>
-                <span>
-                  Viewers can "Watch Now" to join your stream and see your content
-                </span>
-              </div>
-              <div className="flex gap-3">
-                <span className="font-bold text-foreground">3.</span>
-                <span>
-                  Audience can send tips while watching — all sats go directly to you
-                </span>
-              </div>
-              <div className="flex gap-3">
-                <span className="font-bold text-foreground">4.</span>
-                <span>
-                  Schedule streams ahead of time so followers can set reminders
-                </span>
-              </div>
-              <div className="flex gap-3">
-                <span className="font-bold text-foreground">5.</span>
-                <span>
-                  Streams automatically save as VOD (video on demand) for later viewing
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Creator Tips */}
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="p-6">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <Zap className="h-5 w-5 text-warning" />
-              Monetization Tips
-            </h3>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex gap-2">
-                <span>•</span>
-                <span>
-                  <strong>Announce tips:</strong> Let viewers know tips help you create better content
-                </span>
-              </li>
-              <li className="flex gap-2">
-                <span>•</span>
-                <span>
-                  <strong>Tier rewards:</strong> Offer special recognition for top tippers (shoutouts, exclusive content)
-                </span>
-              </li>
-              <li className="flex gap-2">
-                <span>•</span>
-                <span>
-                  <strong>Combo with memberships:</strong> Members get ad-free streams and exclusive content
-                </span>
-              </li>
-              <li className="flex gap-2">
-                <span>•</span>
-                <span>
-                  <strong>Schedule consistently:</strong> Regular streams build loyal audiences
-                </span>
-              </li>
-              <li className="flex gap-2">
-                <span>•</span>
-                <span>
-                  <strong>Share on Nostr:</strong> Post stream announcements to reach more potential viewers
-                </span>
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
+        <Shelf title="Live now" items={live} />
+        <Shelf title="Upcoming" items={upcoming} />
+        <Shelf title="Finished" items={past} />
       </div>
     </Layout>
   );
 }
 
-function StatCard({ label, value, subtitle }: { label: string; value: string; subtitle?: string }) {
+function Shelf({ title, items }: { title: string; items: LiveEvent[] }) {
+  if (!items.length) return null;
+
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-          {label}
-        </p>
-        <div>
-          <p className="text-2xl font-bold">{value}</p>
-          {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
+    <section className="space-y-3">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+          {title}
+        </h2>
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
+          {items.length}
+        </span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {items.map((item) => (
+          <StreamCard key={item.address} live={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StreamCard({ live }: { live: LiveEvent }) {
+  const host = hostOf(live);
+  const author = useAuthor(host);
+  const metadata = author.data?.metadata;
+
+  const name = metadata?.display_name || metadata?.name || genUserName(host);
+  const watchable = isWatchable(live);
+  const npub = nip19.npubEncode(host);
+
+  return (
+    <Card className="overflow-hidden">
+      {live.image && (
+        <div className="aspect-video w-full overflow-hidden bg-muted">
+          <img
+            src={live.image}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        </div>
+      )}
+
+      <CardContent className="space-y-3 p-4">
+        <div className="flex items-start gap-2">
+          <h3 className="min-w-0 flex-1 text-base leading-snug">{live.title}</h3>
+
+          {watchable && (
+            <Badge className="shrink-0 gap-1.5 border-transparent bg-destructive text-destructive-foreground">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+              LIVE
+            </Badge>
+          )}
+        </div>
+
+        {live.summary && (
+          <p className="line-clamp-2 text-sm text-muted-foreground">
+            {live.summary}
+          </p>
+        )}
+
+        <div className="flex items-center gap-2">
+          <Link to={`/${npub}`} className="flex min-w-0 items-center gap-2">
+            <Avatar className="h-6 w-6">
+              <AvatarImage src={metadata?.picture} alt="" />
+              <AvatarFallback className="text-[10px]">
+                {name.slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <span className="truncate text-sm text-muted-foreground hover:text-foreground">
+              {name}
+            </span>
+          </Link>
+
+          {live.currentParticipants !== undefined && (
+            <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[11px] tabular-nums text-muted-foreground">
+              <Users className="h-3 w-3" />
+              {live.currentParticipants.toLocaleString()}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/*
+            A link out, not a player. The stream is on the host's own
+            infrastructure and this app has never touched it — opening it in
+            place would mean claiming responsibility for whatever it serves.
+          */}
+          {watchable ? (
+            <Button asChild size="sm" className="flex-1">
+              <a href={live.streaming} target="_blank" rel="noopener noreferrer">
+                Watch
+              </a>
+            </Button>
+          ) : live.recording ? (
+            <Button asChild size="sm" variant="outline" className="flex-1">
+              <a href={live.recording} target="_blank" rel="noopener noreferrer">
+                Watch the recording
+              </a>
+            </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {live.starts
+                ? `Starts ${relativeTime(live.starts * 1000)}`
+                : 'No time announced yet'}
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>

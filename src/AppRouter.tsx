@@ -19,6 +19,7 @@ const BookmarksPage = lazy(() => importChunk(() => import("./pages/BookmarksPage
 const ChatPage = lazy(() => importChunk(() => import("./pages/ChatPage")));
 const SettingsPage = lazy(() => importChunk(() => import("./pages/SettingsPage")));
 const DocsPage = lazy(() => importChunk(() => import("./pages/DocsPage")));
+const StudioPage = lazy(() => importChunk(() => import("./pages/StudioPage")));
 const PremiumPage = lazy(() => importChunk(() => import("./pages/PremiumPage")));
 const WalletPage = lazy(() => importChunk(() => import("./pages/WalletPage")));
 const EcashPage = lazy(() => importChunk(() => import("./pages/EcashPage")));
@@ -140,6 +141,7 @@ export function AppRouter() {
           <Route path="/settings" element={<SettingsPage />} />
 
           {/* Before the NIP-19 catch-all, which would otherwise swallow /docs */}
+          <Route path="/studio" element={<StudioPage />} />
           <Route path="/docs" element={<DocsPage />} />
           <Route path="/docs/:slug" element={<DocsPage />} />
           {/* Follow pages */}
