@@ -40,13 +40,20 @@ export const NOTIFY_PREF_KEY = 'nostr:system-notifications';
 
 function describe(notification: Notification): { title: string; body: string } {
   switch (notification.type) {
-    case 'zap':
+    case 'zap': {
+      // The grouped total when several people zapped the same note, so the
+      // interruption reports the whole of what arrived rather than the last of it
+      const sats = notification.totalSats ?? notification.amountSats;
+      const others = (notification.zapperCount ?? 1) - 1;
+
       return {
-        title: notification.amountSats
-          ? `⚡ ${notification.amountSats.toLocaleString()} sats`
-          : '⚡ Zapped',
-        body: notification.content || 'Someone zapped your note.',
+        title: sats ? `⚡ ${sats.toLocaleString()} sats` : '⚡ Zapped',
+        body:
+          others > 0
+            ? `From ${others + 1} people on one note.`
+            : notification.content || 'Someone zapped your note.',
       };
+    }
     case 'reply':
       return { title: 'New reply', body: notification.content.slice(0, 140) };
     case 'mention':

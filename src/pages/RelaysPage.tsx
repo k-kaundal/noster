@@ -22,6 +22,7 @@ import { useRelayList } from '@/hooks/useRelayList';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useToast } from '@/hooks/useToast';
 import { isValidRelayUrl, relayDisplayName } from '@/lib/relay';
+import { compareRelayLists, describeDrift } from '@/lib/relayDrift';
 
 export function RelaysPage() {
   useRouteSeo('/relays');
@@ -44,10 +45,23 @@ export function RelaysPage() {
   const { toast } = useToast();
   const {
     entries: publishedEntries,
+    event: publishedEvent,
     isLoading: listLoading,
     publish,
     isPublishing,
   } = useRelayList();
+
+  /**
+   * Whether the relays in use are the relays everyone else was told about.
+   *
+   * `undefined` rather than the empty list when nothing has been published:
+   * having no list is a different problem from having a stale one, and wants a
+   * different sentence. See `lib/relayDrift`.
+   */
+  const drift = compareRelayLists(
+    relays,
+    publishedEvent ? publishedEntries : undefined
+  );
 
   const [input, setInput] = useState('');
 
@@ -97,6 +111,42 @@ export function RelaysPage() {
           <StatCard label="Reading from" value={readUrls.length} />
           <StatCard label="Publishing to" value={writeUrls.length} />
         </div>
+
+        {/*
+          The one thing this page could not tell you before.
+          
+          The list here and the published kind 10002 are two lists and nothing
+          keeps them together. Add a relay and never republish, and notes go
+          somewhere nobody is told to look; drop one and strangers keep asking
+          a relay you left. Both are silent, and from the outside both look
+          like Nostr being unreliable.
+        */}
+        {user && !drift.inSync && drift.published && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-warning-strong">
+                Your published relay list is out of date
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {describeDrift(drift)} since you last published. Other clients
+                still use the old list to find you.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => publish(relays)}
+              disabled={isPublishing}
+              className="shrink-0"
+            >
+              {isPublishing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Publish now
+            </Button>
+          </div>
+        )}
 
         <Card>
           <CardHeader className="pb-3">

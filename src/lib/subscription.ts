@@ -181,6 +181,15 @@ export interface SubscriptionStatus {
   history: Zapper[];
   /** Total ever paid on it, which is what a creator wants to see. */
   totalSats: number;
+  /**
+   * What is still owed, when money arrived but not enough of it.
+   *
+   * Zero in every other state. This exists because an underpayment used to be
+   * indistinguishable from never having paid: the sats left the wallet, the
+   * card said "Subscribe", and nothing anywhere said why. Somebody in that
+   * position cannot fix it without being told what happened.
+   */
+  shortfallSats: number;
 }
 
 export const NO_SUBSCRIPTION: SubscriptionStatus = {
@@ -190,6 +199,7 @@ export const NO_SUBSCRIPTION: SubscriptionStatus = {
   daysLeft: null,
   history: [],
   totalSats: 0,
+  shortfallSats: 0,
 };
 
 /**
@@ -232,6 +242,13 @@ export function subscriptionStatus(
   const qualifying = mine.find((zapper) => zapper.sats >= input.tier.amount);
 
   if (!qualifying) {
+    /*
+     * The largest single payment, not the sum. A period is bought by one
+     * payment covering the price — three separate tips do not add up to a
+     * subscription, because each is measured against the tier on its own.
+     */
+    const largest = Math.max(...mine.map((zapper) => zapper.sats));
+
     return {
       state: 'none',
       lastPayment: mine[0],
@@ -239,6 +256,7 @@ export function subscriptionStatus(
       daysLeft: null,
       history: mine,
       totalSats,
+      shortfallSats: Math.max(input.tier.amount - largest, 0),
     };
   }
 
@@ -252,6 +270,7 @@ export function subscriptionStatus(
     daysLeft: active ? Math.ceil((expiresAt - now) / 86_400) : 0,
     history: mine,
     totalSats,
+    shortfallSats: 0,
   };
 }
 
@@ -283,7 +302,14 @@ export function describeStatus(
     case 'lapsed':
       return `Lapsed — pay again for another ${describeCadence(cadence)}`;
     default:
-      return `${describeCadence(cadence) === 'month' ? 'Monthly' : 'Recurring'} support`;
+      /*
+       * Said plainly, because this is the state somebody is stuck in without
+       * knowing it. They paid, the money is gone, and the card was offering
+       * them the same button as somebody who had never paid at all.
+       */
+      return status.shortfallSats > 0
+        ? `${status.shortfallSats.toLocaleString()} sats short of a ${describeCadence(cadence)}`
+        : `${describeCadence(cadence) === 'month' ? 'Monthly' : 'Recurring'} support`;
   }
 }
 
