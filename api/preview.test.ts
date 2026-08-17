@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cardFor, filterFor, injectCard } from './preview';
+import { absoluteUrl, cardFor, cardTags, filterFor, injectCard } from './preview';
 
 /** The article whose blank preview started this. */
 const SHARED_ARTICLE =
@@ -234,5 +234,54 @@ describe('injectCard', () => {
   it('leaves the app itself intact', () => {
     // The page still has to boot for the person who clicked the link
     expect(injectCard(html, card, url)).toContain('<div id="root"></div>');
+  });
+});
+
+describe('absoluteUrl', () => {
+  /**
+   * Vercel's Node runtime hands the function an `IncomingMessage`, whose `url`
+   * is a path — not the Web `Request` this was first written against. The
+   * original `new URL(request.url)` therefore threw on every single request,
+   * and every profile, note and article on the site answered 500.
+   */
+  const CRASHED =
+    '/npub178hgrwuyxucunql6mxrcfhlfsnha6zc9009mt683dl6yj7r7t8mq7zq9kz?id=npub178hgrwuyxucunql6mxrcfhlfsnha6zc9009mt683dl6yj7r7t8mq7zq9kz';
+
+  it('builds a url from the path that used to throw', () => {
+    const url = absoluteUrl(CRASHED, 'www.nostrfeed.com');
+
+    expect(url.origin).toBe('https://www.nostrfeed.com');
+    expect(url.pathname).toBe(
+      '/npub178hgrwuyxucunql6mxrcfhlfsnha6zc9009mt683dl6yj7r7t8mq7zq9kz'
+    );
+  });
+
+  it('carries the identifier the rewrite passed', () => {
+    expect(absoluteUrl(CRASHED, 'www.nostrfeed.com').searchParams.get('id')).toBe(
+      'npub178hgrwuyxucunql6mxrcfhlfsnha6zc9009mt683dl6yj7r7t8mq7zq9kz'
+    );
+  });
+
+  it('copes with no path and no host rather than throwing', () => {
+    // A throw here is a 500, and a 500 is worse than the page this replaced
+    expect(absoluteUrl(undefined, '').pathname).toBe('/');
+    expect(absoluteUrl('', '').origin).toBe('https://www.nostrfeed.com');
+  });
+
+  it('always speaks https, whatever the host header says', () => {
+    expect(absoluteUrl('/x', 'evil.example').protocol).toBe('https:');
+  });
+});
+
+describe('cardTags', () => {
+  it('carries a whole card', () => {
+    const tags = cardTags(
+      { title: 'T', description: 'D', image: 'https://example.com/i.png' },
+      'https://www.nostrfeed.com/naddr1abc'
+    );
+
+    expect(tags).toContain('property="og:title" content="T"');
+    expect(tags).toContain('property="og:image"');
+    expect(tags).toContain('content="summary_large_image"');
   });
 });

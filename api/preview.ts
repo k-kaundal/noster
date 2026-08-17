@@ -318,13 +318,8 @@ const escape = (value: string) =>
  * not "the more specific one wins" — it is undefined, and several fetchers
  * take the first, which is the one being replaced.
  */
-export function injectCard(html: string, card: Card, url: string): string {
-  const stripped = html.replace(
-    /\s*<meta\s+(?:property|name)="(?:og:(?:title|description|image|url|type)|twitter:(?:card|title|description|image))"[^>]*>/gi,
-    ''
-  );
-
-  const tags = [
+export function cardTags(card: Card, url: string): string {
+  return [
     `<meta property="og:type" content="article">`,
     `<meta property="og:url" content="${escape(url)}">`,
     `<meta property="og:title" content="${escape(card.title)}">`,
@@ -341,6 +336,15 @@ export function injectCard(html: string, card: Card, url: string): string {
         ]
       : []),
   ].join('');
+}
+
+export function injectCard(html: string, card: Card, url: string): string {
+  const stripped = html.replace(
+    /\s*<meta\s+(?:property|name)="(?:og:(?:title|description|image|url|type)|twitter:(?:card|title|description|image))"[^>]*>/gi,
+    ''
+  );
+
+  const tags = cardTags(card, url);
 
   const titled = stripped.replace(
     /<title>[\s\S]*?<\/title>/i,
@@ -350,76 +354,170 @@ export function injectCard(html: string, card: Card, url: string): string {
   return titled.replace(/<\/head>/i, `${tags}</head>`);
 }
 
-/** The app shell, fetched once per warm instance rather than per request. */
+/**
+ * Node's request and response, structurally.
+ *
+ * Vercel's Node runtime calls this with an `IncomingMessage` and a
+ * `ServerResponse`, not with the Web `Request` this was first written against
+ * — which is why every one of these routes returned 500: `request.url` is a
+ * path there, and `new URL('/npub1…')` throws. Described here rather than
+ * imported from `node:http` so the function needs no type dependency.
+ */
+interface NodeRequest {
+  url?: string;
+  headers: Record<string, string | string[] | undefined>;
+}
+
+interface NodeResponse {
+  statusCode: number;
+  setHeader(name: string, value: string): void;
+  end(chunk?: string): void;
+}
+
+function header(request: NodeRequest, name: string): string | undefined {
+  const value = request.headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/**
+ * The full URL of a request that only knows its own path.
+ *
+ * The host comes from the proxy in front of the function, and is a header
+ * anybody can send — so it is only ever used to fetch this deployment's own
+ * shell and to fill in `og:url`. A forged one produces a wrong card, never a
+ * request anywhere else, because the path is fixed and the scheme is not taken
+ * from input.
+ */
+export function absoluteUrl(path: string | undefined, host: string): URL {
+  return new URL(path || '/', `https://${host || 'www.nostrfeed.com'}`);
+}
+
+/**
+ * The app shell, held for the life of a warm instance.
+ *
+ * Read over HTTP from this same deployment rather than off disk, because a
+ * function bundle does not contain the static output. `/index.html` is a real
+ * file, and Vercel serves files before it applies rewrites, so this cannot
+ * come back through here.
+ *
+ * A failure is deliberately not cached: an instance that started while the
+ * deployment was still settling would otherwise serve a card-only page for as
+ * long as it lived.
+ */
 let shell: Promise<string> | undefined;
 
 function loadShell(origin: string): Promise<string> {
-  /*
-   * Read over HTTP from this same deployment rather than off disk: a function
-   * bundle does not contain the static output, and `/index.html` is a real
-   * file so it is served directly without coming back through the rewrite.
-   */
   shell ??= fetch(`${origin}/index.html`)
     .then((response) => (response.ok ? response.text() : ''))
-    .catch(() => '');
+    .then((html) => {
+      if (!html) shell = undefined;
+      return html;
+    })
+    .catch(() => {
+      shell = undefined;
+      return '';
+    });
 
   return shell;
 }
 
-export default async function handler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const identifier = url.pathname.replace(/^\/+/, '').split('/')[0];
+function send(response: NodeResponse, html: string, seconds: number): void {
+  response.statusCode = 200;
+  response.setHeader('content-type', 'text/html; charset=utf-8');
+  response.setHeader(
+    'cache-control',
+    `public, s-maxage=${seconds}, stale-while-revalidate=86400`
+  );
+  response.end(html);
+}
 
-  const html = await loadShell(url.origin);
+/**
+ * The card on its own, when the shell could not be read.
+ *
+ * Only reachable by something that does not run JavaScript anyway — the
+ * rewrite sends people to the static page — so a head full of correct tags is
+ * the whole of what this reader wanted. Still a 200: a 404 tells every crawler
+ * the article does not exist, which is the fault this function exists to fix.
+ */
+function bareCard(card: Card | null, url: string): string {
+  const title = card?.title ?? SITE_NAME;
 
-  /*
-   * Nothing to serve and nothing to fall back to. Better an empty 200 than a
-   * 404 — this path is a real page, it is just one the shell could not be read
-   * for, and a 404 tells every crawler the article does not exist.
-   */
-  if (!html) {
-    return new Response('', {
-      status: 200,
-      headers: { 'content-type': 'text/html; charset=utf-8' },
-    });
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(
+    title
+  )}</title>${card ? cardTags(card, url) : ''}</head><body></body></html>`;
+}
+
+export default async function handler(
+  request: NodeRequest,
+  response: NodeResponse
+): Promise<void> {
+  let url: URL;
+  let identifier = '';
+
+  try {
+    url = absoluteUrl(
+      request.url,
+      header(request, 'x-forwarded-host') ?? header(request, 'host') ?? ''
+    );
+
+    /*
+     * The rewrite passes the matched segment as `id`. The path is read as a
+     * fallback for a direct hit, and both are the same string.
+     */
+    identifier =
+      url.searchParams.get('id') ??
+      url.pathname.replace(/^\/+/, '').split('/')[0];
+  } catch {
+    // Nothing can be built without a URL, and there is nothing to fall back
+    // to that does not need one
+    response.statusCode = 200;
+    response.setHeader('content-type', 'text/html; charset=utf-8');
+    response.end('');
+    return;
   }
 
-  const generic = () =>
-    new Response(html, {
-      status: 200,
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-        // Briefly, so a relay that was down does not fix itself into the cache
-        'cache-control': 'public, s-maxage=60',
-      },
-    });
+  const page = `${url.origin}${url.pathname}`;
 
-  const filter = filterFor(identifier);
-  if (!filter) return generic();
-
-  const event = await findEvent(filter).catch(() => null);
-  if (!event) return generic();
-
-  /*
-   * A note says who wrote it but not what they are called, and "somebody on
-   * NostrFeed said this" is most of the value of the card. Skipped for a kind
-   * 0, which is already the profile.
+  /**
+   * One boundary around the whole of it.
+   *
+   * This function replaced a page that worked. Anything it cannot do — a relay
+   * that hangs, a shape nobody predicted, a bug like the one that made every
+   * profile 500 — has to end as the page without a card, never as an error.
    */
-  const profile =
-    event.kind === 0
-      ? undefined
-      : (await findEvent({ kinds: [0], authors: [event.pubkey] }).catch(
-          () => null
-        )) ?? undefined;
+  try {
+    const filter = filterFor(identifier);
+    const event = filter ? await findEvent(filter).catch(() => null) : null;
 
-  const card = cardFor(event, profile);
-  if (!card) return generic();
+    /*
+     * A note says who wrote it but not what they are called, and "somebody on
+     * NostrFeed said this" is most of the value of the card. Skipped for a
+     * kind 0, which is already the profile.
+     */
+    const profile =
+      !event || event.kind === 0
+        ? undefined
+        : (await findEvent({ kinds: [0], authors: [event.pubkey] }).catch(
+            () => null
+          )) ?? undefined;
 
-  return new Response(injectCard(html, card, `${url.origin}${url.pathname}`), {
-    status: 200,
-    headers: {
-      'content-type': 'text/html; charset=utf-8',
-      'cache-control': `public, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=86400`,
-    },
-  });
+    const card = event ? cardFor(event, profile) : null;
+    const html = await loadShell(url.origin);
+
+    if (!html) {
+      send(response, bareCard(card, page), card ? CACHE_SECONDS : 60);
+      return;
+    }
+
+    if (!card) {
+      // Briefly, so a relay that was down does not fix itself into the cache
+      send(response, html, 60);
+      return;
+    }
+
+    send(response, injectCard(html, card, page), CACHE_SECONDS);
+  } catch {
+    const html = await loadShell(url.origin).catch(() => '');
+    send(response, html || bareCard(null, page), 60);
+  }
 }
