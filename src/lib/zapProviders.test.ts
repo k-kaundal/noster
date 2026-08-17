@@ -7,6 +7,7 @@ import {
   rememberProvider,
   resetProviders,
 } from './zapProviders';
+import { defineKey, writeStore } from './store';
 
 const KEY = 'a'.repeat(64);
 const OTHER = 'b'.repeat(64);
@@ -43,12 +44,41 @@ describe('rememberProvider', () => {
     expect(providerKeyFor('alice@getzap.me')).toEqual([KEY]);
   });
 
-  it('answers for every address on that server', () => {
-    // One server signs for all of its names, which is what makes the table
-    // worth keeping: zapping one person teaches us how to verify the rest
+  it('does not answer for a different address on the same host', () => {
+    /*
+     * The bug this file was written with. One LNbits instance signs with a
+     * different key per pay link — `kk@ln.nostrfeed.com` and
+     * `help@ln.nostrfeed.com` report different `nostrPubkey` values — so a
+     * key cached for the domain rejected every receipt for every other
+     * address on it.
+     */
     rememberProvider('alice@getzap.me', KEY);
 
-    expect(providerKeyFor('bob@getzap.me')).toEqual([KEY]);
+    expect(providerKeyFor('bob@getzap.me')).toBeUndefined();
+  });
+
+  it('survives an entry written by an older version', () => {
+    /*
+     * Storage outlives a release. The previous shape was a bare string, and
+     * reaching for `.filter` on it threw — taking the zap send with it.
+     */
+    writeStore(
+      defineKey<unknown>('nostr:zap-providers', {}),
+      { 'alice@getzap.me': KEY }
+    );
+
+    expect(providerKeyFor('alice@getzap.me')).toEqual([KEY]);
+    expect(() => rememberProvider('alice@getzap.me', OTHER)).not.toThrow();
+    expect(providerKeyFor('alice@getzap.me')).toEqual([OTHER, KEY]);
+  });
+
+  it('ignores an entry that is neither', () => {
+    writeStore(
+      defineKey<unknown>('nostr:zap-providers', {}),
+      { 'alice@getzap.me': { nope: true } }
+    );
+
+    expect(providerKeyFor('alice@getzap.me')).toBeUndefined();
   });
 
   it('refuses a key that is not a BIP-340 pubkey', () => {
