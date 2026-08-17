@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EcashReceiveDialog } from '@/components/wallet/EcashReceiveDialog';
 import { EcashSendDialog } from '@/components/wallet/EcashSendDialog';
@@ -194,23 +195,46 @@ function Ecash() {
         </div>
       </Card>
 
+      {/*
+        A pending deposit stays outside the tabs.
+        
+        It is money already paid for and not yet claimed — the one thing here
+        that is time-sensitive, and hiding it behind a tab is how somebody
+        loses it.
+      */}
       {pendingQuotes.length > 0 && <PendingDeposits quotes={pendingQuotes} />}
 
-      {/* Tokens still out there, with whether anyone has claimed them */}
-      <SentTokens />
+      {/*
+        Three tabs, for the same reason as the lightning wallet: this was nine
+        stacked cards, and the mint list and the safety notes are things people
+        come for deliberately rather than things they want between the balance
+        and their history.
+      */}
+      <Tabs defaultValue="activity">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="mints">Mints</TabsTrigger>
+          <TabsTrigger value="safety">Safety</TabsTrigger>
+        </TabsList>
 
-      <TransactionList />
+        <TabsContent value="activity" className="mt-4 space-y-5">
+          {/* Tokens still out there, with whether anyone has claimed them */}
+          <SentTokens />
+          <TransactionList />
+        </TabsContent>
 
-      <MintInfoCard />
+        <TabsContent value="mints" className="mt-4 space-y-5">
+          <MintInfoCard />
+          {/* NIP-87: who among the people you follow keeps money where */}
+          <MintDiscovery currentMintUrl={mintUrl} />
+          <RecommendMint mintUrl={mintUrl} />
+        </TabsContent>
 
-      {/* NIP-87: who among the people you follow keeps money where */}
-      <MintDiscovery currentMintUrl={mintUrl} />
-
-      <RecommendMint mintUrl={mintUrl} />
-
-      <HowItWorks />
-
-      <ForgetOnThisDevice balanceSats={balanceSats} />
+        <TabsContent value="safety" className="mt-4 space-y-5">
+          <HowItWorks />
+          <ForgetOnThisDevice balanceSats={balanceSats} />
+        </TabsContent>
+      </Tabs>
 
       <Card>
         <CardContent className="pt-6">

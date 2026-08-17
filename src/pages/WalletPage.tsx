@@ -22,6 +22,7 @@ import { FiatValue } from '@/components/FiatValue';
 import { LoginArea } from '@/components/auth/LoginArea';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountCard } from '@/components/wallet/AccountCard';
 import { TierEditor } from '@/components/subscriptions/TierEditor';
@@ -257,11 +258,23 @@ function ConnectedWallet() {
         {/* An edge and a quiet ground, not an accent wash. See EcashPage. */}
         <div className="border-b bg-muted/30 px-6 py-8">
           <div className="flex items-center justify-between gap-2">
+            {/*
+              "Spending", because that is what this is. The page already tells
+              people to keep only what they plan to spend; saying it where the
+              number is costs nothing and is read by everybody, unlike a note
+              at the bottom.
+            */}
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Balance
+              Spending balance
             </p>
-            {/* Only appears when the account holds more than one */}
-            <WalletSwitcher />
+            <div className="flex items-center gap-2">
+              {/* Whose balance it is, which a number never says */}
+              <span className="hidden rounded border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
+                {hostOf(instanceUrl)}
+              </span>
+              {/* Only appears when the account holds more than one */}
+              <WalletSwitcher />
+            </div>
           </div>
 
           {isLoading ? (
@@ -331,23 +344,44 @@ function ConnectedWallet() {
         </div>
       </Card>
 
-      <IdentityCard />
+      {/*
+        Three tabs, because this was eight stacked cards on one page.
+        
+        Somebody opening the wallet wants the balance and what has moved; the
+        addresses and the account keys are things they came for deliberately,
+        and were reachable only by scrolling past everything else. Grouped by
+        what somebody arrived to do rather than by which component it is.
+      */}
+      <Tabs defaultValue="balance">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="balance">Balance</TabsTrigger>
+          <TabsTrigger value="addresses">Addresses</TabsTrigger>
+          <TabsTrigger value="account">Account</TabsTrigger>
+        </TabsList>
 
-      <ActivityCard />
+        <TabsContent value="balance" className="mt-4 space-y-5">
+          <ActivityCard />
+          {/* A one-off ask, next to the standing one below it */}
+          <GoalsCard />
+        </TabsContent>
 
-      {/* A one-off ask, next to the standing one below it */}
-      <GoalsCard />
+        <TabsContent value="addresses" className="mt-4 space-y-5">
+          <IdentityCard />
+        </TabsContent>
 
-      {/* Offering recurring support, beside the wallet the sats arrive in */}
-      <Card>
-        <CardContent className="pt-6">
-          <TierEditor />
-        </CardContent>
-      </Card>
+        <TabsContent value="account" className="mt-4 space-y-5">
+          {/* Offering recurring support, beside the wallet the sats arrive in */}
+          <Card>
+            <CardContent className="pt-6">
+              <TierEditor />
+            </CardContent>
+          </Card>
 
-      <AccountCard />
+          <AccountCard />
 
-      <WalletKeys />
+          <WalletKeys />
+        </TabsContent>
+      </Tabs>
 
       <Card>
         <CardContent className="space-y-4 pt-6">
@@ -365,7 +399,7 @@ function ConnectedWallet() {
               exact objection ecash answers */}
           <Link
             to="/ecash"
-            className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-500/10 dark:text-emerald-400"
+            className="flex items-center gap-2 rounded-lg border p-3 text-sm font-medium transition-colors hover:bg-muted/50"
           >
             <Banknote className="h-4 w-4" />
             <span>Hold sats as private ecash instead</span>
