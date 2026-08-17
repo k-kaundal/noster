@@ -23,8 +23,9 @@
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { transform } from 'esbuild';
+import { nip19 } from 'nostr-tools';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -92,6 +93,14 @@ function pageHtml(template, route) {
   const title = fullTitle(route.title);
   const url = `${SITE_URL}${route.path === '/' ? '/' : route.path}`;
 
+  /*
+   * An article's own cover, when it has one. Falling back to the site card is
+   * right for a page about the site and wrong for a piece of writing — a
+   * preview showing the NostrFeed logo says nothing about the article and is
+   * indistinguishable from the generic preview this exists to replace.
+   */
+  const image = route.image || OG_IMAGE;
+
   let html = template;
 
   html = html.replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtml(title)}</title>`);
@@ -104,10 +113,10 @@ function pageHtml(template, route) {
   html = setMeta(html, 'property', 'og:title', title);
   html = setMeta(html, 'property', 'og:description', route.description);
   html = setMeta(html, 'property', 'og:url', url);
-  html = setMeta(html, 'property', 'og:image', OG_IMAGE);
+  html = setMeta(html, 'property', 'og:image', image);
   html = setMeta(html, 'name', 'twitter:title', title);
   html = setMeta(html, 'name', 'twitter:description', route.description);
-  html = setMeta(html, 'name', 'twitter:image', OG_IMAGE);
+  html = setMeta(html, 'name', 'twitter:image', image);
 
   /*
    * A page kept out of search still gets its card tags, because being
@@ -135,7 +144,7 @@ function sitemap(routes) {
       return [
         '  <url>',
         `<loc>${url}</loc>`,
-        `<lastmod>${today}</lastmod>`,
+        `<lastmod>${route.lastmod ?? today}</lastmod>`,
         route.changefreq ? `<changefreq>${route.changefreq}</changefreq>` : '',
         route.priority ? `<priority>${route.priority}</priority>` : '',
         '</url>',
@@ -199,6 +208,153 @@ function llmsTxt(routes) {
   return lines.join('\n');
 }
 
+/**
+ * Articles, baked the same way the static routes are.
+ *
+ * `/naddr1…` has no build-time list in the general case — the set is every
+ * long-form post on Nostr — but it does not have to be general to be useful.
+ * The articles anybody actually shares are recent ones, and recent ones can be
+ * asked for. So the build fetches a page of them and writes a real file per
+ * article, exactly as it does for `/docs` or `/trending`.
+ *
+ * This is not a replacement for `api/preview.ts`, which answers for anything
+ * at any age. It is the half that keeps working with no server involved — on
+ * a static host, on Blossom, on GitLab Pages — and the half that is already
+ * on disk when a crawler asks, with no relay round trip in the request.
+ *
+ * It must never fail a build. A relay being down is not a reason to ship no
+ * site, so everything here is wrapped and the worst case is the previous
+ * behaviour.
+ */
+const ARTICLE_RELAYS = [
+  'wss://relay.nostr.band',
+  'wss://relay.damus.io',
+  'wss://relay.primal.net',
+];
+
+/** Long-form content. Drafts (30024) are deliberately not published here. */
+const ARTICLE_KIND = 30023;
+
+/** How many to bake. Each is one small file and one sitemap entry. */
+const MAX_ARTICLES = 250;
+
+/** Per relay. The build should not hang on one that accepts and never answers. */
+const RELAY_TIMEOUT = 10_000;
+
+function collectFrom(url) {
+  return new Promise((resolve) => {
+    const events = [];
+    let socket;
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        socket?.close();
+      } catch {
+        // Already closed, or never opened
+      }
+      resolve(events);
+    };
+
+    const timer = setTimeout(finish, RELAY_TIMEOUT);
+
+    try {
+      socket = new WebSocket(url);
+    } catch {
+      finish();
+      return;
+    }
+
+    socket.onerror = finish;
+    socket.onclose = finish;
+
+    socket.onopen = () => {
+      socket.send(
+        JSON.stringify(['REQ', 'a', { kinds: [ARTICLE_KIND], limit: MAX_ARTICLES }])
+      );
+    };
+
+    socket.onmessage = (message) => {
+      try {
+        const data = JSON.parse(String(message.data));
+        if (data[0] === 'EVENT') events.push(data[2]);
+        if (data[0] === 'EOSE') finish();
+      } catch {
+        // One unreadable frame is not a reason to abandon the rest
+      }
+    };
+  });
+}
+
+const tag = (event, name) =>
+  event.tags?.find((entry) => entry[0] === name)?.[1];
+
+/**
+ * The newest revision of each article, across every relay that answered.
+ *
+ * Addressable events are identified by author and `d` tag, and relays disagree
+ * about which revision they hold — so the same piece arrives several times
+ * with different ids and different titles.
+ */
+export function newestArticles(events) {
+  const byAddress = new Map();
+
+  for (const event of events) {
+    if (event?.kind !== ARTICLE_KIND || !event.pubkey || !event.id) continue;
+
+    const identifier = tag(event, 'd');
+    const title = tag(event, 'title');
+
+    // Untitled, or unaddressable, is not something to write a card for
+    if (!identifier || !title) continue;
+
+    const key = `${event.pubkey}:${identifier}`;
+    const held = byAddress.get(key);
+
+    if (!held || event.created_at > held.created_at) byAddress.set(key, event);
+  }
+
+  return [...byAddress.values()]
+    .sort((a, b) => b.created_at - a.created_at)
+    .slice(0, MAX_ARTICLES);
+}
+
+/** An article as a route, so it goes through the same page writer. */
+export function articleRoute(event) {
+  const identifier = tag(event, 'd');
+
+  const naddr = nip19.naddrEncode({
+    identifier,
+    pubkey: event.pubkey,
+    kind: ARTICLE_KIND,
+  });
+
+  const summary = (tag(event, 'summary') || event.content || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return {
+    path: `/${naddr}`,
+    title: tag(event, 'title'),
+    description: summary.length > 200 ? `${summary.slice(0, 199)}…` : summary,
+    image: tag(event, 'image'),
+    changefreq: 'monthly',
+    priority: '0.6',
+    lastmod: new Date(event.created_at * 1000).toISOString().slice(0, 10),
+  };
+}
+
+async function loadArticles() {
+  const answers = await Promise.all(
+    ARTICLE_RELAYS.map((url) => collectFrom(url).catch(() => []))
+  );
+
+  return newestArticles(answers.flat()).map(articleRoute);
+}
+
 async function main() {
   const routes = await loadRoutes();
   const template = await readFile(join(dist, 'index.html'), 'utf8');
@@ -216,15 +372,41 @@ async function main() {
     written += 1;
   }
 
-  await writeFile(join(dist, 'sitemap.xml'), sitemap(routes));
+  /*
+   * Never fatal. A relay being unreachable during a build is not a reason to
+   * ship no site — it is a reason to ship the one that was shipping before.
+   */
+  let articles = [];
+  try {
+    articles = await loadArticles();
+  } catch (error) {
+    console.warn(`seo: articles skipped (${error.message})`);
+  }
+
+  for (const article of articles) {
+    const directory = join(dist, article.path.replace(/^\//, ''));
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, 'index.html'), pageHtml(template, article));
+  }
+
+  const indexed = [...routes, ...articles];
+
+  await writeFile(join(dist, 'sitemap.xml'), sitemap(indexed));
   await writeFile(join(dist, 'llms.txt'), llmsTxt(routes));
 
   console.log(
-    `seo: ${written} route pages, sitemap with ${routes.filter((r) => !r.noindex).length} urls, llms.txt`
+    `seo: ${written} route pages, ${articles.length} articles, sitemap with ${indexed.filter((r) => !r.noindex).length} urls, llms.txt`
   );
 }
 
-main().catch((error) => {
-  console.error('seo build failed:', error);
-  process.exit(1);
-});
+/*
+ * Only when run as a script. The article helpers above are exported so they
+ * can be tested, and importing this file to reach them must not kick off a
+ * build.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error('seo build failed:', error);
+    process.exit(1);
+  });
+}
