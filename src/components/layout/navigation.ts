@@ -5,6 +5,7 @@ import {
   BookOpen,
   Bookmark,
   CalendarDays,
+  ChartLine,
   Compass,
   Film,
   Flame,
@@ -139,6 +140,19 @@ export function getNavItems(pubkey?: string): NavItem[] {
       icon: Bookmark,
       label: 'Bookmarks',
       shortcut: 'B',
+      requiresAuth: true,
+      secondary: true,
+    },
+    /*
+     * Filed under Sats rather than beside Write: it is about what the writing
+     * earned, and somebody looking for their earnings looks where the money
+     * is.
+     */
+    {
+      section: 'money',
+      href: '/studio',
+      icon: ChartLine,
+      label: 'Studio',
       requiresAuth: true,
       secondary: true,
     },

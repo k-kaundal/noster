@@ -86,6 +86,12 @@ export const SITE_ROUTES: SiteRoute[] = [
     summary: 'Short vertical video, published to relays.',
   },
   {
+    path: '/studio',
+    title: 'Studio',
+    description: 'What you earned on NostrFeed, and where it came from.',
+    noindex: true,
+  },
+  {
     path: '/docs',
     title: 'Help',
     description:
