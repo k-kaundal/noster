@@ -5,6 +5,8 @@ import { Layout } from '@/components/Layout';
 import { Profile } from '@/components/Profile';
 import { PostPage } from '@/components/PostPage';
 import { AddressableView } from '@/components/AddressableView';
+import { VanityProfile } from '@/components/VanityProfile';
+import { parseHandle } from '@/lib/nip05Lookup';
 import NotFound from './NotFound';
 
 export function NIP19Page() {
@@ -18,6 +20,19 @@ export function NIP19Page() {
 
   if (!identifier) {
     return <NotFound />;
+  }
+
+  /**
+   * `/@alice`, resolved by name instead of by key.
+   *
+   * Handled here rather than on a route of its own because React Router 6
+   * only matches a parameter that occupies a whole path segment — `/@:handle`
+   * matches nothing — and this is already the page that owns the root
+   * segment. The `@` is unambiguous: no NIP-19 identifier begins with one.
+   */
+  const handle = parseHandle(identifier);
+  if (handle) {
+    return <VanityProfile handle={handle} />;
   }
 
   /**

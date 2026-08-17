@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
+import { profilePath } from '@/lib/nip05Lookup';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { Spotlight } from '@/components/Spotlight';
 import { formatMonthYear } from '@/lib/time';
@@ -290,6 +291,7 @@ export function Profile({ pubkey }: ProfileProps) {
 
               <ShareProfileDialog
                 npub={npub}
+                nip05={metadata?.nip05}
                 displayName={displayName}
                 lightningAddress={lightningAddress}
                 onCopy={copy}
@@ -566,15 +568,25 @@ function PostGroup({
 
 function ShareProfileDialog({
   npub,
+  nip05,
   displayName,
   lightningAddress,
   onCopy,
 }: {
   npub: string;
+  nip05?: string;
   displayName: string;
   lightningAddress?: string;
   onCopy: (value: string, label: string) => void;
 }) {
+  /*
+   * Absolute, because this is copied to somewhere that is not this app —
+   * a bio, a message, a business card. A path would be useless there.
+   */
+  const origin =
+    typeof window === 'undefined' ? '' : window.location.origin;
+  const profileLink = `${origin}${profilePath(nip05, npub)}`;
+
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -601,6 +613,12 @@ function ShareProfileDialog({
             />
           </div>
 
+          {/*
+            * First, and above the key, because it is the one somebody can put
+            * in a bio on another site or read out. An npub is unshareable
+            * anywhere people actually are.
+            */}
+          <CopyRow label="Profile link" value={profileLink} onCopy={onCopy} />
           <CopyRow label="Public key" value={npub} onCopy={onCopy} />
           {lightningAddress && (
             <CopyRow
