@@ -35,8 +35,25 @@ import { nip19 } from 'nostr-tools';
  */
 export type NavSection = 'main' | 'discover' | 'money' | 'manage';
 
+/**
+ * A live figure shown at the end of a row.
+ *
+ * Named rather than carried as a value, because the table is a static list and
+ * these are read from hooks. The point is information scent: a rail that says
+ * "Relays 6/7" answers the question that would otherwise take a click, and a
+ * count beside Notifications is the difference between a menu and a dashboard.
+ *
+ * Deliberately only the two that cost nothing to know. A wallet balance would
+ * be the obvious third and it is not here on purpose — reading it means an
+ * authenticated request to LNbits, and putting that in the rail would make
+ * every page in the app fetch a wallet nobody asked to see.
+ */
+export type NavBadge = 'unread' | 'relays';
+
 export interface NavItem {
   section?: NavSection;
+  /** A live figure to show at the end of the row. */
+  badge?: NavBadge;
   href: string;
   icon: LucideIcon;
   label: string;
@@ -77,6 +94,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
       shortcut: 'N',
       requiresAuth: true,
       secondary: true,
+      badge: 'unread',
     },
     { section: 'discover', href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
     { section: 'discover', href: '/lists', icon: List, label: 'Lists', secondary: true },
@@ -150,7 +168,15 @@ export function getNavItems(pubkey?: string): NavItem[] {
       label: 'P2P',
       secondary: true,
     },
-    { section: 'manage', href: '/relays', icon: Server, label: 'Relays', shortcut: 'R', secondary: true },
+    {
+      section: 'manage',
+      href: '/relays',
+      icon: Server,
+      label: 'Relays',
+      shortcut: 'R',
+      secondary: true,
+      badge: 'relays',
+    },
     {
       section: 'manage',
       href: '/identity',
