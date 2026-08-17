@@ -50,6 +50,21 @@ interface ZapDialogProps {
   /** Controls the dialog externally; omit to use the built-in trigger. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * A price rather than a tip.
+   *
+   * A zap is normally whatever the sender feels like giving, so the dialog
+   * opens on a default and offers presets. Some things being paid for are not
+   * that: a subscription tier costs what the tier says, and letting somebody
+   * pick 21 sats for a 5,000-sat tier does not buy them a cheaper
+   * subscription — it takes their money and does not subscribe them, because
+   * the receipt no longer matches what the tier asks for.
+   *
+   * Set this and the amount is stated rather than chosen.
+   */
+  amountSats?: number;
+  /** What the payment is for, when it is not a plain zap. */
+  purpose?: string;
 }
 
 const PRESETS = [
@@ -74,6 +89,8 @@ export function ZapDialog({
   className,
   open: controlledOpen,
   onOpenChange,
+  amountSats,
+  purpose,
 }: ZapDialogProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isControlled = controlledOpen !== undefined;
@@ -100,8 +117,15 @@ export function ZapDialog({
   const zappable = !!author?.metadata?.lud16 || !!author?.metadata?.lud06;
   if (!user || user.pubkey === target.pubkey || !zappable) return null;
 
-  const title = `Zap ${recipient}`;
-  const description = 'A zap is a real Bitcoin payment, signed by you.';
+  const fixed =
+    typeof amountSats === 'number' && Number.isFinite(amountSats) && amountSats > 0
+      ? Math.round(amountSats)
+      : undefined;
+
+  const title = purpose ?? `Zap ${recipient}`;
+  const description = fixed
+    ? `${formatSats(fixed)} sats to ${recipient}. A real Bitcoin payment, signed by you.`
+    : 'A zap is a real Bitcoin payment, signed by you.';
 
   if (isMobile) {
     return (
@@ -117,7 +141,12 @@ export function ZapDialog({
             <DrawerDescription>{description}</DrawerDescription>
           </DrawerHeader>
           <div className="overflow-y-auto px-4 pb-6">
-            <ZapFlow target={target} open={open} onDone={() => setOpen(false)} />
+            <ZapFlow
+              target={target}
+              open={open}
+              fixed={fixed}
+              onDone={() => setOpen(false)}
+            />
           </div>
         </DrawerContent>
       </Drawer>
@@ -136,7 +165,12 @@ export function ZapDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <ZapFlow target={target} open={open} onDone={() => setOpen(false)} />
+        <ZapFlow
+          target={target}
+          open={open}
+          fixed={fixed}
+          onDone={() => setOpen(false)}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -145,17 +179,20 @@ export function ZapDialog({
 function ZapFlow({
   target,
   open,
+  fixed,
   onDone,
 }: {
   target: Event;
   open: boolean;
+  /** The price, when this is paying for something rather than tipping. */
+  fixed?: number;
   onDone: () => void;
 }) {
   const { toast } = useToast();
   const { requestInvoice, confirmPaid, isZapping, resetInvoice, splits, resolveSplit } =
     useZaps(target, onDone);
 
-  const [amount, setAmount] = useState<number | string>(100);
+  const [amount, setAmount] = useState<number | string>(fixed ?? 100);
   const [comment, setComment] = useState('');
   const [prepared, setPrepared] = useState<ZapInvoice | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -164,11 +201,13 @@ function ZapFlow({
   useEffect(() => {
     if (!open) {
       setPrepared(null);
-      setAmount(100);
+      // Back to the price, not to the tipping default — reopening a tier must
+      // not quietly offer to underpay it
+      setAmount(fixed ?? 100);
       setComment('');
       resetInvoice();
     }
-  }, [open, resetInvoice]);
+  }, [open, resetInvoice, fixed]);
 
   const sats = typeof amount === 'string' ? parseInt(amount, 10) : amount;
   const valid = Number.isFinite(sats) && sats > 0;
@@ -255,51 +294,76 @@ function ZapFlow({
         </div>
       )}
 
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          Amount
-        </p>
-        <ToggleGroup
-          type="single"
-          value={String(amount)}
-          onValueChange={(value) => value && setAmount(parseInt(value, 10))}
-          className="grid grid-cols-5 gap-1.5"
-        >
-          {PRESETS.map(({ amount: preset, icon: Icon }) => (
-            <ToggleGroupItem
-              key={preset}
-              value={String(preset)}
-              className="flex h-auto min-w-0 flex-col rounded-lg px-2 py-2.5 text-xs transition-all hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-            >
-              <Icon className="mb-1 h-4 w-4 mx-auto" />
-              <span className="truncate text-xs font-medium">{formatSats(preset)}</span>
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-
-      <div>
-        <div className="relative">
-          <Input
-            ref={inputRef}
-            type="number"
-            inputMode="numeric"
-            min={1}
-            placeholder="0"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            className="text-lg font-semibold tracking-tight pr-12"
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
-            sats
-          </span>
+      {/*
+        A price is shown, not offered. The presets and the free entry are the
+        right controls for a tip and the wrong ones for something with a cost:
+        an editable field beside a fixed price reads as an invitation to change
+        it, and changing it does not buy a cheaper subscription — it sends
+        money that buys nothing.
+      */}
+      {fixed ? (
+        <div className="rounded-xl border bg-muted/40 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Price
+          </p>
+          <p className="mt-1 text-2xl font-semibold tracking-tight">
+            {formatSats(fixed)}{' '}
+            <span className="text-base font-normal text-muted-foreground">
+              sats
+            </span>
+          </p>
+          <FiatValue sats={fixed} className="mt-0.5 block text-xs" />
         </div>
-        {/*
-          The amount in money the sender thinks in, before they commit to it.
-          Five thousand sats is a number; a currency figure is a decision.
-        */}
-        {valid && <FiatValue sats={sats} className="mt-1.5 block text-xs" />}
-      </div>
+      ) : (
+        <>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              Amount
+            </p>
+            <ToggleGroup
+              type="single"
+              value={String(amount)}
+              onValueChange={(value) => value && setAmount(parseInt(value, 10))}
+              className="grid grid-cols-5 gap-1.5"
+            >
+              {PRESETS.map(({ amount: preset, icon: Icon }) => (
+                <ToggleGroupItem
+                  key={preset}
+                  value={String(preset)}
+                  className="flex h-auto min-w-0 flex-col rounded-lg px-2 py-2.5 text-xs transition-all hover:bg-muted data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                >
+                  <Icon className="mb-1 h-4 w-4 mx-auto" />
+                  <span className="truncate text-xs font-medium">{formatSats(preset)}</span>
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+
+          <div>
+            <div className="relative">
+              <Input
+                ref={inputRef}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                placeholder="0"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                className="text-lg font-semibold tracking-tight pr-12"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                sats
+              </span>
+            </div>
+            {/*
+              The amount in money the sender thinks in, before they commit to
+              it. Five thousand sats is a number; a currency figure is a
+              decision.
+            */}
+            {valid && <FiatValue sats={sats} className="mt-1.5 block text-xs" />}
+          </div>
+        </>
+      )}
 
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
