@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLightningAddress } from '@/hooks/useLightningAddress';
@@ -34,7 +34,6 @@ export function useIdentity() {
   const { user } = useCurrentUser();
   const { mutateAsync: createEvent } = useNostrPublish();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const author = useAuthor(user?.pubkey);
   const metadata = author.data?.metadata;
@@ -198,7 +197,13 @@ export function useIdentity() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['author', user?.pubkey] });
+      /*
+       * Not invalidated, for the reason set out in `useAuthor`: publishing has
+       * already seeded the signed event, and asking the relays now only gets
+       * back the profile from before this edit, because they have not indexed
+       * it yet. `reconcileAuthor` refuses the stale answer either way, but
+       * spending a request to be told something older is still a waste.
+       */
       toast({
         title: 'Profile updated',
         description:

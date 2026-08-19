@@ -5,18 +5,18 @@ import { IdentityVault } from '@/components/identity/IdentityVault';
 import { useSeo } from '@/hooks/useSeo';
 
 /**
- * Identity Vault Page: Nostr identity OS hub.
+ * Your key, the names pointing at it, and what can sign with it here.
  *
- * Central location for users to manage their complete Nostr identity:
- * - Signing devices
- * - Relays
- * - Connected apps & permissions
- * - Session history
+ * The description used to promise signing devices, connected apps and session
+ * history, and the page delivered all three by inventing them. Two of those
+ * are things no Nostr client can know — a key leaves no record of where it has
+ * been used, and NIP-46 grants live in the signer rather than the client — so
+ * the heading now claims only what `IdentityVault` can actually show.
  */
 export function IdentityVaultPage() {
   useSeo({
     title: 'Identity Vault',
-    description: 'Manage your Nostr identity, signing devices, relays, and connected applications.',
+    description: 'Your Nostr key, the names that point at it, and what can sign with it in this browser.',
     path: '/identity',
     noindex: true,
   });
@@ -27,7 +27,7 @@ export function IdentityVaultPage() {
         <PageHeader
           icon={KeyRound}
           title="Identity Vault"
-          description="Your Nostr identity in one place. Manage signing devices, relays, connected apps, and session security."
+          description="Your key, the names that point at it, and what can sign with it in this browser."
         />
 
         <IdentityVault />
