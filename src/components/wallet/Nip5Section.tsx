@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   BadgeCheck,
   Check,
   Clock,
@@ -52,12 +53,14 @@ import {
   defaultAttachWallet,
   normalizeLocalPart,
   outstandingPaymentHash,
-  promoOutcome,
+  formatAmount,
+  priceBreakdown,
   validateLocalPart,
   yearOptions,
   type Nip5Address,
   type Nip5AddressStatus,
   type Nip5Domain,
+  type PriceBreakdown,
 } from '@/lib/nip5';
 
 /**
@@ -614,6 +617,9 @@ function UnpaidName({ address }: { address: Nip5Address }) {
     return (
       <PendingPayment
         pending={pending}
+        // The code the reservation was made with, so the invoice still
+        // accounts for itself on a visit days after the code was typed
+        promoCode={address.extra?.promo_code}
         onPay={(optionId) => void pay({ pending, optionId }).catch(() => {})}
         isPaying={isPaying}
         onCancel={() => setPending(null)}
@@ -643,6 +649,13 @@ function UnpaidName({ address }: { address: Nip5Address }) {
             // The domain it was reserved under, not the default one — asking
             // the wrong domain reserves a second name somewhere else
             domainId: address.domain_id,
+            /*
+             * And the code it was reserved with. Paying later goes back
+             * through the claim endpoint to raise the invoice, so leaving the
+             * code out here would quietly re-price the name at full rate for
+             * anybody who did not pay in the same sitting.
+             */
+            promoCode: address.extra?.promo_code,
           })
             .then((result) => {
               if (result.bolt11) setPending(result);
@@ -802,6 +815,9 @@ function BuyName({
         // What the search said before any code was applied, so the invoice can
         // be shown as a difference rather than as a bare number
         quoted={search.data}
+        // And what was typed, so a code the server silently dropped can be
+        // reported as dropped rather than passed over
+        promoCode={promoCode}
         // The mutations report their own failures; these catches only stop
         // an unhandled rejection reaching the console
         onPay={(optionId) => void pay({ pending, optionId }).catch(() => {})}
@@ -911,13 +927,43 @@ function BuyName({
           spellCheck={false}
           className="font-mono uppercase"
         />
+        {/*
+          Says where the answer comes from, rather than leaving somebody to
+          wonder why the price above did not move as they typed.
+
+          It cannot move. The extension's search endpoint takes a name and a
+          year count and nothing else, and the promotions live on the domain
+          record, which is readable only with the operator's API key — so the
+          discount genuinely does not exist until the reservation raises an
+          invoice. Better to say that than to imply the code was rejected.
+        */}
         <p className="text-xs text-muted-foreground">
-          {/* Said here because the server ignores an unknown code rather than
-              refusing the claim, so the invoice is the first and only place a
-              wrong one shows up */}
-          The invoice shows what you actually pay — check it before paying.
+          {promoCode.trim()
+            ? 'Applied when you reserve — the next screen shows what it takes off, before you pay anything.'
+            : 'The invoice shows what you actually pay — check it before paying.'}
         </p>
       </div>
+
+      {/*
+        The total, before the button that commits to it.
+
+        Reserving raises a real invoice, and doing that to find out the price
+        is the wrong order. `describePrice` is per-domain and lives up beside
+        the name; this is the sum for the years chosen, which is the number
+        the invoice will match.
+      */}
+      {available && search.data && (
+        <div className="flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2.5 text-sm">
+          <span className="text-muted-foreground">
+            {years > 1 ? `${years} years` : '1 year'} at {domain}
+          </span>
+          <span className="font-medium tabular-nums">
+            {search.data.price_in_sats
+              ? formatAmount(search.data.price_in_sats, 'sats')
+              : 'Free'}
+          </span>
+        </div>
+      )}
 
       <Button
         onClick={async () => {
@@ -1100,9 +1146,128 @@ function Availability({
   );
 }
 
+/**
+ * The sum behind the invoice: list price, what the code took off, what is owed.
+ *
+ * A single number is not enough here, and "Discount applied" on its own is
+ * worse than nothing — it is a claim somebody cannot check. Laid out as a sum,
+ * the three lines answer the only questions there are: what it normally costs,
+ * what my code was worth, what I am about to pay.
+ *
+ * The unhappy case is the reason this exists. The extension does not refuse a
+ * code it has never heard of; it drops it and raises a full-price invoice. So
+ * a mistyped or expired code produced a screen that said nothing at all, and
+ * somebody who believed they had 20% off paid 100% without a word.
+ */
+function PriceSummary({
+  price,
+  onRemoveCode,
+}: {
+  price: PriceBreakdown;
+  /** Back to the form, which is where a code can be changed or dropped. */
+  onRemoveCode: () => void;
+}) {
+  /*
+   * Nothing to account for. With no code in play the amount owed is the whole
+   * story, and the panel above has already said it — a sum with one line in it
+   * is the same number twice.
+   */
+  if (price.promo === 'none') return null;
+
+  const { list, saved, paid, unit } = price;
+  const discounted = saved !== undefined && list !== undefined;
+
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      {discounted && (
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="text-muted-foreground">List price</span>
+          <span className="tabular-nums text-muted-foreground line-through decoration-muted-foreground/60">
+            {formatAmount(list, unit)}
+          </span>
+        </div>
+      )}
+
+      {saved !== undefined && (
+        <div className="flex items-baseline justify-between gap-3 text-sm text-success-strong">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Check className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate font-mono text-xs uppercase">
+              {price.code}
+            </span>
+            {/* The form a promotion is usually quoted in, next to the form it
+                is actually paid in */}
+            {!!price.savedPercent && (
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {price.savedPercent}% off
+              </span>
+            )}
+          </span>
+          <span className="shrink-0 tabular-nums">
+            −{formatAmount(saved, unit)}
+          </span>
+        </div>
+      )}
+
+      {paid !== undefined && (
+        <div
+          className={cn(
+            'flex items-baseline justify-between gap-3 text-sm font-medium',
+            // A rule under nothing is just a line across a box
+            discounted && 'border-t pt-2'
+          )}
+        >
+          <span>You pay</span>
+          <span className="tabular-nums">
+            {paid > 0 ? formatAmount(paid, unit) : 'Free'}
+          </span>
+        </div>
+      )}
+
+      {/*
+        Said plainly, and with the way out attached. The alternative is silence
+        on the one screen where the code's failure is still fixable — the name
+        is reserved either way, and going back to drop the code costs nothing.
+      */}
+      {price.promo === 'ignored' && (
+        <p className="flex items-start gap-2 rounded-md bg-warning/10 p-2.5 text-xs text-warning-strong">
+          <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+          <span>
+            <span className="font-mono uppercase">{price.code}</span> didn't
+            change the price — it may have expired, or never existed. The
+            reservation went through at full price either way.{' '}
+            <button
+              type="button"
+              onClick={onRemoveCode}
+              className="underline underline-offset-2"
+            >
+              Go back
+            </button>{' '}
+            to try a different one.
+          </span>
+        </p>
+      )}
+
+      {/*
+        Ignorance, said as ignorance. Without a quote to compare against, the
+        code may well have worked — and "it didn't work" would be a guess
+        presented as a finding.
+      */}
+      {price.promo === 'unknown' && (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-mono uppercase">{price.code}</span> was sent
+          with the reservation. The amount above is what the invoice asks for,
+          discount included.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function PendingPayment({
   pending,
   quoted,
+  promoCode,
   onPay,
   isPaying,
   onCancel,
@@ -1110,6 +1275,8 @@ function PendingPayment({
   pending: PendingNip5;
   /** The list price, so a discount can be shown as a difference. */
   quoted?: Nip5AddressStatus | null;
+  /** What was typed into the code field, so its silence can be reported. */
+  promoCode?: string;
   onPay: (optionId?: string) => void;
   isPaying: boolean;
   onCancel: () => void;
@@ -1118,7 +1285,7 @@ function PendingPayment({
   const { payOptions } = useNip5();
 
   const sats = pending.address?.extra?.price_in_sats;
-  const promo = promoOutcome(quoted, pending.address?.extra);
+  const price = priceBreakdown(quoted, pending.address?.extra, promoCode);
   const usable = payOptions.filter((option) => !option.unavailable);
 
   return (
@@ -1135,20 +1302,7 @@ function PendingPayment({
         </p>
       </div>
 
-      {/*
-        Shown as a difference rather than as "code accepted", because the
-        server ignores a code it does not know instead of refusing the claim —
-        so the only proof a code did anything is that the price moved.
-      */}
-      {promo.applied && (
-        <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success-strong">
-          <Check className="h-4 w-4 shrink-0" />
-          Discount applied
-          {promo.savedSats
-            ? ` — ${promo.savedSats.toLocaleString()} sats off`
-            : ''}
-        </p>
-      )}
+      <PriceSummary price={price} onRemoveCode={onCancel} />
 
       {/* The QR was missing, and it is the only way to pay from a phone that
           is not this browser — which is where most people keep their sats */}
