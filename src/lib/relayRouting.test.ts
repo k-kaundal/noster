@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  RECEIPT_RELAYS,
   canonicalTargets,
   isIdentityRequest,
+  isZapReceiptRequest,
   withPrimaryFirst,
 } from './relayRouting';
 
@@ -110,5 +112,48 @@ describe('isIdentityRequest', () => {
     // An id-only lookup could be anything, and fanning it out helps nothing
     expect(isIdentityRequest([{}])).toBe(false);
     expect(isIdentityRequest([])).toBe(false);
+  });
+});
+
+describe('isZapReceiptRequest', () => {
+  it('recognises a query that is only about receipts', () => {
+    expect(isZapReceiptRequest([{ kinds: [9735] }])).toBe(true);
+  });
+
+  it('leaves note stats alone', () => {
+    /*
+     * `useNoteStats` fetches replies, reposts, reactions and receipts in one
+     * filter per screenful. Widening that would put four more relays behind
+     * every page of every feed, to answer a question the page is not asking.
+     */
+    expect(isZapReceiptRequest([{ kinds: [1, 6, 7, 9735] }])).toBe(false);
+  });
+
+  it('does not qualify when anything else is asked alongside', () => {
+    expect(isZapReceiptRequest([{ kinds: [9735] }, { kinds: [1] }])).toBe(false);
+    expect(isZapReceiptRequest([{ kinds: [9735, 9041] }])).toBe(false);
+  });
+
+  it('ignores a filter with no kinds at all', () => {
+    expect(isZapReceiptRequest([{}])).toBe(false);
+    expect(isZapReceiptRequest([])).toBe(false);
+  });
+});
+
+describe('RECEIPT_RELAYS', () => {
+  it('names relays other clients actually publish zaps to', () => {
+    /*
+     * The whole point. A receipt is published by the sender's lightning server
+     * to the relays named in the sender's zap request — so a zap sent from
+     * Damus lands on Damus's relays, and outbox routing cannot help because
+     * the filter names no author to route by.
+     */
+    expect(RECEIPT_RELAYS).toContain('wss://relay.damus.io');
+    expect(RECEIPT_RELAYS.length).toBeGreaterThan(1);
+  });
+
+  it('lists every relay in canonical form', () => {
+    // Anything else opens a second websocket to a relay already connected
+    expect(canonicalTargets(RECEIPT_RELAYS)).toEqual(RECEIPT_RELAYS);
   });
 });
