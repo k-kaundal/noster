@@ -115,13 +115,38 @@ async function cacheFirst(request, cacheName, max) {
   const cached = await cache.match(request);
   if (cached) return cached;
 
-  const response = await fetch(request);
+  let response;
+  try {
+    response = await fetch(request);
+  } catch {
+    /*
+     * Nothing cached and no network.
+     *
+     * Resolved with a network error rather than left to reject. A rejecting
+     * `respondWith` surfaces as `Uncaught (in promise) TypeError: Failed to
+     * fetch` in the console of every open tab, once per image, forever — and
+     * this handler covers every image on the page, including avatars pointing
+     * at hosts that are simply gone. The page sees exactly the same failure
+     * either way; only the noise differs, and the noise buries real errors.
+     */
+    return Response.error();
+  }
 
   // Opaque cross-origin responses have no readable status; caching them
   // anyway is what makes an offline feed keep its pictures
   if (response.ok || response.type === 'opaque') {
-    await cache.put(request, response.clone());
-    if (max) void trim(cacheName, max);
+    /*
+     * Storing must not be able to fail the request. A cache write can throw on
+     * its own — quota exhausted, or a partial response the Cache API refuses —
+     * and losing the picture because it could not be *stored* is the wrong
+     * trade.
+     */
+    try {
+      await cache.put(request, response.clone());
+      if (max) void trim(cacheName, max);
+    } catch {
+      // Served anyway; it will simply be fetched again next time
+    }
   }
 
   return response;
