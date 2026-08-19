@@ -816,6 +816,8 @@ interface LedgerEntry {
   status?: string;
   memo?: string;
   time?: string | number;
+  /** The one identifier an operator can look the payment up by. */
+  payment_hash?: string;
 }
 
 /**
@@ -828,6 +830,36 @@ interface LedgerEntry {
  * paying and the address list catching up.
  */
 const ACTIVATION_GRACE_MS = 60_000;
+
+/**
+ * Whether a memo names this identifier, rather than merely containing it.
+ *
+ * A plain substring test is wrong here, and expensively so: every name is a
+ * suffix of longer names on the same domain, so paying for `kkworld@getzap.me`
+ * read as proof of payment for `world@getzap.me` — and the screen told
+ * somebody their unpaid name was paid for and not to pay again.
+ *
+ * The characters on either side settle it. Names are made of letters, digits
+ * and `-_.`, so anything else — the space the extension's memo puts in front,
+ * or the end of the string — means the match is the whole name rather than
+ * part of a longer one, in either direction.
+ */
+function namedInMemo(memo: string, identifier: string): boolean {
+  const nameChar = /[a-z0-9\-_.]/;
+  let from = 0;
+
+  for (;;) {
+    const at = memo.indexOf(identifier, from);
+    if (at === -1) return false;
+
+    const before = at === 0 ? '' : memo[at - 1];
+    const after = memo[at + identifier.length] ?? '';
+
+    if (!nameChar.test(before) && !nameChar.test(after)) return true;
+
+    from = at + 1;
+  }
+}
 
 /**
  * Money of theirs already spent on this name, if the ledger shows any.
@@ -857,7 +889,7 @@ export function findNamePayment<T extends LedgerEntry>(
     if (payment.amount >= 0 || payment.status !== 'success') return false;
 
     const memo = payment.memo?.toLowerCase() ?? '';
-    if (!memo.includes('nip-05') || !memo.includes(needle)) return false;
+    if (!memo.includes('nip-05') || !namedInMemo(memo, needle)) return false;
 
     /*
      * An unreadable timestamp answers 0, which is older than everything — the

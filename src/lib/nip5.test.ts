@@ -746,6 +746,37 @@ describe('findNamePayment', () => {
     ).toBeUndefined();
   });
 
+  it('does not read a longer name as this one', () => {
+    /**
+     * Every name is a suffix of longer names on the same domain, so a
+     * substring test made paying for `kkworld@getzap.me` proof of payment for
+     * `world@getzap.me` — and the screen then told somebody their unpaid name
+     * was paid for and not to pay again, which is the one mistake here that
+     * costs them the name.
+     */
+    expect(
+      findNamePayment('world@getzap.me', [bought({
+        memo: 'Payment of 10.0 sats for NIP-05 kkworld@getzap.me',
+      })], 60_000, now)
+    ).toBeUndefined();
+  });
+
+  it('does not read a longer domain as this one', () => {
+    expect(
+      findNamePayment('kk@getzap.me', [bought({
+        memo: 'Payment of 10.0 sats for NIP-05 kk@getzap.me.uk',
+      })], 60_000, now)
+    ).toBeUndefined();
+  });
+
+  it('still finds the name when it opens the memo', () => {
+    // The boundary is the absence of a name character, which the start of the
+    // string is as much as a space is
+    expect(
+      findNamePayment('kk@getzap.me', [bought({ memo: 'kk@getzap.me NIP-05' })], 60_000, now)
+    ).toBeDefined();
+  });
+
   it('ignores a payment for somebody else’s name', () => {
     expect(
       findNamePayment('kkworld@ln.nostrfeed.com', [bought({
