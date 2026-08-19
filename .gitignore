@@ -34,3 +34,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Screenshots from the run-nostrfeed design harness
+design-shots/
