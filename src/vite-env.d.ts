@@ -26,6 +26,14 @@ interface ImportMetaEnv {
    */
   readonly VITE_FREE_LIGHTNING_ADDRESS_DOMAIN?: string;
   readonly VITE_FREE_LIGHTNING_ADDRESS_DOMAINS?: string;
+  /**
+   * Base URL of the GetZap identity directory, e.g. `https://api.getzap.me/v1`.
+   *
+   * Optional, and the app is whole without it: it powers one extra section in
+   * the search box and nothing else. Unset means no directory section and no
+   * requests — see `lib/getzap`.
+   */
+  readonly VITE_GETZAP_API?: string;
   /** LNbits pay link id for monthly relay access. */
   readonly VITE_PREMIUM_MONTHLY_LINK?: string;
   /** LNbits pay link id for lifetime relay write access. */
