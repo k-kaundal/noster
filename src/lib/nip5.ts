@@ -20,6 +20,7 @@
  * disagrees with the invoice.
  */
 import { ADDRESS_DOMAIN } from '@/lib/lightningAddress';
+import { paymentTimeMs } from '@/lib/lnbits';
 
 /** One domain names can be bought under: the extension's id, and the hostname. */
 export interface Nip5Domain {
@@ -727,20 +728,144 @@ export function readClaimedAddress(body: unknown): Nip5Address | null {
     : null;
 }
 
+/** Where the invoices we raised are kept, since the server keeps none. */
+const INVOICE_STORE = 'nip5-pending-invoices';
+
+/** Absent while prerendering, and refused outright in some private modes. */
+function invoiceStore(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readInvoices(storage: Storage | null): Record<string, string> {
+  if (!storage) return {};
+  try {
+    const raw = JSON.parse(storage.getItem(INVOICE_STORE) ?? '{}');
+    return raw && typeof raw === 'object' ? (raw as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
 /**
- * The invoice an unpaid name is still waiting on, if it remembers one.
+ * Keeps the invoice raised for a name, because nothing else does.
  *
- * The extension stores the payment hash on the address itself, which is the
- * only durable record of the purchase: the claim response lived in component
- * state, so paying from a phone, another browser, or simply after a reload
- * left a settled invoice that nothing in this app was watching. The name stayed
- * "awaiting payment" and the only button offered to pay for it again.
+ * `extra.payment_hash` looks like the durable record of a purchase and is not
+ * one: `activate_address` is the only thing that ever writes it, so it is
+ * populated exactly when it has stopped being needed and empty for the whole
+ * window it was being read in. A reservation left unpaid therefore had no hash
+ * anywhere except the claim response, which lived in component state — so a
+ * reload lost the ability to tell "not paid" from "paid, not switched on", and
+ * the screen asked for the money again either way.
+ */
+export function rememberNip5Invoice(
+  addressId: string,
+  paymentHash: string,
+  storage: Storage | null = invoiceStore()
+): void {
+  if (!storage || !addressId || !paymentHash) return;
+  try {
+    storage.setItem(
+      INVOICE_STORE,
+      JSON.stringify({ ...readInvoices(storage), [addressId]: paymentHash })
+    );
+  } catch {
+    // A full or refused store costs the recovery path, not the purchase
+  }
+}
+
+/** Drops an invoice once its name is live and nothing is owed. */
+export function forgetNip5Invoice(
+  addressId: string,
+  storage: Storage | null = invoiceStore()
+): void {
+  if (!storage || !addressId) return;
+  try {
+    const invoices = readInvoices(storage);
+    delete invoices[addressId];
+    storage.setItem(INVOICE_STORE, JSON.stringify(invoices));
+  } catch {
+    // Same
+  }
+}
+
+/**
+ * The invoice an unpaid name is still waiting on.
+ *
+ * Prefers the address's own record and falls back to ours. The server's is
+ * authoritative when it exists — it is written at activation — and ours is the
+ * one that exists during the wait, which is the only time this is asked.
  */
 export function outstandingPaymentHash(
-  address: Pick<Nip5Address, 'active' | 'extra'> | null | undefined
+  address: Pick<Nip5Address, 'id' | 'active' | 'extra'> | null | undefined,
+  storage: Storage | null = invoiceStore()
 ): string | undefined {
   if (!address || address.active) return undefined;
-  return address.extra?.payment_hash || undefined;
+  return (
+    address.extra?.payment_hash || readInvoices(storage)[address.id] || undefined
+  );
+}
+
+/** An outgoing payment, as the wallet ledger records one. */
+interface LedgerEntry {
+  /** Millisatoshis, negative for money leaving. */
+  amount: number;
+  status?: string;
+  memo?: string;
+  time?: string | number;
+}
+
+/**
+ * How long activation is allowed to take before a payment counts as stuck.
+ *
+ * The extension activates from its invoice listener, in the same breath as the
+ * payment settling — there is no queue and nothing to wait for. A minute is
+ * already far outside the honest range, and it keeps the "we have your money
+ * and the name is not live" panel from flashing up in the seconds between
+ * paying and the address list catching up.
+ */
+const ACTIVATION_GRACE_MS = 60_000;
+
+/**
+ * Money of theirs already spent on this name, if the ledger shows any.
+ *
+ * The other half of telling "not paid" from "paid and not switched on", and
+ * the half that works backwards: the invoice belongs to the operator's wallet,
+ * but paying it from the wallet in this app leaves a row in *their* ledger,
+ * and the extension writes the identifier into the memo it raises the invoice
+ * with — `Payment of 2100 sats for NIP-05 name@domain`.
+ *
+ * Only outgoing and only settled. A reimbursement for the same name is an
+ * incoming payment with a memo just as similar, and reading one as proof of
+ * purchase would say a refund was a payment.
+ */
+export function findNamePayment<T extends LedgerEntry>(
+  identifier: string | null | undefined,
+  payments: readonly T[] | null | undefined,
+  /** Only payments settled longer ago than this. Zero takes the newest too. */
+  settledForMs = ACTIVATION_GRACE_MS,
+  now = Date.now()
+): T | undefined {
+  if (!identifier) return undefined;
+
+  const needle = identifier.toLowerCase();
+
+  return (payments ?? []).find((payment) => {
+    if (payment.amount >= 0 || payment.status !== 'success') return false;
+
+    const memo = payment.memo?.toLowerCase() ?? '';
+    if (!memo.includes('nip-05') || !memo.includes(needle)) return false;
+
+    /*
+     * An unreadable timestamp answers 0, which is older than everything — the
+     * right way round here, since a payment we cannot date is one that has had
+     * every chance to be acted on.
+     */
+    return now - paymentTimeMs(payment.time) >= settledForMs;
+  });
 }
 
 /**

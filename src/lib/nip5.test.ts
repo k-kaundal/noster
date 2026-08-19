@@ -19,8 +19,11 @@ import {
   defaultAttachWallet,
   outstandingPaymentHash,
   formatAmount,
+  findNamePayment,
+  forgetNip5Invoice,
   priceBreakdown,
   promoClaimHint,
+  rememberNip5Invoice,
   readClaimedAddress,
   readPaymentHash,
   validateLocalPart,
@@ -601,33 +604,190 @@ describe('nip5Identifier', () => {
   });
 });
 
+/** A `Storage` that lives in a variable, since these run without a browser. */
+function fakeStorage(): Storage {
+  const entries = new Map<string, string>();
+  return {
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => void entries.set(key, value),
+    removeItem: (key: string) => void entries.delete(key),
+  } as unknown as Storage;
+}
+
 describe('outstandingPaymentHash', () => {
   const unpaid = (extra: Record<string, unknown> = {}) => ({
+    id: 'address-1',
     active: false,
     extra: { payment_hash: 'abc123', ...extra },
   });
 
   it('finds the invoice an unpaid name is waiting on', () => {
-    // The extension stores it on the address itself, which is the only record
-    // that survives a reload or a payment made on another device
-    expect(outstandingPaymentHash(unpaid())).toBe('abc123');
+    expect(outstandingPaymentHash(unpaid(), null)).toBe('abc123');
   });
 
   it('answers nothing once the name is live', () => {
-    expect(outstandingPaymentHash({ ...unpaid(), active: true })).toBeUndefined();
+    expect(
+      outstandingPaymentHash({ ...unpaid(), active: true }, null)
+    ).toBeUndefined();
   });
 
   it('answers nothing when no invoice was ever raised', () => {
     // A free name settles immediately and carries no hash
-    expect(outstandingPaymentHash({ active: false, extra: {} })).toBeUndefined();
     expect(
-      outstandingPaymentHash({ active: false, extra: { payment_hash: '' } })
+      outstandingPaymentHash({ id: 'a', active: false, extra: {} }, null)
+    ).toBeUndefined();
+    expect(
+      outstandingPaymentHash(
+        { id: 'a', active: false, extra: { payment_hash: '' } },
+        null
+      )
+    ).toBeUndefined();
+  });
+
+  it('falls back to the invoice we kept ourselves', () => {
+    /**
+     * The reason this fallback exists. `extra.payment_hash` is written by
+     * `activate_address` and by nothing else, so it is empty for the entire
+     * window it is being read in — a reservation waiting to be paid has no
+     * hash on the server at all, and a reload used to lose the only copy.
+     */
+    const storage = fakeStorage();
+    rememberNip5Invoice('address-1', 'kept-hash', storage);
+
+    expect(
+      outstandingPaymentHash({ id: 'address-1', active: false }, storage)
+    ).toBe('kept-hash');
+  });
+
+  it('drops what it kept once the name is live', () => {
+    const storage = fakeStorage();
+    rememberNip5Invoice('address-1', 'kept-hash', storage);
+    forgetNip5Invoice('address-1', storage);
+
+    expect(
+      outstandingPaymentHash({ id: 'address-1', active: false }, storage)
+    ).toBeUndefined();
+  });
+
+  it('survives a store that refuses to be written to', () => {
+    // Private modes and full quotas both throw here, and losing the recovery
+    // path must not lose the purchase
+    const broken = {
+      getItem: () => {
+        throw new Error('denied');
+      },
+      setItem: () => {
+        throw new Error('denied');
+      },
+    } as unknown as Storage;
+
+    expect(() => rememberNip5Invoice('a', 'b', broken)).not.toThrow();
+    expect(
+      outstandingPaymentHash({ id: 'a', active: false }, broken)
     ).toBeUndefined();
   });
 
   it('answers nothing for a missing address', () => {
-    expect(outstandingPaymentHash(null)).toBeUndefined();
-    expect(outstandingPaymentHash(undefined)).toBeUndefined();
+    expect(outstandingPaymentHash(null, null)).toBeUndefined();
+    expect(outstandingPaymentHash(undefined, null)).toBeUndefined();
+  });
+});
+
+describe('findNamePayment', () => {
+  const now = Date.UTC(2026, 7, 19, 12, 0, 0);
+  const anHourAgo = now - 3_600_000;
+
+  /** As the wallet ledger records paying for a name. */
+  const bought = (over: Record<string, unknown> = {}) => ({
+    amount: -2_100_000,
+    status: 'success',
+    memo: 'Payment of 2100 sats for NIP-05 kkworld@ln.nostrfeed.com',
+    time: new Date(anHourAgo).toISOString(),
+    ...over,
+  });
+
+  it('finds money already spent on this name', () => {
+    /**
+     * The extension writes the identifier into the memo of the invoice it
+     * raises, which makes their own ledger a second, durable answer to "has
+     * this been paid for" — and the only one that works when the extension's
+     * payment route refuses to answer.
+     */
+    expect(
+      findNamePayment('kkworld@ln.nostrfeed.com', [bought()], 60_000, now)
+    ).toBeDefined();
+  });
+
+  it('does not read a refund as a purchase', () => {
+    // Reimbursement comes back the other way with a memo just as similar
+    expect(
+      findNamePayment(
+        'kkworld@ln.nostrfeed.com',
+        [
+          bought({
+            amount: 2_100_000,
+            memo: 'Reimbursement for NIP-05 for kkworld@ln.nostrfeed.com',
+          }),
+        ],
+        60_000,
+        now
+      )
+    ).toBeUndefined();
+  });
+
+  it('ignores a payment that has not settled', () => {
+    expect(
+      findNamePayment(
+        'kkworld@ln.nostrfeed.com',
+        [bought({ status: 'pending' })],
+        60_000,
+        now
+      )
+    ).toBeUndefined();
+  });
+
+  it('ignores a payment for somebody else’s name', () => {
+    expect(
+      findNamePayment('kkworld@ln.nostrfeed.com', [bought({
+        memo: 'Payment of 2100 sats for NIP-05 alice@ln.nostrfeed.com',
+      })], 60_000, now)
+    ).toBeUndefined();
+  });
+
+  it('gives activation a moment before calling a payment stuck', () => {
+    /*
+     * Activation happens in the same breath as the payment settling, so a
+     * payment from ten seconds ago says nothing yet — and reporting it as
+     * stuck would flash "we have your money and the name is not live" at
+     * everybody who pays normally.
+     */
+    expect(
+      findNamePayment(
+        'kkworld@ln.nostrfeed.com',
+        [bought({ time: new Date(now - 10_000).toISOString() })],
+        60_000,
+        now
+      )
+    ).toBeUndefined();
+  });
+
+  it('treats a payment it cannot date as long settled', () => {
+    // An unreadable timestamp is one that has had every chance to be acted on
+    expect(
+      findNamePayment(
+        'kkworld@ln.nostrfeed.com',
+        [bought({ time: undefined })],
+        60_000,
+        now
+      )
+    ).toBeDefined();
+  });
+
+  it('answers nothing without a name or a ledger', () => {
+    expect(findNamePayment(null, [bought()], 60_000, now)).toBeUndefined();
+    expect(
+      findNamePayment('kkworld@ln.nostrfeed.com', null, 60_000, now)
+    ).toBeUndefined();
   });
 });
 

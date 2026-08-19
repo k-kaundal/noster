@@ -29,6 +29,7 @@ import {
   promoClaimHint,
   readClaimedAddress,
   readPaymentHash,
+  rememberNip5Invoice,
   validateLocalPart,
   type Nip5Address,
   type Nip5AddressStatus,
@@ -108,7 +109,7 @@ export function useNip5Payment(
 ) {
   const queryClient = useQueryClient();
 
-  return useQuery<boolean>({
+  return useQuery<boolean | null>({
     // Keyed by the domain too. The route is per-domain, so the same key
     // serving two domains would answer one from the other's cached result
     queryKey: ['nip5-payment', domainId, paymentHash ?? ''],
@@ -116,7 +117,25 @@ export function useNip5Payment(
       const body = await lnbitsRequest<Record<string, unknown>>(
         `${BASE}/domain/${domainId}/payments/${paymentHash}`,
         { signal }
-      );
+      ).catch((error) => {
+        /**
+         * A refusal, not a failure — and never an answer of "unpaid".
+         *
+         * The route asserts its way through the payment's `extra`, so an
+         * invoice whose metadata did not survive answers 400 for good:
+         * `No extra data on payment.` It is the same 400 forever, and the
+         * poll behind this used to keep asking every three seconds for as
+         * long as the page stayed open — a permanent error read as a payment
+         * that had not arrived yet.
+         *
+         * Null says what is true: this route cannot answer for this hash.
+         * The caller has another way to look.
+         */
+        if (error instanceof LnbitsError && error.status === 400) return null;
+        throw error;
+      });
+
+      if (body === null) return null;
 
       const paid = body.paid === true || body.status === 'success';
 
@@ -136,7 +155,10 @@ export function useNip5Payment(
       return paid;
     },
     enabled: isNip5Configured() && !!paymentHash && !!domainId,
-    refetchInterval: (query) => (query.state.data ? false : 3000),
+    // Stops on an answer either way: paid, or an endpoint that has said it
+    // cannot answer for this invoice
+    refetchInterval: (query) =>
+      query.state.data === null || query.state.data ? false : 3000,
     retry: false,
   });
 }
@@ -312,6 +334,15 @@ export function useNip5() {
     },
     onSuccess: (pending) => {
       queryClient.invalidateQueries({ queryKey: ['nip5-addresses'] });
+
+      /*
+       * Kept, because the server will not keep it until it no longer matters.
+       * Without this the invoice exists only in this component's state, and a
+       * reload leaves a reservation nobody can tell has been paid.
+       */
+      if (pending.address?.id && pending.paymentHash) {
+        rememberNip5Invoice(pending.address.id, pending.paymentHash);
+      }
 
       // A free name is live the moment it is created and needs no invoice
       if (!pending.bolt11) {
