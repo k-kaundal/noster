@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   describeError,
+  isExtensionNotEnabled,
   isMissingSession,
   LnbitsError,
   msatToSat,
@@ -8,6 +9,7 @@ import {
   readBalanceMsat,
   readBolt11,
   satToMsat,
+  withExtension,
 } from './lnbits';
 
 describe('describeError', () => {
@@ -182,5 +184,140 @@ describe('isMissingSession', () => {
 
   it('ignores errors that did not come from LNbits', () => {
     expect(isMissingSession(new Error('Failed to fetch'))).toBe(false);
+  });
+});
+
+describe('isExtensionNotEnabled', () => {
+  const refusal = (detail: string, status = 403) =>
+    new LnbitsError(describeError({ detail }, status), status, { detail });
+
+  it('recognises the wording this LNbits actually returns', () => {
+    /*
+     * The bug this was written for. The check tested for one exact phrase —
+     * `extension 'lnurlp' not enabled` — so an instance answering with the
+     * sentence below fell straight through `withExtension` and the user saw a
+     * raw authorisation error on a feature that was one PUT away from working.
+     */
+    const error = refusal("User not authorized for extension 'lnurlp'.");
+
+    expect(isExtensionNotEnabled(error, 'lnurlp')).toBe(true);
+  });
+
+  it('still recognises the older wording', () => {
+    expect(
+      isExtensionNotEnabled(refusal("Extension 'lnurlp' not enabled."), 'lnurlp')
+    ).toBe(true);
+  });
+
+  it('recognises it unquoted', () => {
+    expect(
+      isExtensionNotEnabled(refusal('Extension lnurlp not enabled.'), 'lnurlp')
+    ).toBe(true);
+  });
+
+  it('does not mistake an expired session for a disabled extension', () => {
+    /*
+     * A bare authorisation failure needs a fresh login, and quietly trying to
+     * enable something instead would hide that — so the message has to name
+     * the extension as well as complain.
+     */
+    expect(isExtensionNotEnabled(refusal('Not authorized.', 401), 'lnurlp')).toBe(
+      false
+    );
+  });
+
+  it('does not confuse one extension for another', () => {
+    expect(
+      isExtensionNotEnabled(refusal("User not authorized for extension 'nostrnip5'."), 'lnurlp')
+    ).toBe(false);
+  });
+
+  it('ignores anything that is not an LNbits refusal', () => {
+    expect(isExtensionNotEnabled(new Error('offline'), 'lnurlp')).toBe(false);
+    expect(isExtensionNotEnabled(undefined, 'lnurlp')).toBe(false);
+  });
+});
+
+describe('withExtension', () => {
+  const refusal = () =>
+    new LnbitsError("User not authorized for extension 'lnurlp'.", 403, {});
+
+  it('passes a working request straight through', async () => {
+    let calls = 0;
+    const result = await withExtension('lnurlp', 'token', async () => {
+      calls += 1;
+      return 'ok';
+    });
+
+    expect(result).toBe('ok');
+    expect(calls).toBe(1);
+  });
+
+  it('retries once the extension has been switched on', async () => {
+    // `enableExtension` is a real PUT; the retry is what is under test here
+    const fetchMock = vi.fn(async () =>
+      new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    let calls = 0;
+    const result = await withExtension('lnurlp', 'token', async () => {
+      calls += 1;
+      if (calls === 1) throw refusal();
+      return 'ok';
+    });
+
+    expect(result).toBe('ok');
+    expect(calls).toBe(2);
+
+    // Enabled for the account, with the session token rather than an API key
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/api/v1/extension/lnurlp/enable');
+    expect(init.method).toBe('PUT');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer token');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('says who can fix it when enabling is refused too', async () => {
+    /*
+     * The remedy failing means something an account cannot fix — the extension
+     * is not installed, or the instance forbids users enabling their own.
+     * Repeating the original refusal would send the reader back round the same
+     * loop.
+     */
+    vi.stubGlobal('fetch', async () =>
+      new Response('{"detail":"Not found"}', { status: 404 })
+    );
+
+    await expect(
+      withExtension('lnurlp', 'token', async () => {
+        throw refusal();
+      })
+    ).rejects.toThrow(/administrator/i);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('explains the missing session rather than repeating the server', async () => {
+    /*
+     * "Not authorized for extension" reads like a permissions problem an
+     * administrator has to solve. Without a token the real cause is that this
+     * browser has no LNbits session to enable anything with, and only one of
+     * those two is something the reader can act on.
+     */
+    await expect(
+      withExtension('lnurlp', undefined, async () => {
+        throw refusal();
+      })
+    ).rejects.toThrow(/no LNbits session/i);
+  });
+
+  it('leaves an unrelated failure alone', async () => {
+    await expect(
+      withExtension('lnurlp', 'token', async () => {
+        throw new LnbitsError('Insufficient balance.', 402, {});
+      })
+    ).rejects.toThrow('Insufficient balance.');
   });
 });
