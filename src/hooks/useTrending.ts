@@ -173,6 +173,12 @@ export function useTrendingPosts(hours: number = 24, limit: number = 20) {
               recipientPubkey,
               addresses.get(event.pubkey)
             ),
+            /*
+             * A ranking is where a forged receipt actually buys something, so
+             * here an unverifiable one does not count. On a note it still does
+             * — see `zapSummary`.
+             */
+            providerPolicy: 'require' as const,
           });
 
           return {

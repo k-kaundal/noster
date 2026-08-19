@@ -33,6 +33,14 @@ export interface ZapSummary {
   /** Largest first — the list is read to see who gave most. */
   zappers: Zapper[];
   /**
+   * Counted, but signed by a key this browser did not expect.
+   *
+   * Not a forgery claim. The commonest cause by far is a provider key learned
+   * from a different pay link, or one that has rotated since — which is why
+   * these are counted rather than dropped, and surfaced rather than hidden.
+   */
+  unverified: number;
+  /**
    * Receipts that arrived and were not counted, with the check each failed.
    *
    * The number people actually ask about is this one: "I paid and it is not
@@ -46,6 +54,7 @@ export const EMPTY_ZAP_SUMMARY: ZapSummary = {
   totalSats: 0,
   count: 0,
   zappers: [],
+  unverified: 0,
   rejected: [],
 };
 
@@ -97,6 +106,24 @@ export interface ZapSummaryOptions {
    * other check has already been made.
    */
   providerPubkey?: string | string[];
+  /**
+   * What a provider mismatch means here.
+   *
+   * `prefer` — the default — counts the zap anyway and records that it could
+   * not be verified. `require` refuses it.
+   *
+   * The difference matters because the provider key is the one input this app
+   * has to *guess*: it is remembered from payments made in this browser, so it
+   * is missing for most of the network and can be stale for the rest. Letting
+   * a guess delete a payment from the screen is the wrong way round — a zap
+   * that vanishes is money somebody sent and cannot find, and it has happened
+   * here more than once.
+   *
+   * `require` is for the places where a forged receipt buys something: a
+   * ranking, or a figure a creator would quote. Nobody games a number on their
+   * own note; plenty would game a leaderboard.
+   */
+  providerPolicy?: 'prefer' | 'require';
 }
 
 /**
@@ -114,6 +141,7 @@ export function summarizeZaps(
   const zappers: Zapper[] = [];
   const rejected: { id: string; reason: ReceiptRejection }[] = [];
   let totalSats = 0;
+  let unverified = 0;
 
   for (const receipt of receipts) {
     if (seen.has(receipt.id)) continue;
@@ -134,12 +162,26 @@ export function summarizeZaps(
     });
     if (rejection) {
       /*
-       * Recorded rather than dropped. A zap that does not appear is a payment
-       * somebody made and cannot find, and a silent `continue` is why that was
-       * only ever diagnosable by guessing.
+       * A provider mismatch is a doubt, not a disproof.
+       *
+       * Every other check here is a fact about the receipt itself. This one is
+       * a comparison against a key remembered from an earlier payment, and
+       * that memory is missing for most of the network and stale for some of
+       * the rest — so on its own it must not be able to delete a payment from
+       * the screen. It is counted and flagged instead, unless the caller is a
+       * ranking, where a forged receipt would actually buy something.
        */
-      rejected.push({ id: receipt.id, reason: rejection });
-      continue;
+      if (rejection === 'wrong-provider' && options.providerPolicy !== 'require') {
+        unverified += 1;
+      } else {
+        /*
+         * Recorded rather than dropped. A zap that does not appear is a
+         * payment somebody made and cannot find, and a silent `continue` is
+         * why that was only ever diagnosable by guessing.
+         */
+        rejected.push({ id: receipt.id, reason: rejection });
+        continue;
+      }
     }
 
     const parsed = parseZapReceipt(receipt);
@@ -162,7 +204,7 @@ export function summarizeZaps(
 
   zappers.sort((a, b) => b.sats - a.sats || b.at - a.at);
 
-  return { totalSats, count: zappers.length, zappers, rejected };
+  return { totalSats, count: zappers.length, zappers, unverified, rejected };
 }
 
 /**

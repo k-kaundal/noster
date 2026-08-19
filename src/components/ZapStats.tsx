@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Zap, ZapOff } from 'lucide-react';
+import { ShieldQuestion, Zap, ZapOff } from 'lucide-react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { ZapActivityDialog } from '@/components/ZapActivityDialog';
 import { useZapSummary } from '@/hooks/useZapSummary';
@@ -83,6 +83,32 @@ export function ZapStats({
         <Zap className="h-4 w-4 shrink-0" />
         {describeZapSummary(summary)}
       </button>
+
+      {/*
+        Counted, but signed by a key this browser did not expect.
+
+        Shown rather than hidden, and shown rather than used to delete the
+        zap: the provider key is remembered from payments made here, so it is
+        missing for most of the network and stale for some of the rest. The
+        honest report is the total plus a note that part of it could not be
+        proved.
+      */}
+      {summary.unverified > 0 && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex items-center gap-1 px-1 text-[11px] text-muted-foreground">
+              <ShieldQuestion className="h-3.5 w-3.5" />
+              {summary.unverified}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">
+            {summary.unverified === 1 ? 'One zap is' : `${summary.unverified} zaps are`}{' '}
+            counted but unproved: the receipt was signed by a key this browser
+            has not seen from that lightning address. Usually the address's
+            server changed keys.
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       <ZapActivityDialog summary={summary} open={open} onOpenChange={setOpen} />
     </>
