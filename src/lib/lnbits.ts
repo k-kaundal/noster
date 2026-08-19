@@ -96,6 +96,15 @@ export interface LnbitsPayment {
   preimage?: string;
   /** ISO 8601 on LNbits v1, a unix seconds integer on older versions. */
   time?: string | number;
+  /**
+   * Which extension produced this payment, e.g. `lnurlp` or `nostrnip5`.
+   *
+   * The field that makes revenue attributable. LNbits stamps it when an
+   * extension raises the invoice, so it says what the money was *for* —
+   * a name sale, a tip, a pay link — rather than only how much arrived.
+   */
+  tag?: string;
+  extension?: string;
   extra?: Record<string, unknown>;
 }
 

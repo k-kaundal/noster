@@ -32,6 +32,7 @@ import { useEvent } from '@/hooks/useEvent';
 import { useSeo } from '@/hooks/useSeo';
 import { useStudio } from '@/hooks/useStudio';
 import { EarningsTrend } from '@/components/studio/EarningsTrend';
+import { WalletRevenue } from '@/components/studio/WalletRevenue';
 import { describeSource, type TopTarget } from '@/lib/studio';
 import { formatSats } from '@/lib/zap';
 import { cn } from '@/lib/utils';
@@ -260,6 +261,19 @@ export function StudioPage() {
               ) : (
                 <Empty>Nothing arrived in this period.</Empty>
               )}
+            </Section>
+
+            {/*
+              The money Nostr never saw.
+
+              Everything above is built from zap receipts, which can only count
+              what somebody announced to the network. Names, tips and plain
+              invoices are earnings too, and a creator reading "what you
+              earned" should not have to know that this page means "what you
+              were zapped".
+            */}
+            <Section title="In your wallet">
+              <WalletRevenue days={days} relaySats={summary.sats} />
             </Section>
 
             <Section title="What earned most">
