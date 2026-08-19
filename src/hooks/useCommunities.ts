@@ -11,6 +11,7 @@ import { filterMuted } from '@/lib/mute';
 import { activityByCommunity } from '@/lib/communityStats';
 import { buildCommentTags, targetFromEvent } from '@/lib/nip22';
 import { extractMentionPubkeys, extractQuotedEvents } from '@/lib/mention';
+import { hashtagTags, imetaTags, withAttachments } from '@/lib/attachments';
 import {
   APPROVAL_KIND,
   COMMUNITY_KIND,
@@ -276,9 +277,25 @@ export function usePostToCommunity(community: Community | null) {
   const queryClient = useQueryClient();
 
   const post = useMutation({
-    mutationFn: async (content: string) => {
+    mutationFn: async ({
+      content,
+      images = [],
+    }: {
+      content: string;
+      /** Uploaded picture URLs, appended to the body and described in tags. */
+      images?: string[];
+    }) => {
       if (!community) throw new Error('No community');
-      if (!content.trim()) throw new Error('Write something first');
+      if (!content.trim() && !images.length) {
+        throw new Error('Write something first');
+      }
+
+      /*
+       * The pictures go in the body as well as the tags. `imeta` describes an
+       * image, it does not place one — a post whose pictures live only in tags
+       * reads as text in every other client.
+       */
+      const body = withAttachments(content, images);
 
       /**
        * A NIP-72 post is a NIP-22 comment scoped to the community, and this
@@ -289,12 +306,21 @@ export function usePostToCommunity(community: Community | null) {
        */
       await createEvent({
         kind: 1111,
-        content: content.trim(),
-        tags: buildCommentTags({
-          root: targetFromEvent(community.event),
-          mentions: extractMentionPubkeys(content, nip19.decode),
-          quotes: extractQuotedEvents(content, nip19.decode),
-        }),
+        content: body,
+        tags: [
+          ...buildCommentTags({
+            root: targetFromEvent(community.event),
+            mentions: extractMentionPubkeys(body, nip19.decode),
+            quotes: extractQuotedEvents(body, nip19.decode),
+          }),
+          /*
+           * Hashtags were typed and thrown away here. A `#` in a community
+           * post looked like a tag, read like a tag, and indexed as nothing —
+           * so the post was unfindable by the subject its author gave it.
+           */
+          ...hashtagTags(body),
+          ...imetaTags(images),
+        ],
       });
     },
     onSuccess: () => {

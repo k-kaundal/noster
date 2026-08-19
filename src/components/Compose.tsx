@@ -21,6 +21,7 @@ import { useAccountStored } from '@/hooks/useStore';
 import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { looksLikeMarkdown, stripMarkdown } from '@/lib/markdown';
+import { MAX_IMAGES, extractHashtags, imetaTags } from '@/lib/attachments';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -50,30 +51,7 @@ import { EXPIRY_CHOICES, expirationTags } from '@/lib/expiration';
 import { contentWarningTags } from '@/lib/contentWarning';
 import { cn } from '@/lib/utils';
 
-const MAX_IMAGES = 4;
 const SOFT_LIMIT = 1000;
-
-const MIME_TYPES: Record<string, string> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  avif: 'image/avif',
-};
-
-function getImageMimeType(url: string): string {
-  const extension = url.split('.').pop()?.toLowerCase() ?? '';
-  return MIME_TYPES[extension] ?? 'image/jpeg';
-}
-
-/** Hashtags written inline become indexed `t` tags so relays can filter them. */
-function extractHashtags(content: string): string[] {
-  const matches = content.match(/(?:^|\s)#([\p{L}\p{N}_]+)/gu) ?? [];
-  return Array.from(
-    new Set(matches.map((match) => match.trim().slice(1).toLowerCase()))
-  );
-}
 
 export function Compose() {
   /**
@@ -272,11 +250,7 @@ export function Compose() {
       );
 
       const tags = [
-        ...uploadedImages.map((url) => [
-          'imeta',
-          `url ${url}`,
-          `m ${getImageMimeType(url)}`,
-        ]),
+        ...imetaTags(uploadedImages),
         ...mentioned.map((pubkey) => ['p', pubkey]),
         ...quoted,
         ...hashtags.map((tag) => ['t', tag]),
