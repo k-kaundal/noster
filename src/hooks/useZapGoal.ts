@@ -71,6 +71,16 @@ export function useZapGoal(
     progress: GoalProgress;
     /** True when no relay answered, which is not the same as no zaps. */
     unreachable: boolean;
+    /**
+     * Receipts that arrived naming this goal and failed a NIP-57 check.
+     *
+     * The bar had no way to say this. A funded goal reading zero and a goal
+     * nobody has zapped drew identically, and the difference between them is
+     * the entire question somebody asks when their payment does not appear.
+     */
+    rejected: number;
+    /** Counted, but signed by a key this browser did not expect. */
+    unverified: number;
   } | null>({
     queryKey: ['zap-goal', goalEvent?.id ?? '', announcedBy ?? ''],
     queryFn: async ({ signal }) => {
@@ -190,7 +200,13 @@ export function useZapGoal(
         createdAt: zapper.at,
       }));
 
-      return { goal, progress: goalProgress(goal, counted), unreachable };
+      return {
+        goal,
+        progress: goalProgress(goal, counted),
+        unreachable,
+        rejected: summary.rejected.length,
+        unverified: summary.unverified,
+      };
     },
     enabled: !!goalEvent?.id,
     // Short, because somebody who has just zapped a goal is watching the bar

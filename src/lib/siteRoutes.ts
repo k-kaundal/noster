@@ -293,9 +293,13 @@ export const SITE_ROUTES: SiteRoute[] = [
     title: 'Nostr mini apps',
     description:
       'Small apps that run on Nostr data and sign with your key, listed in one place.',
-    priority: 0.4,
-    changefreq: 'weekly',
-    summary: 'Small apps built on Nostr data.',
+    /*
+     * In the sitemap at priority 0.4 until now, which was an instruction to
+     * index a directory of apps that do not exist — the listings on it were
+     * invented, ratings and install counts included. Out of the sitemap until
+     * there is something on the page.
+     */
+    noindex: true,
   },
 
   /* Everything below is signed-in territory. Titled for the tab and for a
