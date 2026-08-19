@@ -450,55 +450,124 @@ export function normalizePromoCode(input: string): string {
   return input.trim().replace(/^["']|["']$/g, '').toUpperCase();
 }
 
-/** What a promo code turned out to be worth. */
-export interface PromoOutcome {
-  /** Whether the server charged less than it quoted. */
-  applied: boolean;
-  /** Sats saved, when both figures are in sats and the code worked. */
-  savedSats?: number;
+/**
+ * What became of a code somebody typed.
+ *
+ * `ignored` is the state worth having a name for. The server does not refuse a
+ * code it has never heard of — it drops it and raises a full-price invoice —
+ * so an expired code, a typo and a code that was never real all end the same
+ * way, and none of them announce themselves. Left unsaid, somebody pays full
+ * price believing they got a discount.
+ *
+ * `unknown` is honest ignorance: a code was typed and there is nothing to
+ * compare it against, because the search never answered or one side quoted no
+ * figure. Distinct from `ignored`, which is a claim about what happened.
+ */
+export type PromoResult = 'none' | 'applied' | 'ignored' | 'unknown';
+
+/** What a name costs, said as the sum a person can check. */
+export interface PriceBreakdown {
+  promo: PromoResult;
+  /** The code, as the server recorded it or as it was typed. */
+  code?: string;
+  /** The unit both figures are in: `sats`, or the domain's currency. */
+  unit: string;
+  /** The list price, before any code. Absent when the search never answered. */
+  list?: number;
+  /** What the invoice actually asks for. */
+  paid?: number;
+  /** The difference, when the price went down. */
+  saved?: number;
+  /** Whole percent off, which is the form a promotion is usually quoted in. */
+  savedPercent?: number;
+}
+
+/** One figure out of the pair, preferring the one that exists. */
+function figure(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 /**
- * Compares the price that was quoted against the price that was charged.
+ * The sum behind an invoice: what it listed at, what the code took off, what
+ * is owed.
  *
- * Asked *after* the claim rather than before it, because there is nowhere to
- * ask before: the search endpoint takes a name and a year count and knows
- * nothing about codes, so the only place a discount becomes visible is the
- * invoice raised in response to the claim. Somebody who typed a code that does
- * not exist would otherwise pay full price with no sign of it — the server
- * ignores an unknown code rather than refusing the claim.
+ * Worked out *after* the claim rather than before it, because there is nowhere
+ * to ask before. The extension's search endpoint takes a name and a year count
+ * and nothing else, and the promotions themselves live on the domain record,
+ * which is readable only with the operator's API key — a key that cannot go in
+ * a browser bundle. So the invoice is the first moment a code's worth exists,
+ * and this is how that moment gets shown as a sum rather than as one number
+ * with no story.
+ *
+ * Takes the typed code as well as the address, because the server's silence is
+ * only legible against somebody's intent: with no code typed there is nothing
+ * to report, and with one typed a price that did not move is news.
  */
-export function promoOutcome(
-  quoted: Pick<Nip5AddressStatus, 'price' | 'price_in_sats'> | null | undefined,
-  charged: Nip5AddressExtra | null | undefined
-): PromoOutcome {
-  if (!quoted || !charged) return { applied: false };
-
-  const before = quoted.price_in_sats;
-  const after = charged.price_in_sats;
-
-  if (
-    typeof before === 'number' &&
-    typeof after === 'number' &&
-    after < before
-  ) {
-    return { applied: true, savedSats: Math.round(before - after) };
-  }
-
-  /**
-   * Falls back to the currency figure when sats are missing on either side.
-   * Reported as applied without an amount rather than as not applied, since
-   * "your code did nothing" is the one wrong answer here.
+export function priceBreakdown(
+  quoted: Pick<Nip5AddressStatus, 'price' | 'price_in_sats' | 'currency'> | null | undefined,
+  charged: Nip5AddressExtra | null | undefined,
+  typedCode?: string
+): PriceBreakdown {
+  /*
+   * Sats when either side carries them, which is nearly always: the extension
+   * prices in the domain's currency and converts at quote time, and an invoice
+   * is denominated in sats by definition. Mixing the two units in one column
+   * would produce a subtraction that does not hold.
    */
-  if (
-    typeof quoted.price === 'number' &&
-    typeof charged.price === 'number' &&
-    charged.price < quoted.price
-  ) {
-    return { applied: true };
+  const inSats =
+    figure(quoted?.price_in_sats) !== undefined ||
+    figure(charged?.price_in_sats) !== undefined;
+
+  const unit = inSats
+    ? 'sats'
+    : (charged?.currency || quoted?.currency || 'sats').trim() || 'sats';
+
+  const list = inSats ? figure(quoted?.price_in_sats) : figure(quoted?.price);
+  const paid = inSats ? figure(charged?.price_in_sats) : figure(charged?.price);
+
+  const saved =
+    list !== undefined && paid !== undefined && paid < list
+      ? list - paid
+      : undefined;
+
+  const code = normalizePromoCode(typedCode ?? '') || charged?.promo_code;
+
+  const promo = ((): PromoResult => {
+    if (!code) return 'none';
+    if (saved !== undefined) return 'applied';
+
+    /*
+     * Only a price with something to discount can be said to have ignored a
+     * code. A free name is already zero, and telling somebody their code
+     * "didn't work" on a name that costs nothing is a complaint about nothing.
+     */
+    if (paid === 0 && !list) return 'none';
+    if (list !== undefined && paid !== undefined && list > 0) return 'ignored';
+
+    return 'unknown';
+  })();
+
+  return {
+    promo,
+    code: code || undefined,
+    unit,
+    list,
+    paid,
+    saved,
+    savedPercent:
+      saved !== undefined && list
+        ? Math.round((saved / list) * 100)
+        : undefined,
+  };
+}
+
+/** An amount in whichever unit the breakdown is denominated in. */
+export function formatAmount(amount: number, unit: string): string {
+  if (/^(sat|sats|satoshis?)$/i.test(unit)) {
+    return `${Math.round(amount).toLocaleString()} sats`;
   }
 
-  return { applied: false };
+  return `${amount.toFixed(2)} ${unit.toUpperCase()}`;
 }
 
 /** The year counts to offer, given what the domain allows. */

@@ -18,7 +18,8 @@ import {
   attachedWalletIsForeign,
   defaultAttachWallet,
   outstandingPaymentHash,
-  promoOutcome,
+  formatAmount,
+  priceBreakdown,
   readClaimedAddress,
   readPaymentHash,
   validateLocalPart,
@@ -249,43 +250,102 @@ describe('normalizePromoCode', () => {
   });
 });
 
-describe('promoOutcome', () => {
+describe('priceBreakdown', () => {
   it('reads a discount as the difference between quoted and charged', () => {
     expect(
-      promoOutcome({ price_in_sats: 10_000 }, { price_in_sats: 7_500 })
-    ).toEqual({ applied: true, savedSats: 2_500 });
-  });
-
-  it('says nothing happened when the price did not move', () => {
-    /**
-     * The direction that matters. The server ignores a code it does not know
-     * rather than refusing the claim, so a wrong code produces a full-price
-     * invoice — and claiming "discount applied" over it would have somebody
-     * pay full price believing otherwise.
-     */
-    expect(
-      promoOutcome({ price_in_sats: 10_000 }, { price_in_sats: 10_000 }).applied
-    ).toBe(false);
-  });
-
-  it('never reads a higher price as a discount', () => {
-    expect(
-      promoOutcome({ price_in_sats: 10_000 }, { price_in_sats: 12_000 }).applied
-    ).toBe(false);
-  });
-
-  it('falls back to the currency figure when sats are missing', () => {
-    // Applied without an amount, since "your code did nothing" is the one
-    // wrong answer available here
-    expect(promoOutcome({ price: 10 }, { price: 8 })).toEqual({
-      applied: true,
+      priceBreakdown({ price_in_sats: 10_000 }, { price_in_sats: 7_500 }, 'launch')
+    ).toMatchObject({
+      promo: 'applied',
+      code: 'LAUNCH',
+      unit: 'sats',
+      list: 10_000,
+      paid: 7_500,
+      saved: 2_500,
+      savedPercent: 25,
     });
   });
 
-  it('answers safely when either side is unknown', () => {
-    expect(promoOutcome(null, { price_in_sats: 100 }).applied).toBe(false);
-    expect(promoOutcome({ price_in_sats: 100 }, null).applied).toBe(false);
-    expect(promoOutcome({}, {}).applied).toBe(false);
+  it('says a code did nothing when the price did not move', () => {
+    /**
+     * The direction that matters. The extension ignores a code it does not
+     * know rather than refusing the claim, so a wrong code produces a
+     * full-price invoice — and silence over it has somebody pay full price
+     * believing otherwise.
+     */
+    expect(
+      priceBreakdown({ price_in_sats: 10_000 }, { price_in_sats: 10_000 }, 'nope')
+        .promo
+    ).toBe('ignored');
+  });
+
+  it('never reads a higher price as a discount', () => {
+    const price = priceBreakdown(
+      { price_in_sats: 10_000 },
+      { price_in_sats: 12_000 },
+      'launch'
+    );
+
+    expect(price.promo).toBe('ignored');
+    expect(price.saved).toBeUndefined();
+  });
+
+  it('reports nothing about a code nobody typed', () => {
+    expect(
+      priceBreakdown({ price_in_sats: 10_000 }, { price_in_sats: 10_000 }).promo
+    ).toBe('none');
+  });
+
+  it('takes the code the server recorded when none was typed here', () => {
+    // A reservation reopened later still knows which code paid for it
+    expect(
+      priceBreakdown(
+        { price_in_sats: 10_000 },
+        { price_in_sats: 8_000, promo_code: 'EARLY' }
+      )
+    ).toMatchObject({ promo: 'applied', code: 'EARLY' });
+  });
+
+  it('falls back to the currency figure when neither side quotes sats', () => {
+    expect(priceBreakdown({ price: 10, currency: 'eur' }, { price: 8 }, 'x'))
+      .toMatchObject({ promo: 'applied', unit: 'eur', saved: 2 });
+  });
+
+  it('admits ignorance rather than guessing', () => {
+    /**
+     * With nothing to compare against, a code may well have worked. Saying it
+     * did not would be a guess presented as a finding — which is the same
+     * failure as silence, pointed the other way.
+     */
+    expect(priceBreakdown(null, { price_in_sats: 100 }, 'x').promo).toBe('unknown');
+    expect(priceBreakdown({ price_in_sats: 100 }, null, 'x').promo).toBe('unknown');
+    expect(priceBreakdown({}, {}, 'x').promo).toBe('unknown');
+  });
+
+  it('does not complain about a code on a name that costs nothing', () => {
+    // There is no discount to fail to apply to zero
+    expect(
+      priceBreakdown({ price_in_sats: 0 }, { price_in_sats: 0 }, 'launch').promo
+    ).toBe('none');
+  });
+
+  it('still reports what is owed when nothing was ever quoted', () => {
+    // The invoice is the half that always exists, and it is the half that
+    // matters most on a screen asking for money
+    expect(priceBreakdown(null, { price_in_sats: 900 })).toMatchObject({
+      promo: 'none',
+      paid: 900,
+      list: undefined,
+    });
+  });
+});
+
+describe('formatAmount', () => {
+  it('writes sats as whole sats', () => {
+    expect(formatAmount(2_500.4, 'sats')).toBe('2,500 sats');
+  });
+
+  it('writes a currency to the cent', () => {
+    expect(formatAmount(9.5, 'eur')).toBe('9.50 EUR');
   });
 });
 

@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
-import { ArrowRight, FileText, Hash, Loader2, Search, User } from 'lucide-react';
+import {
+  ArrowRight,
+  AtSign,
+  FileText,
+  Hash,
+  Loader2,
+  Search,
+  User,
+  Zap,
+} from 'lucide-react';
 import { useSearch } from '@/hooks/useSearch';
+import { useDirectorySearch } from '@/hooks/useDirectorySearch';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuthor } from '@/hooks/useAuthor';
 import { genUserName } from '@/lib/genUserName';
+import type { DirectoryHit } from '@/lib/getzap';
 import { Post } from '@/components/Post';
 import {
   Dialog,
@@ -47,6 +58,15 @@ export function SearchDialog({
   const debouncedQuery = useDebounce(query, 350);
   const { data: results, isFetching } = useSearch(debouncedQuery);
 
+  /**
+   * Names in this deployment's directory, which the relays cannot answer for.
+   *
+   * A separate query on purpose: it is a different question with a different
+   * failure mode, and it must not be able to hold up the relay results or take
+   * the whole search down with it — see `lib/getzap`.
+   */
+  const { data: directory } = useDirectorySearch(debouncedQuery);
+
   const identifier = useMemo(() => asNip19(query), [query]);
   const hashtag = query.trim().startsWith('#')
     ? query.trim().slice(1).toLowerCase()
@@ -70,7 +90,8 @@ export function SearchDialog({
     showResults &&
     !isFetching &&
     !results?.posts.length &&
-    !results?.profiles.length;
+    !results?.profiles.length &&
+    !directory?.length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -162,6 +183,27 @@ export function SearchDialog({
               </p>
             )}
 
+            {/*
+              Names first, above people found on relays.
+
+              The two overlap and are not the same claim: a profile is whoever
+              a relay happens to hold, while a name here is somebody who
+              registered it on this deployment — which is the stronger answer
+              to "is this the real one", and the one a person searching an
+              address is actually after.
+            */}
+            {showResults && !!directory?.length && (
+              <section className="space-y-2">
+                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <AtSign className="h-3.5 w-3.5" />
+                  Names
+                </h3>
+                {directory.map((hit) => (
+                  <DirectoryResult key={hit.identity} hit={hit} onSelect={close} />
+                ))}
+              </section>
+            )}
+
             {showResults && !isFetching && results && (
               <>
                 {results.profiles.length > 0 && (
@@ -206,6 +248,64 @@ export function SearchDialog({
         </ScrollArea>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * A registered name, and whoever holds it.
+ *
+ * Shows the identity rather than the display name, because the identity is
+ * what was searched for and what makes this row different from the profile
+ * rows below it. The profile behind it is loaded so the face is recognisable,
+ * but the name in the directory is the claim being made.
+ */
+function DirectoryResult({
+  hit,
+  onSelect,
+}: {
+  hit: DirectoryHit;
+  onSelect: () => void;
+}) {
+  const author = useAuthor(hit.pubkey);
+  const metadata = author.data?.metadata;
+  const displayName =
+    metadata?.display_name || metadata?.name || genUserName(hit.pubkey);
+
+  return (
+    <Link
+      to={`/${hit.npub}`}
+      onClick={onSelect}
+      className="flex items-center gap-3 rounded-lg p-2.5 transition-colors hover:bg-accent/60"
+    >
+      <Avatar className="h-9 w-9 shrink-0">
+        <AvatarImage src={metadata?.picture} alt="" />
+        <AvatarFallback className="text-xs">
+          {displayName.slice(0, 2).toUpperCase()}
+        </AvatarFallback>
+      </Avatar>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate font-mono text-sm">{hit.identity}</p>
+          {/*
+            An inactive name is a lapsed reservation, not a person. Said out
+            loud rather than hidden: somebody searching for it needs to know it
+            exists and is not currently pointing anywhere.
+          */}
+          {!hit.active && (
+            <Badge variant="outline" className="shrink-0 text-[10px]">
+              Inactive
+            </Badge>
+          )}
+        </div>
+        <p className="truncate text-xs text-muted-foreground">{displayName}</p>
+      </div>
+
+      {/* Zappable, which is half of what a name here is for */}
+      {hit.lud16 && hit.active && (
+        <Zap className="h-3.5 w-3.5 shrink-0 text-zap" aria-label="Can be zapped" />
+      )}
+    </Link>
   );
 }
 
