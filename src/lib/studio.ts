@@ -193,6 +193,47 @@ export function summarizeStudio(
   };
 }
 
+export interface DayEarning {
+  /** Midnight UTC of the day, in seconds. */
+  day: number;
+  sats: number;
+  payments: number;
+}
+
+/**
+ * Earnings per day across the window, including the days nothing arrived.
+ *
+ * The empty days are the point. Dropping them turns a line chart into a lie:
+ * three payments in a month would draw as a steady rise across three evenly
+ * spaced points, when what actually happened is a flat month with three
+ * spikes in it.
+ */
+export function dailyEarnings(
+  earnings: readonly Earning[],
+  windowDays: number,
+  now = Date.now()
+): DayEarning[] {
+  const DAY = 86400;
+  const today = Math.floor(now / 1000 / DAY) * DAY;
+  const first = today - (windowDays - 1) * DAY;
+
+  const buckets = new Map<number, DayEarning>();
+  for (let day = first; day <= today; day += DAY) {
+    buckets.set(day, { day, sats: 0, payments: 0 });
+  }
+
+  for (const entry of earnings) {
+    const day = Math.floor(entry.at / DAY) * DAY;
+    const held = buckets.get(day);
+    if (!held) continue;
+
+    held.sats += entry.sats;
+    held.payments += 1;
+  }
+
+  return [...buckets.values()];
+}
+
 /** What to call a source in a table. */
 export function describeSource(source: EarningSource): string {
   if (source === 'note') return 'Zaps on notes';

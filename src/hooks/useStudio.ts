@@ -8,6 +8,7 @@ import { ZAP_RECEIPT_KIND, explainZapReceipt } from '@/lib/zap';
 import { providerKeyForRecipients } from '@/lib/zapProviders';
 import {
   EMPTY_SUMMARY,
+  dailyEarnings,
   earningFrom,
   summarizeStudio,
   type Earning,
@@ -80,8 +81,15 @@ export function useStudio(windowDays: number) {
     [query.data, windowDays]
   );
 
+  /** One point per day, empty days included. See `lib/studio`. */
+  const daily = useMemo(
+    () => dailyEarnings(query.data ?? [], windowDays),
+    [query.data, windowDays]
+  );
+
   return {
     summary,
+    daily,
     isLoading: query.isLoading,
     isError: query.isError,
     /** Whether the totals are checked against the author's own server. */
