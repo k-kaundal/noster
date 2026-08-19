@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -32,6 +33,7 @@ import {
 import { QrCode } from '@/components/wallet/QrCode';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLightningAddress } from '@/hooks/useLightningAddress';
+import { useLnbitsPayments } from '@/hooks/useLnbitsWallet';
 import { useToast } from '@/hooks/useToast';
 import { servesAddress } from '@/lib/identity';
 import { ADDRESS_DOMAINS } from '@/lib/lightningAddress';
@@ -43,6 +45,7 @@ import {
   describePrice,
   formatNip5,
   expiresAt,
+  findNamePayment,
   nip5Host,
   nip5Identifier,
   nip5State,
@@ -598,6 +601,19 @@ function UnpaidName({ address }: { address: Nip5Address }) {
   const { claim, isClaiming, pay, isPaying } = useNip5();
   const [pending, setPending] = useState<PendingNip5 | null>(null);
 
+  /*
+   * Their own ledger, as the second way of asking. Shares the query the
+   * wallet screen already runs, so it costs nothing here.
+   */
+  const ledger = useLnbitsPayments();
+  const queryClient = useQueryClient();
+
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['nip5-addresses'] }),
+      ledger.refetch(),
+    ]);
+
   /**
    * The invoice from this session if there is one, otherwise the one the
    * address itself remembers.
@@ -610,6 +626,19 @@ function UnpaidName({ address }: { address: Nip5Address }) {
    */
   const watched = pending?.paymentHash ?? outstandingPaymentHash(address);
   const paid = useNip5Payment(watched, pending?.domainId ?? address.domain_id);
+
+  /**
+   * Money that already left for this name.
+   *
+   * Two sources because either can be blind. The extension's payment route
+   * answers for any wallet but refuses outright when the invoice's metadata
+   * did not survive — a 400 that reads as "not paid" and never changes. The
+   * ledger only sees payments made from the wallet in this app, but it sees
+   * them for good, and it is the one that can answer about a payment made
+   * before this page was ever opened.
+   */
+  const settledInvoice = paid.data === true;
+  const spent = findNamePayment(nip5Identifier(address), ledger.data);
 
   if (nip5State(address) !== 'inactive') return null;
 
@@ -642,6 +671,40 @@ function UnpaidName({ address }: { address: Nip5Address }) {
     address.extra?.promo_code,
     address.promo_code_status
   );
+
+  /*
+   * Paid for, and still not live. Said instead of the panel below, because
+   * that one asks for the money again — which is the wrong thing to put in
+   * front of somebody who has already sent it, and the expensive kind of
+   * wrong.
+   */
+  if (spent || settledInvoice) {
+    return (
+      <div className="space-y-3 rounded-lg border border-warning/40 bg-warning/8 p-4">
+        <p className="text-sm font-medium text-warning-strong">
+          {nip5Identifier(address)} is paid for and hasn't been switched on.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {spent
+            ? `${formatAmount(Math.round(Math.abs(spent.amount) / 1000), 'sats')} left your wallet for this name. `
+            : 'The invoice for this name settled. '}
+          The name goes live when {nip5Host(address.domain_id)} registers the
+          payment, and that hasn't happened — so it is waiting on the domain,
+          not on you.{' '}
+          <span className="font-medium">Don't pay again</span>; a second
+          invoice would be a second charge for the same name.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => void refresh()}
+        >
+          Check again
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 rounded-lg border border-warning/30 bg-warning/8 p-4">
@@ -691,6 +754,15 @@ function UnpaidName({ address }: { address: Nip5Address }) {
 
 /** When the rental runs out, in plain words. */
 function RentedUntil({ address }: { address: Nip5Address }) {
+  /*
+   * Nothing for a name nobody has paid for. `expires_at` is written when the
+   * address record is *created*, not when it is activated, so an unpaid
+   * reservation carries a date a year out — and the card read "Rented until
+   * 20/08/2027" directly above "Awaiting payment", which is the reservation
+   * claiming to be the thing it is waiting to become.
+   */
+  if (!address.active) return null;
+
   const expiry = expiresAt(address);
   if (expiry === null) return null;
 
