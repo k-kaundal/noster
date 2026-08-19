@@ -4,6 +4,7 @@ import {
   RELAY_LIST_KIND,
   authorsIn,
   relayHintsFor,
+  rememberRelayHints,
   rememberRelayLists,
   resetOutboxTable,
   routableAuthors,
@@ -177,5 +178,60 @@ describe('withAuthorHints', () => {
 
   it('copes with a budget of one', () => {
     expect(withAuthorHints(base, ['wss://a'], 1)).toEqual(['wss://1']);
+  });
+});
+
+describe('rememberRelayHints', () => {
+  const ALICE = 'a'.repeat(64);
+
+  it('routes by a hint from an nprofile when nothing else is known', () => {
+    /*
+     * The bootstrap answer, handed over in the URL. An `npub` cannot carry
+     * relays and an `nprofile` can, which is the whole difference between the
+     * two forms — and arriving by the better link used to be worth nothing.
+     */
+    expect(rememberRelayHints(ALICE, ['wss://hint.example'])).toBe(true);
+    expect(relayHintsFor([ALICE])).toEqual(['wss://hint.example']);
+  });
+
+  it('never overwrites a relay list the person signed themselves', () => {
+    /*
+     * The precedence that matters. A hint is a claim by whoever pasted the
+     * link; a relay list is a claim by the person. Letting a stale hint from
+     * an old mention displace someone's current list would make them harder
+     * to read, not easier.
+     */
+    rememberRelayLists([relayList(ALICE, ['wss://real.example'])]);
+
+    expect(rememberRelayHints(ALICE, ['wss://hint.example'])).toBe(false);
+    expect(relayHintsFor([ALICE])).toEqual(['wss://real.example']);
+  });
+
+  it('is replaced by a relay list that arrives afterwards', () => {
+    // Stored below any real event, so the first genuine list supersedes it
+    rememberRelayHints(ALICE, ['wss://hint.example']);
+    rememberRelayLists([relayList(ALICE, ['wss://real.example'], 1)]);
+
+    expect(relayHintsFor([ALICE])).toEqual(['wss://real.example']);
+  });
+
+  it('ignores a pointer carrying no relays, which is most of them', () => {
+    expect(rememberRelayHints(ALICE, undefined)).toBe(false);
+    expect(rememberRelayHints(ALICE, [])).toBe(false);
+    expect(routableAuthors()).toBe(0);
+  });
+
+  it('ignores hints that are not usable relay URLs', () => {
+    expect(rememberRelayHints(ALICE, ['https://example.com/', 'not a url'])).toBe(
+      false
+    );
+    expect(routableAuthors()).toBe(0);
+  });
+
+  it('canonicalises what it stores', () => {
+    // Otherwise the pool opens a second websocket to a relay already connected
+    rememberRelayHints(ALICE, ['wss://Hint.Example/']);
+
+    expect(relayHintsFor([ALICE])).toEqual(['wss://hint.example']);
   });
 });

@@ -8,6 +8,7 @@ import { UserHoverCard } from '@/components/UserHoverCard';
 import { LinkCard } from '@/components/notes/LinkCard';
 import { genUserName } from '@/lib/genUserName';
 import { primaryLink } from '@/lib/linkPreview';
+import { rememberRelayHints } from '@/lib/outboxRouting';
 import { cn } from '@/lib/utils';
 
 interface NoteContentProps {
@@ -142,6 +143,16 @@ export function NoteContent({
               <NostrMention key={`mention-${key++}`} pubkey={decoded.data} />
             );
           } else if (decoded.type === 'nprofile') {
+            /*
+             * Where most relay hints in the wild actually live. A mention
+             * written by a client that knows the person carries the relays
+             * they publish to, so a feed full of conversations is also a feed
+             * full of routing information — previously decoded and thrown
+             * away. Never overwrites a signed relay list; see
+             * `rememberRelayHints`.
+             */
+            rememberRelayHints(decoded.data.pubkey, decoded.data.relays);
+
             inline.push(
               <NostrMention
                 key={`mention-${key++}`}

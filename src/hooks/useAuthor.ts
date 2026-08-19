@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query';
 import { createBatchLoader, type BatchLoader } from '@/lib/batchLoader';
 import { reconcileAuthor, shouldReplaceProfile } from '@/lib/authorCache';
+import { RELAY_LIST_KIND } from '@/lib/outboxRouting';
 
 export interface AuthorData {
   event?: NostrEvent;
@@ -73,13 +74,39 @@ function getLoader(nostr: Relay): BatchLoader<string, AuthorData> {
     maxBatchSize: 150,
     emptyValue: () => ({}),
     async fetch(pubkeys) {
-      const events = await nostr.query([{ kinds: [0], authors: pubkeys }], {
-        signal: AbortSignal.timeout(4000),
-      });
+      /**
+       * Kind 10002 travels with kind 0, and that is what makes outbox routing
+       * actually happen.
+       *
+       * The routing table in `lib/outboxRouting` is filled by harvesting relay
+       * lists as they cross the pool — but nothing was putting any there. A
+       * profile view fetched kind 0 alone, so opening somebody's page taught
+       * this app nothing about where they publish, and their notes were then
+       * fetched from the reader's own relays exactly as before. The mechanism
+       * was built and left unfed.
+       *
+       * Asking for both costs nothing: it is the same batch, the same round
+       * trip, and both kinds are in `INDEXED_KINDS`, so the request still
+       * qualifies as an identity lookup and still goes to the NIP-65 indexers
+       * that exist to answer it. The pool harvests what comes back, and the
+       * *next* query for this author's events is routed to their own relays.
+       */
+      const events = await nostr.query(
+        [{ kinds: [0, RELAY_LIST_KIND], authors: pubkeys }],
+        { signal: AbortSignal.timeout(4000) }
+      );
 
       const results = new Map<string, AuthorData>();
 
       for (const event of events) {
+        /*
+         * Only kind 0 is a profile. The relay lists are here to be harvested
+         * by the pool on the way past, not to be read as metadata — and
+         * letting one through would replace somebody's name and avatar with an
+         * event that has neither, since it is usually the newer of the two.
+         */
+        if (event.kind !== 0) continue;
+
         // Relays can return several kind 0s per author; keep the newest
         const existingEntry = results.get(event.pubkey);
         if (existingEntry?.event && existingEntry.event.created_at >= event.created_at) {
