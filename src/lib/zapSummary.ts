@@ -48,6 +48,16 @@ export interface ZapSummary {
    * decided not to count it.
    */
   rejected: { id: string; reason: ReceiptRejection }[];
+  /**
+   * Distinct receipts that reached this app at all, before any judgement.
+   *
+   * The denominator. `count` says how many were counted and `rejected` says
+   * how many were refused, but neither can distinguish a receipt that was
+   * thrown out from one that never arrived — and those have completely
+   * different causes. Compared against a relay's own NIP-45 count, this is
+   * what separates "the app refused it" from "the app never got it".
+   */
+  received: number;
 }
 
 export const EMPTY_ZAP_SUMMARY: ZapSummary = {
@@ -56,6 +66,7 @@ export const EMPTY_ZAP_SUMMARY: ZapSummary = {
   zappers: [],
   unverified: 0,
   rejected: [],
+  received: 0,
 };
 
 export interface ZapSummaryOptions {
@@ -137,6 +148,14 @@ export function summarizeZaps(
   receipts: NostrEvent[],
   options: ZapSummaryOptions
 ): ZapSummary {
+  /*
+   * Every receipt id seen, whatever became of it.
+   *
+   * The deduplication happens here rather than at the point of acceptance, so
+   * a refused receipt arriving from four relays is one refusal rather than
+   * four — it used to be listed once per copy, which turned "1 zap not
+   * counted" into "4 zaps not counted" on a well-connected client.
+   */
   const seen = new Set<string>();
   const zappers: Zapper[] = [];
   const rejected: { id: string; reason: ReceiptRejection }[] = [];
@@ -145,6 +164,7 @@ export function summarizeZaps(
 
   for (const receipt of receipts) {
     if (seen.has(receipt.id)) continue;
+    seen.add(receipt.id);
 
     /*
      * One check per receipt, whatever the number of candidates. This used to
@@ -190,7 +210,6 @@ export function summarizeZaps(
     if (parsed.amountSats === null || parsed.amountSats <= 0) continue;
     if (!parsed.senderPubkey) continue;
 
-    seen.add(receipt.id);
     totalSats += parsed.amountSats;
 
     zappers.push({
@@ -204,7 +223,14 @@ export function summarizeZaps(
 
   zappers.sort((a, b) => b.sats - a.sats || b.at - a.at);
 
-  return { totalSats, count: zappers.length, zappers, unverified, rejected };
+  return {
+    totalSats,
+    count: zappers.length,
+    zappers,
+    unverified,
+    rejected,
+    received: seen.size,
+  };
 }
 
 /**

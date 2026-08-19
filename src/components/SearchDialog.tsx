@@ -146,6 +146,22 @@ export function SearchDialog({
               </div>
             )}
 
+            {/*
+              Said before the results rather than after the lack of them.
+
+              The relay has told us it has no full-text index, so what follows
+              is not "the matches" but "the matches among recent posts". A
+              reader who does not know that reads a short list as evidence
+              that nobody said it.
+            */}
+            {showResults && !isFetching && results?.localOnly && (
+              <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                Your relays don't offer full-text search, so this looks through
+                recent posts only. Add a relay that supports NIP-50 to search
+                everything.
+              </p>
+            )}
+
             {showResults && !isFetching && results && (
               <>
                 {results.profiles.length > 0 && (
@@ -180,8 +196,10 @@ export function SearchDialog({
 
             {isEmpty && !identifier && !hashtag && (
               <p className="py-10 text-center text-sm text-muted-foreground">
-                No results for “{debouncedQuery}”. This relay may not support
-                full-text search.
+                No results for “{debouncedQuery}”.{' '}
+                {results?.localOnly
+                  ? 'Only recent posts were searched, because none of your relays index older ones.'
+                  : 'Try another relay, or a shorter term.'}
               </p>
             )}
           </div>

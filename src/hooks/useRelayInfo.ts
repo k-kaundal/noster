@@ -1,48 +1,48 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { relayHttpUrl } from '@/lib/relay';
+import type { RelayInfo } from '@/lib/nip11';
 
-/** NIP-11 relay information document. Every field is optional by spec. */
-export interface RelayInfo {
-  name?: string;
-  description?: string;
-  banner?: string;
-  icon?: string;
-  pubkey?: string;
-  contact?: string;
-  software?: string;
-  version?: string;
-  supported_nips?: number[];
-  terms_of_service?: string;
-  privacy_policy?: string;
-  limitation?: {
-    max_message_length?: number;
-    max_subscriptions?: number;
-    max_limit?: number;
-    max_subid_length?: number;
-    max_event_tags?: number;
-    max_content_length?: number;
-    min_pow_difficulty?: number;
-    auth_required?: boolean;
-    payment_required?: boolean;
-    restricted_writes?: boolean;
-    created_at_lower_limit?: number;
-    created_at_upper_limit?: number;
-    default_limit?: number;
-  };
-  retention?: {
-    kinds?: (number | number[])[];
-    count?: number;
-    time?: number | null;
-  }[];
-  relay_countries?: string[];
-  language_tags?: string[];
-  tags?: string[];
-  posting_policy?: string;
-  payments_url?: string;
-  fees?: {
-    admission?: { amount: number; unit: string }[];
-    subscription?: { amount: number; unit: string; period: number }[];
-    publication?: { kinds?: number[]; amount: number; unit: string }[];
+/**
+ * The document's shape lives in `lib/nip11` alongside the code that reads it,
+ * so a plain function can ask what a relay supports without importing a hook.
+ */
+export type { RelayInfo };
+
+/** Shared by every caller that fetches a NIP-11 document. */
+export const RELAY_INFO_STALE_TIME = 30 * 60 * 1000;
+
+/**
+ * One relay's document, over HTTP.
+ *
+ * Written once and shared by every caller through the `relay-info` query key,
+ * so the relays page, the composer and the search box read one cache between
+ * them rather than fetching the same document three times.
+ */
+async function fetchRelayInfo(
+  url: string,
+  signal: AbortSignal
+): Promise<RelayInfo> {
+  const response = await fetch(relayHttpUrl(url), {
+    headers: { Accept: 'application/nostr+json' },
+    signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Relay returned ${response.status}`);
+  }
+
+  return (await response.json()) as RelayInfo;
+}
+
+/** The query options every caller uses, so they all share one cache entry. */
+export function relayInfoQuery(url: string) {
+  return {
+    queryKey: ['relay-info', url],
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      fetchRelayInfo(url, signal),
+    retry: false,
+    staleTime: RELAY_INFO_STALE_TIME,
+    gcTime: 60 * 60 * 1000,
   };
 }
 
@@ -54,24 +54,25 @@ export interface RelayInfo {
  */
 export function useRelayInfo(url: string | undefined) {
   return useQuery<RelayInfo | null>({
+    ...relayInfoQuery(url ?? ''),
     queryKey: ['relay-info', url],
-    queryFn: async ({ signal }) => {
-      if (!url) return null;
-
-      const response = await fetch(relayHttpUrl(url), {
-        headers: { Accept: 'application/nostr+json' },
-        signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Relay returned ${response.status}`);
-      }
-
-      return (await response.json()) as RelayInfo;
-    },
+    queryFn: ({ signal }) => (url ? fetchRelayInfo(url, signal) : null),
     enabled: !!url,
-    retry: false,
-    staleTime: 30 * 60 * 1000,
-    gcTime: 60 * 60 * 1000,
+  });
+}
+
+/**
+ * The same, for several relays at once.
+ *
+ * Reads are fanned out across every read relay, so questions like "can search
+ * run on the relay" are questions about the *set* — see `anySupports`.
+ */
+export function useRelayInfos(urls: readonly string[]) {
+  return useQueries({
+    queries: urls.map((url) => relayInfoQuery(url)),
+    combine: (results) => ({
+      infos: results.map((result) => result.data ?? null),
+      isLoading: results.some((result) => result.isLoading),
+    }),
   });
 }

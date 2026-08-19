@@ -1,7 +1,7 @@
-import { useQueries } from '@tanstack/react-query';
 import { useRelays } from '@/hooks/useRelays';
-import { relayDisplayName, relayHttpUrl } from '@/lib/relay';
-import type { RelayInfo } from '@/hooks/useRelayInfo';
+import { useRelayInfos } from '@/hooks/useRelayInfo';
+import { relayDisplayName } from '@/lib/relay';
+import { refuses } from '@/lib/nip11';
 import { NIP40 } from '@/lib/expiration';
 
 /**
@@ -19,28 +19,11 @@ import { NIP40 } from '@/lib/expiration';
 export function useExpirySupport() {
   const { writeUrls } = useRelays();
 
-  const results = useQueries({
-    queries: writeUrls.map((url) => ({
-      queryKey: ['relay-info', url],
-      queryFn: async ({ signal }: { signal: AbortSignal }) => {
-        const response = await fetch(relayHttpUrl(url), {
-          headers: { Accept: 'application/nostr+json' },
-          signal: AbortSignal.any([signal, AbortSignal.timeout(6000)]),
-        });
+  const { infos } = useRelayInfos(writeUrls);
 
-        if (!response.ok) throw new Error(`Relay returned ${response.status}`);
-        return (await response.json()) as RelayInfo;
-      },
-      retry: false,
-      staleTime: 30 * 60 * 1000,
-      gcTime: 60 * 60 * 1000,
-    })),
-  });
-
-  const unsupported = writeUrls.filter((url, index) => {
-    const nips = results[index]?.data?.supported_nips;
-    return Array.isArray(nips) && !nips.includes(NIP40);
-  });
+  const unsupported = writeUrls.filter((_url, index) =>
+    refuses(infos[index], NIP40)
+  );
 
   return {
     /** Display names, since this goes straight into a sentence. */
