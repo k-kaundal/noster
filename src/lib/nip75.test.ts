@@ -166,6 +166,10 @@ describe('buildGoalTags', () => {
 });
 
 describe('goalProgress', () => {
+  /** Well clear of the skew tolerance, so these test the bound not the grace. */
+  const HOUR = 3600;
+  const DAY = 86400;
+
   /** Published at the epoch, so the fixtures below are all "after" it. */
   const goal = {
     amountMsat: 100_000,
@@ -215,14 +219,17 @@ describe('goalProgress', () => {
   it('leaves out zaps that arrived after the deadline', () => {
     const closing = {
       amountMsat: 100_000,
-      closedAt: 500,
+      closedAt: DAY,
       event: { created_at: 0 },
     } as ZapGoal;
 
     const progress = goalProgress(
       closing,
-      [receipt(40_000, undefined, 400), receipt(40_000, undefined, 600)],
-      1000
+      [
+        receipt(40_000, undefined, DAY - HOUR),
+        receipt(40_000, undefined, DAY + HOUR),
+      ],
+      2 * DAY
     );
 
     expect(progress.raisedMsat).toBe(40_000);
@@ -231,8 +238,10 @@ describe('goalProgress', () => {
 
   it('counts a zap that landed exactly on the deadline', () => {
     expect(countsTowardGoal({ closedAt: 500 }, 500)).toBe(true);
-    expect(countsTowardGoal({ closedAt: 500 }, 501)).toBe(false);
     expect(countsTowardGoal({ closedAt: undefined }, 9e9)).toBe(true);
+
+    // Well past it, beyond any plausible clock difference
+    expect(countsTowardGoal({ closedAt: 500 }, 500 + DAY)).toBe(false);
   });
 
   it('leaves out zaps that arrived before the goal was published', () => {
@@ -243,28 +252,72 @@ describe('goalProgress', () => {
      * everything that note ever earned, and reads as part-funded by money
      * nobody sent toward it.
      */
-    expect(countsTowardGoal({ closedAt: undefined, startedAt: 500 }, 499)).toBe(
-      false
-    );
-    expect(countsTowardGoal({ closedAt: undefined, startedAt: 500 }, 500)).toBe(
-      true
-    );
+    const started = { closedAt: undefined, startedAt: DAY };
+
+    expect(countsTowardGoal(started, DAY - HOUR)).toBe(false);
+    expect(countsTowardGoal(started, DAY)).toBe(true);
+  });
+
+  it('forgives a receipt stamped slightly early by a different clock', () => {
+    /*
+     * The two timestamps come from different machines: the goal's from the
+     * browser that published it, the receipt's from the LNURL server that
+     * signed it. Nothing keeps them in step, so a server running a minute
+     * behind stamps a receipt *before* the goal it is plainly paying into —
+     * and a strict comparison threw the payment away and left the bar at
+     * zero, which is exactly the complaint this was traced from.
+     */
+    const started = { closedAt: undefined, startedAt: DAY };
+
+    expect(countsTowardGoal(started, DAY - 60)).toBe(true);
+    expect(countsTowardGoal({ closedAt: DAY }, DAY + 60)).toBe(true);
   });
 
   it('ignores a zap sent before the goal existed', () => {
     const later = {
       amountMsat: 100_000,
       closedAt: undefined,
-      event: { created_at: 1_000 },
+      event: { created_at: DAY },
     } as ZapGoal;
 
     const progress = goalProgress(later, [
-      receipt(40_000, undefined, 900),
-      receipt(10_000, undefined, 1_100),
+      receipt(40_000, undefined, DAY - HOUR),
+      receipt(10_000, undefined, DAY + HOUR),
     ]);
 
     expect(progress.raisedMsat).toBe(10_000);
     expect(progress.contributorCount).toBe(0);
+  });
+
+  it('says how much it set aside, rather than dropping it silently', () => {
+    /*
+     * The bar's silent subtraction, made visible. A goal that has been paid
+     * and reads zero used to draw identically to a goal nobody has zapped,
+     * and telling those apart is the only question anyone asks of a progress
+     * bar that did not move.
+     */
+    const later = {
+      amountMsat: 100_000,
+      closedAt: undefined,
+      event: { created_at: DAY },
+    } as ZapGoal;
+
+    const progress = goalProgress(later, [
+      receipt(40_000, undefined, DAY - HOUR),
+      receipt(5_000, undefined, DAY - 2 * HOUR),
+      receipt(10_000, undefined, DAY + HOUR),
+    ]);
+
+    expect(progress.raisedMsat).toBe(10_000);
+    expect(progress.excludedCount).toBe(2);
+    expect(progress.excludedMsat).toBe(45_000);
+  });
+
+  it('sets nothing aside when everything counted', () => {
+    const progress = goalProgress(goal, [receipt(30_000)]);
+
+    expect(progress.excludedCount).toBe(0);
+    expect(progress.excludedMsat).toBe(0);
   });
 });
 

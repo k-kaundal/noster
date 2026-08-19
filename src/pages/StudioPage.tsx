@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChartLine, ShieldCheck, ShieldQuestion } from 'lucide-react';
+import {
+  ChartLine,
+  Database,
+  ShieldCheck,
+  ShieldQuestion,
+  ZapOff,
+} from 'lucide-react';
 
 import { Layout } from '@/components/Layout';
 import { LoginArea } from '@/components/auth/LoginArea';
@@ -22,6 +28,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useEvent } from '@/hooks/useEvent';
 import { useSeo } from '@/hooks/useSeo';
 import { useStudio } from '@/hooks/useStudio';
 import { EarningsTrend } from '@/components/studio/EarningsTrend';
@@ -47,7 +54,8 @@ const WINDOWS = [
 export function StudioPage() {
   const { user } = useCurrentUser();
   const [days, setDays] = useState(30);
-  const { summary, daily, isLoading, verified } = useStudio(days);
+  const { summary, daily, isLoading, verified, refused, received } =
+    useStudio(days);
 
   useSeo({
     title: 'Studio',
@@ -106,6 +114,54 @@ export function StudioPage() {
           </ToggleGroup>
 
           <Verification verified={verified} />
+
+          {/*
+            Where the number came from, because "why is it different here" is
+            the question this page gets asked.
+
+            A zap receipt is published by the sender's lightning server to the
+            relays the sender's client named, so no single relay holds them
+            all and which ones answer inside a timeout varies by minute and by
+            country. Reading fresh each time made the total a measurement of
+            luck. It is accumulated instead — so this says how much evidence
+            is behind the figure, not how much arrived just now.
+          */}
+          {received > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] text-muted-foreground">
+                  <Database className="h-3.5 w-3.5" />
+                  {received.toLocaleString()} receipts
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                Every receipt this browser has ever seen naming you, from all
+                of your relays plus the ones other clients publish zaps to —
+                unioned, not re-fetched, so a slow relay cannot make your
+                earnings look smaller than they are.
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {refused > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-[11px] text-muted-foreground">
+                  <ZapOff className="h-3.5 w-3.5" />
+                  {refused.toLocaleString()} not counted
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                {refused === 1 ? 'One receipt' : `${refused} receipts`} named
+                you and failed a NIP-57 check, so{' '}
+                {refused === 1 ? 'it is' : 'they are'} left out of these
+                figures. This page is stricter than the count on a post: a
+                receipt signed by a key your lightning address has not used
+                here is shown there and refused here, because this is the
+                number you would quote.
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
 
         {isLoading ? (
@@ -338,14 +394,34 @@ function TargetRow({ target }: { target: TopTarget }) {
    */
   const href = target.source === 'note' ? `/${target.target}` : undefined;
 
+  /*
+   * The note itself, so the row says what was paid for.
+   *
+   * "What earned most" listed eight rows of truncated hex, which answers the
+   * question only for somebody willing to open all eight. The d-tag on an
+   * article is at least words; a note id is not, and the note is the one thing
+   * that makes the row mean anything.
+   */
+  const { data: note } = useEvent(
+    target.source === 'note' ? target.target : ''
+  );
+
   const label =
     target.source === 'article'
       ? target.target.split(':').slice(2).join(':') || 'Article'
-      : `${target.target.slice(0, 12)}…`;
+      : firstLine(note?.content) ?? `${target.target.slice(0, 12)}…`;
+
+  /** Hex reads as a reference; a sentence reads as a sentence. */
+  const isIdentifier = target.source === 'article' || !note?.content.trim();
 
   const body = (
     <div className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:border-primary/40">
-      <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+      <span
+        className={cn(
+          'min-w-0 flex-1 truncate text-xs',
+          isIdentifier ? 'font-mono text-muted-foreground' : 'text-foreground'
+        )}
+      >
         {label}
       </span>
       <span className="shrink-0 text-xs text-muted-foreground">
@@ -358,6 +434,15 @@ function TargetRow({ target }: { target: TopTarget }) {
   );
 
   return href ? <Link to={href}>{body}</Link> : body;
+}
+
+/** Enough of a note to recognise it in a list. */
+function firstLine(content: string | undefined): string | null {
+  const trimmed = content?.trim();
+  if (!trimmed) return null;
+
+  const line = trimmed.split('\n').find((part) => part.trim()) ?? trimmed;
+  return line.length > 90 ? `${line.slice(0, 90).trimEnd()}…` : line;
 }
 
 export default StudioPage;

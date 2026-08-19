@@ -96,6 +96,7 @@ export function ZapGoalCard({
       goal={data.goal}
       progress={data.progress}
       unreachable={data.unreachable}
+      rejected={data.rejected}
       className={className}
     />
   );
@@ -113,6 +114,7 @@ function GoalBody({
   goal,
   progress,
   unreachable,
+  rejected = 0,
   className,
 }: {
   goal: ZapGoal;
@@ -124,6 +126,8 @@ function GoalBody({
    * them apart quietly reports the wrong one.
    */
   unreachable: boolean;
+  /** Receipts that arrived naming this goal and failed a NIP-57 check. */
+  rejected?: number;
   className?: string;
 }) {
   const { user } = useCurrentUser();
@@ -204,6 +208,38 @@ function GoalBody({
             <p className="text-xs text-muted-foreground">
               Couldn't reach the relays this goal counts from, so the total may
               be behind.
+            </p>
+          )}
+
+          {/*
+            Every reason the bar is lower than somebody expects, in the one
+            place they will look for it.
+
+            A goal that has been paid and reads zero was previously
+            indistinguishable from a goal nobody has zapped — and "I sent sats
+            and the bar did not move" is the only question anyone ever asks
+            about a progress bar.
+          */}
+          {progress.excludedCount > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {progress.excludedCount === 1
+                ? 'One zap of '
+                : `${progress.excludedCount} zaps totalling `}
+              {formatSats(Math.round(progress.excludedMsat / 1000))} sats named
+              this goal but{' '}
+              {progress.isClosed
+                ? 'arrived after it closed'
+                : 'was sent before it opened'}
+              , so {progress.excludedCount === 1 ? 'it is' : 'they are'} not in
+              the total.
+            </p>
+          )}
+
+          {rejected > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {rejected === 1 ? 'One receipt' : `${rejected} receipts`} named
+              this goal and failed a NIP-57 check, so{' '}
+              {rejected === 1 ? 'it is' : 'they are'} not counted.
             </p>
           )}
         </div>
@@ -338,6 +374,7 @@ export function LinkedZapGoal({
       goal={data.goal}
       progress={data.progress}
       unreachable={data.unreachable}
+      rejected={data.rejected}
       className={className}
     />
   );

@@ -10,8 +10,10 @@ import { createAuthHandler, type AuthPolicy } from '@/lib/nip42';
 import { readRelays, writeRelays } from '@/lib/relay';
 import {
   INDEXER_RELAYS,
+  RECEIPT_RELAYS,
   canonicalTargets,
   isIdentityRequest,
+  isZapReceiptRequest,
   withPrimaryFirst,
 } from '@/lib/relayRouting';
 import { getRelayHealthMonitor } from '@/lib/relayHealth';
@@ -225,6 +227,25 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
         if (isIdentityRequest(filters)) {
           const withIndexers = canonicalTargets([...toQuery, ...INDEXER_RELAYS]);
           return new Map(withIndexers.map((url) => [url, filters]));
+        }
+
+        /**
+         * A request purely about zap receipts asks where receipts actually go.
+         *
+         * The one case outbox routing cannot reach. A receipt is published by
+         * the sender's lightning server to the relays named in the sender's
+         * zap request — so it is neither the reader's choice nor the author's,
+         * and the filter names no author to route by. A zap sent from another
+         * client lands on that client's relays, and asking only the reader's
+         * is how a paid creator reads a total lower than they were paid.
+         *
+         * Not capped by `MAX_READ_RELAYS`, deliberately: this fires only for
+         * earnings totals and goal tallies, which are a handful of requests on
+         * purpose-built screens rather than anything in a feed.
+         */
+        if (isZapReceiptRequest(filters)) {
+          const wide = canonicalTargets([...toQuery, ...RECEIPT_RELAYS]);
+          return new Map(wide.map((url) => [url, filters]));
         }
 
         /**

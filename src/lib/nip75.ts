@@ -169,6 +169,25 @@ export function linkedGoal(
 }
 
 /**
+ * How far outside the window a receipt may fall and still count.
+ *
+ * Not a fudge factor — a correction for the fact that the two timestamps being
+ * compared are set by different machines. A goal's `created_at` comes from the
+ * browser that published it; a receipt's comes from the LNURL server that
+ * signed it, which is somebody else's computer with its own clock. Nothing
+ * keeps them in step, and a server running a minute behind stamps a receipt
+ * *earlier* than the goal it is paying into — so the zap is thrown out and the
+ * bar does not move, for a payment that plainly happened afterwards.
+ *
+ * Five minutes is chosen against what the bound is actually defending: a note
+ * announcing a goal is usually older than the goal by hours or days, and the
+ * zaps being excluded are that note's history. Nothing in that range is
+ * anywhere near five minutes, so the defence is untouched while ordinary clock
+ * drift stops eating people's money.
+ */
+export const CLOCK_SKEW_TOLERANCE = 300;
+
+/**
  * Whether a receipt counts toward a goal.
  *
  * Both ends of the window, not just the deadline. A goal announced in a note
@@ -177,6 +196,9 @@ export function linkedGoal(
  * itself with every zap that note had ever collected. Money raised before
  * anyone was asked for it is not money raised toward the asking.
  *
+ * Both ends carry the skew tolerance above, and for the same reason at each: a
+ * payment made a moment before a deadline can be stamped a moment after it.
+ *
  * `startedAt` is optional so a caller that only has the parsed tags can still
  * check the deadline.
  */
@@ -184,11 +206,17 @@ export function countsTowardGoal(
   goal: Pick<ZapGoal, 'closedAt'> & { startedAt?: number },
   receiptCreatedAt: number
 ): boolean {
-  if (goal.startedAt !== undefined && receiptCreatedAt < goal.startedAt) {
+  if (
+    goal.startedAt !== undefined &&
+    receiptCreatedAt < goal.startedAt - CLOCK_SKEW_TOLERANCE
+  ) {
     return false;
   }
 
-  return goal.closedAt === undefined || receiptCreatedAt <= goal.closedAt;
+  return (
+    goal.closedAt === undefined ||
+    receiptCreatedAt <= goal.closedAt + CLOCK_SKEW_TOLERANCE
+  );
 }
 
 export interface GoalProgress {
@@ -201,6 +229,19 @@ export interface GoalProgress {
   /** True once `closed_at` has passed. */
   isClosed: boolean;
   contributorCount: number;
+  /**
+   * Valid zaps that fell outside the goal's window, so were not added.
+   *
+   * The bar's silent subtraction, said out loud. A receipt dropped here passed
+   * every NIP-57 check — the money is real and it names this goal — it just
+   * carries a timestamp before the goal opened or after it closed. That is
+   * usually correct and occasionally a clock, and either way somebody looking
+   * at a bar that did not move deserves to know a payment was set aside rather
+   * than never seen.
+   */
+  excludedCount: number;
+  /** Sats in those excluded zaps, for the same reason. */
+  excludedMsat: number;
 }
 
 export function goalProgress(
@@ -208,12 +249,16 @@ export function goalProgress(
   receipts: { amountMsat: number; senderPubkey?: string; createdAt: number }[],
   now: number = Math.floor(Date.now() / 1000)
 ): GoalProgress {
-  const counted = receipts.filter((receipt) =>
-    countsTowardGoal(
+  const counted: typeof receipts = [];
+  const excluded: typeof receipts = [];
+
+  for (const receipt of receipts) {
+    const inWindow = countsTowardGoal(
       { closedAt: goal.closedAt, startedAt: goal.event.created_at },
       receipt.createdAt
-    )
-  );
+    );
+    (inWindow ? counted : excluded).push(receipt);
+  }
 
   const raisedMsat = counted.reduce(
     (total, receipt) => total + receipt.amountMsat,
@@ -241,6 +286,11 @@ export function goalProgress(
     isReached: raisedMsat >= goal.amountMsat,
     isClosed: goal.closedAt !== undefined && goal.closedAt < now,
     contributorCount: contributors.size,
+    excludedCount: excluded.length,
+    excludedMsat: excluded.reduce(
+      (total, receipt) => total + receipt.amountMsat,
+      0
+    ),
   };
 }
 
