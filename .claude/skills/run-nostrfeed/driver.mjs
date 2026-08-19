@@ -457,11 +457,29 @@ async function flow(route, selectors, options) {
     for (const selector of selectors) {
       step += 1;
 
-      // Plain text is treated as a visible-label lookup, which is how a person
-      // describes a button — CSS selectors only when they start with . # or [
-      const locator = /^[.#[]/.test(selector)
-        ? page.locator(selector).first()
-        : page.getByText(selector, { exact: false }).first();
+      /*
+       * Plain text is a visible-label lookup, which is how a person describes
+       * a button — CSS selectors only when they start with `.`, `#` or `[`.
+       *
+       * Scoped to <main> when there is one. Every page here carries a sidebar
+       * whose links use the same words as the content: asking for "Relays" on
+       * the identity page matched the nav item and navigated away instead of
+       * opening the tab, which looks like the app is broken rather than the
+       * instruction being ambiguous. Falls back to the whole page when the
+       * word genuinely only exists in the chrome.
+       */
+      const inMain = page.locator('main');
+      const scope = (await inMain.count()) ? inMain : page;
+
+      let locator;
+      if (/^[.#[]/.test(selector)) {
+        locator = page.locator(selector).first();
+      } else {
+        locator = scope.getByText(selector, { exact: false }).first();
+        if (!(await locator.count())) {
+          locator = page.getByText(selector, { exact: false }).first();
+        }
+      }
 
       try {
         await locator.click({ timeout: 5000 });
