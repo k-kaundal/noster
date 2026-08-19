@@ -607,6 +607,7 @@ function UnpaidName({ address }: { address: Nip5Address }) {
    */
   const ledger = useLnbitsPayments();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const refresh = () =>
     Promise.all([
@@ -639,6 +640,7 @@ function UnpaidName({ address }: { address: Nip5Address }) {
    */
   const settledInvoice = paid.data === true;
   const spent = findNamePayment(nip5Identifier(address), ledger.data);
+  const receipt = spent?.payment_hash ?? watched;
 
   if (nip5State(address) !== 'inactive') return null;
 
@@ -694,14 +696,37 @@ function UnpaidName({ address }: { address: Nip5Address }) {
           <span className="font-medium">Don't pay again</span>; a second
           invoice would be a second charge for the same name.
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => void refresh()}
-        >
-          Check again
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={() => void refresh()}
+          >
+            Check again
+          </Button>
+
+          {/*
+            The payment's own id, because this is where somebody has to go
+            asking. Whoever runs the domain can only find this payment by its
+            hash — it is not in their sales list, precisely because the sale
+            never completed — and without it the report is "I paid and nothing
+            happened", which nobody can act on.
+          */}
+          {receipt && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await navigator.clipboard.writeText(receipt);
+                toast({ title: 'Payment reference copied' });
+              }}
+            >
+              <Copy className="mr-2 h-3.5 w-3.5" />
+              Reference
+            </Button>
+          )}
+        </div>
       </div>
     );
   }

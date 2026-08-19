@@ -816,6 +816,8 @@ interface LedgerEntry {
   status?: string;
   memo?: string;
   time?: string | number;
+  /** The one identifier an operator can look the payment up by. */
+  payment_hash?: string;
 }
 
 /**
