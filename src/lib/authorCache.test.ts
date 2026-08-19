@@ -61,6 +61,37 @@ describe('reconcileAuthor', () => {
     expect(reconcileAuthor(fetched, { event: profile(100) })).toBe(fetched);
   });
 
+  it('refuses a fetched profile that is older than the one in hand', () => {
+    /*
+     * The bug behind "I saved my profile and it changed back".
+     *
+     * Saving seeds the signed event into the cache, the refetch that follows
+     * reaches relays that have not indexed it yet, and they answer with the
+     * previous kind 0. This used to take any event at all — `if
+     * (fetched.event) return fetched` — so the stale answer won for arriving
+     * second, and the edit was published correctly and then thrown off the
+     * screen.
+     */
+    const justSaved: CachedAuthor = { event: profile(200, 'new name') };
+    const staleFromRelay: CachedAuthor = { event: profile(100, 'old name') };
+
+    expect(reconcileAuthor(staleFromRelay, justSaved)).toBe(justSaved);
+  });
+
+  it('takes a fetched profile with the same timestamp', () => {
+    // The same event coming back around; either is correct, and preferring
+    // the fetch keeps this agreeing with `shouldReplaceProfile`
+    const fetched: CachedAuthor = { event: profile(100, 'a') };
+    expect(reconcileAuthor(fetched, { event: profile(100, 'b') })).toBe(fetched);
+  });
+
+  it('keeps a known profile when the fetch has metadata but no event', () => {
+    // Metadata without an event cannot be dated, so it cannot be shown to be
+    // newer than something that can
+    const known: CachedAuthor = { event: profile(100) };
+    expect(reconcileAuthor({ metadata: { name: 'x' } }, known)).toBe(known);
+  });
+
   it('reports nothing when nothing is known either way', () => {
     // A key with genuinely no profile must still resolve, or every consumer
     // waits forever on a query that never settles

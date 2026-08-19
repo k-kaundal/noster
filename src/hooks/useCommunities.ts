@@ -8,6 +8,7 @@ import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useMuteList } from '@/hooks/useMuteList';
 import { useToast } from '@/hooks/useToast';
 import { filterMuted } from '@/lib/mute';
+import { activityByCommunity } from '@/lib/communityStats';
 import { buildCommentTags, targetFromEvent } from '@/lib/nip22';
 import { extractMentionPubkeys, extractQuotedEvents } from '@/lib/mention';
 import {
@@ -141,6 +142,46 @@ export function useCommunityPosts(community: Community | null) {
       refetch: query.refetch,
     };
   }, [query.data, query.isLoading, query.refetch, muteList, community]);
+}
+
+/**
+ * How busy each community on a page is, in one request for all of them.
+ *
+ * A directory card could state only when a community was *created*, which is
+ * the least useful fact about a message board: a place started three years ago
+ * and posted to yesterday reads identically to one started last week and
+ * abandoned. Somebody browsing wants to know whether anyone is there.
+ *
+ * One query rather than one per card, which is what makes it affordable. An
+ * approval carries the community in an `a` tag, so a single filter naming every
+ * address on the page answers for the whole page — see `activityByCommunity`.
+ */
+export function useCommunityActivity(communities: readonly Community[]) {
+  const { nostr } = useNostr();
+
+  const addresses = useMemo(
+    () => communities.map(communityAddress).sort(),
+    [communities]
+  );
+
+  const query = useQuery({
+    queryKey: ['community-activity', addresses.join(',')],
+    queryFn: async (c) => {
+      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(6000)]);
+
+      return nostr.query(
+        [{ kinds: [APPROVAL_KIND], '#a': addresses, limit: 1000 }],
+        { signal }
+      );
+    },
+    enabled: addresses.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return useMemo(
+    () => activityByCommunity(query.data ?? []),
+    [query.data]
+  );
 }
 
 /** Creating or editing a community definition. */

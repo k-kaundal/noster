@@ -237,18 +237,43 @@ export async function lnbitsRequest<T>(
 }
 
 /**
+ * The wordings LNbits has used for "this account has not switched that on".
+ *
+ * Matched as alternatives rather than one exact phrase, which is what this
+ * used to do — it tested for `extension '<id>' not enabled` and nothing else,
+ * so an instance answering `User not authorized for extension 'lnurlp'.`
+ * fell straight through `withExtension` without ever being offered the enable
+ * call that fixes it. The user saw a raw authorisation error on a feature that
+ * was one PUT away from working.
+ *
+ * Both phrasings are the same condition and the same remedy, so both belong
+ * here, and the list is expected to grow as LNbits rewords it again.
+ */
+const NOT_ENABLED = /not enabled|not authori[sz]ed/i;
+
+/**
  * Whether LNbits refused because the extension is not enabled *for this user*.
  *
  * Distinct from the extension being uninstalled or switched off server-wide:
  * an extension can be installed and active, yet still disabled on an account,
  * because a new account only gets the extensions listed in the instance's
  * `lnbits_user_default_extensions` (empty by default).
+ *
+ * The message must name the extension as well as complain, so a plain "not
+ * authorised" from an expired session is not mistaken for one — those need a
+ * fresh login, and silently trying to enable something would hide that.
  */
 export function isExtensionNotEnabled(error: unknown, extId: string): boolean {
-  return (
-    error instanceof LnbitsError &&
-    new RegExp(`extension '${extId}' not enabled`, 'i').test(error.message)
-  );
+  if (!(error instanceof LnbitsError)) return false;
+  if (!NOT_ENABLED.test(error.message)) return false;
+
+  // Quoted either way, or bare, depending on the version doing the refusing
+  const named = new RegExp(`['"\`]?\\b${escapeRegExp(extId)}\\b['"\`]?`, 'i');
+  return named.test(error.message);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /** Turns an extension on for the signed-in account. Needs the session token. */
@@ -278,11 +303,43 @@ export async function withExtension<T>(
   try {
     return await request();
   } catch (error) {
-    // Without a session there is nothing to enable it against, so the original
-    // failure is the honest one to report
-    if (!token || !isExtensionNotEnabled(error, extId)) throw error;
+    if (!isExtensionNotEnabled(error, extId)) throw error;
 
-    await enableExtension(extId, token);
+    /*
+     * Enabling needs the session token, and an API key is not one. Said
+     * plainly rather than re-throwing the server's wording, because "not
+     * authorized for extension 'lnurlp'" reads like a permissions problem
+     * an administrator has to solve, when the actual cause is that this
+     * browser has no LNbits session to switch anything on with.
+     */
+    if (!token) {
+      throw new LnbitsError(
+        `Your ${extId} extension is not switched on for this account, and ` +
+          'this app has no LNbits session to switch it on with. Sign in to ' +
+          'the wallet again and retry.',
+        (error as LnbitsError).status,
+        (error as LnbitsError).body
+      );
+    }
+
+    try {
+      await enableExtension(extId, token);
+    } catch (enableError) {
+      /*
+       * The remedy failing means something an account cannot fix: the
+       * extension is not installed on the server, or the instance forbids
+       * users enabling their own. Both need the administrator, and saying so
+       * is more use than repeating the original refusal.
+       */
+      throw new LnbitsError(
+        `Could not switch on the '${extId}' extension for this account. It ` +
+          'may not be installed on the server — an LNbits administrator can ' +
+          `install it from Extensions and enable '${extId}'.`,
+        enableError instanceof LnbitsError ? enableError.status : 0,
+        enableError instanceof LnbitsError ? enableError.body : undefined
+      );
+    }
+
     return await request();
   }
 }

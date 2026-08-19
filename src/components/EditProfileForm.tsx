@@ -19,7 +19,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Loader2, Upload, Zap } from 'lucide-react';
 import { NSchema as n, type NostrMetadata } from '@nostrify/nostrify';
-import { useQueryClient } from '@tanstack/react-query';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useLightningAddress } from '@/hooks/useLightningAddress';
 import { useAddressCheck } from '@/hooks/useAddressCheck';
@@ -31,8 +30,6 @@ interface EditProfileFormProps {
 }
 
 export const EditProfileForm: React.FC<EditProfileFormProps> = ({ onSuccess }) => {
-  const queryClient = useQueryClient();
-
   const { user, metadata } = useCurrentUser();
   const { mutateAsync: publishEvent, isPending } = useNostrPublish();
   const { mutateAsync: uploadFile, isPending: isUploading } = useUploadFile();
@@ -118,9 +115,20 @@ export const EditProfileForm: React.FC<EditProfileFormProps> = ({ onSuccess }) =
         content: JSON.stringify(data),
       });
 
-      // Invalidate queries to refresh the data
-      queryClient.invalidateQueries({ queryKey: ['logins'] });
-      queryClient.invalidateQueries({ queryKey: ['author', user.pubkey] });
+      /*
+       * Deliberately not invalidated.
+       *
+       * `useNostrPublish` has already seeded the cache with the signed event,
+       * which is the truth. Invalidating asks the relays — and they have not
+       * indexed it yet, so they answer with the *previous* profile, which then
+       * lands on top of the edit that was just made. That is the whole of "I
+       * saved my profile and it changed back".
+       *
+       * `reconcileAuthor` now refuses an older event whatever asks for it, so
+       * this is belt and braces rather than the only guard — but there is no
+       * reason to spend a request to be told something staler than what is
+       * already on screen. See `useAuthor`.
+       */
 
       toast({
         title: 'Profile updated',

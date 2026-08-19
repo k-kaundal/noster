@@ -41,21 +41,31 @@ export function shouldReplaceProfile(
 /**
  * Reconciles a fetch result with what is already known.
  *
+ * Two ways a fetch can be worse than what is in hand, and this used to guard
+ * only the first.
+ *
  * An empty result means "this relay has no kind 0 for that key", which is
  * equally what a relay says when it has not indexed one yet, when it timed
  * out, and when the user has just switched to it. Treating that as "they have
- * no profile" is what makes a name and avatar vanish mid-session, and what
- * would otherwise wipe a profile seeded seconds earlier from a signed event
- * the relays have not caught up with.
+ * no profile" is what makes a name and avatar vanish mid-session.
  *
- * Nothing is lost by keeping the old value: a real profile change arrives as
- * an event, and an event always replaces.
+ * But a relay can also answer with a *stale* profile, and that was accepted
+ * unconditionally — `if (fetched.event) return fetched`. That is the bug
+ * behind "I saved my profile and it changed back": saving seeds the new event
+ * into the cache, the refetch that follows reaches relays which have not
+ * indexed it yet, they serve the previous kind 0, and it wins for having
+ * arrived second. The edit was published correctly and the screen threw it
+ * away.
+ *
+ * Kind 0 is replaceable, so the rule is NIP-01's own — newest `created_at`
+ * wins, whichever direction it came from.
  */
 export function reconcileAuthor<T extends CachedAuthor>(
   fetched: T,
   existing: T | undefined
 ): T {
-  if (fetched.event) return fetched;
-  if (existing?.event) return existing;
-  return fetched;
+  if (!fetched.event) return existing?.event ? existing : fetched;
+  if (!existing?.event) return fetched;
+
+  return shouldReplaceProfile(fetched.event, existing.event) ? fetched : existing;
 }
