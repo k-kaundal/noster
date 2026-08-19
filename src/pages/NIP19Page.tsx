@@ -7,6 +7,7 @@ import { PostPage } from '@/components/PostPage';
 import { AddressableView } from '@/components/AddressableView';
 import { VanityProfile } from '@/components/VanityProfile';
 import { parseHandle } from '@/lib/nip05Lookup';
+import { rememberRelayHints } from '@/lib/outboxRouting';
 import NotFound from './NotFound';
 
 export function NIP19Page() {
@@ -76,6 +77,16 @@ export function NIP19Page() {
       );
 
     case 'nprofile':
+      /*
+       * The relay hints in the link are the answer to the bootstrap question,
+       * handed over in the URL. An `npub` cannot carry them and an `nprofile`
+       * can, which is the entire difference between the two forms — and they
+       * were being decoded and discarded, so arriving by the better link was
+       * worth exactly nothing. Recorded below any signed relay list, so the
+       * person's own answer always outranks the link's.
+       */
+      rememberRelayHints(data.pubkey, data.relays);
+
       return (
         <Layout>
           <Profile pubkey={data.pubkey} />

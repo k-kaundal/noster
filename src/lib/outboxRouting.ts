@@ -83,6 +83,47 @@ export function rememberRelayLists(events: readonly NostrEvent[]): boolean {
   return changed;
 }
 
+/**
+ * Where a NIP-19 pointer said someone publishes.
+ *
+ * `nprofile` and `nevent` can carry relay hints, and a plain `npub` cannot —
+ * which is the whole reason the longer forms exist. Somebody who arrives on a
+ * profile through an `nprofile` link is handed the answer to the bootstrap
+ * question in the URL itself, and this app was decoding it and dropping it on
+ * the floor.
+ *
+ * Recorded at `at: 0`, below any real event, so a signed kind 10002 always
+ * wins and a hint can never overwrite one. A hint is a claim by whoever
+ * pasted the link; a relay list is a claim by the person themselves, and the
+ * two should not be able to argue.
+ */
+export function rememberRelayHints(
+  pubkey: string,
+  relays: readonly string[] | undefined
+): boolean {
+  if (!relays?.length) return false;
+  if (table.has(pubkey)) return false;
+
+  /*
+   * Checked for a websocket scheme before normalizing, not after.
+   *
+   * `normalizeRelayUrl` *coerces* — it prepends `wss://` to anything without a
+   * scheme, which is right for a relay field somebody typed and wrong for
+   * this. These hints come out of arbitrary pointers written by arbitrary
+   * clients, and coercing them puts `wss://https://example.com/` in the
+   * routing table and then opens a socket to it.
+   */
+  const usable = relays.filter(
+    (url) => /^wss?:\/\//i.test(url.trim())
+  );
+
+  const canonical = canonicalTargets(usable);
+  if (!canonical.length) return false;
+
+  table.set(pubkey, { relays: canonical, at: 0 });
+  return true;
+}
+
 /** Every relay list currently known, for storing. */
 export function knownRelayLists(): Map<string, { relays: string[]; at: number }> {
   return new Map(table);
