@@ -21,7 +21,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { useCommunities, usePublishCommunity } from '@/hooks/useCommunities';
+import {
+  useCommunities,
+  useCommunityActivity,
+  usePublishCommunity,
+} from '@/hooks/useCommunities';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useUploadFile } from '@/hooks/useUploadFile';
 import { useToast } from '@/hooks/useToast';
@@ -33,6 +37,7 @@ import {
   roleIn,
   type Community,
 } from '@/lib/community';
+import { describeActivity } from '@/lib/communityStats';
 import { formatMonthYear } from '@/lib/time';
 import { CommunityEditor } from '@/components/communities/CommunityEditor';
 
@@ -41,6 +46,15 @@ export function CommunitiesPage() {
 
   const { user } = useCurrentUser();
   const { communities, isLoading } = useCommunities();
+
+  /**
+   * How busy each of these is, in one request for the whole page.
+   *
+   * A card could previously say only when a community was created, which is
+   * the least useful fact about a message board — a place started three years
+   * ago and posted to yesterday reads the same as one abandoned last week.
+   */
+  const activity = useCommunityActivity(communities);
 
   /**
    * What this person runs, above what merely exists.
@@ -99,6 +113,7 @@ export function CommunitiesPage() {
                     <CommunityCard
                       key={communityAddress(community)}
                       community={community}
+                      activity={activity.get(communityAddress(community))}
                     />
                   ))}
                 </div>
@@ -118,6 +133,7 @@ export function CommunitiesPage() {
                     <CommunityCard
                       key={communityAddress(community)}
                       community={community}
+                      activity={activity.get(communityAddress(community))}
                     />
                   ))}
                 </div>
@@ -134,7 +150,14 @@ export function CommunitiesPage() {
   );
 }
 
-function CommunityCard({ community }: { community: Community }) {
+function CommunityCard({
+  community,
+  activity,
+}: {
+  community: Community;
+  /** Approved posts and when the last one landed, when it is known. */
+  activity?: { posts: number; lastPostAt: number };
+}) {
   const { user } = useCurrentUser();
   const [editing, setEditing] = useState(false);
 
@@ -184,15 +207,21 @@ function CommunityCard({ community }: { community: Community }) {
             </p>
           )}
 
-          {/* The facts a card can state without a request of its own */}
+          {/*
+            Whether anyone is here, before how old it is. "Started March 2023"
+            was the only fact on this card and it is the one that says least:
+            a board posted to yesterday and one abandoned for a year wear the
+            same label. The age stays, demoted to where an age belongs.
+          */}
           <p className="text-xs text-muted-foreground">
-            {/* Seconds to milliseconds: a Nostr timestamp handed straight to a
-                date formatter renders January 1970 */}
-            Started {formatMonthYear(community.createdAt * 1000)}
-            {community.relays.length > 0 &&
-              ` · ${community.relays.length} ${
-                community.relays.length === 1 ? 'relay' : 'relays'
-              }`}
+            {activity?.posts
+              ? `${activity.posts.toLocaleString()} ${
+                  activity.posts === 1 ? 'post' : 'posts'
+                }`
+              : 'No posts yet'}
+            {activity?.lastPostAt
+              ? ` · ${describeActivity(activity.lastPostAt)}`
+              : ` · started ${formatMonthYear(community.createdAt * 1000)}`}
           </p>
         </CardContent>
 
