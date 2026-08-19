@@ -157,6 +157,27 @@ export interface Nip5AddressExtra {
   referer?: string;
 }
 
+/**
+ * The server's verdict on a code, as `PromoCodeStatus` in the schema.
+ *
+ * The extension computes this from its own promotion list and hangs it off the
+ * address — it is stored nowhere, so it is recomputed on every read and always
+ * reflects the promotion as it stands now.
+ *
+ * `buyer_discount` is a **percent**, and zero is the answer for a code the
+ * server has never heard of: `get_promotion` returns nothing and the percent
+ * falls to 0. That is the whole reason this field is worth reading. Everything
+ * else about a bad code looks exactly like a good one — the claim succeeds, an
+ * invoice is raised, no error is reported anywhere.
+ */
+export interface Nip5PromoCodeStatus {
+  /** Percent off, 0–100. Zero means no promotion matched the code. */
+  buyer_discount?: number | null;
+  /** Whether the code lets the buyer name who gets the referrer's cut. */
+  allow_referer?: boolean;
+  referer?: string | null;
+}
+
 /** An identifier owned by an account, as `Address` in the extension's schema. */
 export interface Nip5Address {
   id: string;
@@ -169,6 +190,14 @@ export interface Nip5Address {
   /** ISO 8601. Absent on a free or never-expiring name. */
   expires_at?: string;
   time?: string;
+  /**
+   * What the server makes of the code on this address.
+   *
+   * Present on a claim response and on every entry from `/user/addresses`, so
+   * a reservation left unpaid still carries the verdict on the code it was
+   * made with — days later, in another browser.
+   */
+  promo_code_status?: Nip5PromoCodeStatus;
   extra?: Nip5AddressExtra;
 }
 
@@ -441,13 +470,23 @@ export function isLnAddressPending(
 /**
  * Cleans up a promo code the way somebody will actually type one.
  *
- * These get read off a poster, a podcast, a friend's message — with a trailing
- * space, in the wrong case, occasionally wrapped in quotes. All of those name
- * a real code and all of them fail an exact comparison on the server, which
- * answers "no such promotion" and looks like the code was fake.
+ * These get read off a poster, a podcast, a friend's message, and arrive with
+ * a trailing space or wrapped in quotes — neither of which the person meant to
+ * type, and both of which fail the server's comparison.
+ *
+ * The case is left exactly as typed, which is a correction: this used to
+ * uppercase, and the extension compares `promotion.code == promo_code` with no
+ * folding at all. So a code the operator entered as `spring24` could not be
+ * redeemed by anybody, however carefully they typed it — the client rewrote it
+ * to `SPRING24` on the way out and the server found no such promotion. Forcing
+ * a case invents one the person did not choose; leaving it alone at worst
+ * fails a code they typed wrongly, which they can see and fix.
+ *
+ * A code may also carry a referrer as `CODE@name`, which the server splits off
+ * itself. Case matters there too — it names somebody's identifier.
  */
 export function normalizePromoCode(input: string): string {
-  return input.trim().replace(/^["']|["']$/g, '').toUpperCase();
+  return input.trim().replace(/^["']|["']$/g, '');
 }
 
 /**
@@ -470,6 +509,15 @@ export interface PriceBreakdown {
   promo: PromoResult;
   /** The code, as the server recorded it or as it was typed. */
   code?: string;
+  /**
+   * Whether the server itself answered for the code, rather than the answer
+   * being read off the price.
+   *
+   * The difference is worth carrying: checked, "there is no such code" is a
+   * fact the server stated; unchecked, it is the best reading of two numbers,
+   * and a promotion worth nothing to this buyer looks identical to a typo.
+   */
+  checked: boolean;
   /** The unit both figures are in: `sats`, or the domain's currency. */
   unit: string;
   /** The list price, before any code. Absent when the search never answered. */
@@ -495,18 +543,26 @@ function figure(value: unknown): number | undefined {
  * to ask before. The extension's search endpoint takes a name and a year count
  * and nothing else, and the promotions themselves live on the domain record,
  * which is readable only with the operator's API key — a key that cannot go in
- * a browser bundle. So the invoice is the first moment a code's worth exists,
- * and this is how that moment gets shown as a sum rather than as one number
- * with no story.
+ * a browser bundle. So the reservation is the first moment a code's worth
+ * exists, and this is how that moment gets shown as a sum rather than as one
+ * number with no story.
  *
- * Takes the typed code as well as the address, because the server's silence is
- * only legible against somebody's intent: with no code typed there is nothing
- * to report, and with one typed a price that did not move is news.
+ * `status` is the server answering for the code directly, and it outranks
+ * everything else here. The extension hands back a `buyer_discount` percent
+ * with the reservation and with every later read of the address — zero for a
+ * code it has no promotion for. Reading it turns the one question that used to
+ * be a guess ("did that code do anything?") into something checked, and it
+ * answers even when nothing was quoted to compare against.
+ *
+ * The typed code matters too, because the server's silence is only legible
+ * against somebody's intent: with no code typed there is nothing to report,
+ * and with one typed a price that did not move is news.
  */
 export function priceBreakdown(
   quoted: Pick<Nip5AddressStatus, 'price' | 'price_in_sats' | 'currency'> | null | undefined,
   charged: Nip5AddressExtra | null | undefined,
-  typedCode?: string
+  typedCode?: string,
+  status?: Nip5PromoCodeStatus | null
 ): PriceBreakdown {
   /*
    * Sats when either side carries them, which is nearly always: the extension
@@ -522,18 +578,43 @@ export function priceBreakdown(
     ? 'sats'
     : (charged?.currency || quoted?.currency || 'sats').trim() || 'sats';
 
-  const list = inSats ? figure(quoted?.price_in_sats) : figure(quoted?.price);
   const paid = inSats ? figure(charged?.price_in_sats) : figure(charged?.price);
+  const code = normalizePromoCode(typedCode ?? '') || charged?.promo_code;
+
+  /** The percent the server says this code is worth. Zero means no such code. */
+  const stated = code ? figure(status?.buyer_discount) : undefined;
+
+  /**
+   * What it lists at.
+   *
+   * The search quote when there is one — but a reservation reopened later has
+   * no quote beside it, and the extension stores only the price *after* the
+   * discount, so the list price is gone from the record entirely. The stated
+   * percent puts it back: it is the one number from which the other two follow.
+   */
+  const quotedList = inSats ? figure(quoted?.price_in_sats) : figure(quoted?.price);
+  const list =
+    quotedList ??
+    (paid !== undefined && stated !== undefined && stated > 0 && stated < 100
+      ? paid / (1 - stated / 100)
+      : undefined);
 
   const saved =
     list !== undefined && paid !== undefined && paid < list
       ? list - paid
       : undefined;
 
-  const code = normalizePromoCode(typedCode ?? '') || charged?.promo_code;
-
   const promo = ((): PromoResult => {
     if (!code) return 'none';
+
+    /*
+     * The server's own answer, which is not a reading of anything. A promotion
+     * it cannot find scores zero, and that is the case worth being certain
+     * about — the claim still succeeds and the invoice is still raised, so
+     * every other sign of a dead code is indistinguishable from a live one.
+     */
+    if (stated !== undefined) return stated > 0 ? 'applied' : 'ignored';
+
     if (saved !== undefined) return 'applied';
 
     /*
@@ -550,15 +631,43 @@ export function priceBreakdown(
   return {
     promo,
     code: code || undefined,
+    checked: stated !== undefined,
     unit,
     list,
     paid,
     saved,
+    /*
+     * The stated percent wins over the computed one. Both describe the same
+     * discount, but the server's is the figure the promotion was written with,
+     * while ours is a ratio of two rounded amounts — so a 15% code can come
+     * back out as 14% purely from the sats conversion.
+     */
     savedPercent:
-      saved !== undefined && list
-        ? Math.round((saved / list) * 100)
-        : undefined,
+      stated !== undefined && stated > 0
+        ? Math.round(stated)
+        : saved !== undefined && list
+          ? Math.round((saved / list) * 100)
+          : undefined,
   };
+}
+
+/**
+ * Why a reservation with a code in it failed, when the reason is the code.
+ *
+ * A code worth 100% takes the price to zero, and the extension asserts on a
+ * falsy price before it ever gets to raising an invoice — so a full-value code
+ * is refused by the arithmetic rather than honoured, and the only thing said
+ * about it is `Cannot compute price for 'name'`, which reads like the name is
+ * the problem. Nothing in the flow suggests removing the code, which is the
+ * one thing that makes the reservation go through.
+ */
+export function promoClaimHint(
+  message: string,
+  code?: string
+): string | null {
+  if (!code || !/cannot compute price/i.test(message)) return null;
+
+  return `${code} appears to take the price to nothing, and a name cannot be reserved for an invoice of zero. Reserve it without the code, or use one worth less than the full price.`;
 }
 
 /** An amount in whichever unit the breakdown is denominated in. */

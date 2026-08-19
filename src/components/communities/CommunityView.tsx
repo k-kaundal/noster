@@ -25,7 +25,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Tooltip,
@@ -42,6 +41,7 @@ import {
   summarizeCommunity,
 } from '@/lib/communityStats';
 import { CommunityEditor } from './CommunityEditor';
+import { CommunityComposer } from './CommunityComposer';
 import { ZapButton } from '@/components/ZapButton';
 import { ZapStats } from '@/components/ZapStats';
 import { CommunityVerificationBadge } from './CommunityVerificationBadge';
@@ -397,76 +397,18 @@ function ModeratorChip({ pubkey }: { pubkey: string }) {
 /**
  * The box for writing a post.
  *
- * Opens on focus rather than sitting open. A permanently expanded composer
- * pushed the board itself below the fold on a phone, so the first thing you
- * saw on a community you had come to read was an empty text box.
+ * The composer itself lives in `CommunityComposer`; this wires it to the
+ * community it posts into.
  */
 function ComposeToCommunity({ community }: { community: Community }) {
-  const { user } = useCurrentUser();
   const { post, isPosting } = usePostToCommunity(community);
-  const [content, setContent] = useState('');
-  const [open, setOpen] = useState(false);
-
-  const author = useAuthor(user?.pubkey);
-  const metadata = author.data?.metadata;
-  const name = metadata?.name || genUserName(user?.pubkey ?? '');
-
-  const expanded = open || !!content.trim();
 
   return (
-    <Card>
-      <CardContent className="pt-5">
-        <div className="flex gap-3">
-          <Avatar className="h-9 w-9 shrink-0">
-            <AvatarImage src={metadata?.picture} alt="" />
-            <AvatarFallback className="text-xs">
-              {name.slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-
-          <div className="min-w-0 flex-1 space-y-2">
-            <Textarea
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-              onFocus={() => setOpen(true)}
-              placeholder={`Post to ${community.name}…`}
-              aria-label={`Post to ${community.name}`}
-              className={cn(
-                'resize-none transition-[min-height]',
-                expanded ? 'min-h-[88px]' : 'min-h-[40px]'
-              )}
-            />
-
-            {expanded && (
-              <div className="flex items-center justify-between gap-3">
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Shield className="h-3.5 w-3.5 shrink-0" />
-                  A moderator sees this before the board does.
-                </p>
-                <Button
-                  size="sm"
-                  disabled={isPosting || !content.trim()}
-                  onClick={() =>
-                    post(content).then(
-                      () => {
-                        setContent('');
-                        setOpen(false);
-                      },
-                      () => undefined
-                    )
-                  }
-                >
-                  {isPosting && (
-                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                  )}
-                  Post
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <CommunityComposer
+      communityName={community.name}
+      isPosting={isPosting}
+      onPost={(content, images) => post({ content, images })}
+    />
   );
 }
 
