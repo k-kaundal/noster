@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { NostrEvent } from '@nostrify/nostrify';
 import {
   EMPTY_SUMMARY,
+  dailyEarnings,
   describeSource,
   earningFrom,
   summarizeStudio,
@@ -253,5 +254,51 @@ describe('describeSource', () => {
     expect(describeSource('note')).toBe('Zaps on notes');
     expect(describeSource('article')).toBe('Zaps on articles');
     expect(describeSource('profile')).toBe('Zaps on your profile');
+  });
+});
+
+describe('dailyEarnings', () => {
+  const DAY = 86400;
+  const today = Math.floor(NOW / 1000 / DAY) * DAY;
+
+  const at = (day: number, sats = 100): Earning => ({
+    receiptId: `${day}-${sats}`,
+    sats,
+    senderPubkey: 'alice',
+    at: today - day * DAY + 3600,
+    source: 'note',
+    target: 'note-1',
+  });
+
+  it('gives one bucket per day of the window', () => {
+    expect(dailyEarnings([], 7, NOW)).toHaveLength(7);
+  });
+
+  it('keeps the days nothing arrived', () => {
+    /*
+     * The empty days are the point. Dropping them turns a line into a lie —
+     * three payments in a month would draw as a steady rise across three
+     * evenly spaced points, when what happened is a flat month with spikes.
+     */
+    const days = dailyEarnings([at(0), at(6)], 7, NOW);
+
+    expect(days.map((d) => d.sats)).toEqual([100, 0, 0, 0, 0, 0, 100]);
+  });
+
+  it('runs oldest to newest', () => {
+    const days = dailyEarnings([], 3, NOW);
+    expect(days[0].day).toBeLessThan(days[2].day);
+  });
+
+  it('adds up everything that landed on one day', () => {
+    const days = dailyEarnings([at(1, 100), at(1, 250)], 3, NOW);
+    const day = days.find((entry) => entry.sats > 0);
+
+    expect(day?.sats).toBe(350);
+    expect(day?.payments).toBe(2);
+  });
+
+  it('ignores anything outside the window', () => {
+    expect(dailyEarnings([at(90)], 7, NOW).every((d) => d.sats === 0)).toBe(true);
   });
 });

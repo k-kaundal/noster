@@ -88,18 +88,35 @@ export function useLightningAddress({
    * the key still authenticates one wallet, and the extension expands the
    * query to every wallet its owner has.
    *
-   * Harmless on an instance that does not support the parameter, which ignores
-   * it and answers with the active wallet's links exactly as before.
+   * Asked for, then asked for again without it if the server objects.
+   *
+   * The parameter was assumed harmless on an instance that does not know it —
+   * FastAPI ignores unknown query strings, so usually it is. "Usually" is the
+   * problem: a strict route or a future version answers 4xx, this query does
+   * not retry, and the failure mode is somebody seeing *none* of their
+   * addresses rather than one wallet's worth. Half the list is a nuisance; a
+   * name you paid for looking like it was never created is not.
    */
   const links = useQuery<PayLink[]>({
     queryKey: ['lnurlp-links', wallet?.id ?? ''],
     queryFn: ({ signal }) =>
-      withExtension('lnurlp', token, () =>
-        lnbitsRequest<PayLink[]>('/lnurlp/api/v1/links?all_wallets=true', {
-          apiKey: wallet!.inkey,
-          signal,
-        })
-      ),
+      withExtension('lnurlp', token, async () => {
+        const read = (query: string) =>
+          lnbitsRequest<PayLink[]>(`/lnurlp/api/v1/links${query}`, {
+            apiKey: wallet!.inkey,
+            signal,
+          });
+
+        try {
+          return await read('?all_wallets=true');
+        } catch (error) {
+          // A cancelled request is not the server objecting, and retrying one
+          // would fire a second request after the caller walked away
+          if (signal?.aborted) throw error;
+
+          return await read('');
+        }
+      }),
     enabled: !!wallet,
     staleTime: 60 * 1000,
     retry: false,

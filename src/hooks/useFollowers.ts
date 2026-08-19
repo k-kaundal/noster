@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { NostrEvent } from '@nostrify/nostrify';
 
+import { useRelayCapabilities } from '@/hooks/useRelayCapabilities';
 import { uniqueAuthors } from '@/lib/eventMerge';
 import { recallSync, remember } from '@/lib/eventStore';
+import { countEvents } from '@/lib/relayCount';
 
 /**
  * Long enough for a slow relay to answer.
@@ -23,7 +25,30 @@ const FOLLOWERS_CAP = 3000;
 
 export function useFollowers(pubkey: string) {
   const { nostr } = useNostr();
+  const { countUrl } = useRelayCapabilities();
   const scope = `followers:${pubkey}`;
+
+  /**
+   * The relay's own tally, when it will give one.
+   *
+   * NIP-45 answers "how many" in a single frame, which is the whole reason
+   * this exists: the fetch below asks for a thousand contact lists to count
+   * the people who wrote them, and anyone with more followers than that was
+   * being shown a number that was really the limit. A relay that implements
+   * COUNT knows the answer without sending any of them.
+   *
+   * Kind 3 is replaceable, so a relay holds one per author and the count is a
+   * count of people. A relay that has not said it implements NIP-45 is never
+   * asked — `countUrl` is undefined and this query never runs.
+   */
+  const countQuery = useQuery({
+    queryKey: ['follower-count', pubkey, countUrl],
+    queryFn: ({ signal }) =>
+      countEvents(countUrl!, [{ kinds: [3], '#p': [pubkey] }], { signal }),
+    enabled: !!pubkey && !!countUrl,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const followersQuery = useQuery({
     queryKey: ['followers', pubkey],
@@ -91,10 +116,31 @@ export function useFollowers(pubkey: string) {
    */
   const followerPubkeys = uniqueAuthors(followers);
 
+  /**
+   * The larger of the two, because each can be short in a different way.
+   *
+   * The fetched set is capped at `FOLLOWERS_LIMIT` per relay but unions across
+   * every relay ever read, so it can exceed one relay's answer. The relay's
+   * own count is uncapped but covers only what that relay holds. Neither is
+   * ever an overcount — a follower has to exist to be in either — so the
+   * bigger number is the closer one.
+   */
+  const relayCount = countQuery.data?.count ?? 0;
+  const followerCount = Math.max(followerPubkeys.length, relayCount);
+
   return {
     followers,
     followerPubkeys,
-    followerCount: followerPubkeys.length,
+    followerCount,
+    /**
+     * True when the number is larger than the list of people behind it.
+     *
+     * Which it usually is once a relay answers COUNT: a page can show "12,400
+     * followers" while holding a thousand of them, and anything rendering an
+     * avatar row from `followerPubkeys` needs to know not to claim it is the
+     * whole set.
+     */
+    hasMoreThanLoaded: followerCount > followerPubkeys.length,
     isLoading: followersQuery.isLoading,
   };
 }

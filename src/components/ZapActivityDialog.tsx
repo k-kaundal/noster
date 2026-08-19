@@ -26,10 +26,20 @@ import type { ZapSummary, Zapper } from '@/lib/zapSummary';
  */
 export function ZapActivityDialog({
   summary,
+  missing = 0,
   open,
   onOpenChange,
 }: {
   summary: ZapSummary;
+  /**
+   * Receipts the relay holds that never reached this app.
+   *
+   * Said here rather than only on the button, because this is the list
+   * somebody scrolls looking for their own payment — and the answer "it is on
+   * the relay, this app has not loaded it" is the one that stops them
+   * concluding the zap was lost.
+   */
+  missing?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -57,6 +67,32 @@ export function ZapActivityDialog({
             ))}
           </ul>
         </ScrollArea>
+
+        {(missing > 0 || summary.rejected.length > 0) && (
+          <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+            {missing > 0 && (
+              <>
+                The relay holds{' '}
+                {missing === 1 ? 'one more receipt' : `${missing} more receipts`}{' '}
+                for this post that {missing === 1 ? 'has' : 'have'} not reached
+                this app, so {missing === 1 ? 'it is' : 'they are'} not in the
+                total below.{' '}
+              </>
+            )}
+            {summary.rejected.length > 0 && (
+              <>
+                {summary.rejected.length === 1
+                  ? 'One receipt arrived'
+                  : `${summary.rejected.length} receipts arrived`}{' '}
+                and failed a NIP-57 check (
+                <span className="font-mono">
+                  {[...new Set(summary.rejected.map((entry) => entry.reason))].join(', ')}
+                </span>
+                ).
+              </>
+            )}
+          </p>
+        )}
 
         <div className="flex items-baseline justify-between border-t pt-3">
           <span className="text-sm text-muted-foreground">Total</span>

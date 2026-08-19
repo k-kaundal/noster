@@ -111,6 +111,12 @@ export function useUserStats(pubkey: string) {
               [pubkey],
               readLud16(events.find((event) => event.kind === 0))
             ),
+            /*
+             * A ranking is where a forged receipt actually buys something, so
+             * here an unverifiable one does not count. On a note it still does
+             * — see `zapSummary`.
+             */
+            providerPolicy: 'require' as const,
           }
         );
 

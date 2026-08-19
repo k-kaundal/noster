@@ -98,15 +98,15 @@ describe('summarizeZaps', () => {
     expect(summary.zappers[0].pubkey).toBe(ALICE);
   });
 
-  it('refuses a receipt signed by anyone but the provider', () => {
+  it('refuses a receipt from the wrong provider where it would buy something', () => {
     /**
-     * The check that matters. Without it anybody can publish a kind 9735
-     * naming any note and any amount, and inflate the number readers judge a
-     * post by.
+     * The check that matters, in the place it matters. Without it anybody can
+     * publish a kind 9735 naming any note and any amount, and buy a place in
+     * a ranking for the price of an event.
      */
     const summary = summarizeZaps(
       [receipt({ signWith: impostorKey, bolt11: invoice('10m') })],
-      target
+      { ...target, providerPolicy: 'require' }
     );
 
     expect(summary.count).toBe(0);
@@ -114,6 +114,38 @@ describe('summarizeZaps', () => {
     // Counted as refused rather than silently dropped, so "I paid and it
     // is not showing" has an answer
     expect(summary.rejected.map((r) => r.reason)).toEqual(['wrong-provider']);
+  });
+
+  it('counts it anyway on a note, and says it could not be verified', () => {
+    /*
+     * The provider key is the one input this app has to guess — remembered
+     * from payments made in this browser, missing for most of the network,
+     * stale for some of the rest. Letting a guess delete a payment from the
+     * screen is the wrong way round, and it happened repeatedly: a key cached
+     * from one pay link refused every receipt from its neighbours.
+     */
+    const summary = summarizeZaps(
+      [receipt({ signWith: impostorKey, bolt11: invoice('10m') })],
+      target
+    );
+
+    expect(summary.count).toBe(1);
+    expect(summary.totalSats).toBe(1_000_000);
+    expect(summary.unverified).toBe(1);
+    expect(summary.rejected).toEqual([]);
+  });
+
+  it('still refuses a receipt that fails a check about itself', () => {
+    // Only the provider comparison is downgraded. Everything else is a fact
+    // about the receipt, not a guess about the world.
+    const summary = summarizeZaps([receipt({})], {
+      ...target,
+      eventId: 'a'.repeat(64),
+    });
+
+    expect(summary.count).toBe(0);
+    expect(summary.unverified).toBe(0);
+    expect(summary.rejected.map((r) => r.reason)).toEqual(['wrong-target']);
   });
 
   it('ignores receipts about a different note', () => {
@@ -142,6 +174,42 @@ describe('summarizeZaps', () => {
     const one = receipt({ senderKey: aliceKey });
 
     expect(summarizeZaps([one, one, one], target).totalSats).toBe(1_000);
+  });
+
+  it('reports how many receipts arrived, whatever became of them', () => {
+    /*
+     * The denominator, and the thing the app could not previously see. A
+     * receipt that was refused and a receipt that never arrived look identical
+     * from the total alone, and they have entirely different causes — one is a
+     * validation bug, the other a relay that was not asked. Comparing this
+     * against the relay's own NIP-45 count separates them.
+     */
+    const summary = summarizeZaps(
+      [
+        receipt({ senderKey: aliceKey }),
+        receipt({ senderKey: bobKey, recipient: 'f'.repeat(64) }),
+      ],
+      target
+    );
+
+    expect(summary.count).toBe(1);
+    expect(summary.rejected).toHaveLength(1);
+    expect(summary.received).toBe(2);
+  });
+
+  it('counts a refused receipt once however many relays returned it', () => {
+    /*
+     * Deduplication used to happen only on acceptance, so a single refused
+     * receipt arriving from four relays was listed four times — turning
+     * "1 zap not counted" into "4 zaps not counted" on a well-connected
+     * client, and pointing at a problem four times bigger than the real one.
+     */
+    const wrong = receipt({ recipient: 'f'.repeat(64) });
+
+    const summary = summarizeZaps([wrong, wrong, wrong, wrong], target);
+
+    expect(summary.rejected).toHaveLength(1);
+    expect(summary.received).toBe(1);
   });
 
   it('counts two zaps from one person as two', () => {
@@ -309,12 +377,12 @@ describe('describeZapSummary', () => {
     // One big zap and twelve small ones say very different things, and a
     // total alone cannot tell them apart
     expect(
-      describeZapSummary({ totalSats: 3_420, count: 12, zappers: [], rejected: [] })
+      describeZapSummary({ totalSats: 3_420, count: 12, zappers: [], unverified: 0, rejected: [], received: 12 })
     ).toBe('3,420 sats · 12 zaps');
   });
 
   it('does not say "1 zaps"', () => {
-    expect(describeZapSummary({ totalSats: 21, count: 1, zappers: [], rejected: [] })).toBe(
+    expect(describeZapSummary({ totalSats: 21, count: 1, zappers: [], unverified: 0, rejected: [], received: 1 })).toBe(
       '21 sats · 1 zap'
     );
   });

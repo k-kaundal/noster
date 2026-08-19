@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import {
+  Check,
   ChevronDown,
   ChevronUp,
   Coins,
   ExternalLink,
   Lock,
+  Minus,
   Star,
   Trash2,
 } from 'lucide-react';
@@ -22,6 +24,7 @@ import { useRelayInfo } from '@/hooks/useRelayInfo';
 import type { RelayHealth } from '@/hooks/useRelayHealth';
 import { RelayAdminPanel } from '@/components/relays/RelayAdminPanel';
 import { relayDisplayName, type RelayEntry } from '@/lib/relay';
+import { relayCapabilities } from '@/lib/nip11';
 import { cn } from '@/lib/utils';
 
 interface RelayRowProps {
@@ -264,6 +267,7 @@ function RelayInfoPanel({
 }) {
   const limitation = info.limitation ?? {};
   const paid = limitation.payment_required || !!info.fees?.admission?.length;
+  const capabilities = relayCapabilities(info);
 
   return (
     <div className="space-y-3 text-xs">
@@ -328,6 +332,46 @@ function RelayInfoPanel({
           </Detail>
         )}
       </dl>
+
+      {/*
+        What the numbers below actually mean, for the handful that change what
+        this app can do. The NIP list is the reference; this is the answer to
+        the question somebody opening this panel is really asking.
+      */}
+      {!!capabilities.length && (
+        <div>
+          <p className="mb-1 font-medium text-muted-foreground">What it can do</p>
+          <div className="flex flex-wrap gap-1">
+            {capabilities.map(({ capability, support }) => (
+              <Tooltip key={capability.nip}>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]',
+                      support === 'yes'
+                        ? 'border-success/30 text-success-strong'
+                        : 'border-border text-muted-foreground/60 line-through decoration-muted-foreground/40'
+                    )}
+                  >
+                    {support === 'yes' ? (
+                      <Check className="h-3 w-3" />
+                    ) : (
+                      <Minus className="h-3 w-3" />
+                    )}
+                    {capability.label}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  {capability.hint}
+                  <span className="ml-1 font-mono text-[10px] opacity-70">
+                    NIP-{capability.nip}
+                  </span>
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!!info.supported_nips?.length && (
         <div>

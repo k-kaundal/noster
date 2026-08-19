@@ -4,10 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { ZAP_RECEIPT_KIND, validateZapReceipt } from '@/lib/zap';
+import { ZAP_RECEIPT_KIND, explainZapReceipt } from '@/lib/zap';
 import { providerKeyForRecipients } from '@/lib/zapProviders';
 import {
   EMPTY_SUMMARY,
+  dailyEarnings,
   earningFrom,
   summarizeStudio,
   type Earning,
@@ -52,16 +53,21 @@ export function useStudio(windowDays: number) {
       const providerPubkey = providerKeyForRecipients([pubkey!], lud16);
 
       return receipts
-        .filter((receipt) =>
-          /*
-           * No target named, so a zap on a note, an article or the person
-           * themselves all count — which is what "earned" means here. Every
-           * other NIP-57 check still applies.
-           */
-          validateZapReceipt(receipt, {
-            recipientPubkey: [pubkey!],
-            providerPubkey,
-          })
+        .filter(
+          (receipt) =>
+            /*
+             * No target named, so a zap on a note, an article or the person
+             * themselves all count — which is what "earned" means here.
+             *
+             * Every check applies, the provider key included: this page is
+             * where a creator reads the figure they would quote, so it is one
+             * of the two places an unverifiable receipt must not count. A note
+             * shows it and flags it instead — see `zapSummary`.
+             */
+            explainZapReceipt(receipt, {
+              recipientPubkey: [pubkey!],
+              providerPubkey,
+            }) === null
         )
         .map(earningFrom)
         .filter((earning): earning is Earning => !!earning);
@@ -75,8 +81,15 @@ export function useStudio(windowDays: number) {
     [query.data, windowDays]
   );
 
+  /** One point per day, empty days included. See `lib/studio`. */
+  const daily = useMemo(
+    () => dailyEarnings(query.data ?? [], windowDays),
+    [query.data, windowDays]
+  );
+
   return {
     summary,
+    daily,
     isLoading: query.isLoading,
     isError: query.isError,
     /** Whether the totals are checked against the author's own server. */

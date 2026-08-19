@@ -28,6 +28,11 @@ import {
  */
 export function useZapSummary(event: NostrEvent | undefined): ZapSummary & {
   isLoading: boolean;
+  /**
+   * How the receipts were asked for, so a caller can ask a second source the
+   * same question without repeating the addressable/regular distinction below.
+   */
+  target: { eventId?: string; address?: string } | undefined;
 } {
   /**
    * An addressable event is referenced by coordinate, never by id.
@@ -95,7 +100,15 @@ export function useZapSummary(event: NostrEvent | undefined): ZapSummary & {
     );
   }
 
-  return { ...summary, isLoading };
+  return {
+    ...summary,
+    isLoading,
+    target: event
+      ? address
+        ? { address }
+        : { eventId: event.id }
+      : undefined,
+  };
 }
 
 function isAddressable(kind: number): boolean {

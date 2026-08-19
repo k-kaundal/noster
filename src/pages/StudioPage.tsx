@@ -24,6 +24,7 @@ import {
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useSeo } from '@/hooks/useSeo';
 import { useStudio } from '@/hooks/useStudio';
+import { EarningsTrend } from '@/components/studio/EarningsTrend';
 import { describeSource, type TopTarget } from '@/lib/studio';
 import { formatSats } from '@/lib/zap';
 import { cn } from '@/lib/utils';
@@ -46,7 +47,7 @@ const WINDOWS = [
 export function StudioPage() {
   const { user } = useCurrentUser();
   const [days, setDays] = useState(30);
-  const { summary, isLoading, verified } = useStudio(days);
+  const { summary, daily, isLoading, verified } = useStudio(days);
 
   useSeo({
     title: 'Studio',
@@ -153,6 +154,8 @@ export function StudioPage() {
               />
             </div>
 
+            <EarningsTrend days={daily} />
+
             <Section title="Where the sats came from">
               {summary.bySource.length ? (
                 <Table>
@@ -175,7 +178,24 @@ export function StudioPage() {
                           {row.sats.toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {row.share}%
+                          {/*
+                            The bar reads before the number does. A share is a
+                            proportion, and four right-aligned percentages make
+                            the reader do the comparison the page could have
+                            done for them.
+                          */}
+                          <span className="flex items-center justify-end gap-2">
+                            <span
+                              aria-hidden="true"
+                              className="h-1 w-12 overflow-hidden rounded-full bg-muted"
+                            >
+                              <span
+                                className="block h-full rounded-full bg-zap"
+                                style={{ width: `${row.share}%` }}
+                              />
+                            </span>
+                            {row.share}%
+                          </span>
                         </TableCell>
                       </TableRow>
                     ))}
