@@ -26,6 +26,7 @@ import {
   lnAddressConfig,
   nip5Identifier,
   normalizePromoCode,
+  promoClaimHint,
   readClaimedAddress,
   readPaymentHash,
   validateLocalPart,
@@ -252,8 +253,16 @@ export function useNip5() {
       domainId?: string;
       promoCode?: string;
       referer?: string;
-    }
+    },
+    /*
+     * The code, kept for the error handler. A reservation can fail *because* of
+     * the code, and the server's wording for that case never mentions it.
+     */
+    { promoCode?: string }
   >({
+    onMutate: ({ promoCode }) => ({
+      promoCode: normalizePromoCode(promoCode ?? '') || undefined,
+    }),
     mutationFn: async ({
       localPart,
       years,
@@ -312,14 +321,20 @@ export function useNip5() {
         });
       }
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _variables, context) => {
       const missing = isExtensionMissing(error);
+
+      // Said in place of the server's own wording, which blames the name for
+      // something the code did
+      const promo = missing
+        ? null
+        : promoClaimHint(error.message, context?.promoCode);
 
       toast({
         title: missing ? 'Not available here' : 'Could not reserve that name',
         description: missing
           ? `${NIP5_DOMAIN} doesn't sell verified names — the nostrnip5 extension isn't installed.`
-          : error.message,
+          : promo ?? error.message,
         variant: 'destructive',
       });
     },

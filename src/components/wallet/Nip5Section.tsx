@@ -630,6 +630,19 @@ function UnpaidName({ address }: { address: Nip5Address }) {
   const years = address.extra?.years ?? 1;
   const sats = address.extra?.price_in_sats;
 
+  /*
+   * What the code on this reservation is actually worth, days after it was
+   * typed. The extension recomputes its verdict on every read and stores only
+   * the discounted price, so this is the one place the discount can still be
+   * accounted for — and the place somebody comes back to in order to pay.
+   */
+  const price = priceBreakdown(
+    null,
+    address.extra,
+    address.extra?.promo_code,
+    address.promo_code_status
+  );
+
   return (
     <div className="space-y-3 rounded-lg border border-warning/30 bg-warning/8 p-4">
       <p className="text-sm text-warning-strong">
@@ -637,6 +650,12 @@ function UnpaidName({ address }: { address: Nip5Address }) {
         {sats ? ` It costs ${sats.toLocaleString()} sats.` : ''} Nobody else can
         take it in the meantime.
       </p>
+
+      {price.promo !== 'none' && (
+        <div className="rounded-lg bg-background/60">
+          <PriceSummary price={price} />
+        </div>
+      )}
 
       <Button
         size="sm"
@@ -918,28 +937,40 @@ function BuyName({
         >
           Discount code (optional)
         </Label>
+        {/*
+          Typed through unchanged.
+
+          It used to be uppercased on the way out, by CSS here and by
+          `normalizePromoCode` on the way to the server. The extension compares
+          codes exactly — no folding of any kind — so a code the operator wrote
+          as `spring24` could not be redeemed by anybody, and the field showed
+          capitals that were not what would be sent. `autoCapitalize` did the
+          same thing again on a phone.
+        */}
         <Input
           id="nip5-promo"
           value={promoCode}
           onChange={(event) => setPromoCode(event.target.value)}
           placeholder="If you have one"
-          autoCapitalize="characters"
+          autoCapitalize="none"
+          autoCorrect="off"
           spellCheck={false}
-          className="font-mono uppercase"
+          className="font-mono"
         />
         {/*
           Says where the answer comes from, rather than leaving somebody to
           wonder why the price above did not move as they typed.
 
-          It cannot move. The extension's search endpoint takes a name and a
-          year count and nothing else, and the promotions live on the domain
+          It cannot move here. The extension's search endpoint takes a name and
+          a year count and nothing else, and the promotions live on the domain
           record, which is readable only with the operator's API key — so the
-          discount genuinely does not exist until the reservation raises an
-          invoice. Better to say that than to imply the code was rejected.
+          code is genuinely unchecked until the reservation is made. The old
+          copy said it would be "applied", which promised an outcome; this says
+          what happens, including that reserving costs nothing.
         */}
         <p className="text-xs text-muted-foreground">
           {promoCode.trim()
-            ? 'Applied when you reserve — the next screen shows what it takes off, before you pay anything.'
+            ? 'Checked against the domain when you reserve, which costs nothing — the next screen shows what it took off, or that it was not recognised, before you pay.'
             : 'The invoice shows what you actually pay — check it before paying.'}
         </p>
       </div>
@@ -953,15 +984,32 @@ function BuyName({
         the invoice will match.
       */}
       {available && search.data && (
-        <div className="flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2.5 text-sm">
-          <span className="text-muted-foreground">
-            {years > 1 ? `${years} years` : '1 year'} at {domain}
-          </span>
-          <span className="font-medium tabular-nums">
-            {search.data.price_in_sats
-              ? formatAmount(search.data.price_in_sats, 'sats')
-              : 'Free'}
-          </span>
+        <div className="space-y-1 rounded-lg border px-3 py-2.5">
+          <div className="flex items-baseline justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">
+              {years > 1 ? `${years} years` : '1 year'} at {domain}
+            </span>
+            <span className="font-medium tabular-nums">
+              {search.data.price_in_sats
+                ? formatAmount(search.data.price_in_sats, 'sats')
+                : 'Free'}
+            </span>
+          </div>
+
+          {/*
+            Labels the figure rather than leaving it to be read as the total.
+            With a code in the box this number is the one thing on screen that
+            the code has not been applied to, and shown bare it reads as the
+            answer — which is what "I entered a code and nothing checked it"
+            looks like from here.
+          */}
+          {!!promoCode.trim() && !!search.data.price_in_sats && (
+            <p className="text-xs text-muted-foreground">
+              Before{' '}
+              <span className="font-mono">{promoCode.trim()}</span> — reserving
+              is what prices it.
+            </p>
+          )}
         </div>
       )}
 
@@ -1164,8 +1212,15 @@ function PriceSummary({
   onRemoveCode,
 }: {
   price: PriceBreakdown;
-  /** Back to the form, which is where a code can be changed or dropped. */
-  onRemoveCode: () => void;
+  /**
+   * Back to the form, which is where a code can be changed or dropped.
+   *
+   * Absent where there is no form to go back to — a reservation from a
+   * previous visit is priced and stored, and the extension re-prices it from
+   * the code it remembers, so offering to change it would be offering
+   * something that does not happen.
+   */
+  onRemoveCode?: () => void;
 }) {
   /*
    * Nothing to account for. With no code in play the amount owed is the whole
@@ -1188,13 +1243,17 @@ function PriceSummary({
         </div>
       )}
 
-      {saved !== undefined && (
+      {/*
+        The line for a code that worked. Shown whenever the server says the
+        code is worth something, even with no amount to put beside it: a
+        reservation reopened tomorrow has no quote to subtract from, and
+        "20% off" with no figure still beats saying nothing at all.
+      */}
+      {price.promo === 'applied' && (
         <div className="flex items-baseline justify-between gap-3 text-sm text-success-strong">
           <span className="flex min-w-0 items-center gap-1.5">
             <Check className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate font-mono text-xs uppercase">
-              {price.code}
-            </span>
+            <span className="truncate font-mono text-xs">{price.code}</span>
             {/* The form a promotion is usually quoted in, next to the form it
                 is actually paid in */}
             {!!price.savedPercent && (
@@ -1203,9 +1262,11 @@ function PriceSummary({
               </span>
             )}
           </span>
-          <span className="shrink-0 tabular-nums">
-            −{formatAmount(saved, unit)}
-          </span>
+          {saved !== undefined && (
+            <span className="shrink-0 tabular-nums">
+              −{formatAmount(saved, unit)}
+            </span>
+          )}
         </div>
       )}
 
@@ -1233,17 +1294,28 @@ function PriceSummary({
         <p className="flex items-start gap-2 rounded-md bg-warning/10 p-2.5 text-xs text-warning-strong">
           <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
           <span>
-            <span className="font-mono uppercase">{price.code}</span> didn't
-            change the price — it may have expired, or never existed. The
-            reservation went through at full price either way.{' '}
-            <button
-              type="button"
-              onClick={onRemoveCode}
-              className="underline underline-offset-2"
-            >
-              Go back
-            </button>{' '}
-            to try a different one.
+            <span className="font-mono">{price.code}</span>{' '}
+            {price.checked
+              ? /*
+                 * The server was asked and said nothing matches. Worth saying
+                 * as plainly as that, including the part people get wrong —
+                 * these are compared exactly, so the same code in the wrong
+                 * case is a different code.
+                 */
+                'is not a code this domain knows. Check the spelling and the capitals — they have to match exactly. The reservation went through at full price.'
+              : "didn't change the price — it may have expired, or never existed. The reservation went through at full price either way."}{' '}
+            {onRemoveCode && (
+              <>
+                <button
+                  type="button"
+                  onClick={onRemoveCode}
+                  className="underline underline-offset-2"
+                >
+                  Go back
+                </button>{' '}
+                to try a different one.
+              </>
+            )}
           </span>
         </p>
       )}
@@ -1255,9 +1327,9 @@ function PriceSummary({
       */}
       {price.promo === 'unknown' && (
         <p className="text-xs text-muted-foreground">
-          <span className="font-mono uppercase">{price.code}</span> was sent
-          with the reservation. The amount above is what the invoice asks for,
-          discount included.
+          <span className="font-mono">{price.code}</span> was sent with the
+          reservation. The amount above is what the invoice asks for, discount
+          included.
         </p>
       )}
     </div>
@@ -1285,7 +1357,15 @@ function PendingPayment({
   const { payOptions } = useNip5();
 
   const sats = pending.address?.extra?.price_in_sats;
-  const price = priceBreakdown(quoted, pending.address?.extra, promoCode);
+  const price = priceBreakdown(
+    quoted,
+    pending.address?.extra,
+    promoCode,
+    // The server's own verdict on the code, which comes back with the
+    // reservation — the only thing here that is checked rather than read off
+    // a pair of numbers
+    pending.address?.promo_code_status
+  );
   const usable = payOptions.filter((option) => !option.unavailable);
 
   return (

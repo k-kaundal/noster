@@ -20,6 +20,7 @@ import {
   outstandingPaymentHash,
   formatAmount,
   priceBreakdown,
+  promoClaimHint,
   readClaimedAddress,
   readPaymentHash,
   validateLocalPart,
@@ -233,16 +234,31 @@ describe('readClaimedAddress', () => {
 });
 
 describe('normalizePromoCode', () => {
-  it('takes what somebody actually types', () => {
+  it('drops what nobody meant to type', () => {
     /**
-     * These are read off a poster or a message, so they arrive with spaces,
-     * in the wrong case, sometimes inside quotes. All of those name a real
-     * code and all of them fail an exact comparison on the server, which then
-     * answers as though the code were fake.
+     * These are read off a poster or a message, so they arrive with spaces and
+     * sometimes inside quotes. Neither was typed on purpose, and both fail the
+     * server's comparison — which then answers as though the code were fake.
      */
-    expect(normalizePromoCode('  launch  ')).toBe('LAUNCH');
+    expect(normalizePromoCode('  LAUNCH  ')).toBe('LAUNCH');
     expect(normalizePromoCode('"LAUNCH"')).toBe('LAUNCH');
-    expect(normalizePromoCode("'launch'")).toBe('LAUNCH');
+    expect(normalizePromoCode("'LAUNCH'")).toBe('LAUNCH');
+  });
+
+  it('leaves the case exactly as typed', () => {
+    /**
+     * The extension compares `promotion.code == promo_code` with no folding of
+     * any kind. Uppercasing here made a code written as `spring24` impossible
+     * to redeem however carefully it was typed.
+     */
+    expect(normalizePromoCode('spring24')).toBe('spring24');
+    expect(normalizePromoCode('Spring24')).toBe('Spring24');
+  });
+
+  it('keeps a referrer attached to the code', () => {
+    // The server splits `CODE@name` itself, and the half after the `@` names
+    // somebody's identifier
+    expect(normalizePromoCode(' NEW100@alice ')).toBe('NEW100@alice');
   });
 
   it('leaves an empty field empty', () => {
@@ -253,10 +269,11 @@ describe('normalizePromoCode', () => {
 describe('priceBreakdown', () => {
   it('reads a discount as the difference between quoted and charged', () => {
     expect(
-      priceBreakdown({ price_in_sats: 10_000 }, { price_in_sats: 7_500 }, 'launch')
+      priceBreakdown({ price_in_sats: 10_000 }, { price_in_sats: 7_500 }, 'LAUNCH')
     ).toMatchObject({
       promo: 'applied',
       code: 'LAUNCH',
+      checked: false,
       unit: 'sats',
       list: 10_000,
       paid: 7_500,
@@ -282,7 +299,7 @@ describe('priceBreakdown', () => {
     const price = priceBreakdown(
       { price_in_sats: 10_000 },
       { price_in_sats: 12_000 },
-      'launch'
+      'LAUNCH'
     );
 
     expect(price.promo).toBe('ignored');
@@ -324,7 +341,7 @@ describe('priceBreakdown', () => {
   it('does not complain about a code on a name that costs nothing', () => {
     // There is no discount to fail to apply to zero
     expect(
-      priceBreakdown({ price_in_sats: 0 }, { price_in_sats: 0 }, 'launch').promo
+      priceBreakdown({ price_in_sats: 0 }, { price_in_sats: 0 }, 'LAUNCH').promo
     ).toBe('none');
   });
 
@@ -336,6 +353,98 @@ describe('priceBreakdown', () => {
       paid: 900,
       list: undefined,
     });
+  });
+
+  it('takes the server at its word over the arithmetic', () => {
+    /**
+     * `buyer_discount` is the extension answering for the code directly: it
+     * looks the promotion up and reports the percent, or zero when it has
+     * none. Everything else here is a reading of two numbers.
+     */
+    const price = priceBreakdown(
+      { price_in_sats: 10_000 },
+      { price_in_sats: 8_500 },
+      'SPRING',
+      { buyer_discount: 15 }
+    );
+
+    expect(price).toMatchObject({ promo: 'applied', checked: true });
+    /*
+     * 15, not the 15-ish that dividing rounded sats gives back. The stated
+     * percent is the figure the promotion was written with.
+     */
+    expect(price.savedPercent).toBe(15);
+  });
+
+  it('calls a code the server does not know exactly that', () => {
+    /**
+     * The direction that matters, and the reason this field is worth reading.
+     * The extension ignores a code it has no promotion for rather than
+     * refusing the claim, so nothing else distinguishes a dead code from a
+     * live one — the reservation succeeds and the invoice is raised either way.
+     */
+    const price = priceBreakdown(
+      { price_in_sats: 10_000 },
+      { price_in_sats: 10_000 },
+      'NOPE',
+      { buyer_discount: 0 }
+    );
+
+    expect(price).toMatchObject({ promo: 'ignored', checked: true });
+  });
+
+  it('knows a code worked with nothing to compare it against', () => {
+    /**
+     * A reservation reopened days later has no quote beside it, and the
+     * extension stores only the price after the discount — so without the
+     * stated percent this was `unknown`, on the one screen asking for money.
+     */
+    const price = priceBreakdown(null, { price_in_sats: 8_000 }, 'SPRING', {
+      buyer_discount: 20,
+    });
+
+    expect(price.promo).toBe('applied');
+    // The list price, put back from the percent: 8,000 is the 80% that was paid
+    expect(price.list).toBe(10_000);
+    expect(price.saved).toBe(2_000);
+  });
+
+  it('does not divide by zero reconstructing a full-value code', () => {
+    // 100% off leaves no list price to recover, and the extension refuses such
+    // a reservation anyway
+    expect(
+      priceBreakdown(null, { price_in_sats: 0 }, 'FREE', { buyer_discount: 100 })
+        .list
+    ).toBeUndefined();
+  });
+
+  it('says nothing about a status carrying no code', () => {
+    // Every address comes back with a `promo_code_status`, code or not
+    expect(
+      priceBreakdown({ price_in_sats: 10_000 }, { price_in_sats: 10_000 }, '', {
+        buyer_discount: 0,
+      })
+    ).toMatchObject({ promo: 'none', checked: false });
+  });
+});
+
+describe('promoClaimHint', () => {
+  it('blames the code for a price it took to zero', () => {
+    /**
+     * A 100% code makes the price falsy, and the extension asserts on that
+     * before raising an invoice — so the reservation fails with a message
+     * about the *name*, and nothing anywhere suggests dropping the code.
+     */
+    expect(
+      promoClaimHint("Cannot compute price for 'kkworld'.", 'NEW100')
+    ).toMatch(/without the code/i);
+  });
+
+  it('stays out of the way of every other failure', () => {
+    expect(promoClaimHint('Identifier not available.', 'NEW100')).toBeNull();
+    expect(
+      promoClaimHint("Cannot compute price for 'kkworld'.", undefined)
+    ).toBeNull();
   });
 });
 
