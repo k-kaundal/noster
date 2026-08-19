@@ -64,7 +64,18 @@ export interface TierCopy {
   mark: 'dot' | 'check';
 }
 
-export function describeTier(tier: NameTier): TierCopy {
+export function describeTier(
+  tier: NameTier,
+  /**
+   * Whether somebody picked this local part.
+   *
+   * Only changes the free tier's wording, and it has to: "Assigned, not
+   * chosen" is plainly false of an address somebody named, and a person
+   * reading it about `dev@…` concludes the badge is broken rather than that
+   * the address is unverified.
+   */
+  options: { chosen?: boolean } = {}
+): TierCopy {
   switch (tier) {
     case 'named':
       return {
@@ -75,7 +86,9 @@ export function describeTier(tier: NameTier): TierCopy {
     default:
       return {
         label: 'Free',
-        blurb: 'Receives zaps from every client. Assigned, not chosen.',
+        blurb: options.chosen
+          ? 'Receives zaps. A pay link, not a verified name — no ✓.'
+          : 'Receives zaps from every client. Assigned, not chosen.',
         mark: 'dot',
       };
   }
@@ -96,7 +109,22 @@ export function describeTier(tier: NameTier): TierCopy {
  */
 export function tierOf(
   address: string,
-  domains: { named?: string | string[] } = {}
+  domains: { named?: string | string[] } = {},
+  /**
+   * The verified names actually held, written out in full.
+   *
+   * Given, it decides the top tier outright, and the shape of the local part
+   * stops being consulted. That correction matters because a chosen-looking
+   * name is not evidence of anything: attaching a lightning address to
+   * `dev@getzap.me` makes the extension issue a pay link named `dev`, LNbits
+   * answers for it on its own host, and the list gained a `dev@ln.example`
+   * wearing a ✓ that nobody bought and no client would honour — while the
+   * name that really was bought sat on the other domain.
+   *
+   * Omitted where there is nothing to check against: ranking a stranger's
+   * `lud16` has only the string, and the shape is the best reading available.
+   */
+  verified?: readonly string[] | null
 ): NameTier | null {
   const at = address.lastIndexOf('@');
   if (at <= 0) return null;
@@ -109,17 +137,38 @@ export function tierOf(
     normalizeDomain
   );
 
-  if (named.includes(domain)) {
-    return isGeneratedName(local) ? 'assigned' : 'named';
+  if (!named.includes(domain)) {
+    // An address from somewhere else entirely. Real, and not one of our tiers.
+    return null;
   }
 
-  // An address from somewhere else entirely. Real, and not one of our tiers.
-  return null;
+  if (verified) {
+    const held = `${local}@${domain}`;
+    return verified.some(
+      (entry) => normalizeIdentifier(entry) === held
+    )
+      ? 'named'
+      : 'assigned';
+  }
+
+  return isGeneratedName(local) ? 'assigned' : 'named';
+}
+
+/** Lowercased with the domain normalised, so two spellings compare equal. */
+function normalizeIdentifier(identifier: string): string {
+  const at = identifier.lastIndexOf('@');
+  if (at <= 0) return identifier.trim().toLowerCase();
+
+  return `${identifier.slice(0, at).trim().toLowerCase()}@${normalizeDomain(
+    identifier.slice(at + 1)
+  )}`;
 }
 
 export interface TieredAddress {
   address: string;
   tier: NameTier;
+  /** Whether the local part was picked, rather than derived from the key. */
+  chosen: boolean;
 }
 
 /**
@@ -133,7 +182,8 @@ export interface TieredAddress {
  */
 export function rankAddresses(
   addresses: string[],
-  domains?: { named?: string | string[] }
+  domains?: { named?: string | string[] },
+  verified?: readonly string[] | null
 ): TieredAddress[] {
   const seen = new Set<string>();
   const ranked: TieredAddress[] = [];
@@ -142,11 +192,15 @@ export function rankAddresses(
     const clean = address.trim().toLowerCase();
     if (!clean || seen.has(clean)) continue;
 
-    const tier = tierOf(clean, domains);
+    const tier = tierOf(clean, domains, verified);
     if (!tier) continue;
 
     seen.add(clean);
-    ranked.push({ address: clean, tier });
+    ranked.push({
+      address: clean,
+      tier,
+      chosen: !isGeneratedName(clean.slice(0, clean.lastIndexOf('@'))),
+    });
   }
 
   return ranked.sort((a, b) => tierRank(b.tier) - tierRank(a.tier));
@@ -162,9 +216,10 @@ export function rankAddresses(
 export function leadAddress(
   addresses: string[],
   chosen?: string | null,
-  domains?: { named?: string | string[] }
+  domains?: { named?: string | string[] },
+  verified?: readonly string[] | null
 ): TieredAddress | null {
-  const ranked = rankAddresses(addresses, domains);
+  const ranked = rankAddresses(addresses, domains, verified);
   if (!ranked.length) return null;
 
   const picked = chosen?.trim().toLowerCase();

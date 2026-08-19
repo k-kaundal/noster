@@ -5,7 +5,7 @@ import { VerificationBadge, VerificationMark } from '@/components/VerificationBa
 import { AddressReceiveDialog } from '@/components/wallet/AddressReceiveDialog';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
-import { NIP5_DOMAIN, isNip5Configured } from '@/lib/nip5';
+import { NIP5_DOMAIN, isNip5Configured, nip5Host } from '@/lib/nip5';
 import { describeTier, leadAddress, nextTier, rankAddresses } from '@/lib/tiers';
 import { cn } from '@/lib/utils';
 
@@ -20,8 +20,22 @@ import { cn } from '@/lib/utils';
  * this app cannot see.
  */
 export function NameTiers() {
-  const { lightning } = useIdentity();
+  const { lightning, nip5 } = useIdentity();
   const { toast } = useToast();
+
+  /**
+   * The names that really are verified, so nothing else can look it.
+   *
+   * The tier used to be read off the string: a local part somebody chose, at
+   * one of our domains, was "Verified". Attaching a lightning address to a
+   * bought name breaks that — the extension issues a pay link under the same
+   * local part, LNbits answers for it on its own host, and the list grew a
+   * second address at the *other* domain wearing a ✓ that was never bought and
+   * no client would honour. Only a name on this list has one.
+   */
+  const verified = nip5.addresses
+    .filter((address) => address.active)
+    .map((address) => `${address.local_part}@${nip5Host(address.domain_id)}`);
 
   const [receivingAt, setReceivingAt] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<string | null>(null);
@@ -62,11 +76,11 @@ export function NameTiers() {
     ])
   );
 
-  const ranked = rankAddresses(held, domains);
+  const ranked = rankAddresses(held, domains, verified);
   if (!ranked.length) return null;
 
   // What the profile says, so the ranking never overrules a real decision
-  const lead = leadAddress(held, lightning.profileAddress, domains);
+  const lead = leadAddress(held, lightning.profileAddress, domains, verified);
   const upsell = nextTier(ranked[0]?.tier ?? null);
 
   return (
@@ -103,7 +117,7 @@ export function NameTiers() {
                   <p className="truncate text-xs text-muted-foreground">
                     {walletFor.get(entry.address)
                       ? `Pays into ${walletFor.get(entry.address)}`
-                      : describeTier(entry.tier).blurb}
+                      : describeTier(entry.tier, { chosen: entry.chosen }).blurb}
                   </p>
                 </div>
 

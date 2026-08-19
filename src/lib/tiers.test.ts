@@ -33,6 +33,42 @@ describe('tierOf', () => {
     expect(tierOf('notanaddress', DOMAINS)).toBeNull();
     expect(tierOf('@ln.nostrfeed.com', DOMAINS)).toBeNull();
   });
+
+  it('takes the held names over the shape of the address', () => {
+    /**
+     * The correction. A chosen-looking local part is not evidence of anything:
+     * attaching a lightning address to `dev@getzap.me` makes the extension
+     * issue a pay link named `dev`, and LNbits answers for it on its own host
+     * — so `dev@ln.nostrfeed.com` appeared, wearing a ✓ nobody bought and no
+     * client would honour, while the name really held sat on another domain.
+     */
+    const both = { named: ['ln.nostrfeed.com', 'getzap.me'] };
+    const held = ['dev@getzap.me'];
+
+    expect(tierOf('dev@getzap.me', both, held)).toBe('named');
+    expect(tierOf('dev@ln.nostrfeed.com', both, held)).toBe('assigned');
+  });
+
+  it('compares a held name however it is spelled', () => {
+    expect(
+      tierOf('dev@getzap.me', { named: 'getzap.me' }, [' DEV@GetZap.me '])
+    ).toBe('named');
+  });
+
+  it('still refuses an outside domain even when a name matches', () => {
+    // Holding `dev` somewhere of ours says nothing about `dev` at a service
+    // we do not run
+    expect(
+      tierOf('dev@getalby.com', DOMAINS, ['dev@getalby.com'])
+    ).toBeNull();
+  });
+
+  it('reads the shape when there is nothing to check against', () => {
+    // Ranking a stranger's `lud16` has only the string, and an empty list is
+    // not the same as no list — one says "holds nothing", the other "unknown"
+    expect(tierOf('kk@ln.nostrfeed.com', DOMAINS)).toBe('named');
+    expect(tierOf('kk@ln.nostrfeed.com', DOMAINS, [])).toBe('assigned');
+  });
 });
 
 describe('rankAddresses', () => {
@@ -59,6 +95,23 @@ describe('rankAddresses', () => {
 
   it('handles holding nothing', () => {
     expect(rankAddresses([], DOMAINS)).toEqual([]);
+  });
+
+  it('says which local parts were picked', () => {
+    // So the free tier can stop calling an address somebody named "assigned,
+    // not chosen", which reads as the badge being broken
+    const ranked = rankAddresses(
+      [`${ASSIGNED}@ln.nostrfeed.com`, 'dev@ln.nostrfeed.com'],
+      DOMAINS,
+      []
+    );
+
+    expect(
+      ranked.map((entry) => [entry.address, entry.chosen])
+    ).toEqual([
+      [`${ASSIGNED}@ln.nostrfeed.com`, false],
+      ['dev@ln.nostrfeed.com', true],
+    ]);
   });
 });
 
@@ -110,6 +163,13 @@ describe('describeTier', () => {
       expect(copy.blurb).toBeTruthy();
       expect(copy.mark).toBeTruthy();
     }
+  });
+
+  it('does not call a name somebody picked "assigned"', () => {
+    expect(describeTier('assigned', { chosen: true }).blurb).not.toMatch(
+      /assigned/i
+    );
+    expect(describeTier('assigned').blurb).toMatch(/assigned/i);
   });
 
   it('ranks in the order it describes', () => {
