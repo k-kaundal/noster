@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -10,9 +10,12 @@ import { genUserName } from '@/lib/genUserName';
 import {
   describeIdentity,
   localPartOf,
+  nameByPayLink,
+  payLinkTakesName,
   suggestIdentityName,
   withIdentity,
 } from '@/lib/identity';
+import { lnAddressConfig, nip5Identifier } from '@/lib/nip5';
 import {
   FREE_ADDRESS_DOMAIN,
   isFreeAddressDomain,
@@ -64,6 +67,54 @@ export function useIdentity() {
   });
 
   /**
+   * The pay links that are really verified names, under the names they are.
+   *
+   * Done here rather than in the list that draws them, because the label is
+   * not a display detail: publishing, and every comparison against what the
+   * profile says, run off these addresses. Renaming only on screen produced a
+   * page that showed `dev@getzap.me` as the address zaps land at, while the
+   * check behind it still held `dev@ln.nostrfeed.com` — so a profile pointing
+   * at exactly the right name was reported out of date, and "Publish now"
+   * would have written the wrong one back.
+   */
+  const namedLinks = useMemo(
+    () =>
+      nameByPayLink(
+        nip5.addresses.map((address) => ({
+          payLinkId: lnAddressConfig(address)?.pay_link_id,
+          identifier: nip5Identifier(address),
+          active: address.active,
+        }))
+      ),
+    [nip5.addresses]
+  );
+
+  const nameFor = useCallback(
+    (link?: { id: string; domain?: string | null } | null) =>
+      link && payLinkTakesName(link) ? namedLinks.get(link.id) : undefined,
+    [namedLinks]
+  );
+
+  /** Every address of theirs, named as the identities they are. */
+  const addresses = useMemo(
+    () =>
+      lightning.addresses.map((entry) => {
+        const identifier = nameFor(entry.link);
+        if (!identifier) return entry;
+
+        return {
+          ...entry,
+          address: identifier,
+          domain: identifier.slice(identifier.lastIndexOf('@') + 1),
+        };
+      }),
+    [lightning.addresses, nameFor]
+  );
+
+  /** The one that speaks for them, under the same correction. */
+  const primaryAddress = nameFor(lightning.link) ?? lightning.address;
+
+  /**
    * Every address of theirs, so a profile pointing at their own second one is
    * not mistaken for a profile pointing somewhere else entirely.
    *
@@ -74,8 +125,8 @@ export function useIdentity() {
    * whether to show a nag.
    */
   const ownedAddresses = useMemo(
-    () => lightning.addresses.map((entry) => entry.address),
-    [lightning.addresses]
+    () => addresses.map((entry) => entry.address),
+    [addresses]
   );
 
   const status = useMemo(
@@ -83,7 +134,7 @@ export function useIdentity() {
       describeIdentity({
         verifiedName: nip5.identifier,
         verifiedActive: nip5.address?.active,
-        lightningAddress: lightning.address,
+        lightningAddress: primaryAddress,
         profileNip05: metadata?.nip05,
         profileLud16: metadata?.lud16,
         ownedAddresses,
@@ -91,7 +142,7 @@ export function useIdentity() {
     [
       nip5.identifier,
       nip5.address?.active,
-      lightning.address,
+      primaryAddress,
       metadata?.nip05,
       metadata?.lud16,
       ownedAddresses,
@@ -190,7 +241,8 @@ export function useIdentity() {
             // Only a live name goes in nip05; an unpaid one would fail to
             // verify and show a broken checkmark on every note
             nip05: status.tier === 'verified' ? nip5.identifier : undefined,
-            lud16: lightning.address,
+            // The corrected name, not the label the pay link was found under
+            lud16: primaryAddress,
           })
         ),
         tags: [],
@@ -257,6 +309,13 @@ export function useIdentity() {
     nip5,
     /** The free half. */
     lightning,
+    /**
+     * Every address they hold, named as the identities they are rather than
+     * as the pay links they came off. What the page should list.
+     */
+    addresses,
+    /** The one that speaks for them, under the same correction. */
+    address: primaryAddress,
     suggestion,
     isLoading: lightning.isLoading || nip5.isLoading,
     publish: publish.mutateAsync,
@@ -271,6 +330,8 @@ export function useIdentity() {
     claimFree.isPending,
     nip5,
     lightning,
+    addresses,
+    primaryAddress,
     suggestion,
     publish.mutateAsync,
     publish.isPending,

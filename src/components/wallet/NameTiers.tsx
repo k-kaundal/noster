@@ -5,13 +5,7 @@ import { VerificationBadge, VerificationMark } from '@/components/VerificationBa
 import { AddressReceiveDialog } from '@/components/wallet/AddressReceiveDialog';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
-import { nameByPayLink, payLinkTakesName } from '@/lib/identity';
-import {
-  NIP5_DOMAIN,
-  isNip5Configured,
-  lnAddressConfig,
-  nip5Identifier,
-} from '@/lib/nip5';
+import { NIP5_DOMAIN, isNip5Configured, nip5Identifier } from '@/lib/nip5';
 import { describeTier, leadAddress, nextTier, rankAddresses } from '@/lib/tiers';
 import { cn } from '@/lib/utils';
 
@@ -26,7 +20,14 @@ import { cn } from '@/lib/utils';
  * this app cannot see.
  */
 export function NameTiers() {
-  const { lightning, nip5 } = useIdentity();
+  /*
+   * `addresses` is named as the identities they are, which `useIdentity`
+   * decides. Doing that here instead left the page disagreeing with itself:
+   * this list said `dev@getzap.me` while the check above it still compared the
+   * profile against `dev@ln.nostrfeed.com`, and announced a correct profile
+   * out of date.
+   */
+  const { lightning, nip5, addresses } = useIdentity();
   const { toast } = useToast();
 
   /**
@@ -42,47 +43,6 @@ export function NameTiers() {
     .filter((address) => address.active)
     .map((address) => nip5Identifier(address) ?? '')
     .filter(Boolean);
-
-  /**
-   * The pay links that are really names, under the names they really are.
-   *
-   * Buying `dev@getzap.me` and turning zaps on makes the extension create an
-   * `lnurlp` link named `dev`. The link carries no domain of its own, so this
-   * list stamped the instance's default one on it and showed
-   * `dev@ln.nostrfeed.com` — an address nobody bought, at a domain this
-   * account holds nothing on, listed as a name they own while the name they
-   * actually bought was missing from the list entirely.
-   *
-   * Renaming rather than hiding, because the link is not junk: it is how
-   * `dev@getzap.me` gets paid. LNbits resolves a lightning address by username
-   * alone — `/lnurlp/api/v1/well-known/{username}` takes no domain — so the
-   * one link answers at either host, and the honest label is the name that was
-   * bought.
-   *
-   * Only links with no domain of their own, which is what the extension makes.
-   * A `PayLink` that carries a domain has been placed by LNbits, and moving it
-   * would be the same mistake in the opposite direction.
-   */
-  const named = nameByPayLink(
-    nip5.addresses.map((address) => ({
-      payLinkId: lnAddressConfig(address)?.pay_link_id,
-      identifier: nip5Identifier(address),
-      active: address.active,
-    }))
-  );
-
-  const addresses = lightning.addresses.map((entry) => {
-    const identifier = payLinkTakesName(entry.link)
-      ? named.get(entry.link.id)
-      : undefined;
-    if (!identifier) return entry;
-
-    return {
-      ...entry,
-      address: identifier,
-      domain: identifier.slice(identifier.lastIndexOf('@') + 1),
-    };
-  });
 
   const [receivingAt, setReceivingAt] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<string | null>(null);
