@@ -3,6 +3,8 @@ import {
   describeIdentity,
   listAddresses,
   localPartOf,
+  nameByPayLink,
+  payLinkTakesName,
   pickPrimaryLink,
   servesAddress,
   suggestIdentityName,
@@ -337,6 +339,71 @@ describe('describeIdentity with an address from elsewhere', () => {
  * flow never writes — so a live, paid, reachable address was announced as one
  * that money disappears into.
  */
+describe('nameByPayLink', () => {
+  it('gives a pay link the name it was made for', () => {
+    /**
+     * Turning zaps on for a bought name makes the extension create an `lnurlp`
+     * link under the same local part. The link carries no domain, so a list
+     * built from pay links stamped the instance's default one on it — and
+     * `dev@getzap.me`, the name actually bought, appeared as
+     * `dev@ln.nostrfeed.com`: a domain the account holds nothing on.
+     */
+    expect(
+      nameByPayLink([
+        { payLinkId: 'RnzDRA', identifier: 'dev@getzap.me', active: true },
+      ]).get('RnzDRA')
+    ).toBe('dev@getzap.me');
+  });
+
+  it('renames nothing for a name that never attached one', () => {
+    // The extension's schema defaults `pay_link_id` to the empty string, so a
+    // name whose attachment was asked for and never completed has no link
+    expect(
+      nameByPayLink([
+        { payLinkId: '', identifier: 'dev@getzap.me', active: true },
+      ]).size
+    ).toBe(0);
+  });
+
+  it('refuses to rename anything for an unpaid reservation', () => {
+    /*
+     * The name is the thing being sold. Showing it as held before its invoice
+     * settles is the one mistake here that gives away the product.
+     */
+    expect(
+      nameByPayLink([
+        { payLinkId: 'RnzDRA', identifier: 'dev@getzap.me', active: false },
+      ]).size
+    ).toBe(0);
+  });
+
+  it('handles an account with no names at all', () => {
+    expect(nameByPayLink([]).size).toBe(0);
+  });
+});
+
+describe('payLinkTakesName', () => {
+  it('renames a link that says nothing about where it lives', () => {
+    /*
+     * What `update_ln_address` creates: a username, a wallet and its limits,
+     * and no domain at all. There is nothing to override.
+     */
+    expect(payLinkTakesName({})).toBe(true);
+    expect(payLinkTakesName({ domain: null })).toBe(true);
+    expect(payLinkTakesName({ domain: '  ' })).toBe(true);
+  });
+
+  it('leaves a link LNbits has placed where LNbits put it', () => {
+    /**
+     * `PayLink` carries a domain, and a filled-in one is the server stating
+     * where the link answers. Overriding it would move a working address onto
+     * a domain LNbits never said it was at — the same mistake as the phantom
+     * row, pointed the other way.
+     */
+    expect(payLinkTakesName({ domain: 'ln.nostrfeed.com' })).toBe(false);
+  });
+});
+
 describe('servesAddress', () => {
   const entries = [
     { address: 'help@ln.nostrfeed.com' },

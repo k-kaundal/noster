@@ -287,6 +287,69 @@ export function listAddresses<T extends { username?: string }>(
   );
 }
 
+/** A verified name, and the pay link the extension made to receive for it. */
+export interface NamedPayLink {
+  payLinkId?: string | null;
+  /** The name written out, `local_part@domain`. */
+  identifier?: string | null;
+  active?: boolean;
+}
+
+/**
+ * Which pay links exist only to receive for a verified name.
+ *
+ * Turning zaps on for `dev@one.example` does not make a second name — it makes
+ * the extension POST an `lnurlp` link named `dev`, and store that link's id on
+ * the name. The link itself carries no domain, so a list built from pay links
+ * stamps the instance's default one on it and produces `dev@two.example`: an
+ * address nobody bought, at a domain they hold nothing on, sitting beside the
+ * name it is the plumbing for.
+ *
+ * Keyed by link id rather than by username, because the id is the extension's
+ * own statement about which link belongs to which name. Matching on the
+ * username would also claim a link somebody made by hand under the same name,
+ * which is a different thing that happens to be spelled alike.
+ *
+ * Only live names. An unpaid reservation must not rename anything: the name is
+ * what is being sold, and showing it as held is the one thing that cannot be
+ * allowed to happen before it is paid for.
+ */
+export function nameByPayLink(
+  names: readonly NamedPayLink[]
+): Map<string, string> {
+  const byLink = new Map<string, string>();
+
+  for (const name of names) {
+    if (name.active === false) continue;
+    if (!name.payLinkId || !name.identifier) continue;
+
+    byLink.set(name.payLinkId, name.identifier.trim().toLowerCase());
+  }
+
+  return byLink;
+}
+
+/**
+ * Whether a pay link may be renamed after the verified name it serves.
+ *
+ * Only one with no domain of its own. `PayLink` carries a `domain` field, and
+ * when LNbits has filled it in that is the server stating where the link
+ * answers — a statement that outranks any inference from the name attached to
+ * it. Overriding it would move a real address onto a domain LNbits never said
+ * it was at, which is the same mistake as the phantom row, pointed the other
+ * way.
+ *
+ * The links that qualify are exactly the ones the NIP-05 extension makes:
+ * `update_ln_address` POSTs a username, a wallet and its limits, and no
+ * domain at all. Those are the links with nothing of their own to say, and the
+ * name they were created for is the best label they will ever have.
+ */
+export function payLinkTakesName(link: {
+  domain?: string | null;
+}): boolean {
+  return !link.domain?.trim();
+}
+
 /**
  * Whether anything on the account already answers for an address.
  *
