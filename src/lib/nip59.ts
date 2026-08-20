@@ -50,7 +50,17 @@ export interface Rumor {
   content: string;
 }
 
-const TWO_DAYS = 2 * 24 * 60 * 60;
+/**
+ * How far into the past a gift wrap's timestamp may be pushed.
+ *
+ * Exported because it is not only a detail of writing one. A reader filtering
+ * `since:` has to reach back this far or it will miss wraps that arrive now
+ * and claim to be from yesterday — which is every wrap, since the tweak is
+ * applied to all of them.
+ */
+export const GIFT_WRAP_DRIFT = 2 * 24 * 60 * 60;
+
+const TWO_DAYS = GIFT_WRAP_DRIFT;
 
 /**
  * A timestamp somewhere in the last two days.

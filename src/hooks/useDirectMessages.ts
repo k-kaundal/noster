@@ -1,5 +1,6 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useNostr } from '@nostrify/react';
+import type { NostrEvent } from '@nostrify/nostrify';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
@@ -15,6 +16,7 @@ import {
   GIFT_WRAP_KIND,
   type ChatMessage,
 } from '@/lib/nip17';
+import { GIFT_WRAP_DRIFT } from '@/lib/nip59';
 
 /**
  * Decrypted wraps, per account.
@@ -33,6 +35,23 @@ function decryptCacheFor(pubkey: string | undefined) {
     decryptCaches.set(key, cache);
   }
   return cache;
+}
+
+/**
+ * The live subscriptions, one per account and relay set, shared by everything
+ * that reads the inbox and stopped only when the last reader goes.
+ */
+const streams = new Map<string, { count: number; stop: () => void }>();
+
+function release(key: string) {
+  const entry = streams.get(key);
+  if (!entry) return;
+
+  entry.count -= 1;
+  if (entry.count > 0) return;
+
+  streams.delete(key);
+  entry.stop();
 }
 
 export interface Conversation {
@@ -101,10 +120,18 @@ export function useDirectMessages() {
       return [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
     },
     enabled: !!user,
-    // Cached decryption makes refetching cheap, so the inbox can stay fresh
-    staleTime: 15 * 1000,
-    refetchInterval: 15 * 1000,
+    /*
+     * A backstop now, not the way messages arrive. The subscription below is
+     * what makes a message appear when it is sent; this catches whatever a
+     * dropped socket missed, and refetching is cheap because decryption is
+     * cached. Polling this often *was* the delivery mechanism, which is why a
+     * message could sit unseen for fifteen seconds.
+     */
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
   });
+
+  useDirectMessageStream(inboxRelays, decrypted);
 
   // Just-sent messages, until the relay echo replaces them
   const { data: pending } = useQuery<ChatMessage[]>({
@@ -181,6 +208,115 @@ export function useDirectMessages() {
     isError: query.isError,
     refetch: query.refetch,
   };
+}
+
+/**
+ * Messages, as they arrive.
+ *
+ * Chat was polled — every fifteen seconds the whole inbox was fetched again,
+ * so a message could be written, accepted by a relay, and still sit unseen for
+ * most of a minute across the two clients involved. Relays already push: a
+ * `REQ` left open delivers each event the moment it lands.
+ *
+ * The window is the part that is easy to get wrong. Subscribing with
+ * `since: now` looks obviously right and receives nothing, because a gift wrap
+ * carries a timestamp up to two days in the past — the relay matches the
+ * filter against that, not against when the event showed up. So the window
+ * reaches back the full drift, and the replay it pulls on connect is the
+ * reconnect backfill.
+ */
+function useDirectMessageStream(
+  inboxRelays: string[],
+  decrypted: Map<string, ChatMessage | null>
+) {
+  const { nostr } = useNostr();
+  const { user } = useCurrentUser();
+  const queryClient = useQueryClient();
+
+  const relayKey = inboxRelays.join(',');
+
+  useEffect(() => {
+    if (!user) return;
+
+    /*
+     * One socket however many callers there are. The conversation list and the
+     * open thread both call this hook, and a subscription per caller would ask
+     * every relay for the same events twice — paid for in bandwidth by the
+     * relay operator, and in duplicate decrypt work here.
+     */
+    const shared = `${user.pubkey}|${relayKey}`;
+    const running = streams.get(shared);
+    if (running) {
+      running.count += 1;
+      return () => release(shared);
+    }
+
+    const controller = new AbortController();
+    streams.set(shared, { count: 1, stop: () => controller.abort() });
+
+    const key = ['direct-messages', user.pubkey, relayKey];
+
+    /** Merges one message in, newest first, without disturbing the rest. */
+    const receive = (message: ChatMessage) => {
+      queryClient.setQueryData<ChatMessage[]>(key, (current) => {
+        const existing = current ?? [];
+        if (existing.some((entry) => entry.id === message.id)) return existing;
+
+        return [...existing, message].sort((a, b) => b.createdAt - a.createdAt);
+      });
+    };
+
+    void (async () => {
+      /*
+       * Relays close subscriptions — on their own timers, on deploys, and
+       * whenever a laptop sleeps. Without this the stream ends silently and
+       * chat quietly reverts to the one-minute poll, which is the failure it
+       * was built to remove. Backs off so a relay that refuses is not hammered.
+       */
+      let delay = 1000;
+
+      while (!controller.signal.aborted) {
+        try {
+          const relay = inboxRelays.length
+            ? nostr.group(inboxRelays)
+            : nostr;
+
+          const filters = [
+            {
+              kinds: [GIFT_WRAP_KIND],
+              '#p': [user.pubkey],
+              since: Math.floor(Date.now() / 1000) - GIFT_WRAP_DRIFT,
+            },
+          ];
+
+          for await (const message of relay.req(filters, {
+            signal: controller.signal,
+          })) {
+            if (message[0] !== 'EVENT') continue;
+
+            // Connected and being served, so the next drop starts over patient
+            delay = 1000;
+
+            const [unwrapped] = await unwrapMany(
+              user.signer,
+              [message[2] as NostrEvent],
+              decrypted
+            );
+            if (unwrapped) receive(unwrapped);
+          }
+        } catch {
+          // Aborted, or the relay went away. Either way, the wait below.
+        }
+
+        if (controller.signal.aborted) return;
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay = Math.min(delay * 2, 30_000);
+      }
+    })();
+
+    return () => release(shared);
+  }, [nostr, user, relayKey, inboxRelays, decrypted, queryClient]);
 }
 
 /**
