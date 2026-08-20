@@ -4,6 +4,7 @@ import {
   listAddresses,
   localPartOf,
   nameByPayLink,
+  payLinkTakesName,
   pickPrimaryLink,
   servesAddress,
   suggestIdentityName,
@@ -378,6 +379,28 @@ describe('nameByPayLink', () => {
 
   it('handles an account with no names at all', () => {
     expect(nameByPayLink([]).size).toBe(0);
+  });
+});
+
+describe('payLinkTakesName', () => {
+  it('renames a link that says nothing about where it lives', () => {
+    /*
+     * What `update_ln_address` creates: a username, a wallet and its limits,
+     * and no domain at all. There is nothing to override.
+     */
+    expect(payLinkTakesName({})).toBe(true);
+    expect(payLinkTakesName({ domain: null })).toBe(true);
+    expect(payLinkTakesName({ domain: '  ' })).toBe(true);
+  });
+
+  it('leaves a link LNbits has placed where LNbits put it', () => {
+    /**
+     * `PayLink` carries a domain, and a filled-in one is the server stating
+     * where the link answers. Overriding it would move a working address onto
+     * a domain LNbits never said it was at — the same mistake as the phantom
+     * row, pointed the other way.
+     */
+    expect(payLinkTakesName({ domain: 'ln.nostrfeed.com' })).toBe(false);
   });
 });
 

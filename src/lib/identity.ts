@@ -330,6 +330,27 @@ export function nameByPayLink(
 }
 
 /**
+ * Whether a pay link may be renamed after the verified name it serves.
+ *
+ * Only one with no domain of its own. `PayLink` carries a `domain` field, and
+ * when LNbits has filled it in that is the server stating where the link
+ * answers — a statement that outranks any inference from the name attached to
+ * it. Overriding it would move a real address onto a domain LNbits never said
+ * it was at, which is the same mistake as the phantom row, pointed the other
+ * way.
+ *
+ * The links that qualify are exactly the ones the NIP-05 extension makes:
+ * `update_ln_address` POSTs a username, a wallet and its limits, and no
+ * domain at all. Those are the links with nothing of their own to say, and the
+ * name they were created for is the best label they will ever have.
+ */
+export function payLinkTakesName(link: {
+  domain?: string | null;
+}): boolean {
+  return !link.domain?.trim();
+}
+
+/**
  * Whether anything on the account already answers for an address.
  *
  * A verified name and a pay link are two records in two extensions, and they

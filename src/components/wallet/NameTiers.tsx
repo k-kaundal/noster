@@ -5,7 +5,7 @@ import { VerificationBadge, VerificationMark } from '@/components/VerificationBa
 import { AddressReceiveDialog } from '@/components/wallet/AddressReceiveDialog';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useToast } from '@/hooks/useToast';
-import { nameByPayLink } from '@/lib/identity';
+import { nameByPayLink, payLinkTakesName } from '@/lib/identity';
 import {
   NIP5_DOMAIN,
   isNip5Configured,
@@ -58,6 +58,10 @@ export function NameTiers() {
    * alone — `/lnurlp/api/v1/well-known/{username}` takes no domain — so the
    * one link answers at either host, and the honest label is the name that was
    * bought.
+   *
+   * Only links with no domain of their own, which is what the extension makes.
+   * A `PayLink` that carries a domain has been placed by LNbits, and moving it
+   * would be the same mistake in the opposite direction.
    */
   const named = nameByPayLink(
     nip5.addresses.map((address) => ({
@@ -68,7 +72,9 @@ export function NameTiers() {
   );
 
   const addresses = lightning.addresses.map((entry) => {
-    const identifier = named.get(entry.link.id);
+    const identifier = payLinkTakesName(entry.link)
+      ? named.get(entry.link.id)
+      : undefined;
     if (!identifier) return entry;
 
     return {
