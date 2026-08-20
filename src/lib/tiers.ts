@@ -33,20 +33,29 @@ const OUR_DOMAINS: string[] = [
  *
  * - **assigned** — derived from the key. Permanent, free, receives zaps, and
  *   looks like what it is: a string nobody chose.
+ * - **unverified** — a name somebody picked, at a domain that sells names,
+ *   which they have not bought *here*. It takes money and carries no ✓.
  * - **named** — a name at our own domain, bought by the year through the
  *   NIP-05 extension, which is also what puts a ✓ against posts.
- * There was a third, `portable`, at an outside wallet service's domain. That
+ * There was a fourth, `portable`, at an outside wallet service's domain. That
  * service is gone, and with it the only issuer of that tier — a rung nothing
  * can reach is worse than no rung, because it leaves an upsell on screen
  * pointing at something nobody can buy.
  *
+ * The middle rung exists because a pay link and a bought name are the same
+ * string. Attaching a lightning address to `dev@one.example` makes the
+ * extension issue a pay link named `dev`, which LNbits answers for on its own
+ * host — so `dev@two.example` appears, chosen-looking, payable, and bought by
+ * nobody. Calling that free was wrong twice over: it is a name somebody picked,
+ * and it is for sale at that domain like any other.
+ *
  * Kept apart from `identity.ts`, which answers "what is left to do"; this
  * answers "what does somebody have, and which of it is best".
  */
-export type NameTier = 'assigned' | 'named';
+export type NameTier = 'assigned' | 'unverified' | 'named';
 
 /** Ascending. The last one somebody holds is the one to lead with. */
-export const TIER_ORDER: NameTier[] = ['assigned', 'named'];
+export const TIER_ORDER: NameTier[] = ['assigned', 'unverified', 'named'];
 
 export function tierRank(tier: NameTier): number {
   return TIER_ORDER.indexOf(tier);
@@ -64,13 +73,31 @@ export interface TierCopy {
   mark: 'dot' | 'check';
 }
 
-export function describeTier(tier: NameTier): TierCopy {
+export function describeTier(
+  tier: NameTier,
+  /**
+   * Where the name is, so the middle rung can say where to buy it.
+   *
+   * "Not verified" on its own is a verdict with no next step, and the next
+   * step is the whole reason to say it — the same name is on sale at the
+   * domain it is already sitting at.
+   */
+  options: { domain?: string } = {}
+): TierCopy {
   switch (tier) {
     case 'named':
       return {
         label: 'Verified',
         blurb: 'Your own name, and a ✓ on everything you post.',
         mark: 'check',
+      };
+    case 'unverified':
+      return {
+        label: 'Not verified',
+        blurb: options.domain
+          ? `Receives zaps. Buy it at ${options.domain} to add the ✓.`
+          : 'Receives zaps. Buy this name to add the ✓.',
+        mark: 'dot',
       };
     default:
       return {
@@ -96,7 +123,22 @@ export function describeTier(tier: NameTier): TierCopy {
  */
 export function tierOf(
   address: string,
-  domains: { named?: string | string[] } = {}
+  domains: { named?: string | string[] } = {},
+  /**
+   * The verified names actually held, written out in full.
+   *
+   * Given, it decides the top tier outright, and the shape of the local part
+   * stops being consulted. That correction matters because a chosen-looking
+   * name is not evidence of anything: attaching a lightning address to
+   * `dev@getzap.me` makes the extension issue a pay link named `dev`, LNbits
+   * answers for it on its own host, and the list gained a `dev@ln.example`
+   * wearing a ✓ that nobody bought and no client would honour — while the
+   * name that really was bought sat on the other domain.
+   *
+   * Omitted where there is nothing to check against: ranking a stranger's
+   * `lud16` has only the string, and the shape is the best reading available.
+   */
+  verified?: readonly string[] | null
 ): NameTier | null {
   const at = address.lastIndexOf('@');
   if (at <= 0) return null;
@@ -109,17 +151,43 @@ export function tierOf(
     normalizeDomain
   );
 
-  if (named.includes(domain)) {
-    return isGeneratedName(local) ? 'assigned' : 'named';
+  if (!named.includes(domain)) {
+    // An address from somewhere else entirely. Real, and not one of our tiers.
+    return null;
   }
 
-  // An address from somewhere else entirely. Real, and not one of our tiers.
-  return null;
+  if (verified) {
+    const held = `${local}@${domain}`;
+    if (verified.some((entry) => normalizeIdentifier(entry) === held)) {
+      return 'named';
+    }
+
+    /*
+     * Not bought here, so not verified — but a name somebody picked is not the
+     * free one either. It is the same name the domain has on sale, sitting one
+     * purchase away from the ✓.
+     */
+    return isGeneratedName(local) ? 'assigned' : 'unverified';
+  }
+
+  return isGeneratedName(local) ? 'assigned' : 'named';
+}
+
+/** Lowercased with the domain normalised, so two spellings compare equal. */
+function normalizeIdentifier(identifier: string): string {
+  const at = identifier.lastIndexOf('@');
+  if (at <= 0) return identifier.trim().toLowerCase();
+
+  return `${identifier.slice(0, at).trim().toLowerCase()}@${normalizeDomain(
+    identifier.slice(at + 1)
+  )}`;
 }
 
 export interface TieredAddress {
   address: string;
   tier: NameTier;
+  /** The half after the `@`, so a row can say where to go to buy the ✓. */
+  domain: string;
 }
 
 /**
@@ -133,7 +201,8 @@ export interface TieredAddress {
  */
 export function rankAddresses(
   addresses: string[],
-  domains?: { named?: string | string[] }
+  domains?: { named?: string | string[] },
+  verified?: readonly string[] | null
 ): TieredAddress[] {
   const seen = new Set<string>();
   const ranked: TieredAddress[] = [];
@@ -142,11 +211,15 @@ export function rankAddresses(
     const clean = address.trim().toLowerCase();
     if (!clean || seen.has(clean)) continue;
 
-    const tier = tierOf(clean, domains);
+    const tier = tierOf(clean, domains, verified);
     if (!tier) continue;
 
     seen.add(clean);
-    ranked.push({ address: clean, tier });
+    ranked.push({
+      address: clean,
+      tier,
+      domain: normalizeDomain(clean.slice(clean.lastIndexOf('@') + 1)),
+    });
   }
 
   return ranked.sort((a, b) => tierRank(b.tier) - tierRank(a.tier));
@@ -162,18 +235,25 @@ export function rankAddresses(
 export function leadAddress(
   addresses: string[],
   chosen?: string | null,
-  domains?: { named?: string | string[] }
+  domains?: { named?: string | string[] },
+  verified?: readonly string[] | null
 ): TieredAddress | null {
-  const ranked = rankAddresses(addresses, domains);
+  const ranked = rankAddresses(addresses, domains, verified);
   if (!ranked.length) return null;
 
   const picked = chosen?.trim().toLowerCase();
   return ranked.find((entry) => entry.address === picked) ?? ranked[0];
 }
 
-/** Whether there is anything above what they hold to sell them. */
+/**
+ * Whether there is anything above what they hold to sell them.
+ *
+ * Not the next rung up the order, because one of the rungs is not for sale:
+ * "not verified" is a state a name is in, not something to be upgraded to, and
+ * offering it would advertise the thing somebody already has. Everything below
+ * the top therefore points at the top.
+ */
 export function nextTier(current: NameTier | null): NameTier | null {
   if (current === null) return 'assigned';
-  const next = TIER_ORDER[tierRank(current) + 1];
-  return next ?? null;
+  return current === 'named' ? null : 'named';
 }

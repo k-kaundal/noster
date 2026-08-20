@@ -24,6 +24,14 @@ const STYLES: Record<NameTier, { className: string; ring: string }> = {
     className: 'text-success',
     ring: 'bg-success/15',
   },
+  /*
+   * Quiet, not alarming. A name waiting to be bought is an offer, and dressing
+   * it as a warning would tell somebody an address that works is broken.
+   */
+  unverified: {
+    className: 'text-muted-foreground',
+    ring: 'bg-muted',
+  },
   assigned: {
     className: 'text-muted-foreground',
     ring: 'bg-muted',
