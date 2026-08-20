@@ -3,6 +3,7 @@ import {
   describeIdentity,
   listAddresses,
   localPartOf,
+  nameByPayLink,
   pickPrimaryLink,
   servesAddress,
   suggestIdentityName,
@@ -337,6 +338,49 @@ describe('describeIdentity with an address from elsewhere', () => {
  * flow never writes — so a live, paid, reachable address was announced as one
  * that money disappears into.
  */
+describe('nameByPayLink', () => {
+  it('gives a pay link the name it was made for', () => {
+    /**
+     * Turning zaps on for a bought name makes the extension create an `lnurlp`
+     * link under the same local part. The link carries no domain, so a list
+     * built from pay links stamped the instance's default one on it — and
+     * `dev@getzap.me`, the name actually bought, appeared as
+     * `dev@ln.nostrfeed.com`: a domain the account holds nothing on.
+     */
+    expect(
+      nameByPayLink([
+        { payLinkId: 'RnzDRA', identifier: 'dev@getzap.me', active: true },
+      ]).get('RnzDRA')
+    ).toBe('dev@getzap.me');
+  });
+
+  it('renames nothing for a name that never attached one', () => {
+    // The extension's schema defaults `pay_link_id` to the empty string, so a
+    // name whose attachment was asked for and never completed has no link
+    expect(
+      nameByPayLink([
+        { payLinkId: '', identifier: 'dev@getzap.me', active: true },
+      ]).size
+    ).toBe(0);
+  });
+
+  it('refuses to rename anything for an unpaid reservation', () => {
+    /*
+     * The name is the thing being sold. Showing it as held before its invoice
+     * settles is the one mistake here that gives away the product.
+     */
+    expect(
+      nameByPayLink([
+        { payLinkId: 'RnzDRA', identifier: 'dev@getzap.me', active: false },
+      ]).size
+    ).toBe(0);
+  });
+
+  it('handles an account with no names at all', () => {
+    expect(nameByPayLink([]).size).toBe(0);
+  });
+});
+
 describe('servesAddress', () => {
   const entries = [
     { address: 'help@ln.nostrfeed.com' },

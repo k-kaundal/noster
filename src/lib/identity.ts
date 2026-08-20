@@ -287,6 +287,48 @@ export function listAddresses<T extends { username?: string }>(
   );
 }
 
+/** A verified name, and the pay link the extension made to receive for it. */
+export interface NamedPayLink {
+  payLinkId?: string | null;
+  /** The name written out, `local_part@domain`. */
+  identifier?: string | null;
+  active?: boolean;
+}
+
+/**
+ * Which pay links exist only to receive for a verified name.
+ *
+ * Turning zaps on for `dev@one.example` does not make a second name — it makes
+ * the extension POST an `lnurlp` link named `dev`, and store that link's id on
+ * the name. The link itself carries no domain, so a list built from pay links
+ * stamps the instance's default one on it and produces `dev@two.example`: an
+ * address nobody bought, at a domain they hold nothing on, sitting beside the
+ * name it is the plumbing for.
+ *
+ * Keyed by link id rather than by username, because the id is the extension's
+ * own statement about which link belongs to which name. Matching on the
+ * username would also claim a link somebody made by hand under the same name,
+ * which is a different thing that happens to be spelled alike.
+ *
+ * Only live names. An unpaid reservation must not rename anything: the name is
+ * what is being sold, and showing it as held is the one thing that cannot be
+ * allowed to happen before it is paid for.
+ */
+export function nameByPayLink(
+  names: readonly NamedPayLink[]
+): Map<string, string> {
+  const byLink = new Map<string, string>();
+
+  for (const name of names) {
+    if (name.active === false) continue;
+    if (!name.payLinkId || !name.identifier) continue;
+
+    byLink.set(name.payLinkId, name.identifier.trim().toLowerCase());
+  }
+
+  return byLink;
+}
+
 /**
  * Whether anything on the account already answers for an address.
  *
