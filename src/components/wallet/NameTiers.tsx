@@ -117,7 +117,8 @@ export function NameTiers() {
                   <p className="truncate text-xs text-muted-foreground">
                     {walletFor.get(entry.address)
                       ? `Pays into ${walletFor.get(entry.address)}`
-                      : describeTier(entry.tier, { chosen: entry.chosen }).blurb}
+                      : describeTier(entry.tier, { domain: entry.domain })
+                          .blurb}
                   </p>
                 </div>
 

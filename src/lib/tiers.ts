@@ -33,20 +33,29 @@ const OUR_DOMAINS: string[] = [
  *
  * - **assigned** — derived from the key. Permanent, free, receives zaps, and
  *   looks like what it is: a string nobody chose.
+ * - **unverified** — a name somebody picked, at a domain that sells names,
+ *   which they have not bought *here*. It takes money and carries no ✓.
  * - **named** — a name at our own domain, bought by the year through the
  *   NIP-05 extension, which is also what puts a ✓ against posts.
- * There was a third, `portable`, at an outside wallet service's domain. That
+ * There was a fourth, `portable`, at an outside wallet service's domain. That
  * service is gone, and with it the only issuer of that tier — a rung nothing
  * can reach is worse than no rung, because it leaves an upsell on screen
  * pointing at something nobody can buy.
  *
+ * The middle rung exists because a pay link and a bought name are the same
+ * string. Attaching a lightning address to `dev@one.example` makes the
+ * extension issue a pay link named `dev`, which LNbits answers for on its own
+ * host — so `dev@two.example` appears, chosen-looking, payable, and bought by
+ * nobody. Calling that free was wrong twice over: it is a name somebody picked,
+ * and it is for sale at that domain like any other.
+ *
  * Kept apart from `identity.ts`, which answers "what is left to do"; this
  * answers "what does somebody have, and which of it is best".
  */
-export type NameTier = 'assigned' | 'named';
+export type NameTier = 'assigned' | 'unverified' | 'named';
 
 /** Ascending. The last one somebody holds is the one to lead with. */
-export const TIER_ORDER: NameTier[] = ['assigned', 'named'];
+export const TIER_ORDER: NameTier[] = ['assigned', 'unverified', 'named'];
 
 export function tierRank(tier: NameTier): number {
   return TIER_ORDER.indexOf(tier);
@@ -67,14 +76,13 @@ export interface TierCopy {
 export function describeTier(
   tier: NameTier,
   /**
-   * Whether somebody picked this local part.
+   * Where the name is, so the middle rung can say where to buy it.
    *
-   * Only changes the free tier's wording, and it has to: "Assigned, not
-   * chosen" is plainly false of an address somebody named, and a person
-   * reading it about `dev@…` concludes the badge is broken rather than that
-   * the address is unverified.
+   * "Not verified" on its own is a verdict with no next step, and the next
+   * step is the whole reason to say it — the same name is on sale at the
+   * domain it is already sitting at.
    */
-  options: { chosen?: boolean } = {}
+  options: { domain?: string } = {}
 ): TierCopy {
   switch (tier) {
     case 'named':
@@ -83,12 +91,18 @@ export function describeTier(
         blurb: 'Your own name, and a ✓ on everything you post.',
         mark: 'check',
       };
+    case 'unverified':
+      return {
+        label: 'Not verified',
+        blurb: options.domain
+          ? `Receives zaps. Buy it at ${options.domain} to add the ✓.`
+          : 'Receives zaps. Buy this name to add the ✓.',
+        mark: 'dot',
+      };
     default:
       return {
         label: 'Free',
-        blurb: options.chosen
-          ? 'Receives zaps. A pay link, not a verified name — no ✓.'
-          : 'Receives zaps from every client. Assigned, not chosen.',
+        blurb: 'Receives zaps from every client. Assigned, not chosen.',
         mark: 'dot',
       };
   }
@@ -144,11 +158,16 @@ export function tierOf(
 
   if (verified) {
     const held = `${local}@${domain}`;
-    return verified.some(
-      (entry) => normalizeIdentifier(entry) === held
-    )
-      ? 'named'
-      : 'assigned';
+    if (verified.some((entry) => normalizeIdentifier(entry) === held)) {
+      return 'named';
+    }
+
+    /*
+     * Not bought here, so not verified — but a name somebody picked is not the
+     * free one either. It is the same name the domain has on sale, sitting one
+     * purchase away from the ✓.
+     */
+    return isGeneratedName(local) ? 'assigned' : 'unverified';
   }
 
   return isGeneratedName(local) ? 'assigned' : 'named';
@@ -167,8 +186,8 @@ function normalizeIdentifier(identifier: string): string {
 export interface TieredAddress {
   address: string;
   tier: NameTier;
-  /** Whether the local part was picked, rather than derived from the key. */
-  chosen: boolean;
+  /** The half after the `@`, so a row can say where to go to buy the ✓. */
+  domain: string;
 }
 
 /**
@@ -199,7 +218,7 @@ export function rankAddresses(
     ranked.push({
       address: clean,
       tier,
-      chosen: !isGeneratedName(clean.slice(0, clean.lastIndexOf('@'))),
+      domain: normalizeDomain(clean.slice(clean.lastIndexOf('@') + 1)),
     });
   }
 
@@ -226,9 +245,15 @@ export function leadAddress(
   return ranked.find((entry) => entry.address === picked) ?? ranked[0];
 }
 
-/** Whether there is anything above what they hold to sell them. */
+/**
+ * Whether there is anything above what they hold to sell them.
+ *
+ * Not the next rung up the order, because one of the rungs is not for sale:
+ * "not verified" is a state a name is in, not something to be upgraded to, and
+ * offering it would advertise the thing somebody already has. Everything below
+ * the top therefore points at the top.
+ */
 export function nextTier(current: NameTier | null): NameTier | null {
   if (current === null) return 'assigned';
-  const next = TIER_ORDER[tierRank(current) + 1];
-  return next ?? null;
+  return current === 'named' ? null : 'named';
 }
