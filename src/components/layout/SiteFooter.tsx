@@ -7,6 +7,18 @@ export const AUTHOR = {
   url: 'https://x.com/kkworld',
 } as const;
 
+/**
+ * Where to find people rather than documentation.
+ *
+ * Kept here with the other outward links so there is one copy of the invite.
+ * A Discord invite is a URL that can be revoked or regenerated, and the same
+ * string pasted into four components is four places to miss when it changes.
+ */
+export const COMMUNITY = {
+  name: 'Discord',
+  url: 'https://discord.gg/QTbxqKEfef',
+} as const;
+
 export const PROJECTS = [
   { name: 'SecureEnv', url: 'https://secureenv.in' },
   { name: 'ForgeLearn', url: 'https://forgelearn.dev' },
@@ -33,6 +45,15 @@ export function SiteFooter({ className }: { className?: string }) {
       <Link to="/services" className="hover:text-foreground hover:underline">
         Wallet &amp; mint
       </Link>
+
+      <a
+        href={COMMUNITY.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="hover:text-foreground hover:underline"
+      >
+        {COMMUNITY.name}
+      </a>
 
       <a
         href={AUTHOR.url}

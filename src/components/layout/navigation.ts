@@ -3,6 +3,7 @@ import {
   Banknote,
   Bell,
   BookOpen,
+  LifeBuoy,
   Bookmark,
   CalendarDays,
   ChartLine,
@@ -26,6 +27,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
+import { COMMUNITY } from '@/components/layout/SiteFooter';
 
 /**
  * Which part of the rail an entry belongs to.
@@ -63,6 +65,15 @@ export interface NavItem {
   shortcut?: string;
   /** Only reachable while logged in. */
   requiresAuth?: boolean;
+  /**
+   * Leaves the app.
+   *
+   * Needed because the rail renders a router `Link`, which treats an absolute
+   * URL as a path and routes `https://discord.gg/...` straight to the 404
+   * page. An external row is an `<a>`, and says so with an icon rather than
+   * surprising somebody with a new tab.
+   */
+  external?: boolean;
   /**
    * Kept out of the mobile tab bar, which only has room for a few
    * destinations. These stay reachable from the desktop rail and the
@@ -208,6 +219,14 @@ export function getNavItems(pubkey?: string): NavItem[] {
     // The manual was reachable from the footer alone, which is the one place
     // somebody stuck on a page does not look
     { section: 'manage', href: '/docs', icon: BookOpen, label: 'Help', secondary: true },
+    {
+      section: 'manage',
+      href: COMMUNITY.url,
+      icon: LifeBuoy,
+      label: COMMUNITY.name,
+      secondary: true,
+      external: true,
+    },
     { href: '/compose', icon: PenSquare, label: 'Compose', shortcut: 'C', requiresAuth: true },
   ];
 }

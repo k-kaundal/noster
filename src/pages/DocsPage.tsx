@@ -1,7 +1,15 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, BookOpen, Search } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  ExternalLink,
+  LifeBuoy,
+  Search,
+} from 'lucide-react';
 import { Layout } from '@/components/Layout';
+import { COMMUNITY } from '@/components/layout/SiteFooter';
 import { Markdown } from '@/components/articles/Markdown';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -106,10 +114,41 @@ function Contents() {
                 </div>
               </section>
             ))}
+
+            <AskAPerson />
           </div>
         )}
       </div>
     </Layout>
+  );
+}
+
+/**
+ * Where to go when the documentation was not the answer.
+ *
+ * At the foot of the index rather than the top: somebody who has scrolled the
+ * whole list has demonstrated that what they wanted is not written down, and
+ * offering a chat room above the answer would send people to wait for a human
+ * for a question a page here already answers.
+ */
+function AskAPerson() {
+  return (
+    <a
+      href={COMMUNITY.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group flex items-center gap-3 rounded-xl border border-primary/25 bg-gradient-to-br from-primary/10 to-transparent p-4 transition-colors hover:border-primary/50"
+    >
+      <LifeBuoy className="h-5 w-5 shrink-0 text-primary" />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">Still stuck?</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Ask in the {COMMUNITY.name} — real people, and the fastest way to
+          report something that looks wrong.
+        </p>
+      </div>
+      <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5" />
+    </a>
   );
 }
 

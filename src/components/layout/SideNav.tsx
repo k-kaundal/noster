@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { PenSquare } from 'lucide-react';
+import { ExternalLink, PenSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import {
@@ -130,20 +130,17 @@ function NavLink({
   badge?: string;
   onNavigate?: () => void;
 }) {
-  return (
-    <Link
-      to={item.href}
-      onClick={onNavigate}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'group relative flex items-center gap-3 rounded-lg px-3 text-sm transition-colors duration-150',
-        // Bigger targets in the sheet, where this is being tapped
-        compact ? 'py-2.5' : 'py-2',
-        active
-          ? 'bg-primary/10 font-medium text-foreground'
-          : 'font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-      )}
-    >
+  const className = cn(
+    'group relative flex items-center gap-3 rounded-lg px-3 text-sm transition-colors duration-150',
+    // Bigger targets in the sheet, where this is being tapped
+    compact ? 'py-2.5' : 'py-2',
+    active
+      ? 'bg-primary/10 font-medium text-foreground'
+      : 'font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+  );
+
+  const body = (
+    <>
       {/* A marker on the active row, so the eye finds it without reading */}
       {active && (
         <span
@@ -161,6 +158,16 @@ function NavLink({
         )}
       />
       <span className="flex-1 truncate">{item.label}</span>
+
+      {/* Said before the click rather than discovered after it: a row that
+          silently opens a new tab behaved differently from every row above
+          it, and the only warning was the tab appearing. */}
+      {item.external && (
+        <ExternalLink
+          className="h-3 w-3 shrink-0 text-muted-foreground/70"
+          aria-hidden
+        />
+      )}
 
       {/*
         The figure, and it displaces the shortcut rather than sitting beside
@@ -183,6 +190,35 @@ function NavLink({
           </kbd>
         )
       )}
+    </>
+  );
+
+  /*
+   * A router `Link` treats an absolute URL as a path, so an external row has
+   * to be a plain anchor — routed, it would land on the 404 page.
+   */
+  if (item.external) {
+    return (
+      <a
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onNavigate}
+        className={className}
+      >
+        {body}
+      </a>
+    );
+  }
+
+  return (
+    <Link
+      to={item.href}
+      onClick={onNavigate}
+      aria-current={active ? 'page' : undefined}
+      className={className}
+    >
+      {body}
     </Link>
   );
 }
