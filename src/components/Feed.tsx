@@ -13,12 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrendingHashtags, TrendingPeople } from '@/components/TrendingCards';
 import { useTrending } from '@/hooks/useTrending';
-import { useMuteList } from '@/hooks/useMuteList';
-import { useAdultContent } from '@/hooks/useAdultContent';
-import { filterMuted } from '@/lib/mute';
-import { filterAdultContent } from '@/lib/nsfw';
-import { filterMachineEvents } from '@/lib/machineEvents';
-import { useMachineEvents } from '@/hooks/useMachineEvents';
+import { useContentFilter } from '@/hooks/useContentFilter';
 import { countUnseen, markerFor, type FeedMarker } from '@/lib/feedPosition';
 import { cn } from '@/lib/utils';
 
@@ -48,26 +43,20 @@ export function Feed() {
   } = useFeed(scope);
 
   const { data: trending, isLoading: isTrendingLoading } = useTrending();
-  const { list: muteList } = useMuteList();
   const { filters } = useAdvancedFilters();
-  const { showAdult } = useAdultContent();
-  const { showMachine } = useMachineEvents();
+  const { filter: filterContent } = useContentFilter();
 
   // Muted authors, words and hashtags never reach the timeline
   const posts = useMemo(() => {
     if (!rawPosts) return rawPosts;
 
-    // Before anything optional: adult content is filtered whether or not the
-    // advanced filters have ever been opened
-    let filtered = filterAdultContent(filterMuted(rawPosts, muteList), showAdult);
-
-    /**
-     * Machine payloads next. A service publishing status as kind 1 is doing
-     * nothing wrong, but one beaconing every few seconds is the whole feed
-     * within the hour — and this is the shared timeline, where a reader is
-     * asking for posts. Their own profile still shows everything.
+    /*
+     * Mute, adult content and machine payloads, in one place shared with every
+     * other screen that renders notes — see `useContentFilter`. They used to
+     * be written out here, which is why they applied to this timeline and to
+     * nothing else.
      */
-    filtered = filterMachineEvents(filtered, showMachine);
+    let filtered = filterContent(rawPosts) ?? [];
 
     // Apply advanced filters if enabled
     if (filters.enabled) {
@@ -123,7 +112,7 @@ export function Feed() {
     }
 
     return filtered;
-  }, [rawPosts, muteList, filters, showAdult, showMachine]);
+  }, [rawPosts, filters, filterContent]);
 
   // Track the newest note the reader has actually seen, so the "new posts"
   // pill only counts notes that arrived after they arrived on the page.

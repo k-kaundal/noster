@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useState,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -98,9 +99,23 @@ export function ContentWarning({
    * Only for adult warnings, though: opting into nudity is not opting into
    * gore, and it says nothing at all about spoilers.
    */
-  const preApproved = showAdult && !!event && isAdultContent(event);
+  const adult = !!event && isAdultContent(event);
+  const preApproved = showAdult && adult;
 
   const [revealed, setRevealed] = useState(false);
+
+  /**
+   * Turning adult content off closes what it opened.
+   *
+   * `revealed` is per-post state and it outlived the setting: somebody who
+   * uncovered a post, then switched adult content off, was left looking at the
+   * thing they had just asked to stop seeing — and on a shared screen that is
+   * the exact moment the switch is being reached for. Only for adult posts;
+   * revealing a spoiler is not a decision this setting has any say over.
+   */
+  useEffect(() => {
+    if (!showAdult && adult) setRevealed(false);
+  }, [showAdult, adult]);
   const config = SEVERITY_CONFIG[warning.severity];
   const reason = describeWarning(warning);
   const categories = categoryLabels(warning);

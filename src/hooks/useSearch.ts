@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+import { useContentFilter } from '@/hooks/useContentFilter';
 import { useNostr } from '@nostrify/react';
 import { useQuery } from '@tanstack/react-query';
 import { NSchema as n } from '@nostrify/nostrify';
@@ -53,7 +55,7 @@ export function useSearch(query: string) {
   const localOnly = searchSupport === 'no';
   const limit = localOnly ? LOCAL_LIMIT : INDEXED_LIMIT;
 
-  return useQuery<SearchResults>({
+  const results = useQuery<SearchResults>({
     queryKey: ['search', searchTerm, localOnly],
     queryFn: async (c) => {
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
@@ -102,4 +104,21 @@ export function useSearch(query: string) {
     enabled: searchTerm.length >= 2,
     staleTime: 30_000,
   });
+
+  const { filter } = useContentFilter();
+
+  /*
+   * Searching is not an exemption. A muted account is still muted when their
+   * name is typed into a box, and adult content switched off stays off — the
+   * only screen where that is not true should be the one that says it is
+   * showing you what you asked to hide.
+   */
+  return useMemo(() => {
+    if (!results.data) return results;
+
+    return {
+      ...results,
+      data: { ...results.data, posts: filter(results.data.posts) ?? [] },
+    };
+  }, [results, filter]);
 }

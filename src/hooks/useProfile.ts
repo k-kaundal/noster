@@ -1,11 +1,14 @@
+import { useMemo } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useQuery } from '@tanstack/react-query';
 import { TIMELINE_KINDS } from '@/lib/eventKinds';
+import { useAdultContent } from '@/hooks/useAdultContent';
+import { filterAdultContent } from '@/lib/nsfw';
 
 export function useProfile(pubkey: string) {
   const { nostr } = useNostr();
 
-  return useQuery({
+  const query = useQuery({
     queryKey: ['profile', pubkey],
     queryFn: async (c) => {
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(4000)]);
@@ -37,4 +40,28 @@ export function useProfile(pubkey: string) {
     },
     enabled: !!pubkey,
   });
+
+  const { showAdult } = useAdultContent();
+
+  /*
+   * Adult content, and not the mute list.
+   *
+   * Those pull in opposite directions here and both readings are defensible,
+   * so the distinction is where somebody's intent is. Opening a profile is a
+   * deliberate act — hiding what a muted account posted on their own page
+   * would leave a blank screen with no explanation of why. Adult content
+   * switched off is not about a person at all; it is about who can see the
+   * screen, and that does not stop applying because of which page is open.
+   */
+  return useMemo(() => {
+    if (!query.data) return query;
+
+    return {
+      ...query,
+      data: {
+        ...query.data,
+        posts: filterAdultContent(query.data.posts, showAdult),
+      },
+    };
+  }, [query, showAdult]);
 }

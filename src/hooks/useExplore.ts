@@ -1,10 +1,12 @@
+import { useMemo } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useQuery } from '@tanstack/react-query';
+import { useContentFilter } from '@/hooks/useContentFilter';
 
 export function useExplore() {
   const { nostr } = useNostr();
 
-  return useQuery({
+  const query = useQuery({
     queryKey: ['explore'],
     queryFn: async (c) => {
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(5000)]);
@@ -76,4 +78,30 @@ export function useExplore() {
     },
     refetchInterval: 2 * 60 * 1000, // Refetch every 2 minutes
   });
+
+  const { filter } = useContentFilter();
+
+  /*
+   * Explore is where a reader is handed notes by nobody they follow, which
+   * makes it the screen where an unfiltered feed does the most damage: the
+   * mute list and the adult switch were both being ignored here, so the one
+   * place somebody meets strangers was the one place their settings did not
+   * apply.
+   */
+  return useMemo(() => {
+    if (!query.data) return query;
+
+    const data = query.data;
+
+    return {
+      ...query,
+      data: {
+        ...data,
+        recentPosts: filter(data.recentPosts) ?? [],
+        postsWithImages: filter(data.postsWithImages) ?? [],
+        postsWithLinks: filter(data.postsWithLinks) ?? [],
+        longFormContent: filter(data.longFormContent) ?? [],
+      },
+    };
+  }, [query, filter]);
 }
