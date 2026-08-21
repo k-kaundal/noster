@@ -46,6 +46,14 @@ export interface LightningAddressOptions {
    */
   preferredUsername?: string;
   /**
+   * The whole verified identity, when one is held.
+   *
+   * Needed because the same username exists at more than one domain far more
+   * often than not — buying a name issues a pay link the other domain also
+   * answers for — and the local part alone cannot tell those two apart.
+   */
+  preferredAddress?: string;
+  /**
    * Names this person has actually paid for and which are live.
    *
    * Kept separate from `preferredUsername` on purpose. A reservation exists
@@ -66,6 +74,7 @@ export interface LightningAddressOptions {
  */
 export function useLightningAddress({
   preferredUsername,
+  preferredAddress,
   paidNames = [],
 }: LightningAddressOptions = {}) {
   const { user } = useCurrentUser();
@@ -128,8 +137,14 @@ export function useLightningAddress({
    * The verified name wins when there is a link for it.
    */
   const link = useMemo(
-    () => pickPrimaryLink(links.data ?? [], preferredUsername),
-    [links.data, preferredUsername]
+    () =>
+      pickPrimaryLink(
+        links.data ?? [],
+        preferredUsername,
+        preferredAddress,
+        (entry) => linkAddress(entry)
+      ),
+    [links.data, preferredUsername, preferredAddress]
   );
   const address = link ? linkAddress(link) : null;
 
