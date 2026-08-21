@@ -160,15 +160,52 @@ export function isActiveMute(item: string | MutedItem): boolean {
  * Decides whether an event is muted, and why. Returning the reason lets the UI
  * explain the gap instead of silently dropping content.
  */
+/** NIP-18 repost, and the generic form that carries any kind. */
+const REPOST_KINDS = new Set([6, 16]);
+
+/**
+ * Who a repost is a repost *of*.
+ *
+ * Muting somebody is a request not to see them, and it was being read as a
+ * request not to see events they signed — which is not the same thing. Anybody
+ * else reposting them put them straight back in the timeline, wearing another
+ * account's name, and reposts are exactly how the accounts worth muting travel
+ * furthest.
+ *
+ * Read from the `p` tag first, which NIP-18 requires, and from the embedded
+ * event as a fallback: the tag is what relays index, and the content is what
+ * survives a client that forgot the tag.
+ */
+function repostedAuthor(event: NostrEvent): string | null {
+  if (!REPOST_KINDS.has(event.kind)) return null;
+
+  const tagged = event.tags.find(([name]) => name === 'p')?.[1];
+  if (tagged) return tagged;
+
+  const content = event.content.trim();
+  if (!content.startsWith('{')) return null;
+
+  try {
+    const embedded = JSON.parse(content) as { pubkey?: unknown };
+    return typeof embedded.pubkey === 'string' ? embedded.pubkey : null;
+  } catch {
+    // A repost whose content is not an event names nobody
+    return null;
+  }
+}
+
 export function getMuteReason(
   event: NostrEvent,
   list: MuteList
 ): MuteReason {
-  // Check pubkeys with active mute status
+  const boosted = repostedAuthor(event);
+
+  // Check pubkeys with active mute status, against the author and — for a
+  // repost — against whoever is being amplified
   for (const item of list.pubkeys) {
     const value = getMuteValue(item);
     const isActive = isActiveMute(item);
-    if (value === event.pubkey && isActive) {
+    if (isActive && (value === event.pubkey || value === boosted)) {
       const soft = typeof item === 'string' ? false : (item.soft ?? false);
       return muteReason('author', soft);
     }

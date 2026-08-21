@@ -111,11 +111,17 @@ export function isAdultContent(event: NostrEvent): boolean {
   return classifyNsfw(event).adult;
 }
 
-/** Drops self-labelled adult content from a list of events. */
-export function filterAdultContent(
-  events: NostrEvent[],
+/**
+ * Drops self-labelled adult content from a list of events.
+ *
+ * Generic in the event type, like `filterMuted` beside it, so a caller
+ * holding a narrower row type gets that type back and can chain the two
+ * without a cast.
+ */
+export function filterAdultContent<T extends NostrEvent>(
+  events: T[],
   allow: boolean
-): NostrEvent[] {
+): T[] {
   if (allow) return events;
   return events.filter((event) => !isAdultContent(event));
 }

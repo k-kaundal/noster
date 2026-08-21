@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+import { useContentFilter } from '@/hooks/useContentFilter';
 import { useNostr } from '@nostrify/react';
 import { TIMELINE_KINDS } from '@/lib/eventKinds';
 import { useInfiniteQuery } from '@tanstack/react-query';
@@ -44,11 +46,26 @@ export function useHashtagFeed(tag: string) {
     enabled: !!normalized,
   });
 
-  const posts = query.data
-    ? Array.from(
-        new Map(query.data.pages.flat().map((event) => [event.id, event])).values()
-      ).sort((a, b) => b.created_at - a.created_at)
-    : undefined;
+  const { filter } = useContentFilter();
+
+  /*
+   * Filtered here rather than inside the query, so flipping a setting
+   * re-renders against notes already in hand instead of waiting for a refetch
+   * that would return the same events anyway.
+   */
+  const posts = useMemo(
+    () =>
+      filter(
+        query.data
+          ? Array.from(
+              new Map(
+                query.data.pages.flat().map((event) => [event.id, event])
+              ).values()
+            ).sort((a, b) => b.created_at - a.created_at)
+          : undefined
+      ),
+    [query.data, filter]
+  );
 
   return { ...query, posts };
 }
