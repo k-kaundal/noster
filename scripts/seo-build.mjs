@@ -322,6 +322,25 @@ export function newestArticles(events) {
     .slice(0, MAX_ARTICLES);
 }
 
+/**
+ * The longest a single path component may be, in bytes.
+ *
+ * `NAME_MAX` on every filesystem this builds on. It bites here because an
+ * `naddr` carries its `d` tag verbatim in the payload, and nothing stops a `d`
+ * tag being long: RSS bridges such as atomstr use the source article's whole
+ * URL as the identifier, which produces an `naddr` well past 255 characters
+ * and a `mkdir` that fails with ENAMETOOLONG.
+ */
+const NAME_MAX = 255;
+
+/** Whether every segment of a path can actually be a directory. */
+export function isWritablePath(path) {
+  return path
+    .split('/')
+    .filter(Boolean)
+    .every((segment) => Buffer.byteLength(segment, 'utf8') <= NAME_MAX);
+}
+
 /** An article as a route, so it goes through the same page writer. */
 export function articleRoute(event) {
   const identifier = tag(event, 'd');
@@ -352,7 +371,30 @@ async function loadArticles() {
     ARTICLE_RELAYS.map((url) => collectFrom(url).catch(() => []))
   );
 
-  return newestArticles(answers.flat()).map(articleRoute);
+  const routes = newestArticles(answers.flat()).map(articleRoute);
+
+  /*
+   * Dropped rather than fatal, and dropped from the sitemap too.
+   *
+   * These pages still work — the SPA rewrite serves them and they render
+   * client-side like any other route — so what is lost is the prerendered
+   * card, not the article. Listing a URL in the sitemap that this build knows
+   * it did not write would be inviting a crawler to the one version with no
+   * metadata on it.
+   *
+   * A whole build used to fail on one of these, which is the wrong trade by a
+   * distance: the identifiers come off public relays, so anybody publishing a
+   * long enough `d` tag could stop the site deploying.
+   */
+  const writable = routes.filter((route) => isWritablePath(route.path));
+
+  if (writable.length < routes.length) {
+    console.warn(
+      `seo: ${routes.length - writable.length} article(s) skipped — identifier too long for a path`
+    );
+  }
+
+  return writable;
 }
 
 async function main() {
