@@ -115,7 +115,11 @@ export function NameTiers() {
               )}
             >
               <div className="flex items-center gap-2">
-                <VerificationMark tier={entry.tier} className="shrink-0" />
+                <VerificationMark
+                  tier={entry.tier}
+                  domain={entry.domain}
+                  className="shrink-0"
+                />
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{entry.address}</p>
@@ -127,7 +131,11 @@ export function NameTiers() {
                   </p>
                 </div>
 
-                <VerificationBadge tier={entry.tier} className="shrink-0" />
+                <VerificationBadge
+                  tier={entry.tier}
+                  domain={entry.domain}
+                  className="shrink-0"
+                />
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-1.5">

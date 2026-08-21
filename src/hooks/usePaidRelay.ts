@@ -46,9 +46,16 @@ const WATCH_ATTEMPTS = 300;
  * configured to send; until it is, every check fails. Treating that as "has
  * not paid" would invite somebody to buy admission they already hold.
  */
-export function useAdmission() {
+export function useAdmission(who?: string) {
   const { user } = useCurrentUser();
-  const pubkey = user?.pubkey;
+
+  /*
+   * Anybody's, not only the signed-in reader's. The relay answers for any key,
+   * which is what lets a profile show whether that person can write here —
+   * asked once per profile, and deliberately never per row in a feed, since
+   * that is one cross-origin request per post on screen.
+   */
+  const pubkey = who ?? user?.pubkey;
 
   const query = useQuery<AdmissionState>({
     queryKey: ['relay-admission', ADMISSION_URL, pubkey ?? ''],
