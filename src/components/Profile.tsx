@@ -40,6 +40,7 @@ import { VerificationMark } from '@/components/VerificationBadge';
 import { tierOf } from '@/lib/tiers';
 import { EditProfileForm } from '@/components/EditProfileForm';
 import { LinkedAccounts } from '@/components/identity/LinkedAccounts';
+import { ProfileZapAddress } from '@/components/identity/ProfileZapAddress';
 import { ProfileZapGoals } from '@/components/ZapGoalCard';
 import { SubscriptionTiers } from '@/components/subscriptions/SubscriptionTiers';
 import { TrustScore } from '@/components/trust/TrustScore';
@@ -394,6 +395,14 @@ export function Profile({ pubkey }: ProfileProps) {
               </span>
             )}
           </div>
+
+          {/*
+            Only for the person whose profile this is, and mounted rather than
+            hidden — it reads their wallet, and nobody else's profile should
+            cost that request. Renders nothing when the address above is the
+            one they are really paid at.
+          */}
+          {isCurrentUser && <ProfileZapAddress published={lightningAddress} />}
 
           {/* NIP-39: accounts this profile claims elsewhere. Claims, not
               verifications — see the component. */}
