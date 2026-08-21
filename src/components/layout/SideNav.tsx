@@ -9,6 +9,7 @@ import {
   type NavItem,
 } from '@/components/layout/navigation';
 import { useNavBadges } from '@/hooks/useNavBadges';
+import { SideNavIdentity } from '@/components/layout/SideNavIdentity';
 import { cn } from '@/lib/utils';
 
 /**
@@ -49,6 +50,15 @@ export function SideNav({
 
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
+      {/*
+        Above the scrolling area, like the compose button is below it. Who you
+        are is not a destination to be scrolled past, and signed out this is
+        the only thing in the rail a first-time reader can use.
+      */}
+      <div className="mb-4 shrink-0">
+        <SideNavIdentity compact={compact} />
+      </div>
+
       <nav
         className={cn(
           'flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto scrollbar-thin',
@@ -59,8 +69,14 @@ export function SideNav({
       >
         {sections.map((section) => (
           <div key={section.id} className="space-y-1">
+            {/*
+              Full-strength muted, not 70% of it. At `/70` this measured
+              2.74:1 in light mode — below the 4.5:1 floor, and these are the
+              labels that make nineteen rows scannable at all, so they were the
+              text least able to afford being hard to read.
+            */}
             {section.label && (
-              <p className="px-3 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              <p className="px-3 pb-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {section.label}
               </p>
             )}
@@ -124,7 +140,7 @@ function NavLink({
         // Bigger targets in the sheet, where this is being tapped
         compact ? 'py-2.5' : 'py-2',
         active
-          ? 'bg-muted font-medium text-foreground'
+          ? 'bg-primary/10 font-medium text-foreground'
           : 'font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground'
       )}
     >
@@ -136,7 +152,14 @@ function NavLink({
         />
       )}
 
-      <item.icon className="h-[18px] w-[18px] shrink-0" />
+      {/* The icon carries the active state too. A tinted row whose icon stays
+          grey reads as a hover that got stuck. */}
+      <item.icon
+        className={cn(
+          'h-[18px] w-[18px] shrink-0 transition-colors',
+          active && 'text-primary'
+        )}
+      />
       <span className="flex-1 truncate">{item.label}</span>
 
       {/*
