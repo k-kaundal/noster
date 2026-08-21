@@ -219,16 +219,35 @@ export function subscriptionStatus(
     now?: number;
   }
 ): SubscriptionStatus {
-  const now = input.now ?? Date.now() / 1000;
-
   const summary = summarizeZaps(receipts, {
     address: tierAddress(input.tier),
     recipientPubkey: input.tier.creator,
   });
 
-  const mine = summary.zappers
-    .filter((zapper) => zapper.pubkey === input.subscriber)
-    .sort((a, b) => b.at - a.at);
+  return standingFrom(
+    summary.zappers.filter((zapper) => zapper.pubkey === input.subscriber),
+    input.tier,
+    input.now
+  );
+}
+
+/**
+ * The same judgement, from payments already validated and already theirs.
+ *
+ * Split out because the creator's view asks it of every payer at once, and
+ * going back through `subscriptionStatus` for each of them re-validates every
+ * receipt on the tier once per subscriber — a signature check per receipt per
+ * person. Fifty subscribers and four hundred receipts is twenty thousand
+ * signature verifications to draw one list.
+ */
+function standingFrom(
+  payments: readonly Zapper[],
+  tier: Pick<Tier, 'amount' | 'cadence'>,
+  at?: number
+): SubscriptionStatus {
+  const now = at ?? Date.now() / 1000;
+
+  const mine = [...payments].sort((a, b) => b.at - a.at);
 
   if (!mine.length) return NO_SUBSCRIPTION;
 
@@ -239,7 +258,7 @@ export function subscriptionStatus(
    * payment still holds a period open even if a small tip came after it,
    * which is why this is not simply `mine[0]`.
    */
-  const qualifying = mine.find((zapper) => zapper.sats >= input.tier.amount);
+  const qualifying = mine.find((zapper) => zapper.sats >= tier.amount);
 
   if (!qualifying) {
     /*
@@ -256,11 +275,11 @@ export function subscriptionStatus(
       daysLeft: null,
       history: mine,
       totalSats,
-      shortfallSats: Math.max(input.tier.amount - largest, 0),
+      shortfallSats: Math.max(tier.amount - largest, 0),
     };
   }
 
-  const expiresAt = qualifying.at + cadenceSeconds(input.tier.cadence);
+  const expiresAt = qualifying.at + cadenceSeconds(tier.cadence);
   const active = expiresAt > now;
 
   return {
@@ -311,6 +330,169 @@ export function describeStatus(
         ? `${status.shortfallSats.toLocaleString()} sats short of a ${describeCadence(cadence)}`
         : `${describeCadence(cadence) === 'month' ? 'Monthly' : 'Recurring'} support`;
   }
+}
+
+/** A month, for normalising prices that are not quoted by the month. */
+const MONTH_SECONDS = 30 * 86_400;
+
+/**
+ * One period's price expressed per month.
+ *
+ * Needed because a creator's tiers rarely share a cadence, and a weekly tier
+ * at 1,000 sats and a yearly one at 1,000 are not the same business. Adding
+ * the raw prices — which is the obvious thing to write — reports the yearly
+ * tier as fifty-two times more valuable than it is.
+ */
+export function monthlySats(tier: Pick<Tier, 'amount' | 'cadence'>): number {
+  return Math.round((tier.amount * MONTH_SECONDS) / cadenceSeconds(tier.cadence));
+}
+
+/** One person's standing on one tier. */
+export interface Member {
+  pubkey: string;
+  status: SubscriptionStatus;
+}
+
+export interface TierStanding {
+  tier: Tier;
+  /** Everyone who has ever paid, most given first. */
+  members: Member[];
+  /** Inside a paid period right now. */
+  active: Member[];
+  /** Active, and close enough to the end to be worth a nudge. */
+  renewingSoon: Member[];
+  /** Paid once and let the period run out. */
+  lapsed: Member[];
+  /** Sats ever received on the tier, whoever sent them. */
+  lifetimeSats: number;
+  /**
+   * What the periods running right now are worth per month.
+   *
+   * A run rate, not a forecast, and the distinction is the whole point:
+   * nothing here renews on its own, so this is "what these subscriptions
+   * amount to monthly if every one of them is repeated", which is a different
+   * claim from "what will arrive next month". The page saying it has to say
+   * which one it means.
+   */
+  runRateSats: number;
+  /**
+   * Money on the tier that names nobody this app could identify.
+   *
+   * A NIP-57 zap can be sent anonymously, and one that was is real revenue
+   * attached to a throwaway key. It cannot buy a subscription — there is
+   * nobody to grant it to — but dropping it silently would make the tier's
+   * lifetime total disagree with the wallet for no visible reason.
+   */
+  unattributedSats: number;
+}
+
+/**
+ * Everyone on a tier, and what the tier is worth, from one pass over the
+ * receipts.
+ *
+ * `summarizeZaps` runs once here rather than once per payer. That is not only
+ * a speed concern: it is also the reason every figure on the page agrees with
+ * every other one, since they are all read off the same validated set.
+ */
+export function tierStanding(
+  tier: Tier,
+  receipts: NostrEvent[],
+  now = Date.now() / 1000
+): TierStanding {
+  const summary = summarizeZaps(receipts, {
+    address: tierAddress(tier),
+    recipientPubkey: tier.creator,
+  });
+
+  const byPayer = new Map<string, Zapper[]>();
+  for (const zapper of summary.zappers) {
+    const held = byPayer.get(zapper.pubkey);
+    if (held) held.push(zapper);
+    else byPayer.set(zapper.pubkey, [zapper]);
+  }
+
+  const members = [...byPayer.entries()]
+    .map(([pubkey, payments]) => ({
+      pubkey,
+      status: standingFrom(payments, tier, now),
+    }))
+    .sort((a, b) => b.status.totalSats - a.status.totalSats);
+
+  const active = members.filter((member) => member.status.state === 'active');
+  const lapsed = members.filter((member) => member.status.state === 'lapsed');
+
+  /*
+   * A single payer may hold several throwaway identities, so this is a floor
+   * on what was anonymous rather than a count of anonymous payers. Stated as
+   * sats for that reason, and never as a number of people.
+   */
+  const namedSats = members.reduce(
+    (total, member) => total + member.status.totalSats,
+    0
+  );
+
+  return {
+    tier,
+    members,
+    active,
+    renewingSoon: active.filter((member) => needsRenewal(member.status)),
+    lapsed,
+    lifetimeSats: summary.totalSats,
+    runRateSats: active.length * monthlySats(tier),
+    unattributedSats: Math.max(summary.totalSats - namedSats, 0),
+  };
+}
+
+export interface MembershipSummary {
+  /**
+   * People, not subscriptions.
+   *
+   * Someone subscribed to two tiers is one supporter, and counting them twice
+   * would inflate the headline on exactly the accounts that are doing best.
+   */
+  activeMembers: number;
+  lapsedMembers: number;
+  /** Active periods across every tier, per month. See `runRateSats`. */
+  runRateSats: number;
+  /** Everything ever received through tiers. */
+  lifetimeSats: number;
+  /** Active members whose period ends inside the renewal window. */
+  renewingSoon: number;
+}
+
+export function summarizeMemberships(
+  standings: readonly TierStanding[]
+): MembershipSummary {
+  const activePeople = new Set<string>();
+  const lapsedPeople = new Set<string>();
+  const soonPeople = new Set<string>();
+
+  for (const standing of standings) {
+    for (const member of standing.active) activePeople.add(member.pubkey);
+    for (const member of standing.lapsed) lapsedPeople.add(member.pubkey);
+    for (const member of standing.renewingSoon) soonPeople.add(member.pubkey);
+  }
+
+  /*
+   * Somebody who lapsed on one tier and is active on another is a current
+   * supporter, so the lapsed count is what is left after removing them.
+   * Otherwise upgrading a tier reads as churn.
+   */
+  for (const pubkey of activePeople) lapsedPeople.delete(pubkey);
+
+  return {
+    activeMembers: activePeople.size,
+    lapsedMembers: lapsedPeople.size,
+    renewingSoon: soonPeople.size,
+    runRateSats: standings.reduce(
+      (total, standing) => total + standing.runRateSats,
+      0
+    ),
+    lifetimeSats: standings.reduce(
+      (total, standing) => total + standing.lifetimeSats,
+      0
+    ),
+  };
 }
 
 /**
