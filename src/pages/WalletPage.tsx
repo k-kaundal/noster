@@ -36,7 +36,7 @@ import { WalletModal } from '@/components/WalletModal';
 import { ReceiveDialog } from '@/components/wallet/ReceiveDialog';
 import { SendDialog } from '@/components/wallet/SendDialog';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useLightningAddress } from '@/hooks/useLightningAddress';
+import { useIdentity } from '@/hooks/useIdentity';
 import { useLnbitsAuth } from '@/hooks/useLnbitsAuth';
 import { useToast } from '@/hooks/useToast';
 import { useWalletActivity } from '@/hooks/useWalletActivity';
@@ -224,7 +224,8 @@ function ConnectedWallet() {
   const { logout, instanceUrl, account } = useLnbitsAuth();
   const { wallet, balanceSats, isLoading, createWallet, isCreatingWallet } =
     useLnbitsWallet();
-  const { address } = useLightningAddress();
+  // The name they hold, not the pay link's default label — see `useIdentity`
+  const { address } = useIdentity();
   const { openRequests } = useWalletActivity();
   const { toast } = useToast();
 
