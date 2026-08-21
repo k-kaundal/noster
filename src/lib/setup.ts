@@ -24,7 +24,15 @@ export interface SetupStep {
 }
 
 export function setupSteps(
-  metadata: NostrMetadata | undefined
+  metadata: NostrMetadata | undefined,
+  /**
+   * Where this person's own profile lives.
+   *
+   * Taken rather than written, because there is no `/profile` route — a
+   * profile is addressed by npub, and hardcoding a tidier-looking path here
+   * sent every step to the 404 page.
+   */
+  profilePath: string
 ): SetupStep[] {
   const has = (value: string | undefined) => !!value?.trim();
 
@@ -32,19 +40,19 @@ export function setupSteps(
     {
       id: 'name',
       label: 'Pick a display name',
-      href: '/profile',
+      href: profilePath,
       done: has(metadata?.display_name) || has(metadata?.name),
     },
     {
       id: 'picture',
       label: 'Add a profile picture',
-      href: '/profile',
+      href: profilePath,
       done: has(metadata?.picture),
     },
     {
       id: 'about',
       label: 'Write a short bio',
-      href: '/profile',
+      href: profilePath,
       done: has(metadata?.about),
     },
     {
@@ -72,9 +80,10 @@ export interface SetupProgress {
 }
 
 export function setupProgress(
-  metadata: NostrMetadata | undefined
+  metadata: NostrMetadata | undefined,
+  profilePath: string
 ): SetupProgress {
-  const steps = setupSteps(metadata);
+  const steps = setupSteps(metadata, profilePath);
   const done = steps.filter((step) => step.done).length;
 
   return {

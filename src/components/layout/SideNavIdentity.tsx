@@ -7,6 +7,7 @@ import { StandingMarks } from '@/components/VerificationBadge';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import LoginDialog from '@/components/auth/LoginDialog';
+import { nip19 } from 'nostr-tools';
 import { genUserName } from '@/lib/genUserName';
 import { addressDomain } from '@/lib/lightningAddress';
 import { setupProgress } from '@/lib/setup';
@@ -51,12 +52,16 @@ function SignedIn({ compact }: { compact: boolean }) {
    */
   const tier = address ? tierOf(address) : null;
 
-  const progress = setupProgress(metadata);
+  /* A profile is addressed by npub. There is no `/profile`, and linking to
+     one sent the whole card to the 404 page. */
+  const profilePath = `/${nip19.npubEncode(user.pubkey)}`;
+
+  const progress = setupProgress(metadata, profilePath);
 
   return (
     <div className="space-y-2">
       <Link
-        to="/profile"
+        to={profilePath}
         className="press flex items-center gap-2.5 rounded-xl border bg-card/60 p-2 transition-colors hover:border-primary/40 hover:bg-muted/50"
       >
         <Avatar className="h-9 w-9 shrink-0">
