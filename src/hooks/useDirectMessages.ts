@@ -17,6 +17,7 @@ import {
   type ChatMessage,
 } from '@/lib/nip17';
 import { GIFT_WRAP_DRIFT } from '@/lib/nip59';
+import { isPaidRelay } from '@/lib/paidRelay';
 
 /**
  * Decrypted wraps, per account.
@@ -410,6 +411,7 @@ function pendingKey(pubkey: string | undefined) {
 /** Sends a NIP-17 private message to one or more recipients. */
 export function useSendDirectMessage() {
   const { nostr } = useNostr();
+  const { relays: configuredRelays } = useRelays();
   const { user } = useCurrentUser();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -454,11 +456,25 @@ export function useSendDirectMessage() {
       // it back leaves the composer looking like it swallowed the message.
       appendMessage(rumorToMessage(rumor));
 
+      /** Configured relays a gift wrap may legitimately go to. */
+      const dmFallbackRelays = canonicalTargets(
+        configuredRelays
+          .filter((relay) => relay.write && !isPaidRelay(relay.url))
+          .map((relay) => relay.url)
+      );
+
       /**
        * NIP-17 requires each wrap to go to the relays its recipient nominated
        * in their kind 10050 list — publishing elsewhere means they may simply
        * never see it. Recipients without a list fall back to the default
        * routing, which is the best that can be done for them.
+       *
+       * That fallback is why the paid relay is excluded below. Adding it as a
+       * write relay puts it in the default routing, so a wrap for somebody
+       * with no kind 10050 list would be published there — to a relay that
+       * refuses writes from anyone who has not paid admission, and that the
+       * recipient has no reason to be reading. Both halves are wrong, and the
+       * spec says so plainly: DMs stay on the free relay.
        */
       const relaysFor = async (pubkey: string): Promise<string[]> => {
         const cacheKey = ['dm-relays', pubkey];
@@ -493,8 +509,12 @@ export function useSendDirectMessage() {
           const urls = await relaysFor(targets[index]);
           const signal = AbortSignal.timeout(8000);
 
-          return urls.length
-            ? nostr.group(urls).event(wrap, { signal })
+          if (urls.length) {
+            return nostr.group(urls).event(wrap, { signal });
+          }
+
+          return dmFallbackRelays.length
+            ? nostr.group(dmFallbackRelays).event(wrap, { signal })
             : nostr.event(wrap, { signal });
         })
       );
