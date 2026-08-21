@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Check,
@@ -18,10 +18,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { QrCode } from '@/components/wallet/QrCode';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { usePremium } from '@/hooks/usePremium';
 import { useRelays } from '@/hooks/useRelays';
-import { useAdmission, useAdmissionInvoice, usePaidRelayInfo } from '@/hooks/usePaidRelay';
+import {
+  useAdmission,
+  useAdmissionInvoice,
+  useInvoiceWatcher,
+  usePaidRelayInfo,
+} from '@/hooks/usePaidRelay';
 import { usePayAnyWallet, type PayOption } from '@/hooks/usePayAnyWallet';
 import { useFiatSubscription } from '@/hooks/useFiatSubscription';
 import { FIAT_PROVIDER_LABELS } from '@/lib/fiat';
@@ -31,6 +37,7 @@ import {
   PAID_RELAY_URL,
   admissionPayUrl,
   describeAdmission,
+  type AdmissionInvoice as AdmissionInvoiceValue,
   type AdmissionState as AdmissionStateValue,
 } from '@/lib/paidRelay';
 import {
@@ -151,9 +158,16 @@ function AdmissionCard() {
           </p>
         ) : (
           <>
+            {/*
+              `paid` comes from NIP-11 and the price from the invoice
+              endpoint, and they fail independently — so a quoted price is
+              itself evidence the relay charges, and saying "not advertising
+              paid writes" beside a real fee would be the page arguing with
+              itself.
+            */}
             <p className="text-sm text-muted-foreground">
-              {relay.paid
-                ? 'Writing here costs a one-time admission per key. Reading stays open to everyone.'
+              {relay.paid || relay.feeFromRelay
+                ? 'Writing here costs a one-time admission per key. Reading stays open to everyone, and this never has to be paid twice.'
                 : "This relay isn't advertising paid writes right now."}
             </p>
 
@@ -252,8 +266,8 @@ function AdmissionState({
         {state === 'unknown' && (
           <>
             {' '}
-            You may already have paid — this doesn't mean you haven't. Try
-            again, or open the admission page, which can always answer.
+            You may already have paid — this doesn't mean you haven't. Paying
+            below checks first and charges nothing if you are already in.
           </>
         )}
       </p>
@@ -278,6 +292,11 @@ function AdmissionState({
           Check again
         </Button>
 
+        {/*
+          The last resort, and named as one. Paying belongs in the app — this
+          is here for the case where the relay cannot be reached from this
+          origin at all, which is a configuration this page cannot fix.
+        */}
         <a
           href={admissionPayUrl(pubkey)}
           target="_blank"
@@ -285,7 +304,7 @@ function AdmissionState({
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
         >
           <ExternalLink className="h-3 w-3" />
-          Open the admission page
+          Pay on the web instead
         </a>
       </div>
     </div>
@@ -295,11 +314,15 @@ function AdmissionState({
 /**
  * Paying admission without leaving the app.
  *
- * The invoice comes from the relay and is settled by whichever wallet the
- * person actually has, which is the same choice every other payment here
- * offers. When the relay cannot be reached to mint one — the likeliest failure,
- * since this crosses an origin and depends on CORS headers nginx has to send —
- * the pay page beside it still works, so nobody is stuck.
+ * Deliberately the whole flow: terms, invoice, QR, wallet, and the wait. The
+ * relay runs a perfectly good web page for this, and sending somebody out to a
+ * browser tab to buy something loses most of them at the door — they lose the
+ * app's wallet, the app loses any idea whether they came back, and the person
+ * is left pasting their own npub into a form.
+ *
+ * The invoice is settled by whichever wallet they actually have. That is the
+ * one improvement over the integration notes worth naming: those call
+ * `window.webln` directly, which is the only wallet a person may not have.
  */
 function BuyAdmission({
   feeSats,
@@ -314,22 +337,86 @@ function BuyAdmission({
 }) {
   const { mutateAsync: createInvoice, isPending: isCreating } =
     useAdmissionInvoice();
+  const watchInvoice = useInvoiceWatcher();
   const { options, pay, isPaying, balanceSats } = usePayAnyWallet();
-  const [payingId, setPayingId] = useState<string | null>(null);
-  const [invoice, setInvoice] = useState('');
-  const [accepted, setAccepted] = useState(false);
   const { toast } = useToast();
+
+  const [accepted, setAccepted] = useState(false);
+  const [invoice, setInvoice] = useState<AdmissionInvoiceValue | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const [payingId, setPayingId] = useState<string | null>(null);
+
+  /*
+   * Aborted when the invoice is dismissed, so closing this stops the polling
+   * rather than leaving it running against the relay for the life of the tab.
+   */
+  const watcher = useRef<AbortController | null>(null);
+
+  useEffect(() => () => watcher.current?.abort(), []);
+
+  const dismiss = () => {
+    watcher.current?.abort();
+    watcher.current = null;
+    setInvoice(null);
+    setWaiting(false);
+  };
+
+  /** Starts polling for one invoice, and reports however it ends. */
+  const watch = async (created: AdmissionInvoiceValue) => {
+    watcher.current?.abort();
+    const controller = new AbortController();
+    watcher.current = controller;
+
+    setWaiting(true);
+
+    try {
+      const outcome = await watchInvoice(created, pubkey, controller.signal);
+
+      if (outcome === 'paid') {
+        toast({ title: "You're in", description: 'The relay accepts your writes now.' });
+        setInvoice(null);
+        onPaid();
+      } else if (outcome === 'expired') {
+        toast({
+          title: 'That invoice expired',
+          description: 'Nothing was charged. Create another to try again.',
+          variant: 'destructive',
+        });
+        setInvoice(null);
+      }
+      // 'gave-up' leaves the invoice on screen: it may still be payable, and
+      // removing it would throw away a bolt11 somebody is midway through
+    } finally {
+      setWaiting(false);
+    }
+  };
+
+  const create = async (): Promise<AdmissionInvoiceValue | null> => {
+    const created = await createInvoice().catch(() => null);
+    if (!created) return null;
+
+    /*
+     * The key was already admitted, so the relay returned no invoice. Saying
+     * so and charging nothing is the whole point of checking — this is the
+     * path that stops somebody paying twice.
+     */
+    if (created.userAdmitted) {
+      toast({ title: "You're already in", description: 'Nothing to pay.' });
+      onPaid();
+      return null;
+    }
+
+    setInvoice(created);
+    void watch(created);
+    return created;
+  };
 
   const start = async (option: PayOption) => {
     setPayingId(option.id);
 
     try {
-      const created = await createInvoice();
-
-      if (option.method === 'manual') {
-        setInvoice(created.bolt11);
-        return;
-      }
+      const created = invoice ?? (await create());
+      if (!created?.bolt11) return;
 
       await pay({
         bolt11: created.bolt11,
@@ -337,12 +424,7 @@ function BuyAdmission({
         amountSats: created.amountSats || feeSats,
       });
 
-      toast({
-        title: 'Admission paid',
-        description: 'Checking with the relay now.',
-      });
-
-      onPaid();
+      // The relay decides, not the wallet — `watch` is already asking it
     } catch {
       // Both mutations toast their own failures
     } finally {
@@ -350,36 +432,77 @@ function BuyAdmission({
     }
   };
 
+  const amount = invoice?.amountSats || feeSats;
+
   return (
     <div className="space-y-3">
       {/*
-        Ticked by the person, never on their behalf. nostream requires
+        Ticked by the person, never on their behalf. The relay requires
         `tosAccepted` on the invoice request, and sending it for somebody who
         was never shown the terms is agreeing to something on their account.
       */}
-      <label className="flex items-start gap-2 text-xs text-muted-foreground">
-        <Checkbox
-          checked={accepted}
-          onCheckedChange={(value) => setAccepted(value === true)}
-          className="mt-0.5"
-          aria-label="Accept the relay's terms of service"
-        />
-        <span>
-          I accept the{' '}
-          <a
-            href={termsUrl || admissionPayUrl(pubkey)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-foreground"
-          >
-            relay's terms of service
-          </a>
-          .
-        </span>
-      </label>
+      {!invoice && (
+        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+          <Checkbox
+            checked={accepted}
+            onCheckedChange={(value) => setAccepted(value === true)}
+            className="mt-0.5"
+            aria-label="Accept the relay's terms of service"
+          />
+          <span>
+            I accept the{' '}
+            <a
+              href={termsUrl || admissionPayUrl(pubkey)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-foreground"
+            >
+              relay's terms of service
+            </a>
+            .
+          </span>
+        </label>
+      )}
 
-      {invoice && (
-        <ManualInvoice invoice={invoice} onDone={() => setInvoice('')} />
+      {invoice?.bolt11 && (
+        <div className="space-y-3 rounded-lg border p-4">
+          <QrCode
+            value={`lightning:${invoice.bolt11}`}
+            label={`Lightning invoice for ${amount.toLocaleString()} sats`}
+            size={180}
+          />
+
+          <p className="text-center text-sm">
+            <span className="tabular-nums font-semibold">
+              {amount.toLocaleString()} sats
+            </span>
+            <span className="text-muted-foreground"> — scan or pay below</span>
+          </p>
+
+          {waiting && (
+            <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Waiting for the relay to see the payment…
+            </p>
+          )}
+
+          <div className="flex justify-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                await navigator.clipboard.writeText(invoice.bolt11!);
+                toast({ title: 'Invoice copied' });
+              }}
+            >
+              <Copy className="mr-1.5 h-3.5 w-3.5" />
+              Copy
+            </Button>
+            <Button size="sm" variant="ghost" onClick={dismiss}>
+              Cancel
+            </Button>
+          </div>
+        </div>
       )}
 
       {options.map((option, index) => (
@@ -397,7 +520,7 @@ function BuyAdmission({
           ) : (
             <Zap className="mr-2 h-4 w-4" />
           )}
-          {option.label} · {feeSats.toLocaleString()} sats
+          {option.label} · {amount.toLocaleString()} sats
         </Button>
       ))}
 

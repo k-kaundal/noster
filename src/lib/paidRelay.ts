@@ -60,20 +60,126 @@ export function admissionCheckUrl(pubkey: string, base = ADMISSION_URL): string 
 }
 
 /**
- * The page somebody pays on, when the in-app path cannot be used.
+ * Where invoices are made, and read.
  *
- * `/invoices`, not the relay root — the root answers NIP-11 and the invoice
- * form lives one level down. The key is prefilled because the page otherwise
- * asks somebody to paste their own npub, which is both an extra step and an
- * opportunity to paste the wrong one and buy admission for a key they do not
- * hold.
+ * `POST` mints one; `GET` with a JSON Accept header quotes the fee without
+ * minting anything. Also the web pay page, which this app uses only as a
+ * fallback — paying belongs in the client, and sending somebody out to a
+ * browser tab to buy something loses most of them at the door.
+ */
+export function admissionInvoicesUrl(base = ADMISSION_URL): string {
+  return `${base.replace(/\/+$/, '')}/invoices`;
+}
+
+/**
+ * The web pay page, for when the in-app path cannot run at all.
+ *
+ * The key is prefilled because the page otherwise asks somebody to paste
+ * their own npub — an extra step, and a chance to paste the wrong one and buy
+ * admission for a key they do not hold.
  */
 export function admissionPayUrl(
   pubkey?: string,
   base = ADMISSION_URL
 ): string {
-  const url = `${base.replace(/\/+$/, '')}/invoices`;
+  const url = admissionInvoicesUrl(base);
   return pubkey ? `${url}?pubkey=${encodeURIComponent(pubkey)}` : url;
+}
+
+/** An invoice for admission, as the relay describes one. */
+export interface AdmissionInvoice {
+  /** Absent when the key was already admitted and there is nothing to pay. */
+  bolt11?: string;
+  /** The payment hash, which is also the id the status route takes. */
+  id?: string;
+  amountSats: number;
+  /** Where to poll. Given by the relay rather than built, so a moved route
+   *  follows on its own. */
+  statusUrl?: string;
+  /** Seconds since epoch, or null when the relay did not say. */
+  expiresAt: number | null;
+  status: InvoiceStatus;
+  /**
+   * Whether this key is already in.
+   *
+   * The relay answers a `POST` for an admitted key with this set and no
+   * invoice, which is the case that must never turn into a second charge.
+   */
+  userAdmitted: boolean;
+}
+
+export type InvoiceStatus = 'pending' | 'completed' | 'expired' | 'unknown';
+
+function readStatus(value: unknown): InvoiceStatus {
+  return value === 'pending' || value === 'completed' || value === 'expired'
+    ? value
+    : 'unknown';
+}
+
+/**
+ * Reads the relay's invoice, in whichever shape it sent one.
+ *
+ * The documented response quotes `amount_sats`, and nostream's own API has
+ * historically quoted millisats under `amount`. Reading the wrong one is a
+ * factor of a thousand on a number shown next to a QR code, so each is read
+ * from its own field and neither is converted into the other.
+ */
+export function readInvoice(body: unknown): AdmissionInvoice | null {
+  if (!body || typeof body !== 'object') return null;
+
+  const row = body as Record<string, unknown>;
+  const nested = (row.invoice ?? {}) as Record<string, unknown>;
+
+  const pick = <T>(...values: unknown[]): T | undefined =>
+    values.find((value) => value !== undefined && value !== null && value !== '') as
+      | T
+      | undefined;
+
+  const userAdmitted = row.userAdmitted === true;
+
+  const bolt11 = pick<string>(
+    row.bolt11,
+    row.paymentRequest,
+    row.payment_request,
+    nested.bolt11,
+    nested.paymentRequest,
+    nested.payment_request
+  );
+
+  // An admitted key comes back with no invoice, which is an answer rather
+  // than a failure — everything else with no invoice is a failure
+  if (!bolt11 && !userAdmitted) return null;
+
+  const sats = Number(pick(row.amount_sats, nested.amount_sats));
+  const msats = Number(pick(row.amount, nested.amount));
+
+  const expires = pick<string | number>(row.expires_at, nested.expires_at);
+  const expiresAt =
+    typeof expires === 'number'
+      ? expires
+      : typeof expires === 'string'
+        ? Math.floor(Date.parse(expires) / 1000) || null
+        : null;
+
+  return {
+    bolt11,
+    id: pick<string>(row.id, nested.id),
+    amountSats: Number.isFinite(sats) && sats > 0
+      ? Math.round(sats)
+      : Number.isFinite(msats) && msats > 0
+        ? Math.ceil(msats / 1000)
+        : 0,
+    statusUrl: pick<string>(row.status_url, nested.status_url),
+    expiresAt: Number.isFinite(expiresAt) ? expiresAt : null,
+    status: readStatus(row.status ?? nested.status),
+    userAdmitted,
+  };
+}
+
+/** Reads a poll of the status route. */
+export function readInvoiceStatus(body: unknown): InvoiceStatus {
+  if (!body || typeof body !== 'object') return 'unknown';
+  return readStatus((body as Record<string, unknown>).status);
 }
 
 /**

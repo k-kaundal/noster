@@ -8,10 +8,13 @@ import {
   ADMISSION_URL,
   PAID_RELAY_URL,
   admissionCheckUrl,
-  admissionPayUrl,
+  admissionInvoicesUrl,
   admissionFeeSats,
   readAdmission,
+  readInvoice,
+  readInvoiceStatus,
   requiresPayment,
+  type AdmissionInvoice,
   type AdmissionState,
 } from '@/lib/paidRelay';
 
@@ -23,6 +26,12 @@ const CONFIRM_INTERVAL = 4000;
 
 /** And for how long: two minutes of asking, then it stops on its own. */
 const CONFIRM_ATTEMPTS = 30;
+
+/** How often to poll an invoice that is waiting to be paid. */
+const WATCH_INTERVAL = 3000;
+
+/** Fifteen minutes, which outlasts a bolt11 but not a forgotten tab. */
+const WATCH_ATTEMPTS = 300;
 
 /**
  * Where the signed-in account stands with the paid relay.
@@ -119,79 +128,56 @@ export function useAdmission() {
 export function usePaidRelayInfo() {
   const { data: info, isLoading, isError } = useRelayInfo(PAID_RELAY_URL);
 
+  /**
+   * The price from the endpoint that will actually charge it.
+   *
+   * Asked as well as NIP-11 rather than instead, because the two fail
+   * independently and either answering is enough. NIP-11 needs an
+   * `application/nostr+json` Accept header, which is not a CORS-simple value
+   * and so needs a preflight; this one is a plain JSON GET. Gating the whole
+   * card on NIP-11 alone meant a relay that could be paid perfectly well was
+   * announced as not answering.
+   */
+  const quote = useQuery({
+    queryKey: ['relay-admission-fee', ADMISSION_URL],
+    queryFn: async ({ signal }) => {
+      const response = await fetch(admissionInvoicesUrl(), {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT)]),
+      });
+
+      if (!response.ok) throw new Error(`Relay returned ${response.status}`);
+
+      const body = (await response.json()) as Record<string, unknown>;
+      const sats = Number(body.amount_sats);
+
+      return Number.isFinite(sats) && sats > 0 ? Math.round(sats) : null;
+    },
+    staleTime: 10 * 60 * 1000,
+    retry: false,
+  });
+
+  // The minting endpoint outranks the description of it
+  const feeSats = quote.data ?? admissionFeeSats(info);
+
   return {
     info,
-    isLoading,
-    /** Whether a NIP-11 document came back at all. */
-    live: !isError && !!info,
+    isLoading: isLoading || quote.isLoading,
+    /**
+     * Whether anything on that host answered. Either source will do — the
+     * question this gates is "can somebody buy admission", and one reachable
+     * endpoint is enough to say yes.
+     */
+    live: (!isError && !!info) || quote.isSuccess,
     /** Whether it advertises paid writes, which is the claim that matters. */
     paid: requiresPayment(info),
     /** The relay's own price, falling back to the documented one. */
-    feeSats: admissionFeeSats(info) ?? ADMISSION_SATS,
+    feeSats: feeSats ?? ADMISSION_SATS,
     /** Whether that price is the relay's or our copy of it. */
-    feeFromRelay: admissionFeeSats(info) !== null,
+    feeFromRelay: feeSats !== null,
   };
 }
 
-interface AdmissionInvoice {
-  /** The bolt11 to pay, with whatever wallet they have. */
-  bolt11: string;
-  /** nostream's id for it, for polling the status afterwards. */
-  invoiceId?: string;
-  amountSats: number;
-}
-
-function readInvoice(body: unknown): AdmissionInvoice | null {
-  if (!body || typeof body !== 'object') return null;
-
-  const row = body as Record<string, unknown>;
-
-  /*
-   * nostream has moved this field between versions and wraps it differently
-   * depending on whether the response came from the API or the pay page, so
-   * every spelling it has used is accepted rather than pinning one and
-   * breaking on the next upgrade.
-   */
-  const nested = (row.invoice ?? {}) as Record<string, unknown>;
-
-  const bolt11 = [
-    row.bolt11,
-    row.paymentRequest,
-    row.payment_request,
-    nested.bolt11,
-    nested.paymentRequest,
-    nested.payment_request,
-  ].find((value): value is string => typeof value === 'string' && !!value);
-
-  if (!bolt11) return null;
-
-  const id = [row.id, nested.id].find(
-    (value): value is string => typeof value === 'string' && !!value
-  );
-
-  const amount = Number(row.amount ?? nested.amount);
-
-  return {
-    bolt11,
-    invoiceId: id,
-    // nostream quotes invoice amounts in millisats
-    amountSats: Number.isFinite(amount) && amount > 0 ? Math.ceil(amount / 1000) : 0,
-  };
-}
-
-/**
- * Buys admission for the signed-in key.
- *
- * Returns an invoice rather than paying it, so the existing wallet picker can
- * settle it from the NostrFeed wallet, a NWC connection, WebLN, or by copying
- * it into a phone — the same choice every other payment in this app offers.
- * Nobody should have to move their money here to write to a relay.
- *
- * Accepting the terms of service is part of the request because nostream
- * requires it, and sending `tosAccepted=yes` on somebody's behalf without
- * showing them the terms would be agreeing to something for them. The caller
- * passes it only after they have.
- */
 export function useAdmissionInvoice() {
   const { user } = useCurrentUser();
   const { toast } = useToast();
@@ -201,51 +187,149 @@ export function useAdmissionInvoice() {
     mutationFn: async (): Promise<AdmissionInvoice> => {
       if (!user) throw new Error('Log in first');
 
+      const url = admissionInvoicesUrl();
+
       /*
-       * Form-encoded, which is what nostream's route expects — and which is
-       * also a CORS-simple content type, so this is one fewer preflight to
-       * have configured on the relay's nginx.
+       * JSON first, form-encoded second, because the relay documents both and
+       * they fail differently. JSON is a non-simple content type, so it needs
+       * a CORS preflight the relay's nginx has to answer; form-encoded needs
+       * none. Trying the documented shape first and falling back to the one
+       * that cannot be preflighted away means a misconfigured `OPTIONS` costs
+       * a round trip rather than the whole feature.
        */
-      const body = new URLSearchParams({
-        pubkey: user.pubkey,
-        tosAccepted: 'yes',
-        feeSchedule: 'admission',
-      });
-
-      const response = await fetch(admissionPayUrl(), {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded',
+      const attempts: RequestInit[] = [
+        {
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            pubkey: user.pubkey,
+            tosAccepted: true,
+            feeSchedule: 'admission',
+          }),
         },
-        body,
-        signal: AbortSignal.timeout(TIMEOUT),
-      });
+        {
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            pubkey: user.pubkey,
+            tosAccepted: 'yes',
+            feeSchedule: 'admission',
+          }),
+        },
+      ];
 
-      if (!response.ok) {
-        throw new Error(`The relay returned ${response.status}`);
+      let failure = 'The relay did not answer';
+
+      for (const attempt of attempts) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            ...attempt,
+            signal: AbortSignal.timeout(TIMEOUT),
+          });
+
+          if (!response.ok) {
+            failure = `The relay returned ${response.status}`;
+            continue;
+          }
+
+          const invoice = readInvoice(await response.json());
+          if (invoice) return invoice;
+
+          failure = 'The relay did not return an invoice';
+        } catch (error) {
+          failure = error instanceof Error ? error.message : failure;
+        }
       }
 
-      const invoice = readInvoice(await response.json());
-      if (!invoice) throw new Error('The relay did not return an invoice');
-
-      return invoice;
+      throw new Error(failure);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['relay-admission'] });
+    onSuccess: (invoice) => {
+      // An admitted key comes back with no invoice, and the card should say so
+      if (invoice.userAdmitted) {
+        queryClient.invalidateQueries({ queryKey: ['relay-admission'] });
+      }
     },
     onError: (error: Error) => {
       /*
        * Named as a reachability problem rather than a payment one, because
        * that is overwhelmingly what it is — the relay is on another origin and
-       * this fails whenever its CORS headers are missing. The pay page always
-       * works, so the message points there.
+       * this fails whenever its CORS headers are missing.
        */
       toast({
-        title: "Couldn't create the invoice here",
-        description: `${error.message}. Open the admission page to pay instead.`,
+        title: "Couldn't reach the relay",
+        description: error.message,
         variant: 'destructive',
       });
     },
   });
+}
+
+/**
+ * Watches one invoice until it is paid, expires, or the caller gives up.
+ *
+ * Polls the relay's own `status_url` and the admission check together, because
+ * they can disagree and either one saying yes is enough: the status route
+ * knows the payment settled, the check knows the key was admitted, and the
+ * gap between those two facts is exactly the window somebody sits staring at a
+ * QR code they have already paid.
+ *
+ * Bounded, and cancellable. The integration notes poll in a bare
+ * `while (true)`, which never stops — close the dialog without paying and it
+ * keeps hitting the relay every three seconds for the life of the tab.
+ */
+export function useInvoiceWatcher() {
+  const queryClient = useQueryClient();
+
+  return useCallback(
+    async (
+      invoice: AdmissionInvoice,
+      pubkey: string,
+      signal: AbortSignal
+    ): Promise<'paid' | 'expired' | 'gave-up'> => {
+      const checkUrl = admissionCheckUrl(pubkey);
+
+      const settled = () => {
+        queryClient.invalidateQueries({ queryKey: ['relay-admission'] });
+        return 'paid' as const;
+      };
+
+      for (let attempt = 0; attempt < WATCH_ATTEMPTS; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, WATCH_INTERVAL));
+        if (signal.aborted) return 'gave-up';
+
+        const [status, admitted] = await Promise.all([
+          invoice.statusUrl
+            ? fetch(invoice.statusUrl, {
+                headers: { Accept: 'application/json' },
+                signal,
+              })
+                .then((response) => (response.ok ? response.json() : null))
+                .then(readInvoiceStatus)
+                .catch(() => 'unknown' as const)
+            : Promise.resolve('unknown' as const),
+          fetch(checkUrl, { headers: { Accept: 'application/json' }, signal })
+            .then((response) => (response.ok ? response.json() : null))
+            .then(readAdmission)
+            .catch(() => null),
+        ]);
+
+        if (status === 'completed' || admitted === true) return settled();
+
+        /*
+         * Only the relay's own verdict expires an invoice. A clock on this
+         * device that is a few minutes fast would otherwise close a dialog on
+         * an invoice that is still perfectly payable.
+         */
+        if (status === 'expired') return 'expired';
+      }
+
+      return 'gave-up';
+    },
+    [queryClient]
+  );
 }
