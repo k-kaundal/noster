@@ -1,5 +1,6 @@
 import type { NostrEvent } from '@nostrify/nostrify';
 import { parseZapReceipt } from '@/lib/zap';
+import { TIER_KIND } from '@/lib/subscription';
 
 /**
  * What a creator earned, and where it came from.
@@ -16,7 +17,7 @@ import { parseZapReceipt } from '@/lib/zap';
  */
 
 /** Where a payment came from, read off what the zap request pointed at. */
-export type EarningSource = 'note' | 'article' | 'profile';
+export type EarningSource = 'note' | 'article' | 'profile' | 'subscription';
 
 export interface Earning {
   receiptId: string;
@@ -59,12 +60,31 @@ export function earningFrom(receipt: NostrEvent): Earning | null {
   const address = value('a');
   const eventId = value('e');
 
+  /*
+   * A subscription is a zap *at a tier*, so it arrives carrying an `a` tag
+   * exactly as an article zap does — and was counted as one. That put
+   * membership revenue in the "Zaps on articles" row and listed tier
+   * coordinates under "What earned most" as if they were posts, which is a
+   * creator being told the wrong thing about where their money comes from.
+   *
+   * Separated by the coordinate's kind, which is the only thing that
+   * distinguishes them. Note that this reclassifies money already counted: a
+   * tier zap named this person either way, so no total moves.
+   */
+  const source: EarningSource = address
+    ? address.startsWith(`${TIER_KIND}:`)
+      ? 'subscription'
+      : 'article'
+    : eventId
+      ? 'note'
+      : 'profile';
+
   return {
     receiptId: receipt.id,
     sats: parsed.amountSats,
     senderPubkey: parsed.senderPubkey,
     at: receipt.created_at,
-    source: address ? 'article' : eventId ? 'note' : 'profile',
+    source,
     target: address ?? eventId,
   };
 }
@@ -238,5 +258,6 @@ export function dailyEarnings(
 export function describeSource(source: EarningSource): string {
   if (source === 'note') return 'Zaps on notes';
   if (source === 'article') return 'Zaps on articles';
+  if (source === 'subscription') return 'Subscriptions';
   return 'Zaps on your profile';
 }

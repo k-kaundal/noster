@@ -420,13 +420,25 @@ function TargetRow({ target }: { target: TopTarget }) {
     target.source === 'note' ? target.target : ''
   );
 
+  /*
+   * A coordinate's `d` tag, which for both an article and a tier is a slug
+   * derived from its title — so it is words rather than hex, and reads well
+   * enough to identify the row without another request.
+   */
+  const identifier = target.target.split(':').slice(2).join(':');
+
   const label =
     target.source === 'article'
-      ? target.target.split(':').slice(2).join(':') || 'Article'
-      : firstLine(note?.content) ?? `${target.target.slice(0, 12)}…`;
+      ? identifier || 'Article'
+      : target.source === 'subscription'
+        ? `${identifier || 'Tier'} · subscription`
+        : firstLine(note?.content) ?? `${target.target.slice(0, 12)}…`;
 
   /** Hex reads as a reference; a sentence reads as a sentence. */
-  const isIdentifier = target.source === 'article' || !note?.content.trim();
+  const isIdentifier =
+    target.source === 'article' ||
+    target.source === 'subscription' ||
+    !note?.content.trim();
 
   const body = (
     <div className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:border-primary/40">
