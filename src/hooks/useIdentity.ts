@@ -63,6 +63,13 @@ export function useIdentity() {
   const lightning = useLightningAddress({
     // The pay link that matches the bought name outranks any older one
     preferredUsername: localPartOf(nip5.identifier) ?? undefined,
+    /*
+     * And the whole name outranks the local part. Holding `kk` at two domains
+     * is the normal case rather than the exotic one — buying a name issues a
+     * pay link the other domain also answers for — so matching on `kk` alone
+     * picked whichever the API listed first.
+     */
+    preferredAddress: nip5.identifier ?? undefined,
     paidNames,
   });
 

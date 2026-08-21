@@ -20,7 +20,18 @@
  * is left to do about it, which is the part worth testing.
  */
 
-import { tierOf } from '@/lib/tiers';
+import { tierOf, tierRank } from '@/lib/tiers';
+
+/**
+ * How good an address of ours is, as a number.
+ *
+ * `-1` for anything not one of our tiers, so an unrecognised address never
+ * outranks one we issued and never suppresses a genuine nag.
+ */
+function rankOf(address: string): number {
+  const tier = address ? tierOf(address) : null;
+  return tier ? tierRank(tier) : -1;
+}
 
 export type IdentityTier = 'none' | 'external' | 'free' | 'verified';
 
@@ -126,9 +137,25 @@ export function describeIdentity(snapshot: IdentitySnapshot): IdentityStatus {
    * address is out of date" is true of someone who claimed a new name and
    * forgot to publish it, and false — and quite annoying — for someone being
    * paid at a wallet they chose.
+   *
+   * Nor when the published address is theirs and outranks the one this app
+   * would pick — a backstop against proposing a downgrade. `pickPrimaryLink`
+   * is a heuristic over a wallet's pay links, and when it lands on the lesser
+   * of two addresses somebody owns, this would tell them their correct profile
+   * is out of date and offer the worse name as the fix.
+   *
+   * Deliberately strict: equal tiers still nag, because that is the case the
+   * nag exists for. Two addresses of ours at the same tier, with the profile
+   * on the older one, is somebody who claimed a new name and forgot to publish
+   * it — and suppressing that would trade a rare wrong suggestion for a common
+   * missing one.
    */
-  if (address && !external && snapshot.profileLud16 !== address) {
-    unpublished.push('lud16');
+  if (address && !external && profileLud16 !== address) {
+    const published = owned.has(profileLud16.toLowerCase())
+      ? rankOf(profileLud16)
+      : -1;
+
+    if (published <= rankOf(address)) unpublished.push('lud16');
   }
 
   const tier: IdentityTier = verified
@@ -196,9 +223,35 @@ export function suggestIdentityName(
  */
 export function pickPrimaryLink<T extends { username?: string }>(
   links: T[],
-  preferredUsername?: string | null
+  preferredUsername?: string | null,
+  /**
+   * The whole verified identity, when there is one.
+   *
+   * Matching on the local part alone is not enough, and the failure is not
+   * rare: somebody who buys `kk` at the domain that sells names usually also
+   * holds `kk` at the one that gives them away, because claiming the first
+   * issues a pay link for the second. Two links, one username, and
+   * `find(username === 'kk')` returns whichever the API listed first — so a
+   * profile correctly pointing at `kk@getzap.me` was told its zap address was
+   * out of date and offered `kk@ln.nostrfeed.com` as the fix. That is the app
+   * proposing a downgrade to somebody who had already paid for the better one.
+   *
+   * Given, the whole address decides, and the username is only the fallback.
+   */
+  preferredAddress?: string | null,
+  /** How to write a link out, so the address comparison can be made. */
+  format?: (link: T) => string | null
 ): T | null {
   if (!links.length) return null;
+
+  const wanted = preferredAddress?.trim().toLowerCase();
+
+  if (wanted && format) {
+    const exact = links.find(
+      (link) => format(link)?.trim().toLowerCase() === wanted
+    );
+    if (exact) return exact;
+  }
 
   if (preferredUsername) {
     const preferred = links.find(
