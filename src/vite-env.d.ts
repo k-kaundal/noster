@@ -34,6 +34,16 @@ interface ImportMetaEnv {
    * requests — see `lib/getzap`.
    */
   readonly VITE_GETZAP_API?: string;
+  /**
+   * The relay that charges for writes, if this deployment runs one.
+   *
+   * Separate from the free relay on purpose: putting admission on the relay
+   * that carries DMs, zaps and NWC would lock unpaid accounts out of all
+   * three.
+   */
+  readonly VITE_PAID_RELAY?: string;
+  /** Where that relay sells and checks admission, over HTTP. */
+  readonly VITE_PAID_RELAY_ADMISSION?: string;
   /** LNbits pay link id for monthly relay access. */
   readonly VITE_PREMIUM_MONTHLY_LINK?: string;
   /** LNbits pay link id for lifetime relay write access. */
