@@ -20,7 +20,7 @@ import { Switch } from '@/components/ui/switch';
 import { Loader2, Upload, Zap } from 'lucide-react';
 import { NSchema as n, type NostrMetadata } from '@nostrify/nostrify';
 import { useUploadFile } from '@/hooks/useUploadFile';
-import { useLightningAddress } from '@/hooks/useLightningAddress';
+import { useIdentity } from '@/hooks/useIdentity';
 import { useAddressCheck } from '@/hooks/useAddressCheck';
 import { useDebounce } from '@/hooks/useDebounce';
 
@@ -420,7 +420,13 @@ const LightningAddressField: React.FC<{
     onBlur: () => void;
   };
 }> = ({ field }) => {
-  const { address } = useLightningAddress();
+  /*
+   * The corrected name, not the label the pay link was found under. This
+   * field offers to fill itself in, so reading the raw one would hand
+   * somebody `luna@ln.nostrfeed.com` to publish when what they hold is
+   * `luna@getzap.me`.
+   */
+  const { address } = useIdentity();
   const alreadySet = !!address && field.value === address;
 
   /**

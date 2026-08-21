@@ -89,6 +89,8 @@ function CurrentIdentity() {
     status,
     nip5,
     lightning,
+    // The name they hold, not the label its pay link was found under
+    address,
     publish,
     isPublishing,
     alignLightningAddress,
@@ -175,14 +177,14 @@ function CurrentIdentity() {
         rest of Nostr's view of it — the profile's `lud16` first, since that
         is what every other client reads.
       */}
-      <ZapReadiness address={lightning.profileAddress ?? lightning.address} />
+      <ZapReadiness address={lightning.profileAddress ?? address} />
 
       {status.mismatched && (
         <div className="rounded-lg border border-primary/25 bg-primary/[0.06] p-4">
           <p className="mb-3 text-sm text-foreground">
             Zaps go to{' '}
             <code className="inline rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-              {lightning.address}
+              {address}
             </code>
           </p>
           <Button
