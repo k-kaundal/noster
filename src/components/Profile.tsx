@@ -36,8 +36,10 @@ import { EmptyState } from '@/components/EmptyState';
 import { PostSkeletonList } from '@/components/PostSkeleton';
 import { FollowButton } from '@/components/FollowButton';
 import { ZapTrigger } from '@/components/ZapTrigger';
-import { VerificationMark } from '@/components/VerificationBadge';
+import { StandingMarks } from '@/components/VerificationBadge';
+import { addressDomain } from '@/lib/lightningAddress';
 import { tierOf } from '@/lib/tiers';
+import { useAdmission } from '@/hooks/usePaidRelay';
 import { EditProfileForm } from '@/components/EditProfileForm';
 import { LinkedAccounts } from '@/components/identity/LinkedAccounts';
 import { ProfileZapAddress } from '@/components/identity/ProfileZapAddress';
@@ -110,6 +112,13 @@ export function Profile({ pubkey }: ProfileProps) {
    * a relationship that does not exist.
    */
   const payTier = lightningAddress ? tierOf(lightningAddress) : null;
+  /*
+   * Asked once, here, and nowhere that renders a list. The relay answers for
+   * any key, so this is a real check rather than a claim read off their relay
+   * list — but it is a cross-origin request per person, which a timeline
+   * cannot afford and a profile can.
+   */
+  const { state: admission } = useAdmission(pubkey);
   const isCurrentUser = user?.pubkey === pubkey;
   const npub = nip19.npubEncode(pubkey);
 
@@ -322,7 +331,13 @@ export function Profile({ pubkey }: ProfileProps) {
                 </Tooltip>
               )}
 
-              {payTier && <VerificationMark tier={payTier} className="h-5 w-5" />}
+              {/* Two claims, two marks: what name they hold, and whether the
+                  paid relay takes their writes. Neither implies the other. */}
+              <StandingMarks
+                standing={{ tier: payTier, admitted: admission === 'admitted' }}
+                domain={lightningAddress ? addressDomain(lightningAddress) : undefined}
+                className="[&_svg]:h-5 [&_svg]:w-5"
+              />
 
               {/* NIP-85: only rendered if the reader declared a rank provider */}
               <TrustScore pubkey={pubkey} />

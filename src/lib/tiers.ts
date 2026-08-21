@@ -1,4 +1,8 @@
-import { ADDRESS_DOMAINS, normalizeDomain } from '@/lib/lightningAddress';
+import {
+  ADDRESS_DOMAINS,
+  isFreeAddressDomain,
+  normalizeDomain,
+} from '@/lib/lightningAddress';
 import { NIP5_DOMAINS } from '@/lib/nip5';
 import { isGeneratedName } from '@/lib/freeAddress';
 
@@ -35,8 +39,14 @@ const OUR_DOMAINS: string[] = [
  *   looks like what it is: a string nobody chose.
  * - **unverified** — a name somebody picked, at a domain that sells names,
  *   which they have not bought *here*. It takes money and carries no ✓.
- * - **named** — a name at our own domain, bought by the year through the
- *   NIP-05 extension, which is also what puts a ✓ against posts.
+ * - **named** — a name at a domain that also gives names away, bought by the
+ *   year through the NIP-05 extension, which is what puts a ✓ against posts.
+ * - **premium** — the same purchase at a domain that sells every name it has.
+ *   Nobody arrives there by accident, which is the whole distinction: the free
+ *   domain hands out assigned names to anyone who presses the button, and a
+ *   sell-only domain has no free rung to arrive on. Everything a name carries
+ *   at that domain — the address, the inbox, the on-chain deposit, the wallet
+ *   connection — was chosen and paid for.
  * There was a fourth, `portable`, at an outside wallet service's domain. That
  * service is gone, and with it the only issuer of that tier — a rung nothing
  * can reach is worse than no rung, because it leaves an upsell on screen
@@ -52,10 +62,32 @@ const OUR_DOMAINS: string[] = [
  * Kept apart from `identity.ts`, which answers "what is left to do"; this
  * answers "what does somebody have, and which of it is best".
  */
-export type NameTier = 'assigned' | 'unverified' | 'named';
+export type NameTier = 'assigned' | 'unverified' | 'named' | 'premium';
 
 /** Ascending. The last one somebody holds is the one to lead with. */
-export const TIER_ORDER: NameTier[] = ['assigned', 'unverified', 'named'];
+export const TIER_ORDER: NameTier[] = [
+  'assigned',
+  'unverified',
+  'named',
+  'premium',
+];
+
+/**
+ * Whether a domain of ours sells every name it has.
+ *
+ * Derived rather than configured, because the app already draws this line:
+ * `FREE_ADDRESS_DOMAINS` is the set a free assigned address may be issued
+ * under, and a domain of ours outside it has no free rung at all. Adding a
+ * `VITE_PREMIUM_DOMAINS` beside it would be a second place the same truth
+ * lives, and the two would drift the first time somebody changed one.
+ *
+ * A deployment serving one domain, which gives names away, therefore has no
+ * premium tier and never shows one — which is correct, not a gap.
+ */
+export function isPremiumDomain(domain: string): boolean {
+  const normalized = normalizeDomain(domain);
+  return OUR_DOMAINS.includes(normalized) && !isFreeAddressDomain(normalized);
+}
 
 export function tierRank(tier: NameTier): number {
   return TIER_ORDER.indexOf(tier);
@@ -70,7 +102,7 @@ export interface TierCopy {
    * Which mark to draw. Names a shape rather than a component so this file
    * stays testable and free of React.
    */
-  mark: 'dot' | 'check';
+  mark: 'dot' | 'check' | 'gem' | 'shield';
 }
 
 export function describeTier(
@@ -85,6 +117,14 @@ export function describeTier(
   options: { domain?: string } = {}
 ): TierCopy {
   switch (tier) {
+    case 'premium':
+      return {
+        label: 'Premium',
+        blurb: options.domain
+          ? `A bought name at ${options.domain}, where none are given away.`
+          : 'A bought name at a domain where none are given away.',
+        mark: 'gem',
+      };
     case 'named':
       return {
         label: 'Verified',
@@ -116,10 +156,13 @@ export function describeTier(
  * or bought depending only on whether a person picked the local part, and one
  * from anywhere else is not ours to rank.
  *
- * Every domain we issue under counts equally. They are separate namespaces —
- * `alice@one.example` and `alice@two.example` can belong to different people
- * and pay different wallets — but they are all ours, and ranking one above
- * another would tell somebody the address they chose is the lesser one.
+ * Domains are not interchangeable, and this used to say they were. The claim
+ * was that ranking one above another tells somebody the address they chose is
+ * the lesser one — true between two domains that both give names away, and
+ * false between one that does and one that does not. A name at a sell-only
+ * domain was bought; a name at the free domain may have been handed over. That
+ * is a real difference in what somebody did, so it gets a real difference in
+ * what they wear.
  */
 export function tierOf(
   address: string,
@@ -156,10 +199,13 @@ export function tierOf(
     return null;
   }
 
+  /** Bought names split by whether the domain has a free rung at all. */
+  const bought: NameTier = isPremiumDomain(domain) ? 'premium' : 'named';
+
   if (verified) {
     const held = `${local}@${domain}`;
     if (verified.some((entry) => normalizeIdentifier(entry) === held)) {
-      return 'named';
+      return bought;
     }
 
     /*
@@ -170,7 +216,7 @@ export function tierOf(
     return isGeneratedName(local) ? 'assigned' : 'unverified';
   }
 
-  return isGeneratedName(local) ? 'assigned' : 'named';
+  return isGeneratedName(local) ? 'assigned' : bought;
 }
 
 /** Lowercased with the domain normalised, so two spellings compare equal. */
@@ -255,5 +301,65 @@ export function leadAddress(
  */
 export function nextTier(current: NameTier | null): NameTier | null {
   if (current === null) return 'assigned';
-  return current === 'named' ? null : 'named';
+  if (current === 'premium') return null;
+
+  /*
+   * Everything below the top points at the top, and which rung is the top
+   * depends on the deployment. Offering `premium` where no sell-only domain is
+   * configured would advertise a name nobody can buy — the mistake the retired
+   * `portable` rung made, which is why it is gone.
+   */
+  const best = hasPremiumDomain() ? 'premium' : 'named';
+  return current === best ? null : best;
 }
+
+/** Whether this deployment sells names at a domain with no free rung. */
+export function hasPremiumDomain(): boolean {
+  return OUR_DOMAINS.some(isPremiumDomain);
+}
+
+/**
+ * Two claims about one person, kept apart.
+ *
+ * A name and relay admission are bought separately, from different things, and
+ * neither implies the other: somebody on the assigned free address can pay the
+ * relay toll, and somebody holding a premium name can have skipped it. Folding
+ * them into a single rank would answer a question nobody asked and lose the
+ * one they did.
+ *
+ * So this is a pair rather than a tier, and the marks that draw it are two
+ * marks. That is the rule the profile header already follows for the NIP-05 ✓
+ * and the address tier — one mark doing two jobs tells a reader neither.
+ */
+export interface UserStanding {
+  /** What name they hold, or null when it is nobody's we issue. */
+  tier: NameTier | null;
+  /**
+   * Whether the paid relay accepts their writes.
+   *
+   * Undefined where it was not asked, which is most of the app — checking
+   * costs a request per person and is worth it on a profile, never in a feed.
+   * Undefined is not `false`: an unasked question has no answer.
+   */
+  admitted?: boolean;
+}
+
+/**
+ * How much somebody has bought, for ordering only.
+ *
+ * Never for display. A single number cannot say *which* of the two things
+ * somebody has, and a badge built from this would show the same mark for a
+ * premium name and for a free address with relay admission — which are not the
+ * same person and should not look alike.
+ */
+export function standingRank(standing: UserStanding): number {
+  const name = standing.tier ? tierRank(standing.tier) + 1 : 0;
+  return name * 2 + (standing.admitted ? 1 : 0);
+}
+
+/** What the relay half is called, where there is room to say it. */
+export const RELAY_MEMBER: TierCopy = {
+  label: 'Paid relay',
+  blurb: 'Paid the one-time admission, so this relay takes their writes.',
+  mark: 'shield',
+};
