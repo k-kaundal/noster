@@ -17,7 +17,7 @@ import {
   withPrimaryFirst,
 } from '@/lib/relayRouting';
 import { getRelayHealthMonitor } from '@/lib/relayHealth';
-import { ensureRelayHealth } from '@/lib/relayProbe';
+import { watchRelayHealth } from '@/lib/relayWatch';
 import {
   RELAY_LIST_KIND,
   RELAY_LIST_SCOPE,
@@ -126,13 +126,6 @@ interface NostrProviderProps {
 const MAX_READ_RELAYS = 10;
 const MAX_WRITE_RELAYS = 8;
 
-/**
- * How often the configured relays are re-checked.
- *
- * Comfortably longer than the prober's own minute-long cache, so this is a
- * heartbeat rather than a second source of truth about when to probe.
- */
-const HEALTH_INTERVAL = 2 * 60_000;
 
 const NostrProvider: React.FC<NostrProviderProps> = (props) => {
   const { children } = props;
@@ -182,56 +175,31 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
     queryClient.resetQueries();
   }, [relayKey, queryClient]);
 
-  /**
-   * Keeps the router's idea of relay health from being fiction.
-   *
-   * `reqRouter` and `eventRouter` below sort by health and skip relays whose
-   * circuit breaker is open, which is the right design and was doing nothing:
-   * the only thing that probes relays is `lib/relayProbe`, and the only thing
-   * that ran it was the relays page. So on every other screen — which is all
-   * of them — every relay was `unknown`, the sort was arbitrary, and no
-   * breaker had ever opened because no failure had ever been recorded.
-   *
-   * Probed here instead, where the relay list already lives. The prober caches
-   * for a minute, shares a socket per relay and caps concurrency, so asking on
-   * every relay change costs one short handshake per relay at most.
-   */
-  useEffect(() => {
-    const urls = config.relays.map((relay) => relay.url).filter(Boolean);
-    if (!urls.length) return;
-
-    void ensureRelayHealth(urls);
-
-    /*
-     * Re-probed on an interval rather than once. A relay that failed early is
-     * otherwise skipped for the life of the tab — the breaker reopens on its
-     * own timeout, but nothing would ever record the success that clears the
-     * failure count behind it.
-     */
-    const timer = setInterval(() => {
-      void ensureRelayHealth(urls);
-    }, HEALTH_INTERVAL);
-
-    return () => clearInterval(timer);
-  }, [relayKey, config.relays]);
-
   if (!pool.current) {
     const healthMonitor = getRelayHealthMonitor();
 
     pool.current = new ExpiryFilteringPool({
       open(url: string) {
-        return new NRelay1(url, {
-          // Configure reconnection with exponential backoff
-          reconnectTimeout: 5000,   // Start with 5 second delay
-          maxReconnectTime: 60000,  // Cap at 60 seconds
-          requestTimeout: 3000,     // Timeout individual requests after 3 seconds
-          /**
-           * NIP-42. Nostrify drives the protocol; this decides whether to
-           * answer at all, which it does only for relays the reader chose —
-           * see `lib/nip42`.
-           */
-          auth: createAuthHandler(url, () => authPolicy.current),
-        });
+        /*
+         * Wrapped so the routing below has something real to sort by. Health
+         * is read off the traffic this socket was already carrying rather
+         * than from a prober opening a second one — see `lib/relayWatch`.
+         */
+        return watchRelayHealth(
+          new NRelay1(url, {
+            // Configure reconnection with exponential backoff
+            reconnectTimeout: 5000,   // Start with 5 second delay
+            maxReconnectTime: 60000,  // Cap at 60 seconds
+            requestTimeout: 3000,     // Timeout individual requests after 3 seconds
+            /**
+             * NIP-42. Nostrify drives the protocol; this decides whether to
+             * answer at all, which it does only for relays the reader chose —
+             * see `lib/nip42`.
+             */
+            auth: createAuthHandler(url, () => authPolicy.current),
+          }),
+          url
+        );
       },
       /**
        * Fan the same filters out to every read relay. NPool merges and
@@ -251,11 +219,26 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
         // Cap to MAX_READ_RELAYS to prevent query stalling
         const targets = primaryFirst.slice(0, MAX_READ_RELAYS);
 
-        // Filter out relays with open circuit breakers
-        const available = targets.filter((url) => healthMonitor.canQuery(url));
+        /**
+         * Every route leaves through here, not just the configured set.
+         *
+         * The circuit breaker used to be applied to the reader's own relays
+         * and then bypassed by everything appended afterwards — the indexers,
+         * the receipt relays, and the author hints harvested from strangers'
+         * relay lists. Those are the URLs least likely to be alive and the
+         * ones nobody chose, and they were re-added to every request forever:
+         * a dead indexer got a fresh socket and its own reconnect loop on each
+         * identity lookup, which is what filled the console with failures.
+         *
+         * Falling back to the unfiltered list when filtering empties it, so a
+         * bad minute cannot leave the app with nowhere to ask.
+         */
+        const usable = (urls: string[]) => {
+          const open = urls.filter((url) => healthMonitor.canQuery(url));
+          return open.length ? open : urls.slice(0, 3);
+        };
 
-        // If all relays have circuit breakers open, use them anyway as last resort
-        const toQuery = available.length > 0 ? available : targets.slice(0, 3);
+        const toQuery = usable(targets);
 
         /**
          * Identity lookups also ask the indexers.
@@ -267,7 +250,9 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
          * wins if somebody was asked who has it.
          */
         if (isIdentityRequest(filters)) {
-          const withIndexers = canonicalTargets([...toQuery, ...INDEXER_RELAYS]);
+          const withIndexers = usable(
+            canonicalTargets([...toQuery, ...INDEXER_RELAYS])
+          );
           return new Map(withIndexers.map((url) => [url, filters]));
         }
 
@@ -286,7 +271,7 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
          * purpose-built screens rather than anything in a feed.
          */
         if (isZapReceiptRequest(filters)) {
-          const wide = canonicalTargets([...toQuery, ...RECEIPT_RELAYS]);
+          const wide = usable(canonicalTargets([...toQuery, ...RECEIPT_RELAYS]));
           return new Map(wide.map((url) => [url, filters]));
         }
 
@@ -312,7 +297,9 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
           ? withAuthorHints(toQuery, hints, MAX_READ_RELAYS)
           : toQuery;
 
-        return new Map(canonicalTargets(routed).map((url) => [url, filters]));
+        return new Map(
+          usable(canonicalTargets(routed)).map((url) => [url, filters])
+        );
       },
 
       /**
