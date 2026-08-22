@@ -43,7 +43,7 @@ export function NotificationBadge() {
         >
           <Bell className="h-[1.2rem] w-[1.2rem]" />
           {unreadCount > 0 && (
-            <span className="absolute right-1 top-1 flex min-w-[1.1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-destructive-foreground">
+            <span className="absolute right-1 top-1 flex min-w-[1.1rem] items-center justify-center rounded-full bg-destructive-strong px-1 text-[10px] font-semibold leading-4 text-white">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}

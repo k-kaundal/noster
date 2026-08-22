@@ -18,6 +18,10 @@ import { useToast } from '@/hooks/useToast';
 import { useOnceOpened } from '@/hooks/useDeferredDialog';
 import { genUserName } from '@/lib/genUserName';
 import { handleFor } from '@/lib/handle';
+import {
+  getThreadPosition,
+  isReply as isReplyEvent,
+} from '@/lib/thread';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserHoverCard } from '@/components/UserHoverCard';
@@ -205,7 +209,12 @@ export function Post({
   const timeAgo = useTimeAgo(event.created_at);
 
   const isRepost = event.kind === 6 || event.kind === 16;
-  const isReply = !isRepost && event.tags.some(([name]) => name === 'e');
+  /*
+   * NIP-10, not "has an `e` tag". A quote carries `['e', id, '', 'mention']`,
+   * so the old test labelled every quote "Replying to @somebody" — naming the
+   * person being quoted as the person being answered.
+   */
+  const isReply = !isRepost && isReplyEvent(event);
   const isOwnPost = user?.pubkey === event.pubkey;
   const canZap = !!(metadata?.lud06 || metadata?.lud16) && !isOwnPost;
 
@@ -639,13 +648,26 @@ export function Post({
           className
         )}
       >
+        {/*
+          The most prominent thing in the feed, and it was the least legible.
+          Tinted text on a tint of the same hue: the name measured 2.62:1 and
+          the word "reposted" 1.97:1, both far under the 4.5:1 floor. The
+          opacity was doing the work of a colour — `text-repost/70` on
+          `bg-repost/5` is two washes of green sitting on each other.
+
+          The icon keeps the hue, since it carries the meaning and an icon is
+          not read. The words get colours chosen to be read.
+        */}
         {isRepost && (
-          <div className="flex items-center gap-2 border-b bg-repost/5 px-4 py-2.5 text-xs text-repost font-medium">
-            <Repeat2 className="h-4 w-4 shrink-0 text-repost/80" />
-            <Link to={`/${npub}`} className="hover:underline">
+          <div className="flex items-center gap-2 border-b bg-repost/10 px-4 py-2.5 text-xs">
+            <Repeat2 className="h-4 w-4 shrink-0 text-repost" />
+            <Link
+              to={`/${npub}`}
+              className="font-medium text-foreground hover:underline"
+            >
               {displayName}
             </Link>
-            <span className="text-repost/70">reposted</span>
+            <span className="text-muted-foreground">reposted</span>
           </div>
         )}
 
@@ -734,31 +756,72 @@ export function Post({
  * the alternative is fetching the parent note just to learn its author, which
  * is a round trip per reply in the feed.
  */
+/**
+ * What a reply is a reply to.
+ *
+ * Two facts, and the second one is why this exists. Naming the author answers
+ * "who is being talked to"; a line of what they said answers "about what",
+ * which is the question a reply in a timeline actually raises — read on its
+ * own, a comment is half a conversation, and the half on screen is the one
+ * that makes least sense alone.
+ *
+ * The parent is fetched, and that is only affordable because `useEvent`
+ * batches: twenty replies on screen collect into one `ids: [...]` query rather
+ * than twenty round trips. Absent, this degrades to the name alone rather than
+ * to a blank space or a spinner — plenty of parents are on relays nobody here
+ * is connected to, and that is not an error worth showing.
+ */
 function ReplyingTo({ event, noteId }: { event: NostrEvent; noteId: string }) {
-  // NIP-10 puts the parent's author on the reply tag; the first `p` tag is the
-  // long-standing convention for the same thing
-  const parentPubkey =
+  const { parentId } = getThreadPosition(event);
+
+  /*
+   * NIP-10 puts the parent's author on the reply tag, which saves a lookup
+   * when the marked form was used. The first `p` tag is the long-standing
+   * convention for the same thing, and the fetched parent settles it when
+   * neither is present.
+   */
+  const taggedPubkey =
     event.tags.find(([name, , , marker]) => name === 'e' && marker === 'reply')?.[4] ||
     event.tags.find(([name]) => name === 'p')?.[1];
+
+  const { data: parent } = useEvent(parentId ?? '');
+  const parentPubkey = taggedPubkey || parent?.pubkey;
 
   const author = useAuthor(parentPubkey || '');
   const metadata = author.data?.metadata;
 
+  /** One line of it. A reply's own text is the thing being read. */
+  const excerpt = parent?.content
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140);
+
   return (
-    <Link
-      to={`/${noteId}`}
-      className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
-    >
-      <MessageCircle className="h-3.5 w-3.5 shrink-0 opacity-60" />
-      <span>
-        {/* The handle rather than the display name: "Replying to @Keen
-            Eagle" names nobody, since that label is invented for anyone
-            without a profile and two strangers get the same one. */}
-        {parentPubkey
-          ? `Replying to @${handleFor(metadata, parentPubkey)}`
-          : 'Replying to a thread'}
-      </span>
-    </Link>
+    <div className="mt-1.5 space-y-1.5">
+      <Link
+        to={parentId ? `/${nip19.noteEncode(parentId)}` : `/${noteId}`}
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground hover:underline"
+      >
+        <MessageCircle className="h-3.5 w-3.5 shrink-0 opacity-60" />
+        <span>
+          {/* The handle rather than the display name: "Replying to @Keen
+              Eagle" names nobody, since that label is invented for anyone
+              without a profile and two strangers get the same one. */}
+          {parentPubkey
+            ? `Replying to @${handleFor(metadata, parentPubkey)}`
+            : 'Replying to a thread'}
+        </span>
+      </Link>
+
+      {excerpt && parentId && (
+        <Link
+          to={`/${nip19.noteEncode(parentId)}`}
+          className="block border-l-2 border-muted-foreground/25 py-0.5 pl-2.5 text-xs italic leading-snug text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+        >
+          <span className="line-clamp-2">{excerpt}</span>
+        </Link>
+      )}
+    </div>
   );
 }
 

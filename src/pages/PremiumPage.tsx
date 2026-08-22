@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Check,
+  Circle,
   Copy,
   CreditCard,
   ExternalLink,
@@ -19,6 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { QrCode } from '@/components/wallet/QrCode';
+import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { usePremium } from '@/hooks/usePremium';
 import { useRelays } from '@/hooks/useRelays';
@@ -38,8 +40,11 @@ import {
   admissionPayUrl,
   describeAdmission,
   type AdmissionInvoice as AdmissionInvoiceValue,
+  writeRequirements,
+  WRITE_LIMITS,
   type AdmissionState as AdmissionStateValue,
 } from '@/lib/paidRelay';
+import { tierOf } from '@/lib/tiers';
 import {
   isFixedPrice,
   payLinkUrl,
@@ -69,7 +74,7 @@ export function PremiumPage() {
         <PageHeader
           icon={Sparkles}
           title="Relay access"
-          description="Writing to the paid relay is bought once. Reading is free, everywhere, always."
+          description="The paid relay wants admission and a verified name before it takes a write. Reading is free, everywhere, always."
         />
 
         <AdmissionCard />
@@ -133,6 +138,15 @@ function AdmissionCard() {
   const { state, isLoading, refetch, confirm, isChecking } = useAdmission();
   const relay = usePaidRelayInfo();
 
+  /*
+   * Whether they hold a name the relay will accept. Read from the published
+   * profile rather than from the wallet, because the relay checks the `nip05`
+   * on the kind 0 — a name bought and never published is a name the relay
+   * cannot see.
+   */
+  const metadata = useAuthor(user?.pubkey).data?.metadata;
+  const verified = !!metadata?.nip05 && !!tierOf(metadata.nip05);
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -167,7 +181,7 @@ function AdmissionCard() {
             */}
             <p className="text-sm text-muted-foreground">
               {relay.paid || relay.feeFromRelay
-                ? 'Writing here costs a one-time admission per key. Reading stays open to everyone, and this never has to be paid twice.'
+                ? 'Writing here needs a one-time admission and a verified name. Reading stays open to everyone, and admission is never paid twice.'
                 : "This relay isn't advertising paid writes right now."}
             </p>
 
@@ -208,6 +222,7 @@ function AdmissionCard() {
             state={state}
             feeSats={relay.feeSats}
             live={relay.live}
+            verified={verified}
             pubkey={user.pubkey}
             termsUrl={relay.info?.terms_of_service}
             onRecheck={() => void refetch()}
@@ -224,6 +239,7 @@ function AdmissionState({
   state,
   feeSats,
   live,
+  verified,
   pubkey,
   termsUrl,
   onRecheck,
@@ -233,6 +249,8 @@ function AdmissionState({
   state: AdmissionStateValue;
   feeSats: number;
   live: boolean;
+  /** Whether their published profile carries a name the relay accepts. */
+  verified: boolean;
   pubkey: string;
   /** The relay's own terms, from its NIP-11 document. */
   termsUrl?: string;
@@ -241,20 +259,52 @@ function AdmissionState({
   onPaid: () => void;
   isChecking: boolean;
 }) {
+  const requirements = writeRequirements({
+    admitted: state === 'admitted',
+    verified,
+  });
+
+  const ready = requirements.every((entry) => entry.met);
+
   if (state === 'admitted') {
     return (
       <div className="space-y-3">
-        <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success-strong">
-          <Check className="h-4 w-4 shrink-0" />
-          {describeAdmission(state)}
-        </p>
-        <AddToRelayList />
+        <Requirements requirements={requirements} />
+
+        {ready ? (
+          <>
+            <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success-strong">
+              <Check className="h-4 w-4 shrink-0" />
+              {describeAdmission(state)}
+            </p>
+            <AddToRelayList />
+          </>
+        ) : (
+          /*
+           * Paid, and still refused. Worth saying loudly, because this is the
+           * state somebody lands in after handing over sats and it looks
+           * exactly like the feature being broken.
+           */
+          <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/8 p-3">
+            <p className="text-sm text-warning-strong">
+              Admission is paid, but the relay also checks for a verified name
+              before it takes a write.
+            </p>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/wallet">Get a name</Link>
+            </Button>
+          </div>
+        )}
+
+        <Limits />
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      <Requirements requirements={requirements} />
+
       <p
         className={
           state === 'unpaid'
@@ -307,7 +357,66 @@ function AdmissionState({
           Pay on the web instead
         </a>
       </div>
+
+      {/* Before the money changes hands, not after the first refusal */}
+      <Limits />
     </div>
+  );
+}
+
+/**
+ * The two things the relay wants, and which of them you have.
+ *
+ * Both, not just the money. The relay checks NIP-05 as well as admission, so a
+ * page offering "pay 2100 sats and you can write" to somebody holding no name
+ * would take their sats for something that still refuses them — the worst
+ * outcome this screen can produce.
+ *
+ * NIP-42 AUTH is a third requirement and is deliberately not listed. The pool
+ * answers the challenge on its own for any relay in the reader's list, so the
+ * only way to fail it is not to have added the relay, which has its own row
+ * further down.
+ */
+function Requirements({
+  requirements,
+}: {
+  requirements: ReturnType<typeof writeRequirements>;
+}) {
+  return (
+    <ul className="space-y-1.5">
+      {requirements.map((entry) => (
+        <li key={entry.id} className="flex items-start gap-2 text-sm">
+          {entry.met ? (
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+          ) : (
+            <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50" />
+          )}
+          <span className="min-w-0">
+            <span className={entry.met ? 'text-foreground' : 'font-medium'}>
+              {entry.label}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {entry.detail}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * What the relay enforces after the door.
+ *
+ * Said before somebody hits one rather than after. A rejected note explains
+ * itself in the outbox, but a limit discovered that way reads as the app being
+ * broken; read here first, it reads as a relay with rules.
+ */
+function Limits() {
+  return (
+    <p className="text-xs text-muted-foreground">
+      Once you are in: {WRITE_LIMITS.join(' · ')}.
+    </p>
   );
 }
 

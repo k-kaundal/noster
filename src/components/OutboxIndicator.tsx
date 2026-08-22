@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { useOutbox } from '@/hooks/useOutbox';
-import { isAdmissionRejection } from '@/lib/paidRelay';
+import { explainRelayRejection } from '@/lib/paidRelay';
 import { cn } from '@/lib/utils';
 
 /**
@@ -24,11 +24,17 @@ export function OutboxIndicator({ className }: { className?: string }) {
   const [retrying, setRetrying] = useState(false);
 
   /*
-   * Any of them, not all: one refused note is enough to explain a queue that
-   * will not drain, and the rest are usually the same key hitting the same
-   * relay.
+   * The first refusal this app can explain. One is enough — a queue that will
+   * not drain usually will not drain for one reason, and the rest are the same
+   * key hitting the same relay.
+   *
+   * Each of these needs a different thing from the reader: pay, buy a name,
+   * slow down, shorten, or nothing at all. Retrying them all identically is
+   * the worst of both, since it never succeeds and never says why.
    */
-  const blocked = items.some((item) => isAdmissionRejection(item.lastError));
+  const blocked = items
+    .map((item) => explainRelayRejection(item.lastError))
+    .find(Boolean);
 
   if (!count) return null;
 
@@ -68,19 +74,19 @@ export function OutboxIndicator({ className }: { className?: string }) {
           </div>
 
           {/*
-            The one failure retrying cannot fix.
+            The failures retrying cannot fix on its own.
 
-            A paid relay rejects an unadmitted key outright, and nothing about
-            waiting changes that — so the queue would sit here filling up while
-            "Try now" reported the same refusal forever, with no word anywhere
-            about what the relay actually said. This is the only place that
-            sentence can reach the person who needs it.
+            A paid relay refuses an unadmitted key, an unverified name, an
+            oversized note and a stale one — each outright, and none of them
+            differently on the second attempt. Without this the queue sat here
+            filling up while "Try now" reported the same refusal forever, with
+            no word anywhere about what the relay actually said. This is the
+            only place that sentence reaches the person who needs it.
           */}
           {blocked && (
             <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/8 p-3">
               <p className="text-xs text-warning-strong">
-                A relay refused these because this account hasn't been admitted.
-                Retrying won't change that.
+                {blocked} Retrying won't change that on its own.
               </p>
               <Button asChild size="sm" variant="outline" className="w-full">
                 <Link to="/premium">See relay access</Link>

@@ -14,6 +14,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrendingHashtags, TrendingPeople } from '@/components/TrendingCards';
 import { useTrending } from '@/hooks/useTrending';
 import { useContentFilter } from '@/hooks/useContentFilter';
+import { useFeedSpam } from '@/hooks/useFeedSpam';
+import { FilteredNotice } from '@/components/FilteredNotice';
 import { countUnseen, markerFor, type FeedMarker } from '@/lib/feedPosition';
 import { cn } from '@/lib/utils';
 
@@ -132,10 +134,21 @@ export function Feed() {
   const newCount = firstUnseen;
 
   /** The held-back notes are dropped until the reader asks for them. */
-  const visiblePosts = useMemo(
+  const unseenTrimmed = useMemo(
     () => (posts && firstUnseen > 0 ? posts.slice(firstUnseen) : posts),
     [posts, firstUnseen]
   );
+
+  /*
+   * Campaigns and blank-profile link drops, judged by the same code that has
+   * been filtering notifications all along — see `useFeedSpam`. Never applied
+   * to the Following tab: those are accounts somebody chose, and a filter that
+   * second-guesses a deliberate follow is worse than the spam it catches.
+   */
+  const spam = useFeedSpam(scope === 'following' ? undefined : unseenTrimmed);
+  const [showSpam, setShowSpam] = useState(false);
+
+  const visiblePosts = showSpam ? unseenTrimmed : spam.kept;
 
   useEffect(() => {
     if (posts?.length && !seenTop) setSeenTop(markerFor(posts[0]));
@@ -320,6 +333,16 @@ export function Feed() {
               </div>
             ))}
           </div>
+
+          {/* Never silence. A filter nobody can inspect is indistinguishable
+              from a bug, and the note it gets wrong is the one somebody most
+              needs to find. */}
+          <FilteredNotice
+            count={spam.filtered.length}
+            reasons={spam.reasons}
+            open={showSpam}
+            onToggle={() => setShowSpam((open) => !open)}
+          />
 
           <div ref={sentinelRef} className="py-4 text-center">
             {isFetchingNextPage ? (

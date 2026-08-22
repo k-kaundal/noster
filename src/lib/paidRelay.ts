@@ -255,6 +255,56 @@ export function describeAdmission(state: AdmissionState): string {
 }
 
 /**
+ * What the paid relay asks for beyond the money.
+ *
+ * Admission is necessary and not sufficient, which is the single most
+ * important thing this page has to get across: the relay also wants NIP-42
+ * AUTH as the event author and a verified NIP-05 at one of our domains, and it
+ * enforces rate, size and age limits on top. Selling "pay 2100 sats and you
+ * can write" to somebody holding no name takes their money for something that
+ * will still refuse them.
+ *
+ * AUTH is not listed as a step because it is not one — the pool answers the
+ * challenge automatically for any relay in the reader's own list, so the only
+ * way to fail it is to not have added the relay, which is its own row already.
+ */
+export interface WriteRequirement {
+  id: 'admission' | 'name';
+  label: string;
+  detail: string;
+  met: boolean;
+}
+
+export function writeRequirements(input: {
+  admitted: boolean;
+  /** Whether they hold a verified name at one of our domains. */
+  verified: boolean;
+}): WriteRequirement[] {
+  return [
+    {
+      id: 'admission',
+      label: 'Admission paid',
+      detail: 'A one-time payment, tied to this key.',
+      met: input.admitted,
+    },
+    {
+      id: 'name',
+      label: 'A verified name',
+      detail:
+        'The relay checks your NIP-05 against our domains before it takes a write.',
+      met: input.verified,
+    },
+  ];
+}
+
+/** The limits the relay applies once somebody is through the door. */
+export const WRITE_LIMITS = [
+  '4 notes a minute, 120 events an hour',
+  'Notes up to 8 KB',
+  'Nothing older than 7 days',
+] as const;
+
+/**
  * The rejection a relay sends when the writer has not been admitted.
  *
  * NIP-20 machine-readable prefix. Recognised so a failed publish can say what
@@ -269,6 +319,45 @@ export function isAdmissionRejection(message: string | undefined): boolean {
     text.startsWith('blocked:') &&
     (text.includes('not admitted') || text.includes('admission'))
   );
+}
+
+/**
+ * Why the paid relay refused a write, in words a reader can act on.
+ *
+ * Every one of these is a different fix — pay, buy a name, wait, shorten,
+ * or nothing at all — and a queue that retries them all identically is the
+ * worst of both: it never succeeds and it never says why. `null` for anything
+ * unrecognised, so an unfamiliar refusal is left to whatever the relay said
+ * rather than guessed at.
+ */
+export function explainRelayRejection(
+  message: string | undefined
+): string | null {
+  if (!message) return null;
+
+  const text = message.toLowerCase();
+
+  if (isAdmissionRejection(message)) {
+    return "This account hasn't paid admission to the paid relay.";
+  }
+
+  if (text.includes('nip-05') || text.includes('nip05')) {
+    return 'The paid relay wants a verified name before it takes a write.';
+  }
+
+  if (text.startsWith('rate-limited:') || text.includes('rate limit')) {
+    return 'Sending too fast for the paid relay — it allows 4 notes a minute.';
+  }
+
+  if (text.includes('too large') || text.includes('too long')) {
+    return 'Too big for the paid relay, which caps a note at 8 KB.';
+  }
+
+  if (text.includes('too old') || text.includes('created_at')) {
+    return 'Too old for the paid relay, which refuses anything over 7 days.';
+  }
+
+  return null;
 }
 
 /**
