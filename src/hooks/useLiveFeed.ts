@@ -105,9 +105,17 @@ export function useLiveFeed(
              * one, so it was prepended a second time and the reader saw the
              * same note twice in one list.
              */
+            /*
+             * Tolerant of a page from an older shape, for the same reason
+             * `useFeed` is: a persisted cache outlives a deploy, and a
+             * `.map` on `undefined` here throws inside a cache write, which
+             * is a worse place to throw than a render.
+             */
             const known = new Set(
               current.pages.flatMap((page) =>
-                page.events.map((event) => event.id)
+                (Array.isArray(page) ? page : (page?.events ?? [])).map(
+                  (event) => event.id
+                )
               )
             );
 
@@ -129,6 +137,12 @@ export function useLiveFeed(
              * arrivals only understates a pill; the reader loses nothing
              * they were looking at, and the next refetch catches up.
              */
+            // An older-shaped first page cannot be prepended to safely; the
+            // next refetch replaces it with the current shape anyway
+            if (Array.isArray(first) || !Array.isArray(first?.events)) {
+              return current;
+            }
+
             const room = MAX_LIVE_PAGE - first.events.length;
             if (room <= 0) return current;
 

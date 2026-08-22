@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import {
   MAX_AGE_MS,
+  VERSION,
   isRestorable,
   persistQueryCache,
   restoreQueryCache,
@@ -46,7 +47,7 @@ describe('shouldPersistKey', () => {
 });
 
 describe('isRestorable', () => {
-  const stored = { version: 1, savedAt: NOW, state: { queries: [] } };
+  const stored = { version: VERSION, savedAt: NOW, state: { queries: [] } };
 
   it('accepts a cache saved just now', () => {
     expect(isRestorable(stored, NOW)).toBe(true);
@@ -67,7 +68,7 @@ describe('isRestorable', () => {
   it('refuses junk', () => {
     expect(isRestorable(null, NOW)).toBe(false);
     expect(isRestorable('{}', NOW)).toBe(false);
-    expect(isRestorable({ version: 1, savedAt: NOW }, NOW)).toBe(false);
+    expect(isRestorable({ version: VERSION, savedAt: NOW }, NOW)).toBe(false);
   });
 });
 
@@ -88,7 +89,7 @@ describe('serializeCache', () => {
     const parsed = JSON.parse(serializeCache(new QueryClient(), NOW)!);
 
     expect(parsed.savedAt).toBe(NOW);
-    expect(parsed.version).toBe(1);
+    expect(parsed.version).toBe(VERSION);
   });
 
   it('returns null rather than a payload too big to store', () => {

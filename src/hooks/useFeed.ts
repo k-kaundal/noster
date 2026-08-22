@@ -74,7 +74,29 @@ async function fetchPage(
   };
 }
 
-function nextPageParam(lastPage: FeedPage) {
+/**
+ * A page's events, whatever shape the page turned out to be.
+ *
+ * Defensive on purpose, and the cost of learning why the hard way. A cached
+ * page from before this shape existed is a bare array, and reading `.events`
+ * off it gives `undefined` — which `flatMap` keeps, so the next `.map` reads
+ * `.id` of nothing and throws at the app root before a single screen renders.
+ * The boundary catches it and shows an error page, and the cache that caused
+ * it is restored again on the next load, so the app never starts again.
+ *
+ * `queryPersistence` has a version for exactly this and it is bumped. This is
+ * the second lock: a crash that cannot be cleared by reloading is bad enough
+ * to be worth not being able to happen twice.
+ */
+function eventsOf(page: FeedPage | NostrEvent[] | undefined): NostrEvent[] {
+  if (Array.isArray(page)) return page;
+  return page?.events ?? [];
+}
+
+function nextPageParam(lastPage: FeedPage | NostrEvent[]) {
+  // A page from an older shape has no cursor to read; stop rather than guess
+  if (Array.isArray(lastPage)) return undefined;
+
   // A short page is the relay saying it has nothing older
   if (lastPage.received < PAGE_SIZE || lastPage.oldest === null) {
     return undefined;
@@ -173,7 +195,7 @@ export function useFeed(scope: FeedScope = 'global') {
     ? Array.from(
         new Map(
           query.data.pages
-            .flatMap((page) => page.events)
+            .flatMap(eventsOf)
             .map((event) => [event.id, event])
         ).values()
       ).sort((a, b) => b.created_at - a.created_at)
