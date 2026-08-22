@@ -39,6 +39,8 @@ import { ZapTrigger } from '@/components/ZapTrigger';
 import { StandingMarks } from '@/components/VerificationBadge';
 import { addressDomain } from '@/lib/lightningAddress';
 import { tierOf } from '@/lib/tiers';
+import { isReply } from '@/lib/thread';
+import { isRepost } from '@/lib/eventKinds';
 import { useAdmission } from '@/hooks/usePaidRelay';
 import { EditProfileForm } from '@/components/EditProfileForm';
 import { LinkedAccounts } from '@/components/identity/LinkedAccounts';
@@ -125,11 +127,21 @@ export function Profile({ pubkey }: ProfileProps) {
   const posts = useMemo(() => profileData?.posts ?? [], [profileData]);
 
   const { notes, replies, media } = useMemo(() => {
+    /*
+     * NIP-10, not "has an `e` tag".
+     *
+     * That test filed every quote and every repost under Replies, because a
+     * quote carries `['e', id, '', 'mention']` and a kind 6 carries a bare `e`
+     * tag naming what it boosted. An account that quotes or reposts at all —
+     * which is most of them — ended up with an empty Notes tab and everything
+     * it wrote listed as a comment on something. `isReply` reads the markers
+     * and the positional form and excludes mentions; see `lib/thread`.
+     */
     const notes = posts.filter(
-      (post) => !post.tags.some(([name]) => name === 'e')
+      (post) => isRepost(post) || !isReply(post)
     );
-    const replies = posts.filter((post) =>
-      post.tags.some(([name]) => name === 'e')
+    const replies = posts.filter(
+      (post) => !isRepost(post) && isReply(post)
     );
     const media = posts.filter((post) => IMAGE_URL.test(post.content));
     return { notes, replies, media };

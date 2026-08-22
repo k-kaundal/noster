@@ -178,7 +178,7 @@ function NavLink({
         Tabular numerals so a count that ticks 9 → 10 does not shift the row.
       */}
       {badge ? (
-        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
           {badge}
         </span>
       ) : (

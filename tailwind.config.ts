@@ -48,7 +48,9 @@ export default {
 				},
 				destructive: {
 					DEFAULT: 'hsl(var(--destructive))',
-					foreground: 'hsl(var(--destructive-foreground))'
+					foreground: 'hsl(var(--destructive-foreground))',
+					/** For small text on red — see `--destructive-strong`. */
+					strong: 'hsl(var(--destructive-strong))'
 				},
 				success: {
 					DEFAULT: 'hsl(var(--success))',

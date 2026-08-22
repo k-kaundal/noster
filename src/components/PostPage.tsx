@@ -16,7 +16,10 @@ interface PostPageProps {
 }
 
 export function PostPage({ eventId }: PostPageProps) {
-  const { data: event, isLoading, error } = useEvent(eventId);
+  // `null` is the batch loader's "no relay had it", which reads the same as
+  // absent to everything below
+  const { data, isLoading, error } = useEvent(eventId);
+  const event = data ?? undefined;
 
   return (
     <>

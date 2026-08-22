@@ -32,6 +32,15 @@
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
+    /*
+     * The same red, dark enough to carry small text.
+     *
+     * `--destructive` is tuned for buttons, where the label is large enough
+     * that 3:1 passes. A notification count is 10px, so 4.5:1 applies, and
+     * white on a 60%-lightness red measured 3.28:1. Kept as its own token
+     * rather than darkening the button colour everyone recognises.
+     */
+    --destructive-strong: 0 72% 42%;
 
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
@@ -132,6 +141,8 @@
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
+    /* Dark mode's red is already darker; a touch more for 10px text */
+    --destructive-strong: 0 72% 46%;
 
     --success: 142 69% 45%;
     --success-foreground: 0 0% 100%;

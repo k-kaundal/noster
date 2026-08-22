@@ -116,6 +116,17 @@ export function parseJsonContent(content: string): unknown | null {
 
 const TEXT_KINDS = new Set([1, 1111]);
 const REPOST_KINDS = new Set([6, 16]);
+
+/**
+ * Whether an event is a repost rather than something written.
+ *
+ * Exported because more than the renderer needs it: a repost carries an `e`
+ * tag naming what it boosted, which makes it look exactly like a reply to
+ * anything testing for one.
+ */
+export function isRepost(event: { kind: number }): boolean {
+  return REPOST_KINDS.has(event.kind);
+}
 const ARTICLE_KINDS = new Set([30023, 30024]);
 const VIDEO_KINDS = new Set([21, 22, 34235, 34236]);
 const PICTURE_KINDS = new Set([20]);
