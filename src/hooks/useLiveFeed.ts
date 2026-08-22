@@ -5,8 +5,23 @@ import type { NostrEvent, NostrFilter } from '@nostrify/nostrify';
 import { isRenderableEvent } from '@/lib/eventKinds';
 import { createEventBatcher } from '@/lib/eventBatch';
 
+/**
+ * A page as `useFeed` stores one.
+ *
+ * Redeclared here rather than imported to avoid a cycle, and that is exactly
+ * why it has to be kept in step: the cache key is built from a string, so
+ * `setQueryData` cannot be typed against the query and TypeScript will not
+ * notice when the two drift. It drifted once — the page grew from an array to
+ * an object carrying a cursor, and this file went on calling `page.map`.
+ */
+interface FeedPage {
+  events: NostrEvent[];
+  received: number;
+  oldest: number | null;
+}
+
 /** Newest-first pages, as `useInfiniteQuery` stores them. */
-type FeedPages = InfiniteData<NostrEvent[], number | undefined>;
+type FeedPages = InfiniteData<FeedPage, number | undefined>;
 
 /** Most notes the live subscription will let the first page hold. */
 const MAX_LIVE_PAGE = 200;
@@ -91,7 +106,9 @@ export function useLiveFeed(
              * same note twice in one list.
              */
             const known = new Set(
-              current.pages.flatMap((page) => page.map((event) => event.id))
+              current.pages.flatMap((page) =>
+                page.events.map((event) => event.id)
+              )
             );
 
             const fresh = events.filter((event) => !known.has(event.id));
@@ -112,12 +129,26 @@ export function useLiveFeed(
              * arrivals only understates a pill; the reader loses nothing
              * they were looking at, and the next refetch catches up.
              */
-            const room = MAX_LIVE_PAGE - first.length;
+            const room = MAX_LIVE_PAGE - first.events.length;
             if (room <= 0) return current;
+
+            const added = fresh.slice(0, room);
 
             return {
               ...current,
-              pages: [[...fresh.slice(0, room), ...first], ...rest],
+              pages: [
+                {
+                  ...first,
+                  events: [...added, ...first.events],
+                  /*
+                   * The cursor is untouched. It records how far back the
+                   * *fetch* reached, and notes arriving live are newer than
+                   * anything on the page — moving it would make the next
+                   * "load more" ask for a range already in hand.
+                   */
+                },
+                ...rest,
+              ],
             };
           }
         );

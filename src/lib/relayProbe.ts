@@ -1,3 +1,5 @@
+import { getRelayHealthMonitor } from '@/lib/relayHealth';
+
 export type RelayHealthStatus = 'idle' | 'checking' | 'online' | 'offline';
 
 export interface RelayHealth {
@@ -51,6 +53,28 @@ function publish(): void {
 
 function set(url: string, health: RelayHealth): void {
   cache.set(url, health);
+
+  /*
+   * The router's monitor is a different object with a different job — it holds
+   * consecutive failures and opens a circuit breaker, and `NostrProvider`
+   * sorts and filters every query and publish through it. Nothing ever told it
+   * anything.
+   *
+   * So `sortByHealth` ranked relays it had no opinion about, `canQuery` let
+   * every one through because no circuit had ever opened, and the routing that
+   * reads as health-aware was choosing at random. Meanwhile this prober had
+   * the answer the whole time and was showing it on the relays page.
+   *
+   * Reported from here rather than probed twice: no new sockets, and the two
+   * views of a relay can no longer disagree. `checking` says nothing yet, so
+   * it is not an outcome to record.
+   */
+  if (health.status === 'online') {
+    getRelayHealthMonitor().recordSuccess(url, health.latency ?? 0);
+  } else if (health.status === 'offline') {
+    getRelayHealthMonitor().recordFailure(url);
+  }
+
   publish();
 }
 

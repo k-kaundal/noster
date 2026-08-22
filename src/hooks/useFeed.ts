@@ -21,6 +21,23 @@ function isPlausible(event: NostrEvent) {
   return event.created_at > 0 && event.created_at < Date.now() / 1000 + 86400;
 }
 
+/**
+ * A page, and how far back it actually reached.
+ *
+ * The cursor cannot be read off the notes that survived filtering. A page of
+ * thirty raw events with twelve unrenderable ones among them leaves eighteen,
+ * and `18 < 30` reads as "the relay has no more" — so the feed stopped early,
+ * and stopped earlier the more junk a relay carried. Both numbers are kept:
+ * one decides what to draw, the other decides whether to keep asking.
+ */
+interface FeedPage {
+  events: NostrEvent[];
+  /** How many the relays returned, before anything was dropped. */
+  received: number;
+  /** The oldest timestamp seen, filtered or not. */
+  oldest: number | null;
+}
+
 async function fetchPage(
   nostr: NRelay,
   input: {
@@ -29,7 +46,7 @@ async function fetchPage(
     until?: number;
     signal: AbortSignal;
   }
-): Promise<NostrEvent[]> {
+): Promise<FeedPage> {
   const signal = AbortSignal.any([input.signal, AbortSignal.timeout(5000)]);
 
   const events = await nostr.query(
@@ -43,17 +60,28 @@ async function fetchPage(
     { signal }
   );
 
-  return events
-    .filter(isPlausible)
-    // Empty notes would render as blank cards, so they never enter the feed
-    .filter(isRenderableEvent)
-    .sort((a, b) => b.created_at - a.created_at);
+  const plausible = events.filter(isPlausible);
+
+  return {
+    events: plausible
+      // Empty notes would render as blank cards, so they never enter the feed
+      .filter(isRenderableEvent)
+      .sort((a, b) => b.created_at - a.created_at),
+    received: events.length,
+    oldest: plausible.length
+      ? Math.min(...plausible.map((event) => event.created_at))
+      : null,
+  };
 }
 
-function nextPageParam(lastPage: NostrEvent[]) {
-  if (lastPage.length < PAGE_SIZE) return undefined;
-  // Step one second past the oldest note so it is not returned twice
-  return lastPage[lastPage.length - 1].created_at - 1;
+function nextPageParam(lastPage: FeedPage) {
+  // A short page is the relay saying it has nothing older
+  if (lastPage.received < PAGE_SIZE || lastPage.oldest === null) {
+    return undefined;
+  }
+
+  // Step one second past the oldest seen so it is not returned twice
+  return lastPage.oldest - 1;
 }
 
 /** Re-exported so components keep importing the scope from the hook. */
@@ -144,7 +172,9 @@ export function useFeed(scope: FeedScope = 'global') {
   const posts = query.data
     ? Array.from(
         new Map(
-          query.data.pages.flat().map((event) => [event.id, event])
+          query.data.pages
+            .flatMap((page) => page.events)
+            .map((event) => [event.id, event])
         ).values()
       ).sort((a, b) => b.created_at - a.created_at)
     : undefined;

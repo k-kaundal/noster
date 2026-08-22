@@ -17,6 +17,7 @@ import {
   withPrimaryFirst,
 } from '@/lib/relayRouting';
 import { getRelayHealthMonitor } from '@/lib/relayHealth';
+import { ensureRelayHealth } from '@/lib/relayProbe';
 import {
   RELAY_LIST_KIND,
   RELAY_LIST_SCOPE,
@@ -125,6 +126,14 @@ interface NostrProviderProps {
 const MAX_READ_RELAYS = 10;
 const MAX_WRITE_RELAYS = 8;
 
+/**
+ * How often the configured relays are re-checked.
+ *
+ * Comfortably longer than the prober's own minute-long cache, so this is a
+ * heartbeat rather than a second source of truth about when to probe.
+ */
+const HEALTH_INTERVAL = 2 * 60_000;
+
 const NostrProvider: React.FC<NostrProviderProps> = (props) => {
   const { children } = props;
   const { config } = useAppContext();
@@ -172,6 +181,39 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
     cachedRelayKey.current = relayKey;
     queryClient.resetQueries();
   }, [relayKey, queryClient]);
+
+  /**
+   * Keeps the router's idea of relay health from being fiction.
+   *
+   * `reqRouter` and `eventRouter` below sort by health and skip relays whose
+   * circuit breaker is open, which is the right design and was doing nothing:
+   * the only thing that probes relays is `lib/relayProbe`, and the only thing
+   * that ran it was the relays page. So on every other screen — which is all
+   * of them — every relay was `unknown`, the sort was arbitrary, and no
+   * breaker had ever opened because no failure had ever been recorded.
+   *
+   * Probed here instead, where the relay list already lives. The prober caches
+   * for a minute, shares a socket per relay and caps concurrency, so asking on
+   * every relay change costs one short handshake per relay at most.
+   */
+  useEffect(() => {
+    const urls = config.relays.map((relay) => relay.url).filter(Boolean);
+    if (!urls.length) return;
+
+    void ensureRelayHealth(urls);
+
+    /*
+     * Re-probed on an interval rather than once. A relay that failed early is
+     * otherwise skipped for the life of the tab — the breaker reopens on its
+     * own timeout, but nothing would ever record the success that clears the
+     * failure count behind it.
+     */
+    const timer = setInterval(() => {
+      void ensureRelayHealth(urls);
+    }, HEALTH_INTERVAL);
+
+    return () => clearInterval(timer);
+  }, [relayKey, config.relays]);
 
   if (!pool.current) {
     const healthMonitor = getRelayHealthMonitor();
