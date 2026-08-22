@@ -145,10 +145,20 @@ export function Feed() {
    * to the Following tab: those are accounts somebody chose, and a filter that
    * second-guesses a deliberate follow is worse than the spam it catches.
    */
-  const spam = useFeedSpam(scope === 'following' ? undefined : unseenTrimmed);
+  const judgeSpam = scope !== 'following';
+  const spam = useFeedSpam(judgeSpam ? unseenTrimmed : undefined);
   const [showSpam, setShowSpam] = useState(false);
 
-  const visiblePosts = showSpam ? unseenTrimmed : spam.kept;
+  /*
+   * The unjudged list when the judge was not asked, rather than its answer.
+   *
+   * `useFeedSpam` hands back whatever it was given, so switched off it hands
+   * back `undefined` — which rendered the Following tab as an empty list under
+   * a spinner that never stopped, because the notes were all there and none of
+   * them were being mapped over.
+   */
+  const visiblePosts =
+    judgeSpam && !showSpam ? spam.kept : unseenTrimmed;
 
   useEffect(() => {
     if (posts?.length && !seenTop) setSeenTop(markerFor(posts[0]));
