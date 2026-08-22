@@ -25,8 +25,16 @@ const STORAGE_KEY = 'nostr:query-cache';
  *
  * Restoring last week's shape into this week's components is how a cache
  * turns into a crash, so a mismatch throws the whole thing away.
+ *
+ * 2 — a feed page stopped being an array of events and became an object
+ * carrying the paging cursor beside them. Restoring a version 1 cache made
+ * `pages.flatMap((page) => page.events)` produce a list of `undefined`, and
+ * the very next `.map((event) => event.id)` threw at the app root, before any
+ * screen had rendered. Nothing recovers from that: the boundary catches it and
+ * the reader sees an error page every time they open the app, because the
+ * cache that causes it is restored again on the next load.
  */
-const VERSION = 1;
+export const VERSION = 2;
 
 /** Past this, a restored cache is more misleading than helpful. */
 export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
