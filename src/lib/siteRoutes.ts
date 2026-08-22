@@ -59,6 +59,15 @@ export const SITE_ROUTES: SiteRoute[] = [
     summary: 'Search people, hashtags and communities.',
   },
   {
+    path: '/articles',
+    title: 'Articles on Nostr',
+    description:
+      'Long-form writing published to Nostr — essays, guides and posts worth sitting down with, laid out for reading rather than scrolling.',
+    priority: 0.8,
+    changefreq: 'daily',
+    summary: 'Long-form writing, laid out for reading.',
+  },
+  {
     path: '/trending',
     title: 'Trending on Nostr',
     description:

@@ -3,6 +3,7 @@ import {
   Banknote,
   Bell,
   BookOpen,
+  CircleHelp,
   LifeBuoy,
   Bookmark,
   CalendarDays,
@@ -110,6 +111,13 @@ export function getNavItems(pubkey?: string): NavItem[] {
       badge: 'unread',
     },
     { section: 'discover', href: '/trending', icon: Flame, label: 'Trending', shortcut: 'T', secondary: true },
+    {
+      section: 'discover',
+      href: '/articles',
+      icon: BookOpen,
+      label: 'Articles',
+      secondary: true,
+    },
     { section: 'discover', href: '/lists', icon: List, label: 'Lists', secondary: true },
     { section: 'discover', href: '/calendar', icon: CalendarDays, label: 'Calendar', secondary: true },
     {
@@ -218,7 +226,7 @@ export function getNavItems(pubkey?: string): NavItem[] {
     { section: 'manage', href: '/settings', icon: Settings, label: 'Settings', shortcut: ',', secondary: true },
     // The manual was reachable from the footer alone, which is the one place
     // somebody stuck on a page does not look
-    { section: 'manage', href: '/docs', icon: BookOpen, label: 'Help', secondary: true },
+    { section: 'manage', href: '/docs', icon: CircleHelp, label: 'Help', secondary: true },
     {
       section: 'manage',
       href: COMMUNITY.url,
