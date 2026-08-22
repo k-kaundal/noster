@@ -22,7 +22,17 @@ export interface RelayHealthMetrics {
 export class RelayHealthMonitor {
   private metrics: Map<string, RelayHealthMetrics> = new Map();
   private readonly circuitBreakerThreshold = 3;    // Failures before opening circuit
-  private readonly circuitBreakerTimeout = 30000;   // 30 seconds
+  private readonly circuitBreakerTimeout = 30000;   // First hold, then doubled
+  /**
+   * The longest a relay is left alone, however hopeless it looks.
+   *
+   * A fixed thirty seconds meant a relay that has been refusing connections
+   * all day was still retried twice a minute for the life of the tab, each
+   * attempt a fresh socket and its own reconnect loop. Doubling per failure
+   * turns that into a handful of attempts an hour, while a relay that is
+   * merely having a bad minute is still back within one.
+   */
+  private readonly circuitBreakerMax = 10 * 60_000; // 10 minutes
   private readonly healthCheckInterval = 60000;     // Check health every 60 seconds
 
   constructor() {
@@ -64,10 +74,20 @@ export class RelayHealthMonitor {
     metrics.consecutiveFailures++;
     metrics.totalRequests++;
 
-    // Open circuit breaker if too many consecutive failures
+    /*
+     * Held longer each time it fails again, capped. The first success resets
+     * `consecutiveFailures`, so recovery is immediate and the escalation only
+     * ever accrues to a relay that keeps refusing.
+     */
     if (metrics.consecutiveFailures >= this.circuitBreakerThreshold) {
+      const strikes = metrics.consecutiveFailures - this.circuitBreakerThreshold;
+      const hold = Math.min(
+        this.circuitBreakerTimeout * 2 ** strikes,
+        this.circuitBreakerMax
+      );
+
       metrics.isCircuitOpen = true;
-      metrics.circuitOpenUntil = Date.now() + this.circuitBreakerTimeout;
+      metrics.circuitOpenUntil = Date.now() + hold;
     }
 
     this.updateStatus(url);
