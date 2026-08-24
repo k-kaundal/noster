@@ -35,6 +35,7 @@ const NotificationsPage = lazy(() => importChunk(() => import("./pages/Notificat
 const IdentityVaultPage = lazy(() => importChunk(() => import("./pages/IdentityVaultPage")));
 const CommunityTreasuryPage = lazy(() => importChunk(() => import("./pages/CommunityTreasuryPage")));
 const BountiesPage = lazy(() => importChunk(() => import("./pages/BountiesPage")));
+const ArticlesPage = lazy(() => importChunk(() => import("./pages/ArticlesPage")));
 const MembershipsPage = lazy(() => importChunk(() => import("./pages/MembershipsPage")));
 const SatsDropsPage = lazy(() => importChunk(() => import("./pages/SatsDropsPage")));
 const LiveStreamingPage = lazy(() => importChunk(() => import("./pages/LiveStreamingPage")));
@@ -129,6 +130,9 @@ export function AppRouter() {
           <Route path="/community-treasury" element={<CommunityTreasuryPage />} />
           {/* Bounties: fund tasks, submit solutions, earn sats */}
           <Route path="/bounties" element={<BountiesPage />} />
+          {/* Everything long-form, laid out for reading rather than scrolling */}
+          <Route path="/articles" element={<ArticlesPage />} />
+
           {/* Memberships: recurring revenue from subscribers */}
           <Route path="/memberships" element={<MembershipsPage />} />
           {/* Sats Drops: LNURL-withdraw distributions to community */}

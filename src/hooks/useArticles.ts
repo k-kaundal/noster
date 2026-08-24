@@ -3,6 +3,7 @@ import { useNostr } from '@nostrify/react';
 import { useQuery } from '@tanstack/react-query';
 import type { NostrEvent } from '@nostrify/nostrify';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useContentFilter } from '@/hooks/useContentFilter';
 import { useMuteList } from '@/hooks/useMuteList';
 import { filterMuted } from '@/lib/mute';
 import type { Nip44Signer } from '@/lib/nip60';
@@ -22,9 +23,20 @@ import {
 interface ArticleQuery {
   /** Only this author's articles. */
   author?: string;
+  /**
+   * Only these authors' articles.
+   *
+   * Separate from `author` rather than replacing it, because the two mean
+   * different things to a relay: an empty `authors` array is a filter that
+   * matches nobody, and a reading list built from an empty follow list should
+   * ask for nothing rather than for everything.
+   */
+  authors?: string[];
   /** Only articles carrying this `t` tag. */
   hashtag?: string;
   limit?: number;
+  /** Skips the query outright, for a tab that has nothing to ask about yet. */
+  enabled?: boolean;
 }
 
 /**
@@ -55,12 +67,21 @@ function latestPerAddress(events: NostrEvent[]): Article[] {
 }
 
 /** Published long-form articles. */
-export function useArticles({ author, hashtag, limit = 30 }: ArticleQuery = {}) {
+export function useArticles({
+  author,
+  authors,
+  hashtag,
+  limit = 30,
+  enabled = true,
+}: ArticleQuery = {}) {
   const { nostr } = useNostr();
   const { list: muteList } = useMuteList();
+  const { filter: filterContent } = useContentFilter();
+
+  const key = authors ? [...authors].sort().join(',') : '';
 
   const query = useQuery({
-    queryKey: ['articles', author ?? '', hashtag ?? '', limit],
+    queryKey: ['articles', author ?? '', key, hashtag ?? '', limit],
     queryFn: async (c) => {
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(6000)]);
 
@@ -69,6 +90,7 @@ export function useArticles({ author, hashtag, limit = 30 }: ArticleQuery = {}) 
           {
             kinds: [ARTICLE_KIND],
             ...(author ? { authors: [author] } : {}),
+            ...(authors?.length ? { authors } : {}),
             ...(hashtag ? { '#t': [hashtag.toLowerCase()] } : {}),
             limit,
           },
@@ -78,12 +100,21 @@ export function useArticles({ author, hashtag, limit = 30 }: ArticleQuery = {}) 
 
       return events;
     },
+    enabled: enabled && !(authors && !authors.length),
     staleTime: 60 * 1000,
   });
 
+  /*
+   * Adult content and machine payloads as well as the mute list. An article is
+   * a longer read than a note, not a different kind of thing to have asked not
+   * to see — see `useContentFilter`.
+   */
   const articles = useMemo(
-    () => latestPerAddress(filterMuted(query.data ?? [], muteList)),
-    [query.data, muteList]
+    () =>
+      latestPerAddress(
+        filterContent(filterMuted(query.data ?? [], muteList)) ?? []
+      ),
+    [query.data, muteList, filterContent]
   );
 
   return { articles, isLoading: query.isLoading, error: query.error as Error | null };
