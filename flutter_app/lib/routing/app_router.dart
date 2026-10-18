@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/app_providers.dart';
 import '../screens/feed/feed_screen.dart';
 import '../screens/feed/thread_screen.dart';
+import '../screens/hashtag/hashtag_screen.dart';
 import '../models/nostr_models.dart';
 import '../screens/profile/profile_screen.dart';
 import '../screens/compose/compose_screen.dart';
@@ -82,6 +83,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           // Discover
           GoRoute(path: '/explore', builder: (_, _) => const ExploreScreen()),
           GoRoute(path: '/trending', builder: (_, _) => const TrendingScreen()),
+          GoRoute(path: '/hashtag/:tag', builder: (_, state) => HashtagScreen(tag: Uri.decodeComponent(state.pathParameters['tag']!))),
           GoRoute(path: '/reels', builder: (_, _) => const ReelsScreen()),
           GoRoute(path: '/articles', builder: (_, _) => const ArticlesScreen()),
           GoRoute(path: '/lists', builder: (_, _) => const ListsScreen()),

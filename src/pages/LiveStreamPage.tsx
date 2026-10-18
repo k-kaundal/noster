@@ -20,6 +20,8 @@ import {
 } from '@/lib/nip53';
 import { relativeTime } from '@/lib/time';
 import { LiveChat } from '@/components/live';
+import { LinkedZapGoal } from '@/components/ZapGoalCard';
+import { ZapButton } from '@/components/ZapButton';
 
 /**
  * One live stream, with its chat.
@@ -86,6 +88,15 @@ export function LiveStreamPage() {
         </Button>
 
         <StreamHeader live={live} />
+
+        {/*
+          NIP-75: a stream raising funds carries a `goal` tag naming the goal
+          event. Rendered between the header and the chat, which is where
+          Zap.stream puts it — the thing being funded next to the thing
+          asking for funds.
+        */}
+        <LinkedZapGoal event={live.event} />
+
         <LiveChat live={live} />
       </div>
     </Layout>
@@ -191,6 +202,13 @@ function StreamHeader({ live }: { live: LiveEvent }) {
               Stream offline
             </Button>
           )}
+
+          {/*
+            Zapping the stream event itself. When the stream carries a `goal`
+            tag, useZaps reads it and routes the receipt to the goal's relays
+            with the goal id in the `e` tag — so a zap here funds the goal.
+          */}
+          <ZapButton target={live.event} showCount={false} className="shrink-0" />
         </div>
       </CardContent>
     </Card>

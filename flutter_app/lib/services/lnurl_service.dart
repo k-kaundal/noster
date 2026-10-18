@@ -75,8 +75,10 @@ Future<String?> fetchInvoice({
     final uri = Uri.parse(info.callback).replace(queryParameters: {
       'amount': '${sats * 1000}',
       if (comment != null && comment.isNotEmpty) 'comment': comment,
-      if (zapRequestJson != null) 'nostr': zapRequestJson,
-      if (zapRequestJson != null) 'lnurl': '',
+      if (zapRequestJson != null) ...{
+        'nostr': zapRequestJson,
+        'lnurl': '',
+      },
     });
     final res = await http.get(uri).timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) return null;

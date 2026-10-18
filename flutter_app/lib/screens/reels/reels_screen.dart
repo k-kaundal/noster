@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/app_providers.dart';
+import '../../models/nostr_models.dart';
 
 class ReelsScreen extends ConsumerStatefulWidget {
   const ReelsScreen({super.key});
@@ -22,8 +24,7 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Placeholder list of reels; in production, query kind 1 with video URLs
-    final feed = ref.watch(trendingProvider);
+    final videosAsync = ref.watch(videosProvider);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -32,30 +33,20 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: const Text('Reels', style: TextStyle(color: Colors.white)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.camera_alt_outlined, color: Colors.white),
-            onPressed: () {},
-            tooltip: 'Create reel',
-          ),
-        ],
       ),
-      body: feed.when(
+      body: videosAsync.when(
         loading: () => const _ReelsSkeleton(),
         error: (err, _) => _ReelsError(
-          onRetry: () => ref.invalidate(trendingProvider),
+          onRetry: () => ref.invalidate(videosProvider),
         ),
         data: (events) {
-          final reels = events.take(20).toList();
-          if (reels.isEmpty) return const _EmptyReels();
+          if (events.isEmpty) return const _EmptyReels();
           return PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical,
-            itemCount: reels.length,
+            itemCount: events.length,
             itemBuilder: (context, i) => _ReelPage(
-              index: i,
-              authorPubkey: reels[i].pubkey,
-              caption: reels[i].content,
+              event: events[i],
             ),
           );
         },
@@ -65,40 +56,53 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
 }
 
 class _ReelPage extends ConsumerWidget {
-  final int index;
-  final String authorPubkey;
-  final String caption;
-  const _ReelPage({
-    required this.index,
-    required this.authorPubkey,
-    required this.caption,
-  });
+  final NostrEvent event;
+  const _ReelPage({required this.event});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profileAsync = ref.watch(profileProvider(authorPubkey));
-    final likes = 42 + (index * 137) % 900;
-    final comments = 5 + (index * 31) % 120;
+    final profileAsync = ref.watch(profileProvider(event.pubkey));
+    final engagementAsync = ref.watch(engagementProvider(event.id));
+
+    final engagement = engagementAsync.valueOrNull;
+    final likes = engagement?.reactions ?? 0;
+    final comments = engagement?.replies ?? 0;
+    final videoUrl = _extractVideoUrl(event.content);
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Video placeholder
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.deepPurple.shade900,
-                Colors.black,
-                Colors.indigo.shade900,
-              ],
+        // Video area — tappable to open URL
+        GestureDetector(
+          onTap: videoUrl != null ? () => _openUrl(videoUrl) : null,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.deepPurple.shade900,
+                  Colors.black,
+                  Colors.indigo.shade900,
+                ],
+              ),
             ),
-          ),
-          child: const Center(
-            child: Icon(Icons.play_circle_outline,
-                size: 80, color: Colors.white54),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.play_circle_outline,
+                      size: 80, color: Colors.white54),
+                  if (videoUrl != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Tap to play video',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
 
@@ -124,12 +128,6 @@ class _ReelPage extends ConsumerWidget {
               _ReelAction(
                 icon: Icons.share_outlined,
                 label: 'Share',
-                onTap: () {},
-              ),
-              const SizedBox(height: 20),
-              _ReelAction(
-                icon: Icons.bookmark_border,
-                label: 'Save',
                 onTap: () {},
               ),
               const SizedBox(height: 20),
@@ -168,30 +166,23 @@ class _ReelPage extends ConsumerWidget {
                         const CircleAvatar(radius: 18, child: Icon(Icons.person, size: 18)),
                   ),
                   const SizedBox(width: 10),
-                  Text(
-                    profileAsync.value?.displayNameOrName ??
-                        '${authorPubkey.substring(0, 8)}…',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Text(
+                      profileAsync.value?.displayNameOrName ??
+                          '${event.pubkey.substring(0, 8)}…',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  OutlinedButton(
-                    onPressed: () {},
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      minimumSize: const Size(0, 28),
-                    ),
-                    child: const Text('Follow', style: TextStyle(fontSize: 12)),
                   ),
                 ],
               ),
               const SizedBox(height: 10),
               Text(
-                caption,
+                event.content,
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 13),
@@ -201,6 +192,19 @@ class _ReelPage extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  String? _extractVideoUrl(String content) {
+    final urlRegex = RegExp(r'https?://[^\s]+\.(mp4|mov|webm)', caseSensitive: false);
+    final match = urlRegex.firstMatch(content);
+    return match?.group(0);
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   String _formatCount(int n) {

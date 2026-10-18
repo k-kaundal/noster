@@ -206,12 +206,40 @@ final articlesProvider = FutureProvider<List<NostrEvent>>((ref) async {
   return nostr.fetchArticles();
 });
 
-/// Bookmarks
+/// Bookmarks (resolved events from the user's bookmark list)
 final bookmarksProvider = FutureProvider<List<NostrEvent>>((ref) async {
   final nostr = await _initNostr(ref);
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return [];
-  return nostr.fetchBookmarks(auth.pubkey!);
+  // Get the bookmark list (kind 10003)
+  final lists = await nostr.fetchBookmarks(auth.pubkey!);
+  if (lists.isEmpty) return [];
+  // Collect event IDs from all bookmark lists
+  final ids = <String>{};
+  for (final list in lists) {
+    ids.addAll(list.eventRefs);
+  }
+  if (ids.isEmpty) return [];
+  // Fetch the bookmarked events
+  final events = await nostr.relayPool.query(
+    [NostrFilter(ids: ids.toList(), limit: 100)],
+    timeout: const Duration(seconds: 8),
+  );
+  events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return events;
+});
+
+/// Bookmarked event IDs (for checking if a post is bookmarked)
+final bookmarkedIdsProvider = FutureProvider<Set<String>>((ref) async {
+  final nostr = await _initNostr(ref);
+  final auth = ref.watch(authStateProvider);
+  if (!auth.isLoggedIn || auth.pubkey == null) return {};
+  final lists = await nostr.fetchBookmarks(auth.pubkey!);
+  final ids = <String>{};
+  for (final list in lists) {
+    ids.addAll(list.eventRefs);
+  }
+  return ids;
 });
 
 /// DMs
@@ -252,6 +280,24 @@ final marketProvider = FutureProvider<List<NostrEvent>>((ref) async {
 final liveStreamsProvider = FutureProvider<List<NostrEvent>>((ref) async {
   final nostr = await _initNostr(ref);
   return nostr.fetchLiveStreams();
+});
+
+/// Videos / reels
+final videosProvider = FutureProvider<List<NostrEvent>>((ref) async {
+  final nostr = await _initNostr(ref);
+  return nostr.fetchVideos();
+});
+
+/// Trending hashtags
+final trendingHashtagsProvider = FutureProvider<List<HashtagStat>>((ref) async {
+  final nostr = await _initNostr(ref);
+  return nostr.fetchTrendingHashtags();
+});
+
+/// Engagement stats for an event
+final engagementProvider = FutureProvider.family<EventEngagement, String>((ref, eventId) async {
+  final nostr = await _initNostr(ref);
+  return nostr.fetchEngagement(eventId);
 });
 
 /// Theme mode

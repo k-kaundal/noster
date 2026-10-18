@@ -30,6 +30,7 @@ class PostCard extends ConsumerWidget {
     final reactionsAsync = ref.watch(reactionsProvider(event.id));
     final repostsAsync = ref.watch(repostsProvider(event.id));
     final followsAsync = ref.watch(followsProvider);
+    final bookmarkedIdsAsync = ref.watch(bookmarkedIdsProvider);
     final auth = ref.watch(authStateProvider);
 
     final profile = profileAsync.valueOrNull;
@@ -45,6 +46,8 @@ class PostCard extends ConsumerWidget {
     final follows = followsAsync.valueOrNull ?? [];
     final isFollowing = follows.contains(event.pubkey);
     final isOwnPost = auth.pubkey == event.pubkey;
+    final bookmarkedIds = bookmarkedIdsAsync.valueOrNull ?? <String>{};
+    final isBookmarked = bookmarkedIds.contains(event.id);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -165,6 +168,12 @@ class PostCard extends ConsumerWidget {
                     onTap: () => _handleZap(context, ref, auth),
                   ),
                   _ActionButton(
+                    icon: isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+                    count: 0,
+                    color: isBookmarked ? colorScheme.primary : null,
+                    onTap: () => _handleBookmark(context, ref, auth, isBookmarked),
+                  ),
+                  _ActionButton(
                     icon: Icons.share_outlined,
                     count: 0,
                     onTap: () => _handleShare(context, ref),
@@ -275,6 +284,34 @@ class PostCard extends ConsumerWidget {
     final nostr = ref.read(nostrServiceProvider);
     final note1 = nostr.authService.encodeNote(event.id);
     Share.share('nostr:$note1');
+  }
+
+  Future<void> _handleBookmark(
+      BuildContext context, WidgetRef ref, AuthState auth, bool isBookmarked) async {
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      _showLoginPrompt(context);
+      return;
+    }
+    try {
+      final nostr = ref.read(nostrServiceProvider);
+      await nostr.toggleBookmark(event.id, isBookmarked);
+      ref.invalidate(bookmarkedIdsProvider);
+      ref.invalidate(bookmarksProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isBookmarked ? 'Bookmark removed' : 'Bookmarked!'),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to bookmark: $e')),
+        );
+      }
+    }
   }
 
   void _showLoginPrompt(BuildContext context) {

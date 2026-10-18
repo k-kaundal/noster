@@ -18,8 +18,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Reuse communities provider as placeholder for NIP-52 calendar events
-    final events = ref.watch(communitiesProvider);
+    final events = ref.watch(calendarProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -45,7 +44,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         loading: () => const _CalendarSkeleton(),
         error: (err, _) => _ErrorView(
           message: 'Failed to load events',
-          onRetry: () => ref.invalidate(communitiesProvider),
+          onRetry: () => ref.invalidate(calendarProvider),
         ),
         data: (items) {
           if (items.isEmpty) return const _EmptyCalendar();

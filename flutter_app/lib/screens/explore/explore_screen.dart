@@ -1,20 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:timeago/timeago.dart' as timeago;
+import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../providers/app_providers.dart';
-import '../../models/nostr_models.dart';
+import '../../widgets/post/post_card.dart';
 
 class ExploreScreen extends ConsumerWidget {
   const ExploreScreen({super.key});
 
-  static const _trendingTags = [
-    'bitcoin', 'nostr', 'lightning', 'privacy', 'photography', 'music', 'art'
-  ];
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final hashtagsAsync = ref.watch(trendingHashtagsProvider);
     final trending = ref.watch(trendingProvider);
 
     return Scaffold(
@@ -23,13 +19,16 @@ class ExploreScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
-            onPressed: () {},
+            onPressed: () => context.push('/search'),
             tooltip: 'Search',
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(trendingProvider),
+        onRefresh: () async {
+          ref.invalidate(trendingHashtagsProvider);
+          ref.invalidate(trendingProvider);
+        },
         child: CustomScrollView(
           slivers: [
             // Trending hashtags
@@ -46,45 +45,33 @@ class ExploreScreen extends ConsumerWidget {
               ),
             ),
             SliverToBoxAdapter(
-              child: SizedBox(
-                height: 44,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _trendingTags.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (context, i) => ActionChip(
-                    avatar: const Icon(Icons.tag, size: 16),
-                    label: Text(_trendingTags[i]),
-                    onPressed: () {},
-                  ),
+              child: hashtagsAsync.when(
+                loading: () => const SizedBox(
+                  height: 44,
+                  child: Center(child: CircularProgressIndicator()),
                 ),
-              ),
-            ),
-
-            // Suggested users
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-                child: Text(
-                  'Suggested Users',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 150,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: 8,
-                  separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  itemBuilder: (context, i) => _SuggestedUserCard(index: i),
-                ),
+                error: (_, _) => const SizedBox.shrink(),
+                data: (stats) {
+                  if (stats.isEmpty) return const SizedBox.shrink();
+                  return SizedBox(
+                    height: 44,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: stats.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
+                      itemBuilder: (context, i) {
+                        final stat = stats[i];
+                        return ActionChip(
+                          avatar: const Icon(Icons.tag, size: 16),
+                          label: Text('${stat.tag} (${stat.count})'),
+                          onPressed: () =>
+                              context.push('/hashtag/${Uri.encodeComponent(stat.tag)}'),
+                        );
+                      },
+                    ),
+                  );
+                },
               ),
             ),
 
@@ -113,11 +100,9 @@ class ExploreScreen extends ConsumerWidget {
                 if (events.isEmpty) {
                   return const SliverToBoxAdapter(child: _EmptyTrending());
                 }
-                return SliverList.separated(
+                return SliverList.builder(
                   itemCount: events.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 4),
-                  itemBuilder: (context, i) =>
-                      _TrendingPostTile(event: events[i]),
+                  itemBuilder: (context, i) => PostCard(event: events[i]),
                 );
               },
             ),
@@ -125,101 +110,6 @@ class ExploreScreen extends ConsumerWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _SuggestedUserCard extends StatelessWidget {
-  final int index;
-  const _SuggestedUserCard({required this.index});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: scheme.primaryContainer,
-              child: Icon(Icons.person, color: scheme.onPrimaryContainer),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Nostr User',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 26,
-              child: FilledButton.tonal(
-                onPressed: () {},
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  minimumSize: Size.zero,
-                ),
-                child: const Text('Follow', style: TextStyle(fontSize: 11)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TrendingPostTile extends ConsumerWidget {
-  final NostrEvent event;
-  const _TrendingPostTile({required this.event});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final profileAsync = ref.watch(profileProvider(event.pubkey));
-    final timestamp =
-        DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
-
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: profileAsync.when(
-        data: (profile) => CircleAvatar(
-          backgroundImage: profile?.picture != null
-              ? CachedNetworkImageProvider(profile!.picture!)
-              : null,
-          child: profile?.picture == null ? const Icon(Icons.person) : null,
-        ),
-        loading: () => const CircleAvatar(),
-        error: (_, _) => const CircleAvatar(child: Icon(Icons.person)),
-      ),
-      title: Text(
-        event.content,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 14),
-      ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Row(
-          children: [
-            Text(
-              profileAsync.value?.displayNameOrName ?? 'Anon',
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              timeago.format(timestamp),
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-          ],
-        ),
-      ),
-      onTap: () {},
     );
   }
 }

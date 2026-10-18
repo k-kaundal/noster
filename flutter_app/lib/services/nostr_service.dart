@@ -384,4 +384,139 @@ class NostrService {
       NostrFilter(kinds: [30311], limit: limit),
     ], timeout: const Duration(seconds: 8));
   }
+
+  /// Fetch a single event by ID.
+  Future<NostrEvent?> fetchEventById(String id) async {
+    final events = await relayPool.query([
+      NostrFilter(ids: [id], limit: 1),
+    ], timeout: const Duration(seconds: 8));
+    return events.isEmpty ? null : events.first;
+  }
+
+  /// Fetch events by IDs (batch).
+  Future<List<NostrEvent>> fetchEventsByIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+    return relayPool.query([
+      NostrFilter(ids: ids, limit: ids.length),
+    ], timeout: const Duration(seconds: 8));
+  }
+
+  /// Fetch engagement (replies + reactions + reposts + zaps) for an event.
+  Future<EventEngagement> fetchEngagement(String eventId) async {
+    final events = await relayPool.query([
+      NostrFilter(kinds: [1, 6, 7, 16, 9735], tagFilters: {'e': [eventId]}, limit: 500),
+    ], timeout: const Duration(seconds: 6));
+    int replies = 0, reactions = 0, reposts = 0, zaps = 0, zapSats = 0;
+    for (final e in events) {
+      switch (e.kind) {
+        case 1: replies++; break;
+        case 6:
+        case 16: reposts++; break;
+        case 7: reactions++; break;
+        case 9735:
+          zaps++;
+          final sats = _parseZapAmount(e);
+          zapSats += sats;
+          break;
+      }
+    }
+    return EventEngagement(
+      replies: replies, reactions: reactions, reposts: reposts,
+      zaps: zaps, zapSats: zapSats,
+    );
+  }
+
+  int _parseZapAmount(NostrEvent receipt) {
+    // Try to parse amount from description (zap request JSON)
+    final desc = receipt.getTag('description');
+    if (desc != null) {
+      try {
+        final json = jsonDecode(desc) as Map<String, dynamic>;
+        final tags = (json['tags'] as List?)?.cast<List>() ?? [];
+        for (final t in tags) {
+          if (t.length >= 2 && t[0] == 'amount') {
+            return (int.tryParse(t[1].toString()) ?? 0) ~/ 1000;
+          }
+        }
+      } catch (_) {}
+    }
+    // Fallback to amount tag
+    final amount = receipt.getTag('amount');
+    if (amount != null) return (int.tryParse(amount) ?? 0) ~/ 1000;
+    return 0;
+  }
+
+  /// Fetch video/reel events (kind 1 with media URLs or kind 21/22 video).
+  Future<List<NostrEvent>> fetchVideos({int limit = 50}) async {
+    final events = await relayPool.query([
+      NostrFilter(kinds: [1, 21, 22], limit: limit * 2),
+    ], timeout: const Duration(seconds: 8));
+    // Filter to events with video URLs
+    final videos = events.where((e) {
+      final c = e.content.toLowerCase();
+      return c.contains('.mp4') || c.contains('.mov') ||
+             c.contains('.webm') || c.contains('youtube.com') ||
+             c.contains('youtu.be') || c.contains('vimeo.com');
+    }).toList();
+    videos.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return videos.take(limit).toList();
+  }
+
+  /// Fetch popular hashtags from recent events.
+  Future<List<HashtagStat>> fetchTrendingHashtags({int limit = 20, int hours = 24}) async {
+    final since = (DateTime.now().millisecondsSinceEpoch ~/ 1000) - (hours * 3600);
+    final events = await relayPool.query([
+      NostrFilter(kinds: [1], since: since, limit: 500),
+    ], timeout: const Duration(seconds: 8));
+    final counts = <String, int>{};
+    for (final e in events) {
+      for (final tag in e.hashtags) {
+        final t = tag.toLowerCase();
+        counts[t] = (counts[t] ?? 0) + 1;
+      }
+    }
+    final sorted = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted.take(limit).map((e) => HashtagStat(tag: e.key, count: e.value)).toList();
+  }
+
+  /// Toggle bookmark for an event (add or remove from kind 10003 list).
+  Future<void> toggleBookmark(String eventId, bool isCurrentlyBookmarked) async {
+    _requireSigning();
+    final lists = await fetchBookmarks(_auth.pubkey!);
+    final allIds = <String>{};
+    final addresses = <String>{};
+    for (final list in lists) {
+      allIds.addAll(list.eventRefs);
+      addresses.addAll(list.getTags('a'));
+    }
+    if (isCurrentlyBookmarked) {
+      allIds.remove(eventId);
+    } else {
+      allIds.add(eventId);
+    }
+    final event = createBookmark(allIds.toList(), addresses.toList());
+    publish(event);
+  }
+}
+
+/// Engagement stats for an event.
+class EventEngagement {
+  final int replies;
+  final int reactions;
+  final int reposts;
+  final int zaps;
+  final int zapSats;
+  const EventEngagement({
+    this.replies = 0, this.reactions = 0, this.reposts = 0,
+    this.zaps = 0, this.zapSats = 0,
+  });
+  int get score => replies + reactions + reposts + zaps;
+}
+
+/// A trending hashtag with usage count.
+class HashtagStat {
+  final String tag;
+  final int count;
+  const HashtagStat({required this.tag, required this.count});
 }
