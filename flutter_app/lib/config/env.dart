@@ -8,13 +8,15 @@ class Env {
     'LNBITS_URL',
     defaultValue: 'https://getzap.me',
   );
+  // SECURITY: No hardcoded credentials. These must be provided via
+  // --dart-define at build time from CI secrets, never committed to git.
   static const lnbitsWalletId = String.fromEnvironment(
     'LNBITS_WALLET_ID',
-    defaultValue: '90fec4c2460049989570e6305c49bfc5',
+    defaultValue: '',
   );
   static const lnbitsInvoiceKey = String.fromEnvironment(
     'LNBITS_INVOICE_KEY',
-    defaultValue: '22a5285a78394439927cc32bbe0dbea5',
+    defaultValue: '',
   );
 
   // ── Cashu ───────────────────────────────────────────────────────────

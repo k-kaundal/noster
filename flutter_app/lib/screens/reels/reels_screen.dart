@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:video_player/video_player.dart';
 import '../../providers/app_providers.dart';
 import '../../models/nostr_models.dart';
 
@@ -15,6 +17,7 @@ class ReelsScreen extends ConsumerStatefulWidget {
 
 class _ReelsScreenState extends ConsumerState<ReelsScreen> {
   final PageController _pageController = PageController();
+  int _currentIndex = 0;
 
   @override
   void dispose() {
@@ -40,13 +43,20 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
           onRetry: () => ref.invalidate(videosProvider),
         ),
         data: (events) {
-          if (events.isEmpty) return const _EmptyReels();
+          final playable =
+              events.where((e) => _ReelVideoSource.of(e) != null).toList();
+          if (playable.isEmpty) return const _EmptyReels();
           return PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical,
-            itemCount: events.length,
+            itemCount: playable.length,
+            onPageChanged: (i) => setState(() => _currentIndex = i),
             itemBuilder: (context, i) => _ReelPage(
-              event: events[i],
+              key: ValueKey(playable[i].id),
+              event: playable[i],
+              // Only the reel on screen plays — the rest pause to save
+              // bandwidth and battery, same as Instagram
+              isActive: i == _currentIndex,
             ),
           );
         },
@@ -55,56 +65,213 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
   }
 }
 
-class _ReelPage extends ConsumerWidget {
+/// Where the video actually lives.
+///
+/// NIP-71 puts the playable source in `imeta` tags; kind-1 reposts of the
+/// same idea put the URL in the body. Both are checked, imeta first because
+/// it carries the poster and is the canonical source.
+class _ReelVideoSource {
+  final String url;
+  final String? poster;
+
+  const _ReelVideoSource(this.url, {this.poster});
+
+  static _ReelVideoSource? of(NostrEvent event) {
+    // imeta tags — NIP-71 format: ["imeta", "url <x>", "image <poster>", ...]
+    for (final tag in event.tags) {
+      if (tag.isEmpty || tag[0] != 'imeta') continue;
+      String? url;
+      String? poster;
+      bool isVideo = false;
+      for (var i = 1; i < tag.length; i++) {
+        final part = tag[i];
+        if (part.startsWith('url ')) url = part.substring(4).trim();
+        if (part.startsWith('image ')) poster = part.substring(6).trim();
+        if (part.startsWith('m video/')) isVideo = true;
+      }
+      if (url != null && (isVideo || _looksLikeVideo(url))) {
+        return _ReelVideoSource(url, poster: poster);
+      }
+    }
+
+    // Fallback: a video URL in the note body
+    final urlRegex = RegExp(
+      r'https?://[^\s]+\.(mp4|mov|webm|m4v)(\?[^\s]*)?',
+      caseSensitive: false,
+    );
+    final match = urlRegex.firstMatch(event.content);
+    if (match != null) return _ReelVideoSource(match.group(0)!);
+
+    return null;
+  }
+
+  static bool _looksLikeVideo(String url) {
+    return RegExp(r'\.(mp4|mov|webm|m4v)(\?|$)', caseSensitive: false)
+        .hasMatch(url);
+  }
+}
+
+class _ReelPage extends ConsumerStatefulWidget {
   final NostrEvent event;
-  const _ReelPage({required this.event});
+  final bool isActive;
+
+  const _ReelPage({super.key, required this.event, required this.isActive});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final profileAsync = ref.watch(profileProvider(event.pubkey));
-    final engagementAsync = ref.watch(engagementProvider(event.id));
+  ConsumerState<_ReelPage> createState() => _ReelPageState();
+}
+
+class _ReelPageState extends ConsumerState<_ReelPage> {
+  VideoPlayerController? _controller;
+  bool _initialized = false;
+  bool _showPlayIcon = false;
+  bool _muted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _setup();
+  }
+
+  Future<void> _setup() async {
+    final source = _ReelVideoSource.of(widget.event);
+    if (source == null) return;
+
+    final controller =
+        VideoPlayerController.networkUrl(Uri.parse(source.url));
+    _controller = controller;
+
+    try {
+      await controller.initialize();
+      if (!mounted) return;
+      await controller.setLooping(true);
+      setState(() => _initialized = true);
+      _syncPlayback();
+    } catch (_) {
+      // A video that won't load shouldn't crash the rest of the feed
+    }
+  }
+
+  void _syncPlayback() {
+    final controller = _controller;
+    if (controller == null || !_initialized) return;
+
+    if (widget.isActive) {
+      controller.play();
+    } else {
+      controller.pause();
+      // Reset so the next visit starts from the top, like Instagram
+      controller.seekTo(Duration.zero);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_ReelPage old) {
+    super.didUpdateWidget(old);
+    if (old.isActive != widget.isActive) _syncPlayback();
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _togglePlay() {
+    final controller = _controller;
+    if (controller == null || !_initialized) return;
+
+    setState(() {
+      if (controller.value.isPlaying) {
+        controller.pause();
+        _showPlayIcon = true;
+      } else {
+        controller.play();
+        _showPlayIcon = false;
+      }
+    });
+  }
+
+  void _toggleMute() {
+    final controller = _controller;
+    if (controller == null) return;
+    setState(() {
+      _muted = !_muted;
+      controller.setVolume(_muted ? 0 : 1);
+    });
+  }
+
+  Future<void> _share() async {
+    final source = _ReelVideoSource.of(widget.event);
+    final url = source?.url ?? 'nostr:${widget.event.id}';
+    await Share.share(url, subject: 'Nostr reel');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profileAsync = ref.watch(profileProvider(widget.event.pubkey));
+    final engagementAsync = ref.watch(engagementProvider(widget.event.id));
 
     final engagement = engagementAsync.valueOrNull;
     final likes = engagement?.reactions ?? 0;
     final comments = engagement?.replies ?? 0;
-    final videoUrl = _extractVideoUrl(event.content);
+    final source = _ReelVideoSource.of(widget.event);
+    final controller = _controller;
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Video area — tappable to open URL
+        // Video — tap to play/pause, no browser trip
         GestureDetector(
-          onTap: videoUrl != null ? () => _openUrl(videoUrl) : null,
+          onTap: _togglePlay,
           child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.deepPurple.shade900,
-                  Colors.black,
-                  Colors.indigo.shade900,
-                ],
-              ),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.play_circle_outline,
-                      size: 80, color: Colors.white54),
-                  if (videoUrl != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Tap to play video',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+            color: Colors.black,
+            child: _initialized && controller != null
+                ? Center(
+                    child: AspectRatio(
+                      aspectRatio: controller.value.aspectRatio,
+                      child: VideoPlayer(controller),
                     ),
-                  ],
-                ],
+                  )
+                : source?.poster != null
+                    ? CachedNetworkImage(
+                        imageUrl: source!.poster!,
+                        fit: BoxFit.contain,
+                        placeholder: (_, _) => const _VideoLoading(),
+                        errorWidget: (_, _, _) => const _VideoLoading(),
+                      )
+                    : const _VideoLoading(),
+          ),
+        ),
+
+        // Paused indicator — only shown after the user pauses, not on load
+        if (_showPlayIcon && _initialized)
+          IgnorePointer(
+            child: Center(
+              child: Icon(
+                Icons.play_arrow,
+                size: 80,
+                color: Colors.white.withValues(alpha: 0.8),
               ),
             ),
           ),
-        ),
+
+        // Mute toggle
+        if (_initialized)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 56,
+            right: 12,
+            child: IconButton(
+              onPressed: _toggleMute,
+              icon: Icon(
+                _muted ? Icons.volume_off : Icons.volume_up,
+                color: Colors.white,
+              ),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black45,
+              ),
+            ),
+          ),
 
         // Right action column
         Positioned(
@@ -128,7 +295,7 @@ class _ReelPage extends ConsumerWidget {
               _ReelAction(
                 icon: Icons.share_outlined,
                 label: 'Share',
-                onTap: () {},
+                onTap: _share,
               ),
               const SizedBox(height: 20),
               _ReelAction(
@@ -162,14 +329,14 @@ class _ReelPage extends ConsumerWidget {
                           : null,
                     ),
                     loading: () => const CircleAvatar(radius: 18),
-                    error: (_, _) =>
-                        const CircleAvatar(radius: 18, child: Icon(Icons.person, size: 18)),
+                    error: (_, _) => const CircleAvatar(
+                        radius: 18, child: Icon(Icons.person, size: 18)),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       profileAsync.value?.displayNameOrName ??
-                          '${event.pubkey.substring(0, 8)}…',
+                          '${widget.event.pubkey.substring(0, 8)}…',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -182,7 +349,7 @@ class _ReelPage extends ConsumerWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                event.content,
+                widget.event.content,
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 13),
@@ -194,22 +361,20 @@ class _ReelPage extends ConsumerWidget {
     );
   }
 
-  String? _extractVideoUrl(String content) {
-    final urlRegex = RegExp(r'https?://[^\s]+\.(mp4|mov|webm)', caseSensitive: false);
-    final match = urlRegex.firstMatch(content);
-    return match?.group(0);
-  }
-
-  Future<void> _openUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
   String _formatCount(int n) {
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
-    return '$n';
+    return n > 0 ? '$n' : '';
+  }
+}
+
+class _VideoLoading extends StatelessWidget {
+  const _VideoLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: CircularProgressIndicator(color: Colors.white54),
+    );
   }
 }
 
@@ -228,13 +393,18 @@ class _ReelAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       child: Column(
         children: [
           Icon(icon, color: color ?? Colors.white, size: 30),
-          const SizedBox(height: 4),
-          Text(label,
-              style: const TextStyle(color: Colors.white, fontSize: 11)),
+          if (label.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(label,
+                style: const TextStyle(color: Colors.white, fontSize: 11)),
+          ],
         ],
       ),
     );

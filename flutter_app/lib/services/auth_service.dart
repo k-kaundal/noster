@@ -237,8 +237,19 @@ class AuthService {
     final cipher = pc.CBCBlockCipher(pc.AESEngine())
       ..init(false, pc.ParametersWithIV(pc.KeyParameter(key), ivBytes));
     final padded = cipher.process(ctBytes);
-    // PKCS7 unpad
+    // PKCS7 unpad with validation to prevent padding oracle attacks
+    if (padded.isEmpty) throw const FormatException('Empty decrypted payload');
     final padLen = padded.last;
+    // Validate padLen is in valid range (1-16)
+    if (padLen < 1 || padLen > 16 || padLen > padded.length) {
+      throw const FormatException('Invalid PKCS7 padding');
+    }
+    // Verify all padding bytes equal padLen (constant-time to avoid timing attacks)
+    var valid = true;
+    for (var i = padded.length - padLen; i < padded.length; i++) {
+      if (padded[i] != padLen) valid = false;
+    }
+    if (!valid) throw const FormatException('Invalid PKCS7 padding bytes');
     return utf8.decode(padded.sublist(0, padded.length - padLen));
   }
 

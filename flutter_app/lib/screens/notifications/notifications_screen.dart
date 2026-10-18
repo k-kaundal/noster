@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -10,110 +11,380 @@ import '../../providers/app_providers.dart';
 /// Notification filter selection.
 final notificationFilterProvider = StateProvider<String>((ref) => 'all');
 
-class NotificationsScreen extends ConsumerWidget {
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
+  @override
+  ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
+    with SingleTickerProviderStateMixin {
   static const _filters = [
-    ('all', 'All'),
-    ('mention', 'Mentions'),
-    ('reaction', 'Reactions'),
-    ('repost', 'Reposts'),
-    ('zap', 'Zaps'),
+    ('all', 'All', Icons.notifications_rounded),
+    ('mention', 'Mentions', Icons.alternate_email_rounded),
+    ('reaction', 'Reactions', Icons.favorite_rounded),
+    ('repost', 'Reposts', Icons.repeat_rounded),
+    ('zap', 'Zaps', Icons.bolt_rounded),
   ];
 
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeIn,
+    );
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final auth = ref.watch(authStateProvider);
     final notifications = ref.watch(notificationsProvider);
     final filter = ref.watch(notificationFilterProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
-      body: Column(
-        children: [
-          // Filter chips
-          SizedBox(
-            height: 56,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              itemCount: _filters.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final (value, label) = _filters[i];
-                final selected = filter == value;
-                return FilterChip(
-                  label: Text(label),
-                  selected: selected,
-                  onSelected: (_) =>
-                      ref.read(notificationFilterProvider.notifier).state = value,
-                );
-              },
-            ),
+      backgroundColor: colorScheme.surface,
+      appBar: AppBar(
+        title: const Text(
+          'Notifications',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 24,
+            letterSpacing: -0.5,
           ),
-          const Divider(height: 1),
-          Expanded(
-            child: notifications.when(
-              data: (events) {
-                if (!auth.isLoggedIn || events.isEmpty) {
-                  return _buildEmpty(theme, auth.isLoggedIn);
-                }
-
-                final filtered = events.where((e) {
-                  final type = _typeFor(e);
-                  if (filter == 'all') return true;
-                  return type == filter;
-                }).toList();
-
-                if (filtered.isEmpty) {
-                  return _buildEmpty(theme, true);
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () => ref.refresh(notificationsProvider.future),
-                  child: ListView.separated(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, i) =>
-                        _NotificationTile(event: filtered[i]),
+        ),
+        elevation: 0,
+        scrolledUnderElevation: 2,
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: colorScheme.surfaceTint,
+      ),
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: Column(
+          children: [
+            // Modern filter chips
+            Container(
+              height: 64,
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                border: Border(
+                  bottom: BorderSide(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+                    width: 1,
                   ),
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text('Failed to load notifications: $e'),
                 ),
               ),
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                itemCount: _filters.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (context, i) {
+                  final (value, label, icon) = _filters[i];
+                  final selected = filter == value;
+                  return _ModernFilterChip(
+                    label: label,
+                    icon: icon,
+                    selected: selected,
+                    onSelected: () {
+                      HapticFeedback.selectionClick();
+                      ref.read(notificationFilterProvider.notifier).state = value;
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+            Expanded(
+              child: notifications.when(
+                data: (events) {
+                  if (!auth.isLoggedIn || events.isEmpty) {
+                    return _buildEmpty(theme, auth.isLoggedIn);
+                  }
+
+                  final filtered = events.where((e) {
+                    final type = _typeFor(e);
+                    if (filter == 'all') return true;
+                    return type == filter;
+                  }).toList();
+
+                  if (filtered.isEmpty) {
+                    return _buildEmpty(theme, true);
+                  }
+
+                  return RefreshIndicator(
+                    onRefresh: () async {
+                      HapticFeedback.mediumImpact();
+                      ref.invalidate(notificationsProvider);
+                      await ref.read(notificationsProvider.future);
+                    },
+                    color: colorScheme.primary,
+                    child: ListView.separated(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, _) => Divider(
+                        height: 1,
+                        indent: 80,
+                        color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                      ),
+                      itemBuilder: (context, i) => TweenAnimationBuilder<double>(
+                        duration: Duration(milliseconds: 300 + (i * 50).clamp(0, 500)),
+                        tween: Tween(begin: 0.0, end: 1.0),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, child) {
+                          return Transform.translate(
+                            offset: Offset(0, 20 * (1 - value)),
+                            child: Opacity(
+                              opacity: value,
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: _NotificationTile(event: filtered[i]),
+                      ),
+                    ),
+                  );
+                },
+                loading: () => _buildLoadingState(theme),
+                error: (e, _) => _buildErrorState(theme, e),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildEmpty(ThemeData theme, bool loggedIn) {
+    final colorScheme = theme.colorScheme;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.notifications_none,
-            size: 64,
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            loggedIn ? 'No notifications yet' : 'Log in to see notifications',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.notifications_none_rounded,
+                size: 64,
+                color: colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              loggedIn ? 'No notifications yet' : 'Log in to see notifications',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              loggedIn
+                  ? 'When someone interacts with you,\nyou\'ll see it here'
+                  : 'Connect your account to get started',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: 5,
+      separatorBuilder: (_, _) => const SizedBox(height: 16),
+      itemBuilder: (context, i) => _SkeletonTile(colorScheme: colorScheme),
+    );
+  }
+
+  Widget _buildErrorState(ThemeData theme, Object error) {
+    final colorScheme = theme.colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              size: 64,
+              color: colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load notifications',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error.toString(),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () {
+                ref.invalidate(notificationsProvider);
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Try Again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Modern Filter Chip ─────────────────────────────────────────────
+
+class _ModernFilterChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  const _ModernFilterChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: selected
+            ? colorScheme.primaryContainer
+            : colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: selected
+              ? colorScheme.primary
+              : colorScheme.outline.withValues(alpha: 0.2),
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onSelected,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 18,
+                  color: selected
+                      ? colorScheme.onPrimaryContainer
+                      : colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: selected
+                        ? colorScheme.onPrimaryContainer
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+// ─── Skeleton Loading Tile ──────────────────────────────────────────
+
+class _SkeletonTile extends StatelessWidget {
+  final ColorScheme colorScheme;
+
+  const _SkeletonTile({required this.colorScheme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 14,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                height: 12,
+                width: 150,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -140,6 +411,7 @@ class _NotificationTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final type = _typeFor(event);
     final profile = ref.watch(profileProvider(event.pubkey)).value;
     final name = profile?.displayNameOrName ??
@@ -148,78 +420,113 @@ class _NotificationTile extends ConsumerWidget {
 
     final (icon, color, action) = switch (type) {
       'reaction' => (
-          Icons.favorite,
-          Colors.red,
+          Icons.favorite_rounded,
+          Colors.red.shade400,
           'liked your note',
         ),
       'repost' => (
-          Icons.repeat,
-          Colors.green,
+          Icons.repeat_rounded,
+          Colors.green.shade400,
           'reposted your note',
         ),
       'zap' => (
-          Icons.bolt,
+          Icons.bolt_rounded,
           Colors.amber.shade700,
           'zapped you',
         ),
       _ => (
-          Icons.alternate_email,
-          theme.colorScheme.primary,
+          Icons.alternate_email_rounded,
+          colorScheme.primary,
           'mentioned you',
         ),
     };
 
-    return ListTile(
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 28,
-            child: Icon(icon, color: color, size: 22),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          _open(context, ref, event);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Icon indicator
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 12),
+              // Avatar
+              _Avatar(imageUrl: profile?.picture, name: name),
+              const SizedBox(width: 12),
+              // Content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    RichText(
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      text: TextSpan(
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          height: 1.4,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          TextSpan(
+                            text: ' $action',
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (event.content.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        event.content,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      timeago.format(time),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          _Avatar(imageUrl: profile?.picture, name: name),
-        ],
-      ),
-      title: RichText(
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        text: TextSpan(
-          style: theme.textTheme.bodyMedium,
-          children: [
-            TextSpan(
-              text: name,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            TextSpan(text: ' $action'),
-          ],
         ),
       ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (event.content.isNotEmpty)
-            Text(
-              event.content,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-              ),
-            ),
-          Text(
-            timeago.format(time),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-            ),
-          ),
-        ],
-      ),
-      onTap: () => _open(context, ref, event),
     );
   }
 
   void _open(BuildContext context, WidgetRef ref, NostrEvent event) {
-    // Navigate to the referenced event's author profile, or the actor's profile
     final target = event.getTag('p') ?? event.pubkey;
     context.push('/profile/$target');
   }
@@ -233,19 +540,29 @@ class _Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final url = imageUrl;
+
     if (url != null && url.isNotEmpty) {
       return CircleAvatar(
+        radius: 24,
         backgroundImage: CachedNetworkImageProvider(url),
         onBackgroundImageError: (_, _) {},
+        backgroundColor: colorScheme.surfaceContainerHighest,
       );
     }
+
     return CircleAvatar(
-      backgroundColor: theme.colorScheme.primaryContainer,
+      radius: 24,
+      backgroundColor: colorScheme.primaryContainer,
       child: Text(
         initial,
-        style: TextStyle(color: theme.colorScheme.onPrimaryContainer),
+        style: TextStyle(
+          color: colorScheme.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
+          fontSize: 18,
+        ),
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -8,7 +9,7 @@ import '../../models/nostr_models.dart';
 import '../../providers/app_providers.dart';
 import '../../services/auth_service.dart';
 
-/// Chat / DM screen.
+/// Chat / DM screen with end-to-end encryption (NIP-04/NIP-17).
 /// - No [peerNpub]: shows the conversation list.
 /// - [peerNpub] set: shows the direct chat thread.
 class ChatScreen extends ConsumerStatefulWidget {
@@ -40,59 +41,143 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return _buildChatThread(context);
   }
 
-  // ---------------------------------------------------------------------------
-  // Conversation list
-  // ---------------------------------------------------------------------------
+  // ─── Conversation list ─────────────────────────────────────────────
 
   Widget _buildConversationList(BuildContext context) {
     final dmsAsync = ref.watch(dmsProvider);
     final auth = ref.watch(authStateProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu_rounded),
+          tooltip: 'Menu',
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            Scaffold.of(context).openDrawer();
+          },
+        ),
         title: const Text('Messages'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.search_rounded),
+            tooltip: 'Search',
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              context.push('/search');
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.add_comment_outlined),
             tooltip: 'New message',
-            onPressed: () => _showNewMessageDialog(context),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              _showNewMessageDialog(context);
+            },
           ),
         ],
       ),
       body: dmsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline,
-                  size: 48, color: Theme.of(context).colorScheme.error),
-              const SizedBox(height: 12),
-              Text('Failed to load messages',
-                  style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              FilledButton.tonal(
-                onPressed: () => ref.refresh(dmsProvider),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
+        loading: () => _buildLoadingState(colorScheme),
+        error: (err, _) => _buildErrorState(context),
         data: (events) {
           final conversations = _groupIntoConversations(events, auth.pubkey);
           if (conversations.isEmpty) {
             return _buildEmptyState(context);
           }
           return RefreshIndicator(
-            onRefresh: () async => ref.refresh(dmsProvider),
+            onRefresh: () async {
+              HapticFeedback.mediumImpact();
+              ref.invalidate(dmsProvider);
+              await ref.read(dmsProvider.future);
+            },
             child: ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: conversations.length,
-              separatorBuilder: (_, _) => const Divider(indent: 72),
+              separatorBuilder: (_, _) => Divider(
+                height: 1,
+                indent: 84,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
               itemBuilder: (context, index) =>
                   _conversationTile(context, conversations[index]),
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildLoadingState(ColorScheme colorScheme) {
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: 5,
+      separatorBuilder: (_, _) => const SizedBox(height: 16),
+      itemBuilder: (context, i) => Row(
+        children: [
+          CircleAvatar(radius: 28, backgroundColor: colorScheme.surfaceContainerHighest),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 14,
+                  width: 120,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 12,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: colorScheme.errorContainer.withValues(alpha: 0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.error_outline_rounded, size: 48, color: colorScheme.error),
+            ),
+            const SizedBox(height: 24),
+            Text('Failed to load messages',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                ref.invalidate(dmsProvider);
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Try Again'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -126,89 +211,177 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ? DateTime.fromMillisecondsSinceEpoch(lastMsg.createdAt * 1000)
         : null;
 
-    return ListTile(
-      leading: profileAsync.when(
-        data: (profile) => CircleAvatar(
-          backgroundImage: profile?.picture != null
-              ? CachedNetworkImageProvider(profile!.picture!)
-              : null,
-          child: profile?.picture == null ? const Icon(Icons.person) : null,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          context.push('/chat/${conv.peerPubkey}');
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            children: [
+              profileAsync.when(
+                data: (profile) => _Avatar(
+                  imageUrl: profile?.picture,
+                  name: profile?.displayNameOrName ?? conv.peerPubkey,
+                ),
+                loading: () => _Avatar(name: conv.peerPubkey),
+                error: (_, _) => _Avatar(name: conv.peerPubkey),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: profileAsync.when(
+                            data: (profile) => Text(
+                              profile?.displayNameOrName ?? _shortKey(conv.peerPubkey),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            loading: () => Text(_shortKey(conv.peerPubkey)),
+                            error: (_, _) => Text(_shortKey(conv.peerPubkey)),
+                          ),
+                        ),
+                        if (timestamp != null)
+                          Text(
+                            timeago.format(timestamp, locale: 'en_short'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (lastMsg != null) ...[
+                          Icon(Icons.lock_rounded,
+                              size: 12,
+                              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              lastMsg.content,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (conv.unreadCount > 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${conv.unreadCount}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.onPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        loading: () => const CircleAvatar(child: Icon(Icons.person)),
-        error: (_, _) => const CircleAvatar(child: Icon(Icons.person)),
       ),
-      title: profileAsync.when(
-        data: (profile) => Text(
-          profile?.displayNameOrName ?? _shortKey(conv.peerPubkey),
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        loading: () => Text(_shortKey(conv.peerPubkey)),
-        error: (_, _) => Text(_shortKey(conv.peerPubkey)),
-      ),
-      subtitle: lastMsg != null
-          ? Text(
-              lastMsg.content,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: colorScheme.onSurfaceVariant),
-            )
-          : null,
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (timestamp != null)
-            Text(
-              timeago.format(timestamp),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          if (conv.unreadCount > 0) ...[
-            const SizedBox(height: 4),
-            Badge(
-              label: Text('${conv.unreadCount}'),
-              backgroundColor: colorScheme.primary,
-            ),
-          ],
-        ],
-      ),
-      onTap: () {
-        // Navigate to the thread; use npub encoding for the route.
-        context.push('/chat/${conv.peerPubkey}');
-      },
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Chat thread
-  // ---------------------------------------------------------------------------
+  // ─── Chat thread ───────────────────────────────────────────────────
 
   Widget _buildChatThread(BuildContext context) {
     final peerPubkey = widget.peerNpub!;
     final dmsAsync = ref.watch(dmsProvider);
     final profileAsync = ref.watch(profileProvider(peerPubkey));
     final auth = ref.watch(authStateProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
+        elevation: 0,
+        scrolledUnderElevation: 2,
+        backgroundColor: colorScheme.surface,
+        titleSpacing: 0,
         title: profileAsync.when(
-          data: (profile) => Row(
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundImage: profile?.picture != null
-                    ? CachedNetworkImageProvider(profile!.picture!)
-                    : null,
-                child: profile?.picture == null
-                    ? const Icon(Icons.person, size: 18)
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Text(profile?.displayNameOrName ?? _shortKey(peerPubkey)),
-            ],
+          data: (profile) => InkWell(
+            onTap: () => context.push('/profile/$peerPubkey'),
+            child: Row(
+              children: [
+                _Avatar(
+                  imageUrl: profile?.picture,
+                  name: profile?.displayNameOrName ?? peerPubkey,
+                  radius: 18,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        profile?.displayNameOrName ?? _shortKey(peerPubkey),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Icon(Icons.lock_rounded, size: 11, color: colorScheme.primary),
+                          const SizedBox(width: 3),
+                          Text(
+                            'Encrypted',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
           loading: () => Text(_shortKey(peerPubkey)),
           error: (_, _) => Text(_shortKey(peerPubkey)),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.more_vert_rounded),
+            onPressed: () => context.push('/profile/$peerPubkey'),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -217,34 +390,63 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (err, _) => Center(
                 child: Text('Failed to load messages',
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.error)),
+                    style: TextStyle(color: colorScheme.error)),
               ),
               data: (events) {
                 final thread = _filterThread(events, auth.pubkey, peerPubkey);
                 if (thread.isEmpty) {
                   return Center(
-                    child: Text(
-                      'No messages yet.\nSay hello!',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant),
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.waving_hand_rounded,
+                                size: 48, color: colorScheme.primary),
+                          ),
+                          const SizedBox(height: 24),
+                          Text(
+                            'No messages yet',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Say hello! Messages are end-to-end encrypted.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }
                 return ListView.builder(
                   controller: _scrollController,
                   reverse: true,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   itemCount: thread.length,
                   itemBuilder: (context, index) {
                     final msg = thread[index];
                     final isSent = msg.pubkey == auth.pubkey;
-                    return _MessageBubble(
-                      event: msg,
-                      isSent: isSent,
+                    final showDateSeparator = index == thread.length - 1 ||
+                        !_isSameDay(
+                          thread[index].createdAt,
+                          thread[index + 1].createdAt,
+                        );
+                    return Column(
+                      children: [
+                        if (showDateSeparator)
+                          _DateSeparator(timestamp: msg.createdAt),
+                        _MessageBubble(event: msg, isSent: isSent),
+                      ],
                     );
                   },
                 );
@@ -255,6 +457,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
       ),
     );
+  }
+
+  bool _isSameDay(int ts1, int ts2) {
+    final d1 = DateTime.fromMillisecondsSinceEpoch(ts1 * 1000);
+    final d2 = DateTime.fromMillisecondsSinceEpoch(ts2 * 1000);
+    return d1.year == d2.year && d1.month == d2.month && d1.day == d2.day;
   }
 
   List<NostrEvent> _filterThread(
@@ -271,50 +479,71 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       BuildContext context, AuthState auth, String peerPubkey) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return SafeArea(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          border:
-              Border(top: BorderSide(color: colorScheme.outlineVariant)),
+    return Container(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 8,
+        top: 8,
+        bottom: MediaQuery.of(context).viewPadding.bottom + 8,
+      ),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        border: Border(
+          top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
         ),
-        child: Row(
-          children: [
-            Expanded(
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(24),
+              ),
               child: TextField(
                 controller: _messageController,
                 decoration: InputDecoration(
                   hintText: 'Message…',
-                  filled: true,
-                  fillColor: colorScheme.surfaceContainerHighest,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
+                  hintStyle: TextStyle(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                   ),
+                  border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
+                      horizontal: 20, vertical: 12),
                 ),
                 minLines: 1,
                 maxLines: 4,
                 textCapitalization: TextCapitalization.sentences,
                 enabled: auth.isLoggedIn && !auth.isReadOnly,
+                onSubmitted: (_) => _send(auth, peerPubkey),
               ),
             ),
-            const SizedBox(width: 8),
-            IconButton.filled(
+          ),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [colorScheme.primary, colorScheme.tertiary],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
               onPressed:
                   _isSending || !auth.isLoggedIn ? null : () => _send(auth, peerPubkey),
               icon: _isSending
                   ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
                     )
-                  : const Icon(Icons.send),
+                  : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -323,6 +552,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
+    HapticFeedback.mediumImpact();
     setState(() => _isSending = true);
     try {
       final nostr = ref.read(nostrServiceProvider);
@@ -330,7 +560,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       nostr.publish(event);
       _messageController.clear();
       ref.invalidate(dmsProvider);
-      // Scroll to bottom after send
       await Future.delayed(const Duration(milliseconds: 100));
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -342,7 +571,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send: $e')),
+          SnackBar(
+            content: Text('Failed to send: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     } finally {
@@ -353,33 +585,47 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget _buildEmptyState(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.chat_bubble_outline,
-              size: 64, color: colorScheme.onSurfaceVariant),
-          const SizedBox(height: 16),
-          Text('No conversations yet',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            'Start a new message to get going',
-            style: TextStyle(color: colorScheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: () => _showNewMessageDialog(context),
-            icon: const Icon(Icons.add),
-            label: const Text('New Message'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.chat_bubble_outline_rounded,
+                  size: 64, color: colorScheme.primary),
+            ),
+            const SizedBox(height: 24),
+            Text('No conversations yet',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    )),
+            const SizedBox(height: 8),
+            Text(
+              'Start a new message to get going.\nAll messages are end-to-end encrypted.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                _showNewMessageDialog(context);
+              },
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('New Message'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
+  // ─── Helpers ───────────────────────────────────────────────────────
 
   String _shortKey(String pubkey) =>
       '${pubkey.substring(0, 8)}…${pubkey.substring(pubkey.length - 4)}';
@@ -389,12 +635,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('New Message'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Recipient npub or hex pubkey',
             hintText: 'npub1…',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
           autofocus: true,
         ),
@@ -433,7 +681,91 @@ class Conversation {
   });
 }
 
-/// A message bubble that decrypts its content on demand.
+// ─── Avatar ─────────────────────────────────────────────────────────
+
+class _Avatar extends StatelessWidget {
+  final String? imageUrl;
+  final String name;
+  final double radius;
+
+  const _Avatar({this.imageUrl, required this.name, this.radius = 28});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final url = imageUrl;
+
+    if (url != null && url.isNotEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundImage: CachedNetworkImageProvider(url),
+        onBackgroundImageError: (_, _) {},
+        backgroundColor: colorScheme.surfaceContainerHighest,
+      );
+    }
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: colorScheme.primaryContainer,
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: TextStyle(
+          color: colorScheme.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
+          fontSize: radius * 0.7,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Date Separator ─────────────────────────────────────────────────
+
+class _DateSeparator extends StatelessWidget {
+  final int timestamp;
+  const _DateSeparator({required this.timestamp});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+    final now = DateTime.now();
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
+    final isYesterday = date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day - 1;
+
+    final label = isToday
+        ? 'Today'
+        : isYesterday
+            ? 'Yesterday'
+            : '${date.day}/${date.month}/${date.year}';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Message Bubble ─────────────────────────────────────────────────
+
 class _MessageBubble extends ConsumerStatefulWidget {
   final NostrEvent event;
   final bool isSent;
@@ -475,27 +807,30 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
         DateTime.fromMillisecondsSinceEpoch(widget.event.createdAt * 1000);
     final isSent = widget.isSent;
 
-    final displayText = _failed
-        ? '🔒 Unable to decrypt'
-        : (_decrypted ?? '…');
+    final displayText = _failed ? '🔒 Unable to decrypt' : (_decrypted ?? '…');
 
     return Align(
       alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.72,
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         decoration: BoxDecoration(
-          color: isSent
-              ? colorScheme.primary
-              : colorScheme.surfaceContainerHighest,
+          gradient: isSent
+              ? LinearGradient(
+                  colors: [colorScheme.primary, colorScheme.tertiary],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: isSent ? null : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isSent ? 16 : 4),
-            bottomRight: Radius.circular(isSent ? 4 : 16),
+            topLeft: const Radius.circular(20),
+            topRight: const Radius.circular(20),
+            bottomLeft: Radius.circular(isSent ? 20 : 6),
+            bottomRight: Radius.circular(isSent ? 6 : 20),
           ),
         ),
         child: Column(
@@ -505,21 +840,34 @@ class _MessageBubbleState extends ConsumerState<_MessageBubble> {
             Text(
               displayText,
               style: TextStyle(
-                color: isSent
-                    ? colorScheme.onPrimary
-                    : colorScheme.onSurfaceVariant,
+                fontSize: 15,
+                height: 1.35,
+                color: isSent ? Colors.white : colorScheme.onSurface,
                 fontStyle: _failed ? FontStyle.italic : FontStyle.normal,
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              timeago.format(timestamp),
-              style: TextStyle(
-                fontSize: 10,
-                color: isSent
-                    ? colorScheme.onPrimary.withValues(alpha: 0.7)
-                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-              ),
+            const SizedBox(height: 3),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  timeago.format(timestamp, locale: 'en_short'),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isSent
+                        ? Colors.white.withValues(alpha: 0.7)
+                        : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  ),
+                ),
+                if (isSent) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.lock_rounded,
+                    size: 10,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
+                ],
+              ],
             ),
           ],
         ),

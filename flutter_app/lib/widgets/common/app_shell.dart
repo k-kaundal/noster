@@ -1,9 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/app_providers.dart';
 import '../../services/auth_service.dart';
 
+/// Navigation Architecture:
+/// 
+/// PRIMARY NAVIGATION (Bottom Nav - 5 tabs):
+/// 1. Feed - Home timeline with tabs (For You / Following)
+/// 2. Search - Discover content and users
+/// 3. Notifications - Activity and mentions
+/// 4. Chat - Direct messages
+/// 5. Profile - User's own profile
+/// 
+/// SECONDARY NAVIGATION (Drawer):
+/// - Accessed via hamburger menu in Feed AppBar
+/// - Contains all other features organized by category
+/// 
+/// TERTIARY NAVIGATION (Stack):
+/// - Detail screens push on top (thread, profile, compose, etc.)
+/// - Back button returns to previous screen
+/// 
+/// FAB PLACEMENT:
+/// - Only on Feed screen for composing new posts
+/// - Positioned bottom-right, above bottom nav
+/// - Hidden on other tabs
 class AppShell extends ConsumerStatefulWidget {
   final Widget child;
   const AppShell({super.key, required this.child});
@@ -12,238 +35,818 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
-  static const _mainRoutes = ['/feed', '/search', '/notifications', '/chat', '/wallet'];
+class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderStateMixin {
+  /// Primary bottom-nav routes, matching the web's MobileNav:
+  /// Feed, Reels, Search, Chat, Profile
+  static const _mainRoutes = ['/feed', '/reels', '/search', '/chat', '/profile'];
   static const _mainIcons = [
     Icons.home_outlined,
-    Icons.search_outlined,
-    Icons.notifications_outlined,
-    Icons.chat_bubble_outline,
-    Icons.account_balance_wallet_outlined,
+    Icons.play_circle_outline_rounded,
+    Icons.search_rounded,
+    Icons.chat_bubble_outline_rounded,
+    Icons.person_outline_rounded,
   ];
   static const _mainSelectedIcons = [
-    Icons.home,
-    Icons.search,
-    Icons.notifications,
-    Icons.chat_bubble,
-    Icons.account_balance_wallet,
+    Icons.home_rounded,
+    Icons.play_circle_rounded,
+    Icons.search_rounded,
+    Icons.chat_bubble_rounded,
+    Icons.person_rounded,
   ];
-  static const _mainLabels = ['Feed', 'Search', 'Alerts', 'Chat', 'Wallet'];
+  static const _mainLabels = ['Home', 'Reels', 'Search', 'Chat', 'Profile'];
+
+  late AnimationController _animationController;
+  int _previousIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
 
   int _currentIndex(String location) {
+    if (location.startsWith('/profile/')) {
+      final auth = ref.read(authStateProvider);
+      if (auth.isLoggedIn && location.contains(auth.pubkey ?? '')) {
+        return 4;
+      }
+    }
     for (var i = 0; i < _mainRoutes.length; i++) {
       if (location.startsWith(_mainRoutes[i])) return i;
     }
     return 0;
   }
 
+  void _onDestinationSelected(int index) {
+    if (index != _previousIndex) {
+      HapticFeedback.mediumImpact();
+      _animationController.forward(from: 0.8);
+      _previousIndex = index;
+    }
+
+    if (index == 4) {
+      final auth = ref.read(authStateProvider);
+      if (auth.isLoggedIn && auth.pubkey != null) {
+        context.go('/profile/${auth.pubkey}');
+      } else {
+        context.go('/login');
+      }
+    } else {
+      context.go(_mainRoutes[index]);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
     final index = _currentIndex(location);
-    final auth = ref.watch(authStateProvider);
-    final notificationsAsync = ref.watch(notificationsProvider);
     final dmsAsync = ref.watch(dmsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
-    // Compute badge counts (unread-style: just show total counts as proxy)
-    final notifCount = notificationsAsync.valueOrNull?.length ?? 0;
     final dmCount = dmsAsync.valueOrNull?.length ?? 0;
 
     return Scaffold(
       body: widget.child,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (i) => context.go(_mainRoutes[i]),
-        height: 64,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        destinations: List.generate(
-          _mainRoutes.length,
-          (i) {
-            Widget icon = Icon(_mainIcons[i]);
-            Widget selectedIcon = Icon(_mainSelectedIcons[i]);
+      extendBody: true,
+      bottomNavigationBar: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: colorScheme.shadow.withValues(alpha: 0.1),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+              spreadRadius: 0,
+            ),
+            BoxShadow(
+              color: colorScheme.shadow.withValues(alpha: 0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+              spreadRadius: 0,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Container(
+            height: 72,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: List.generate(
+                _mainRoutes.length,
+                (i) => _ModernNavItem(
+                  icon: _mainIcons[i],
+                  selectedIcon: _mainSelectedIcons[i],
+                  label: _mainLabels[i],
+                  isSelected: i == index,
+                  badgeCount: i == 3 ? dmCount : 0,
+                  onTap: () => _onDestinationSelected(i),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      drawer: const ModernDrawer(),
+    );
+  }
+}
 
-            // Add badges for notifications & chat
-            if (i == 2 && notifCount > 0) {
-              icon = Badge(
-                label: Text(notifCount > 99 ? '99+' : '$notifCount'),
-                child: icon,
-              );
-              selectedIcon = Badge(
-                label: Text(notifCount > 99 ? '99+' : '$notifCount'),
-                child: selectedIcon,
-              );
-            } else if (i == 3 && dmCount > 0) {
-              icon = Badge(
-                label: Text(dmCount > 99 ? '99+' : '$dmCount'),
-                child: icon,
-              );
-              selectedIcon = Badge(
-                label: Text(dmCount > 99 ? '99+' : '$dmCount'),
-                child: selectedIcon,
-              );
-            }
+// ─── Modern Navigation Item ─────────────────────────────────────────
 
-            return NavigationDestination(
-              icon: icon,
-              selectedIcon: selectedIcon,
-              label: _mainLabels[i],
+class _ModernNavItem extends StatefulWidget {
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool isSelected;
+  final int badgeCount;
+  final VoidCallback onTap;
+
+  const _ModernNavItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.isSelected,
+    required this.badgeCount,
+    required this.onTap,
+  });
+
+  @override
+  State<_ModernNavItem> createState() => _ModernNavItemState();
+}
+
+class _ModernNavItemState extends State<_ModernNavItem>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+
+    _slideAnimation = Tween<double>(begin: 0.0, end: -4.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+
+    if (widget.isSelected) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_ModernNavItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isSelected != oldWidget.isSelected) {
+      if (widget.isSelected) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Transform.translate(
+              offset: Offset(0, _slideAnimation.value),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                decoration: BoxDecoration(
+                  gradient: widget.isSelected
+                      ? LinearGradient(
+                          colors: [
+                            colorScheme.primaryContainer.withValues(alpha: 0.8),
+                            colorScheme.primaryContainer.withValues(alpha: 0.4),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        )
+                      : null,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Transform.scale(
+                      scale: _scaleAnimation.value,
+                      child: _buildIconWithBadge(colorScheme),
+                    ),
+                    const SizedBox(height: 2),
+                    AnimatedDefaultTextStyle(
+                      duration: const Duration(milliseconds: 200),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: widget.isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: widget.isSelected
+                            ? colorScheme.primary
+                            : colorScheme.onSurfaceVariant,
+                        letterSpacing: 0.2,
+                      ),
+                      child: Text(widget.label),
+                    ),
+                  ],
+                ),
+              ),
             );
           },
         ),
       ),
-      drawer: _buildDrawer(context, auth),
     );
   }
 
-  Widget _buildDrawer(BuildContext context, AuthState auth) {
+  Widget _buildIconWithBadge(ColorScheme colorScheme) {
+    Widget iconWidget = Icon(
+      widget.isSelected ? widget.selectedIcon : widget.icon,
+      size: 26,
+      color: widget.isSelected
+          ? colorScheme.primary
+          : colorScheme.onSurfaceVariant,
+    );
+
+    if (widget.badgeCount > 0) {
+      return Badge(
+        label: Text(
+          widget.badgeCount > 99 ? '99+' : '${widget.badgeCount}',
+          style: const TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+            height: 1.2,
+          ),
+        ),
+        backgroundColor: colorScheme.error,
+        textColor: colorScheme.onError,
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        child: iconWidget,
+      );
+    }
+
+    return iconWidget;
+  }
+}
+
+// ─── Modern Drawer ──────────────────────────────────────────────────
+
+class ModernDrawer extends ConsumerWidget {
+  const ModernDrawer({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authStateProvider);
     final colorScheme = Theme.of(context).colorScheme;
+
     return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          DrawerHeader(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [colorScheme.primary, colorScheme.tertiary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+      width: 320,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              colorScheme.surface,
+              colorScheme.surfaceContainerLowest,
+            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Header with profile
+              _DrawerHeader(auth: auth),
+
+              // Navigation items
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  children: [
+                    if (!auth.isLoggedIn)
+                      _DrawerItem(
+                        icon: Icons.login_rounded,
+                        title: 'Login',
+                        subtitle: 'Connect your account',
+                        onTap: () => _navigate(context, '/login'),
+                      ),
+                    if (auth.isLoggedIn) ...[
+                      _DrawerItem(
+                        icon: Icons.edit_note_rounded,
+                        title: 'Write Article',
+                        subtitle: 'Create long-form content',
+                        onTap: () => _navigate(context, '/articles'),
+                      ),
+                    ],
+                    _DrawerDivider(),
+                    _DrawerSection(title: 'Discover'),
+                    _DrawerItem(
+                      icon: Icons.explore_rounded,
+                      title: 'Explore',
+                      subtitle: 'Discover new content',
+                      onTap: () => _navigate(context, '/explore'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.trending_up_rounded,
+                      title: 'Trending',
+                      subtitle: 'Popular posts',
+                      onTap: () => _navigate(context, '/trending'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.video_library_rounded,
+                      title: 'Reels',
+                      subtitle: 'Short videos',
+                      onTap: () => _navigate(context, '/reels'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.article_rounded,
+                      title: 'Articles',
+                      subtitle: 'Long-form posts',
+                      onTap: () => _navigate(context, '/articles'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.list_rounded,
+                      title: 'Lists',
+                      subtitle: 'Curated feeds',
+                      onTap: () => _navigate(context, '/lists'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.calendar_month_rounded,
+                      title: 'Calendar',
+                      subtitle: 'Events & schedules',
+                      onTap: () => _navigate(context, '/calendar'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.groups_rounded,
+                      title: 'Communities',
+                      subtitle: 'Join communities',
+                      onTap: () => _navigate(context, '/communities'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.group_rounded,
+                      title: 'Groups',
+                      subtitle: 'Private groups',
+                      onTap: () => _navigate(context, '/groups'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.live_tv_rounded,
+                      title: 'Live',
+                      subtitle: 'Live streams',
+                      onTap: () => _navigate(context, '/live'),
+                    ),
+                    _DrawerDivider(),
+                    _DrawerSection(title: 'Sats & Economy'),
+                    _DrawerItem(
+                      icon: Icons.account_balance_wallet_rounded,
+                      title: 'Wallet',
+                      subtitle: 'Manage your sats',
+                      onTap: () => _navigate(context, '/wallet'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.store_rounded,
+                      title: 'Market',
+                      subtitle: 'Buy & sell',
+                      onTap: () => _navigate(context, '/market'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.swap_horiz_rounded,
+                      title: 'P2P',
+                      subtitle: 'Peer-to-peer trading',
+                      onTap: () => _navigate(context, '/p2p'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_rounded,
+                      title: 'Premium',
+                      subtitle: 'Upgrade your account',
+                      onTap: () => _navigate(context, '/premium'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.water_drop_rounded,
+                      title: 'Sats Drops',
+                      subtitle: 'Earn rewards',
+                      onTap: () => _navigate(context, '/sats-drops'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.card_membership_rounded,
+                      title: 'Memberships',
+                      subtitle: 'Your subscriptions',
+                      onTap: () => _navigate(context, '/memberships'),
+                    ),
+                    _DrawerDivider(),
+                    _DrawerSection(title: 'Creator Tools'),
+                    _DrawerItem(
+                      icon: Icons.dashboard_rounded,
+                      title: 'Studio',
+                      subtitle: 'Creator dashboard',
+                      onTap: () => _navigate(context, '/studio'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.emoji_events_rounded,
+                      title: 'Bounties',
+                      subtitle: 'Complete tasks',
+                      onTap: () => _navigate(context, '/bounties'),
+                    ),
+                    _DrawerDivider(),
+                    _DrawerSection(title: 'Manage'),
+                    _DrawerItem(
+                      icon: Icons.bookmark_rounded,
+                      title: 'Bookmarks',
+                      subtitle: 'Saved posts',
+                      onTap: () => _navigate(context, '/bookmarks'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.key_rounded,
+                      title: 'Identity',
+                      subtitle: 'Manage keys',
+                      onTap: () => _navigate(context, '/identity'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.settings_rounded,
+                      title: 'Settings',
+                      subtitle: 'App preferences',
+                      onTap: () => _navigate(context, '/settings'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.help_rounded,
+                      title: 'Docs',
+                      subtitle: 'Help & documentation',
+                      onTap: () => _navigate(context, '/docs'),
+                    ),
+                    if (auth.isLoggedIn) ...[
+                      _DrawerDivider(),
+                      _DrawerItem(
+                        icon: Icons.logout_rounded,
+                        title: 'Logout',
+                        subtitle: 'Sign out',
+                        isDestructive: true,
+                        onTap: () {
+                          ref.read(authStateProvider.notifier).logout();
+                          Navigator.pop(context);
+                          context.go('/feed');
+                        },
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                  ],
+                ),
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Colors.white,
-                  backgroundImage: auth.profile?.picture != null
-                      ? NetworkImage(auth.profile!.picture!)
-                      : null,
-                  child: auth.profile?.picture == null
-                      ? Icon(Icons.bolt, size: 36, color: colorScheme.primary)
-                      : null,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  auth.isLoggedIn
-                      ? (auth.profile?.displayNameOrName ?? 'Nostr User')
-                      : 'NostrFeed',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  auth.isLoggedIn
-                      ? (auth.isReadOnly
-                          ? 'Read-only mode'
-                          : '@${auth.profile?.name ?? "anon"}')
-                      : 'Nostr Operating System',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+
+              // Footer with version
+              _DrawerFooter(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _navigate(BuildContext context, String route) {
+    HapticFeedback.lightImpact();
+    Navigator.pop(context);
+    context.push(route);
+  }
+}
+
+// ─── Drawer Header ──────────────────────────────────────────────────
+
+class _DrawerHeader extends StatelessWidget {
+  final AuthState auth;
+
+  const _DrawerHeader({required this.auth});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            colorScheme.primary,
+            colorScheme.tertiary,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Avatar
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
+            child: CircleAvatar(
+              radius: 36,
+              backgroundColor: Colors.white,
+              backgroundImage: auth.profile?.picture != null
+                  ? CachedNetworkImageProvider(auth.profile!.picture!)
+                  : null,
+              child: auth.profile?.picture == null
+                  ? Icon(Icons.bolt_rounded, size: 40, color: colorScheme.primary)
+                  : null,
+            ),
           ),
-          if (!auth.isLoggedIn)
-            ListTile(
-              leading: const Icon(Icons.login),
-              title: const Text('Login'),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/login');
-              },
+          const SizedBox(height: 16),
+
+          // Name
+          Text(
+            auth.isLoggedIn
+                ? (auth.profile?.displayNameOrName ?? 'Nostr User')
+                : 'NostrFeed',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              letterSpacing: -0.5,
             ),
-          if (auth.isLoggedIn) ...[
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text('Profile'),
-              onTap: () {
-                Navigator.pop(context);
-                if (auth.pubkey != null) {
-                  context.push('/profile/${auth.pubkey}');
-                }
-              },
+          ),
+          const SizedBox(height: 4),
+
+          // Subtitle
+          Text(
+            auth.isLoggedIn
+                ? (auth.isReadOnly
+                    ? 'Read-only mode'
+                    : '@${auth.profile?.name ?? "anon"}')
+                : 'Nostr Operating System',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.9),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
             ),
-            ListTile(
-              leading: const Icon(Icons.edit_note),
-              title: const Text('Write Article'),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/articles');
-              },
-            ),
-          ],
-          const Divider(),
-          _drawerSection('Discover'),
-          _drawerItem(context, Icons.explore, 'Explore', '/explore'),
-          _drawerItem(context, Icons.trending_up, 'Trending', '/trending'),
-          _drawerItem(context, Icons.video_library, 'Reels', '/reels'),
-          _drawerItem(context, Icons.article, 'Articles', '/articles'),
-          _drawerItem(context, Icons.list, 'Lists', '/lists'),
-          _drawerItem(context, Icons.calendar_month, 'Calendar', '/calendar'),
-          _drawerItem(context, Icons.groups, 'Communities', '/communities'),
-          _drawerItem(context, Icons.group, 'Groups', '/groups'),
-          _drawerItem(context, Icons.live_tv, 'Live', '/live'),
-          const Divider(),
-          _drawerSection('Sats'),
-          _drawerItem(context, Icons.account_balance_wallet, 'Wallet', '/wallet'),
-          _drawerItem(context, Icons.store, 'Market', '/market'),
-          _drawerItem(context, Icons.swap_horiz, 'P2P', '/p2p'),
-          _drawerItem(context, Icons.workspace_premium, 'Premium', '/premium'),
-          _drawerItem(context, Icons.water_drop, 'Sats Drops', '/sats-drops'),
-          _drawerItem(context, Icons.card_membership, 'Memberships', '/memberships'),
-          const Divider(),
-          _drawerSection('Creator'),
-          _drawerItem(context, Icons.dashboard, 'Studio', '/studio'),
-          _drawerItem(context, Icons.emoji_events, 'Bounties', '/bounties'),
-          const Divider(),
-          _drawerSection('Manage'),
-          _drawerItem(context, Icons.bookmark, 'Bookmarks', '/bookmarks'),
-          _drawerItem(context, Icons.key, 'Identity', '/identity'),
-          _drawerItem(context, Icons.settings, 'Settings', '/settings'),
-          _drawerItem(context, Icons.help, 'Docs', '/docs'),
-          if (auth.isLoggedIn) ...[
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                ref.read(authStateProvider.notifier).logout();
-                Navigator.pop(context);
-                context.go('/feed');
-              },
+          ),
+
+          if (auth.isLoggedIn && auth.profile?.nip05 != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.verified_rounded, color: Colors.white, size: 14),
+                  const SizedBox(width: 4),
+                  Text(
+                    auth.profile!.nip05!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
       ),
     );
   }
+}
 
-  Widget _drawerSection(String title) {
+// ─── Drawer Section ─────────────────────────────────────────────────
+
+class _DrawerSection extends StatelessWidget {
+  final String title;
+
+  const _DrawerSection({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       child: Text(
         title.toUpperCase(),
         style: TextStyle(
           fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.primary,
-          letterSpacing: 1.2,
+          fontWeight: FontWeight.w700,
+          color: colorScheme.primary,
+          letterSpacing: 1.5,
         ),
       ),
     );
   }
+}
 
-  Widget _drawerItem(BuildContext context, IconData icon, String title, String route) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      dense: true,
-      onTap: () {
-        Navigator.pop(context);
-        context.push(route);
-      },
+// ─── Drawer Item ────────────────────────────────────────────────────
+
+class _DrawerItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback onTap;
+  final bool isDestructive;
+
+  const _DrawerItem({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.onTap,
+    this.isDestructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = isDestructive ? Colors.red : colorScheme.onSurface;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isDestructive
+                        ? Colors.red.withValues(alpha: 0.1)
+                        : colorScheme.primaryContainer.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 22,
+                    color: isDestructive ? Colors.red : colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: color,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 14,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Drawer Divider ─────────────────────────────────────────────────
+
+class _DrawerDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: Divider(
+        color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+        height: 1,
+      ),
+    );
+  }
+}
+
+// ─── Drawer Footer ──────────────────────────────────────────────────
+
+class _DrawerFooter extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [colorScheme.primary, colorScheme.tertiary],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'NostrFeed',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                Text(
+                  'v1.0.0',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

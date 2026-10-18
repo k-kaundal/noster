@@ -151,7 +151,22 @@ class NostrFilter {
     this.until,
     this.limit,
     this.search,
-  });
+    List<String>? eTags,
+    List<String>? pTags,
+    List<String>? aTags,
+    List<String>? tTags,
+  }) {
+    // Convenience: route single-letter tags into tagFilters
+    final extras = <String, List<String>>{
+      if (eTags != null && eTags.isNotEmpty) 'e': eTags,
+      if (pTags != null && pTags.isNotEmpty) 'p': pTags,
+      if (aTags != null && aTags.isNotEmpty) 'a': aTags,
+      if (tTags != null && tTags.isNotEmpty) 't': tTags,
+    };
+    if (extras.isNotEmpty) {
+      tagFilters = {...?tagFilters, ...extras};
+    }
+  }
 
   Map<String, dynamic> toJson() {
     final m = <String, dynamic>{};
@@ -289,6 +304,8 @@ String randomHex(int bytes) {
 }
 
 /// Normalize a relay URL to canonical form.
+/// SECURITY: Always upgrades to wss:// (encrypted WebSocket).
+/// ws:// (unencrypted) is only allowed for localhost development.
 String normalizeRelayUrl(String url) {
   var u = url.trim().toLowerCase();
   if (!u.startsWith('wss://') && !u.startsWith('ws://')) u = 'wss://$u';
@@ -297,10 +314,18 @@ String normalizeRelayUrl(String url) {
 }
 
 /// Validate relay URL format.
+/// SECURITY: Only wss:// is allowed for public relays.
+/// ws:// is only permitted for localhost/127.0.0.1 (development).
 bool isValidRelayUrl(String url) {
   try {
     final uri = Uri.parse(url);
-    return (uri.scheme == 'wss' || uri.scheme == 'ws') && uri.host.isNotEmpty;
+    if (uri.scheme == 'wss' && uri.host.isNotEmpty) return true;
+    // Allow ws:// only for localhost development
+    if (uri.scheme == 'ws' &&
+        (uri.host == 'localhost' || uri.host == '127.0.0.1')) {
+      return true;
+    }
+    return false;
   } catch (_) {
     return false;
   }

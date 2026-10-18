@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../providers/app_providers.dart';
 
+/// Login and signup screen with a modern two-tab flow:
+/// - **Sign Up**: generate fresh keys with backup guidance
+/// - **Log In**: nsec/hex key or read-only npub browse
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -21,7 +25,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
@@ -38,11 +42,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       SnackBar(
         content: Text(message),
         backgroundColor: Theme.of(context).colorScheme.error,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
-  Future<void> _runAuth(Future<void> Function() action, String errorPrefix) async {
+  Future<void> _runAuth(
+      Future<void> Function() action, String errorPrefix) async {
     setState(() => _isLoading = true);
     try {
       await action();
@@ -53,6 +59,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  // ── Login ────────────────────────────────────────────────────────────
 
   Future<void> _loginWithKey() async {
     final input = _nsecController.text.trim();
@@ -70,11 +78,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
   }
 
-  Future<void> _generateKeys() async {
-    final notifier = ref.read(authStateProvider.notifier);
-    await _runAuth(notifier.generateKeys, 'Failed to generate keys');
-  }
-
   Future<void> _browseReadOnly() async {
     final input = _npubController.text.trim();
     if (input.isEmpty) {
@@ -89,6 +92,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     await _runAuth(() => notifier.loginReadOnly(input), 'Invalid npub');
   }
 
+  // ── Signup ───────────────────────────────────────────────────────────
+
+  Future<void> _generateKeys() async {
+    final notifier = ref.read(authStateProvider.notifier);
+    await _runAuth(notifier.generateKeys, 'Failed to generate keys');
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -98,52 +108,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Gradient header with logo/title
+            // Hero section
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+              padding: const EdgeInsets.symmetric(
+                  vertical: 48, horizontal: 24),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    scheme.primary,
-                    scheme.tertiary,
-                  ],
+                  colors: [scheme.primary, scheme.tertiary],
                 ),
                 borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(32),
-                  bottomRight: Radius.circular(32),
+                  bottomLeft: Radius.circular(40),
+                  bottomRight: Radius.circular(40),
                 ),
               ),
               child: Column(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: scheme.onPrimary.withValues(alpha: 0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.bolt,
                       size: 48,
-                      color: scheme.onPrimary,
+                      color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   Text(
                     'NostrFeed',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      color: scheme.onPrimary,
+                    style: theme.textTheme.headlineLarge?.copyWith(
+                      color: Colors.white,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.5,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Text(
                     'Your Nostr Operating System',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: scheme.onPrimary.withValues(alpha: 0.85),
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.85),
                     ),
                   ),
                 ],
@@ -151,16 +166,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             ),
 
             // Tab bar
-            TabBar(
-              controller: _tabController,
-              labelColor: scheme.primary,
-              unselectedLabelColor: scheme.onSurface.withValues(alpha: 0.6),
-              indicatorColor: scheme.primary,
-              tabs: const [
-                Tab(text: 'Extension'),
-                Tab(text: 'Key'),
-                Tab(text: 'Browse'),
-              ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest
+                      .withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: scheme.onSurfaceVariant,
+                  indicator: BoxDecoration(
+                    color: scheme.primary,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                  tabs: const [
+                    Tab(text: 'Log In'),
+                    Tab(text: 'Sign Up'),
+                  ],
+                ),
+              ),
             ),
 
             // Tab content
@@ -168,9 +201,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildExtensionTab(theme),
-                  _buildKeyTab(theme),
-                  _buildBrowseTab(theme),
+                  _buildLoginTab(theme),
+                  _buildSignupTab(theme),
                 ],
               ),
             ),
@@ -180,66 +212,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _buildExtensionTab(ThemeData theme) {
+  // ── Login tab ────────────────────────────────────────────────────────
+
+  Widget _buildLoginTab(ThemeData theme) {
     final scheme = theme.colorScheme;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.extension, size: 56, color: scheme.primary),
-          const SizedBox(height: 16),
           Text(
-            'Login with Browser Extension',
-            style: theme.textTheme.titleLarge,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Use a NIP-07 compatible extension like Alby, nos2x, or Flamingo. '
-            'Your keys stay in the extension and are never shared with this app.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurface.withValues(alpha: 0.7),
+            'Welcome back',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: _isLoading
-                ? null
-                : () => _showError('NIP-07 extension login is not yet supported on this platform'),
-            icon: const Icon(Icons.login),
-            label: const Text('Connect Extension'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildKeyTab(ThemeData theme) {
-    final scheme = theme.colorScheme;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+          const SizedBox(height: 8),
           Text(
-            'Login with Private Key',
-            style: theme.textTheme.titleLarge,
+            'Log in with your Nostr private key',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 32),
+
+          // nsec key input
           TextField(
             controller: _nsecController,
             obscureText: true,
             enabled: !_isLoading,
             decoration: InputDecoration(
               labelText: 'Private Key',
-              hintText: 'nsec1... or 64-char hex',
+              hintText: 'nsec1… or 64-char hex',
               prefixIcon: const Icon(Icons.key),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.paste),
+                tooltip: 'Paste',
+                onPressed: () async {
+                  final data = await Clipboard.getData('text/plain');
+                  if (data?.text != null) {
+                    _nsecController.text = data!.text!;
+                  }
+                },
               ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              filled: true,
+              fillColor: scheme.surfaceContainerHighest
+                  .withValues(alpha: 0.3),
             ),
           ),
           const SizedBox(height: 16),
@@ -247,46 +270,166 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             onPressed: _isLoading ? null : _loginWithKey,
             icon: _isLoading
                 ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.login),
-            label: const Text('Login with Key'),
+            label: const Text('Log In'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
           ),
-          const SizedBox(height: 24),
+
+          const SizedBox(height: 32),
           Row(
             children: [
               Expanded(child: Divider(color: scheme.outlineVariant)),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
                   'or',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurface.withValues(alpha: 0.6),
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
               ),
               Expanded(child: Divider(color: scheme.outlineVariant)),
             ],
           ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            onPressed: _isLoading ? null : _generateKeys,
-            icon: const Icon(Icons.person_add),
-            label: const Text('Generate New Keys'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+          const SizedBox(height: 32),
+
+          // Read-only browse
+          Text(
+            'Browse without an account',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
           Text(
-            'New to Nostr? Generate a fresh key pair to sign up.',
+            'Enter any npub to browse Nostr in read-only mode',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurface.withValues(alpha: 0.6),
+              color: scheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _npubController,
+            enabled: !_isLoading,
+            decoration: InputDecoration(
+              labelText: 'Public Key',
+              hintText: 'npub1…',
+              prefixIcon: const Icon(Icons.person_outline),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              filled: true,
+              fillColor: scheme.surfaceContainerHighest
+                  .withValues(alpha: 0.3),
+            ),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: _isLoading ? null : _browseReadOnly,
+            icon: const Icon(Icons.explore),
+            label: const Text('Browse Read-Only'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Signup tab ───────────────────────────────────────────────────────
+
+  Widget _buildSignupTab(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Create your account',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Generate a fresh Nostr key pair to get started',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 32),
+
+          // Feature list
+          _SignupFeature(
+            icon: Icons.key,
+            title: 'Your keys, your identity',
+            body: 'A private key is generated on your device. '
+                'It never leaves this app.',
+            scheme: scheme,
+          ),
+          const SizedBox(height: 16),
+          _SignupFeature(
+            icon: Icons.no_accounts_outlined,
+            title: 'No email or phone',
+            body: 'No signup forms, no verification codes. '
+                'Your key is your account.',
+            scheme: scheme,
+          ),
+          const SizedBox(height: 16),
+          _SignupFeature(
+            icon: Icons.backup_outlined,
+            title: 'Back it up',
+            body: 'Write down your private key somewhere safe. '
+                'Without it, your account is gone forever.',
+            scheme: scheme,
+          ),
+          const SizedBox(height: 32),
+
+          // Generate button
+          FilledButton.icon(
+            onPressed: _isLoading ? null : _generateKeys,
+            icon: _isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.person_add),
+            label: const Text('Generate New Keys'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'After generating, save your private key immediately. '
+            'You will need it to log in again.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontStyle: FontStyle.italic,
             ),
             textAlign: TextAlign.center,
           ),
@@ -294,57 +437,61 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       ),
     );
   }
+}
 
-  Widget _buildBrowseTab(ThemeData theme) {
-    final scheme = theme.colorScheme;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Icon(Icons.visibility_outlined, size: 56, color: scheme.primary),
-          const SizedBox(height: 16),
-          Text(
-            'Browse Read-Only',
-            style: theme.textTheme.titleLarge,
-            textAlign: TextAlign.center,
+// ── Signup feature row ───────────────────────────────────────────────
+
+class _SignupFeature extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String body;
+  final ColorScheme scheme;
+
+  const _SignupFeature({
+    required this.icon,
+    required this.title,
+    required this.body,
+    required this.scheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(12),
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Enter any npub to browse Nostr as that user in read-only mode. '
-            'You won\'t be able to post, like, or zap.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurface.withValues(alpha: 0.7),
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _npubController,
-            enabled: !_isLoading,
-            decoration: InputDecoration(
-              labelText: 'Public Key',
-              hintText: 'npub1...',
-              prefixIcon: const Icon(Icons.person_outline),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+          child: Icon(icon, size: 20, color: scheme.primary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
-            ),
+              const SizedBox(height: 2),
+              Text(
+                body,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: scheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _isLoading ? null : _browseReadOnly,
-            icon: _isLoading
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.explore),
-            label: const Text('Browse'),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

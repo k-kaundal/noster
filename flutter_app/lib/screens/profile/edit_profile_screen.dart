@@ -1,21 +1,22 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../models/nostr_models.dart';
 import '../../providers/app_providers.dart';
+import '../../providers/upload_providers.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
 
-  /// Show as a modal bottom sheet dialog
-  static Future<void> show(BuildContext context) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (context) => const Padding(
-        padding: EdgeInsets.only(top: 8),
-        child: EditProfileScreen(),
+  /// Show as a full-screen page rather than a bottom sheet.
+  static void show(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const EditProfileScreen(),
+        fullscreenDialog: true,
       ),
     );
   }
@@ -36,12 +37,20 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   late final TextEditingController _lud16Controller;
   bool _isSaving = false;
 
+  // Image upload state
+  bool _isUploadingPicture = false;
+  bool _isUploadingBanner = false;
+  String? _uploadError;
+
+  final _imagePicker = ImagePicker();
+
   @override
   void initState() {
     super.initState();
     final profile = ref.read(authStateProvider).profile;
     _nameController = TextEditingController(text: profile?.name ?? '');
-    _displayNameController = TextEditingController(text: profile?.displayName ?? '');
+    _displayNameController =
+        TextEditingController(text: profile?.displayName ?? '');
     _aboutController = TextEditingController(text: profile?.about ?? '');
     _pictureController = TextEditingController(text: profile?.picture ?? '');
     _bannerController = TextEditingController(text: profile?.banner ?? '');
@@ -67,6 +76,95 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     final trimmed = value.trim();
     return trimmed.isEmpty ? null : trimmed;
   }
+
+  // ── Image upload ─────────────────────────────────────────────────────
+
+  Future<void> _pickAndUploadImage({required bool isBanner}) async {
+    setState(() => _uploadError = null);
+
+    // Let user choose camera or gallery
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final picked = await _imagePicker.pickImage(
+      source: source,
+      maxWidth: isBanner ? 2048 : 1024,
+      maxHeight: isBanner ? 2048 : 1024,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    setState(() {
+      if (isBanner) {
+        _isUploadingBanner = true;
+      } else {
+        _isUploadingPicture = true;
+      }
+      _uploadError = null;
+    });
+
+    try {
+      final url = await ref.read(uploadProvider.notifier).uploadImage(picked);
+
+      setState(() {
+        if (isBanner) {
+          _bannerController.text = url;
+        } else {
+          _pictureController.text = url;
+        }
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '${isBanner ? 'Banner' : 'Profile picture'} uploaded — save to publish it'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _uploadError = e.toString());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        if (isBanner) {
+          _isUploadingBanner = false;
+        } else {
+          _isUploadingPicture = false;
+        }
+      });
+    }
+  }
+
+  // ── Save ─────────────────────────────────────────────────────────────
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -108,134 +206,154 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     }
   }
 
+  // ── UI ───────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final profile = ref.watch(authStateProvider).profile;
 
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.9,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      builder: (context, scrollController) {
-        return Column(
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text('Edit Profile'),
+        actions: [
+          FilledButton(
+            onPressed: _isSaving ? null : _save,
+            child: _isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Save'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            // Handle
-            Container(
-              margin: const EdgeInsets.only(top: 8, bottom: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: scheme.onSurface.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
+            // ── Banner section ─────────────────────────────────────
+            _ImageSection(
+              label: 'Banner',
+              hint: 'Wide image shown at the top of your profile',
+              url: _bannerController.text,
+              previewType: _PreviewType.wide,
+              isUploading: _isUploadingBanner,
+              onUpload: () => _pickAndUploadImage(isBanner: true),
+              onUrlChanged: (v) => _bannerController.text = v,
+              scheme: scheme,
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Edit Profile', style: theme.textTheme.titleLarge),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 24),
+
+            // ── Avatar section ─────────────────────────────────────
+            _ImageSection(
+              label: 'Profile Picture',
+              hint: 'Square photo shown as your avatar',
+              url: _pictureController.text,
+              previewType: _PreviewType.square,
+              isUploading: _isUploadingPicture,
+              onUpload: () => _pickAndUploadImage(isBanner: false),
+              onUrlChanged: (v) => _pictureController.text = v,
+              scheme: scheme,
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: Form(
-                key: _formKey,
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    _buildField(
-                      controller: _displayNameController,
-                      label: 'Display Name',
-                      hint: 'Your public display name',
-                      icon: Icons.badge_outlined,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildField(
-                      controller: _nameController,
-                      label: 'Name',
-                      hint: 'Short username',
-                      icon: Icons.person_outline,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildField(
-                      controller: _aboutController,
-                      label: 'About',
-                      hint: 'Tell people about yourself',
-                      icon: Icons.info_outline,
-                      maxLines: 4,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildField(
-                      controller: _pictureController,
-                      label: 'Avatar URL',
-                      hint: 'https://example.com/avatar.png',
-                      icon: Icons.image_outlined,
-                      keyboardType: TextInputType.url,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildField(
-                      controller: _bannerController,
-                      label: 'Banner URL',
-                      hint: 'https://example.com/banner.png',
-                      icon: Icons.panorama_outlined,
-                      keyboardType: TextInputType.url,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildField(
-                      controller: _websiteController,
-                      label: 'Website',
-                      hint: 'https://yourwebsite.com',
-                      icon: Icons.link,
-                      keyboardType: TextInputType.url,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildField(
-                      controller: _nip05Controller,
-                      label: 'NIP-05 Identifier',
-                      hint: 'you@example.com',
-                      icon: Icons.verified_outlined,
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildField(
-                      controller: _lud16Controller,
-                      label: 'Lightning Address',
-                      hint: 'you@walletofsatoshi.com',
-                      icon: Icons.bolt_outlined,
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton.icon(
-                      onPressed: _isSaving ? null : _save,
-                      icon: _isSaving
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.save),
-                      label: Text(_isSaving ? 'Saving...' : 'Save Profile'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+            const SizedBox(height: 24),
+
+            if (_uploadError != null) ...[
+              Card(
+                color: scheme.errorContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: scheme.error),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _uploadError!,
+                          style: TextStyle(
+                            color: scheme.onErrorContainer,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 32),
-                  ],
+                    ],
+                  ),
                 ),
               ),
+              const SizedBox(height: 24),
+            ],
+
+            // ── Text fields ────────────────────────────────────────
+            _buildField(
+              controller: _displayNameController,
+              label: 'Display Name',
+              hint: 'Your public display name',
+              icon: Icons.badge_outlined,
             ),
+            const SizedBox(height: 12),
+            _buildField(
+              controller: _nameController,
+              label: 'Name',
+              hint: 'Short username',
+              icon: Icons.person_outline,
+            ),
+            const SizedBox(height: 12),
+            _buildField(
+              controller: _aboutController,
+              label: 'About',
+              hint: 'Tell people about yourself',
+              icon: Icons.info_outline,
+              maxLines: 4,
+            ),
+            const SizedBox(height: 12),
+            _buildField(
+              controller: _websiteController,
+              label: 'Website',
+              hint: 'https://yourwebsite.com',
+              icon: Icons.link,
+              keyboardType: TextInputType.url,
+            ),
+            const SizedBox(height: 12),
+            _buildField(
+              controller: _nip05Controller,
+              label: 'NIP-05 Identifier',
+              hint: 'you@example.com',
+              icon: Icons.verified_outlined,
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 12),
+            _buildField(
+              controller: _lud16Controller,
+              label: 'Lightning Address',
+              hint: 'you@walletofsatoshi.com',
+              icon: Icons.bolt_outlined,
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 32),
+
+            // Preview hint
+            if (profile != null)
+              Center(
+                child: Text(
+                  'Changes will appear on your public profile once saved',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            const SizedBox(height: 32),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -272,6 +390,167 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         }
         return null;
       },
+    );
+  }
+}
+
+// ── Image section widget ───────────────────────────────────────────────
+
+enum _PreviewType { square, wide }
+
+class _ImageSection extends StatelessWidget {
+  final String label;
+  final String hint;
+  final String url;
+  final _PreviewType previewType;
+  final bool isUploading;
+  final VoidCallback onUpload;
+  final ValueChanged<String> onUrlChanged;
+  final ColorScheme scheme;
+
+  const _ImageSection({
+    required this.label,
+    required this.hint,
+    required this.url,
+    required this.previewType,
+    required this.isUploading,
+    required this.onUpload,
+    required this.onUrlChanged,
+    required this.scheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasImage = url.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            const Spacer(),
+            if (hasImage)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: 'Remove',
+                onPressed: () => onUrlChanged(''),
+              ),
+          ],
+        ),
+        Text(
+          hint,
+          style: TextStyle(
+            fontSize: 12,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Preview + upload button
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Preview
+            Container(
+              width: previewType == _PreviewType.square ? 80 : 160,
+              height: previewType == _PreviewType.square ? 80 : 90,
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: hasImage
+                  ? CachedNetworkImage(
+                      imageUrl: url,
+                      fit: BoxFit.cover,
+                      placeholder: (_, _) => Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: scheme.primary,
+                          ),
+                        ),
+                      ),
+                      errorWidget: (_, _, _) => Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  : Center(
+                      child: Icon(
+                        previewType == _PreviewType.square
+                            ? Icons.person_outline
+                            : Icons.panorama_outlined,
+                        size: 32,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+            ),
+            const SizedBox(width: 16),
+
+            // Upload button + URL field
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed: isUploading ? null : onUpload,
+                    icon: isUploading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.upload, size: 18),
+                    label: Text(
+                      isUploading
+                          ? 'Uploading…'
+                          : hasImage
+                              ? 'Change Image'
+                              : 'Upload Image',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    initialValue: url,
+                    onChanged: onUrlChanged,
+                    decoration: InputDecoration(
+                      hintText: 'https://…',
+                      prefixIcon: const Icon(Icons.link, size: 18),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                    style: const TextStyle(fontSize: 13),
+                    keyboardType: TextInputType.url,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

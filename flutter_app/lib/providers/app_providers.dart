@@ -4,6 +4,7 @@ import '../models/nostr_models.dart';
 import '../services/auth_service.dart';
 import '../services/nostr_service.dart';
 import '../services/relay_pool.dart';
+import '../services/upload_service.dart';
 import '../config/env.dart';
 
 /// Nostr service singleton.
@@ -298,6 +299,12 @@ final trendingHashtagsProvider = FutureProvider<List<HashtagStat>>((ref) async {
 final engagementProvider = FutureProvider.family<EventEngagement, String>((ref, eventId) async {
   final nostr = await _initNostr(ref);
   return nostr.fetchEngagement(eventId);
+});
+
+/// Upload service for Blossom media uploads
+final uploadServiceProvider = Provider<UploadService>((ref) {
+  final nostrService = ref.read(nostrServiceProvider);
+  return UploadService(nostrService.authService, nostrService);
 });
 
 /// Theme mode

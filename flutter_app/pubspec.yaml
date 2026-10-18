@@ -24,6 +24,12 @@ dependencies:
   crypto: ^3.0.3
   pointycastle: ^4.0.0
 
+  # Lightning / Wallets
+  bolt11_decoder: ^1.0.0
+  # QR code scanning — replaced mobile_scanner (doesn't support arm64 simulators)
+  # with qr_code_scanner which works everywhere.
+  qr_code_scanner: ^1.0.1
+
   # Local storage
   shared_preferences: ^2.3.2
   flutter_secure_storage: ^9.2.2
@@ -33,6 +39,7 @@ dependencies:
   cached_network_image: ^3.4.1
   file_picker: ^10.1.2
   mime: ^1.0.5
+  flutter_svg: ^2.0.10+1
 
   # HTTP & APIs
   http: ^1.2.1
@@ -51,6 +58,8 @@ dependencies:
   flutter_linkify: ^6.0.0
   linkify: ^5.0.0
   path_provider: ^2.1.4
+  video_player: ^2.14.1
+  chewie: ^1.13.1
 
 dev_dependencies:
   flutter_test:

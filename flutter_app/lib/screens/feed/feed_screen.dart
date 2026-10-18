@@ -1,4 +1,6 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -32,9 +34,19 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   Widget build(BuildContext context) {
     final auth = ref.watch(authStateProvider);
     final colorScheme = Theme.of(context).colorScheme;
+    final notificationsAsync = ref.watch(notificationsProvider);
+    final notifCount = notificationsAsync.valueOrNull?.length ?? 0;
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu_rounded),
+          tooltip: 'Menu',
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            Scaffold.of(context).openDrawer();
+          },
+        ),
         title: Row(
           children: [
             Container(
@@ -46,23 +58,82 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.primary.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.bolt, color: Colors.white, size: 18),
+              child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
             ),
             const SizedBox(width: 10),
             const Text(
               'NostrFeed',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                letterSpacing: -0.5,
+              ),
             ),
           ],
         ),
         actions: [
+          // Search button
           IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: 'New post',
-            onPressed: auth.isLoggedIn && !auth.isReadOnly
-                ? () => context.push('/compose')
-                : () => context.push('/login'),
+            icon: const Icon(Icons.search_rounded),
+            tooltip: 'Search',
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              context.push('/search');
+            },
+          ),
+          // Notifications bell with badge
+          IconButton(
+            icon: Badge(
+              isLabelVisible: notifCount > 0,
+              label: Text(
+                notifCount > 99 ? '99+' : '$notifCount',
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+              backgroundColor: colorScheme.error,
+              textColor: colorScheme.onError,
+              child: const Icon(Icons.notifications_outlined),
+            ),
+            tooltip: 'Notifications',
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              context.push('/notifications');
+            },
+          ),
+          // Profile avatar
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                if (auth.isLoggedIn && auth.pubkey != null) {
+                  context.push('/profile/${auth.pubkey}');
+                } else {
+                  context.push('/login');
+                }
+              },
+              child: CircleAvatar(
+                radius: 16,
+                backgroundColor: colorScheme.primaryContainer,
+                backgroundImage: auth.profile?.picture != null
+                    ? CachedNetworkImageProvider(auth.profile!.picture!)
+                    : null,
+                child: auth.profile?.picture == null
+                    ? Icon(
+                        Icons.person_rounded,
+                        size: 18,
+                        color: colorScheme.onPrimaryContainer,
+                      )
+                    : null,
+              ),
+            ),
           ),
         ],
         bottom: TabBar(
@@ -81,12 +152,20 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
         ],
       ),
       floatingActionButton: auth.isLoggedIn && !auth.isReadOnly
-          ? FloatingActionButton(
-              onPressed: () => context.push('/compose'),
-              tooltip: 'New post',
-              child: const Icon(Icons.add),
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 90),
+              child: FloatingActionButton.extended(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  context.push('/compose');
+                },
+                icon: const Icon(Icons.edit_rounded),
+                label: const Text('Post'),
+                elevation: 4,
+              ),
             )
           : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }
@@ -206,7 +285,7 @@ class _FeedBody extends ConsumerWidget {
         return RefreshIndicator(
           onRefresh: () async => onRefresh(),
           child: ListView.builder(
-            padding: const EdgeInsets.only(top: 4, bottom: 80),
+            padding: const EdgeInsets.only(top: 4, bottom: 180), // Space for FAB + bottom nav
             itemCount: events.length,
             itemBuilder: (context, index) =>
                 PostCard(event: events[index] as dynamic),

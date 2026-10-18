@@ -274,26 +274,103 @@ class RelayPool {
   }
 
   /// Subscribe for streaming (live) events.
-  Stream<NostrEvent> subscribe(List<NostrFilter> filters) {
+  Stream<NostrEvent> subscribe(
+    List<NostrFilter> filters, {
+    List<String>? relays,
+  }) {
     final seen = <String>{};
     final controller = StreamController<NostrEvent>.broadcast();
 
-    for (final relay in _relays.values) {
-      if (relay.isConnected) {
-        final (_, stream) = relay.subscribe(filters);
-        stream.listen((event) {
-          if (seen.add(event.id)) {
+    // Determine which relays to use. If `relays` is provided, ensure those
+    // connections exist (ad-hoc, just for this subscription) and use them.
+    final targetRelays = <RelayConnection>[];
+    if (relays != null && relays.isNotEmpty) {
+      for (final url in relays) {
+        final normalized = normalizeRelayUrl(url);
+        var conn = _relays[normalized];
+        if (conn == null) {
+          conn = RelayConnection(normalized);
+          conn.onAuthChallenge = authHandler != null
+              ? (challenge) => authHandler!(normalized, challenge)
+              : null;
+          _relays[normalized] = conn;
+          // Fire-and-forget connect; the subscription will be used once connected
+          conn.connect().catchError((_) {});
+        }
+        targetRelays.add(conn);
+      }
+    } else {
+      targetRelays.addAll(_relays.values);
+    }
+
+    // Forward events from each relay, deduping by event id
+    final subscriptions = <(RelayConnection, String)>[];
+    for (final relay in targetRelays) {
+      // Wait for connection before subscribing
+      if (!relay.isConnected) {
+        // Try to subscribe anyway once connection finishes; if connection
+        // hasn't completed within 5s, skip.
+        Future.doWhile(() async {
+          await Future.delayed(const Duration(milliseconds: 200));
+          return !relay.isConnected && !controller.isClosed;
+        }).timeout(const Duration(seconds: 5), onTimeout: () {});
+      }
+      if (!relay.isConnected) continue;
+
+      final (subId, stream) = relay.subscribe(filters);
+      subscriptions.add((relay, subId));
+      stream.listen(
+        (event) {
+          if (!controller.isClosed && seen.add(event.id)) {
             controller.add(event);
           }
-        });
-      }
+        },
+        onDone: () {},
+        onError: (_) {},
+      );
     }
+
+    // When the outer stream is cancelled, close inner subs
+    controller.onCancel = () {
+      for (final (relay, subId) in subscriptions) {
+        relay.unsubscribe(subId);
+      }
+    };
 
     return controller.stream;
   }
 
-  /// Publish to all connected relays.
-  void publish(NostrEvent event) {
+  /// Publish to all connected relays (or a targeted subset).
+  void publish(NostrEvent event, {List<String>? relays}) {
+    if (relays != null && relays.isNotEmpty) {
+      for (final url in relays) {
+        final normalized = normalizeRelayUrl(url);
+        var conn = _relays[normalized];
+        if (conn == null) {
+          conn = RelayConnection(normalized);
+          conn.onAuthChallenge = authHandler != null
+              ? (challenge) => authHandler!(normalized, challenge)
+              : null;
+          _relays[normalized] = conn;
+          conn.connect().then((_) {
+            conn?.publish(event);
+          }).catchError((_) {});
+          continue;
+        }
+        if (conn.isConnected) {
+          conn.publish(event);
+        } else {
+          // Wait briefly for connection, then publish
+          Future.doWhile(() async {
+            await Future.delayed(const Duration(milliseconds: 200));
+            return !conn!.isConnected;
+          }).timeout(const Duration(seconds: 5), onTimeout: () {}).then((_) {
+            if (conn!.isConnected) conn.publish(event);
+          });
+        }
+      }
+      return;
+    }
     for (final relay in _relays.values) {
       if (relay.isConnected) {
         relay.publish(event);

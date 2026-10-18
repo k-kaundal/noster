@@ -12,6 +12,9 @@ import '../screens/search/search_screen.dart';
 import '../screens/notifications/notifications_screen.dart';
 import '../screens/chat/chat_screen.dart';
 import '../screens/wallet/wallet_screen.dart';
+import '../screens/wallet/nwc_screen.dart';
+import '../screens/wallet/cashu_wallet_screen.dart';
+import '../screens/wallet/lnbits_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/bookmarks/bookmarks_screen.dart';
 import '../screens/communities/communities_screen.dart';
@@ -94,6 +97,9 @@ final routerProvider = Provider<GoRouter>((ref) {
 
           // Sats
           GoRoute(path: '/wallet', builder: (_, _) => const WalletScreen()),
+          GoRoute(path: '/wallet/nwc', builder: (_, _) => const NwcScreen()),
+          GoRoute(path: '/wallet/cashu', builder: (_, _) => const CashuWalletScreen()),
+          GoRoute(path: '/wallet/lnbits', builder: (_, _) => const LnbitsScreen()),
           GoRoute(path: '/market', builder: (_, _) => const MarketScreen()),
           GoRoute(path: '/p2p', builder: (_, _) => const P2PScreen()),
           GoRoute(path: '/premium', builder: (_, _) => const PremiumScreen()),

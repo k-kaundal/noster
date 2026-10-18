@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../models/nostr_models.dart';
 import '../../providers/app_providers.dart';
+import '../../providers/nwc_providers.dart';
 import '../../services/lnurl_service.dart';
 
 /// Shows a zap dialog for a Nostr event or profile.
@@ -182,6 +185,30 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
         return;
       }
 
+      // If NWC is connected, try to pay the invoice directly
+      final nwcState = ref.read(nwcNotifierProvider);
+      if (nwcState.isConnected) {
+        try {
+          await ref.read(nwcNotifierProvider.notifier).payInvoice(invoice);
+          if (!mounted) return;
+          // Payment succeeded — show success and close
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Zap of $amount sats sent!')),
+          );
+          Navigator.pop(context);
+          return;
+        } catch (e) {
+          // Payment failed — fall through to manual invoice view
+          if (!mounted) return;
+          setState(() {
+            _invoice = invoice;
+            _loading = false;
+            _error = 'NWC payment failed: $e. Pay manually below.';
+          });
+          return;
+        }
+      }
+
       setState(() {
         _invoice = invoice;
         _loading = false;
@@ -347,6 +374,30 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
+
+        // NWC indicator
+        Builder(builder: (context) {
+          final nwcState = ref.watch(nwcNotifierProvider);
+          if (!nwcState.isConnected) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle,
+                    size: 14, color: Colors.green.shade600),
+                const SizedBox(width: 4),
+                Text(
+                  'Will pay via ${nwcState.activeConnection?.alias ?? "NWC"}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.green.shade700,
+                      ),
+                ),
+              ],
+            ),
+          );
+        }),
+
         if (_error != null) ...[
           const SizedBox(height: 12),
           Text(
@@ -365,7 +416,10 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Icon(Icons.bolt, color: Colors.amber.shade700),
-          label: const Text('Create Invoice'),
+          label: Builder(builder: (context) {
+            final nwcState = ref.watch(nwcNotifierProvider);
+            return Text(nwcState.isConnected ? 'Send Zap' : 'Create Invoice');
+          }),
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
