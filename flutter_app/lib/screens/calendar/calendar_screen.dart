@@ -16,6 +16,26 @@ class CalendarScreen extends ConsumerStatefulWidget {
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   DateTime _focusedMonth = DateTime.now();
 
+  void _showNewEventSheet(BuildContext context) {
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Log in to create events')),
+      );
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: const _NewEventSheet(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final events = ref.watch(calendarProvider);
@@ -49,7 +69,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         data: (items) {
           if (items.isEmpty) return const _EmptyCalendar();
           return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(communitiesProvider),
+            onRefresh: () async => ref.invalidate(calendarProvider),
             child: ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: items.length,
@@ -60,7 +80,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
+        onPressed: () => _showNewEventSheet(context),
         icon: const Icon(Icons.event),
         label: const Text('New Event'),
       ),
@@ -71,6 +91,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 class _EventCard extends ConsumerWidget {
   final NostrEvent event;
   const _EventCard({required this.event});
+
+  void _handleRsvp(BuildContext context, WidgetRef ref, String response) {
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Log in to RSVP')),
+      );
+      return;
+    }
+    // NIP-52 RSVP is a kind 31925 reaction to a calendar event.
+    // For now, send a reaction as acknowledgment — full RSVP kind support
+    // needs the calendar event to be addressable (kind 31922/31923).
+    final nostr = ref.read(nostrServiceProvider);
+    nostr.publish(nostr.createReaction(event, content: response == 'yes' ? '✅' : '🤔'));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('RSVP "$response" sent')),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -172,41 +210,58 @@ class _EventCard extends ConsumerWidget {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      // Attendee avatars
-                      SizedBox(
-                        height: 22,
-                        width: 80,
-                        child: Stack(
-                          children: List.generate(
-                            attendees > 4 ? 4 : attendees,
-                            (i) => Positioned(
-                              left: i * 16.0,
-                              child: CircleAvatar(
-                                radius: 11,
-                                backgroundColor: scheme.secondaryContainer,
-                                backgroundImage: i == 0 &&
-                                        profileAsync.value?.picture != null
-                                    ? CachedNetworkImageProvider(
-                                        profileAsync.value!.picture!)
-                                    : null,
-                                child: i != 0 || profileAsync.value?.picture == null
-                                    ? Icon(Icons.person,
-                                        size: 10,
-                                        color: scheme.onSecondaryContainer)
-                                    : null,
+                      // Attendee avatars — shrink to fit
+                      Flexible(
+                        flex: 0,
+                        child: SizedBox(
+                          height: 22,
+                          width: 64,
+                          child: Stack(
+                            children: List.generate(
+                              attendees > 4 ? 4 : attendees,
+                              (i) => Positioned(
+                                left: i * 14.0,
+                                child: CircleAvatar(
+                                  radius: 11,
+                                  backgroundColor: scheme.secondaryContainer,
+                                  backgroundImage: i == 0 &&
+                                          profileAsync.value?.picture != null
+                                      ? CachedNetworkImageProvider(
+                                          profileAsync.value!.picture!)
+                                      : null,
+                                  child: i != 0 || profileAsync.value?.picture == null
+                                      ? Icon(Icons.person,
+                                          size: 10,
+                                          color: scheme.onSecondaryContainer)
+                                      : null,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                      Text('$attendees attending',
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          '$attendees attending',
                           style: TextStyle(
                               fontSize: 12,
-                              color: scheme.onSurfaceVariant)),
-                      const Spacer(),
-                      _RsvpButton(label: 'Yes', selected: false, onTap: () {}),
+                              color: scheme.onSurfaceVariant),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _RsvpButton(
+                        label: 'Yes',
+                        selected: false,
+                        onTap: () => _handleRsvp(context, ref, 'yes'),
+                      ),
                       const SizedBox(width: 6),
-                      _RsvpButton(label: 'Maybe', selected: false, onTap: () {}),
+                      _RsvpButton(
+                        label: 'Maybe',
+                        selected: false,
+                        onTap: () => _handleRsvp(context, ref, 'maybe'),
+                      ),
                     ],
                   ),
                 ],
@@ -229,20 +284,23 @@ class _RsvpButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? scheme.primary : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+    return Material(
+      color: selected ? scheme.primary : scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44, minWidth: 60),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+            ),
           ),
         ),
       ),
@@ -350,6 +408,160 @@ class _ErrorView extends StatelessWidget {
             label: const Text('Retry'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Bottom sheet for creating a NIP-52 calendar event (kind 31923, time-based).
+class _NewEventSheet extends ConsumerStatefulWidget {
+  const _NewEventSheet();
+
+  @override
+  ConsumerState<_NewEventSheet> createState() => _NewEventSheetState();
+}
+
+class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
+  final _titleController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  DateTime _start = DateTime.now().add(const Duration(days: 1));
+  bool _publishing = false;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _locationController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickStart() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _start,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_start),
+    );
+    if (time == null || !mounted) return;
+    setState(() {
+      _start = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    });
+  }
+
+  Future<void> _publish() async {
+    if (_titleController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Title is required')),
+      );
+      return;
+    }
+
+    setState(() => _publishing = true);
+    try {
+      final nostr = ref.read(nostrServiceProvider);
+      final startTs = _start.millisecondsSinceEpoch ~/ 1000;
+      final event = nostr.createCalendarEvent(
+        title: _titleController.text.trim(),
+        start: startTs,
+        location: _locationController.text.trim().isEmpty
+            ? null
+            : _locationController.text.trim(),
+        description: _descriptionController.text.trim(),
+      );
+      nostr.publish(event);
+      if (!mounted) return;
+      ref.invalidate(calendarProvider);
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Event published')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _publishing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to publish: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text('New Event',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: 'Title',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _pickStart,
+              icon: const Icon(Icons.schedule),
+              label: Text(DateFormat('EEE, MMM d • h:mm a').format(_start)),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _locationController,
+              decoration: const InputDecoration(
+                labelText: 'Location (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _descriptionController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _publishing ? null : _publish,
+              icon: _publishing
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: scheme.onPrimary,
+                      ),
+                    )
+                  : const Icon(Icons.publish),
+              label: const Text('Publish Event'),
+            ),
+          ],
+        ),
       ),
     );
   }

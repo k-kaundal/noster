@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:shimmer/shimmer.dart';
 import '../../providers/app_providers.dart';
@@ -16,6 +17,21 @@ class P2PScreen extends ConsumerStatefulWidget {
 class _P2PScreenState extends ConsumerState<P2PScreen> {
   String _filter = 'All';
   static const _filters = ['All', 'Buy', 'Sell'];
+
+  void _showNewOrderSheet(BuildContext context, WidgetRef ref) {
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Log in to create an order')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('P2P order creation needs escrow support — coming soon'),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +81,7 @@ class _P2PScreenState extends ConsumerState<P2PScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
+        onPressed: () => _showNewOrderSheet(context, ref),
         icon: const Icon(Icons.add),
         label: const Text('New Order'),
       ),
@@ -77,6 +93,19 @@ class _OrderCard extends ConsumerWidget {
   final NostrEvent event;
   final bool isBuy;
   const _OrderCard({required this.event, required this.isBuy});
+
+  void _openTradeChat(BuildContext context, WidgetRef ref) {
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Log in to trade')),
+      );
+      return;
+    }
+    final nostr = ref.read(nostrServiceProvider);
+    final npub = nostr.authService.encodeNpub(event.pubkey);
+    context.push('/chat/$npub');
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -105,8 +134,8 @@ class _OrderCard extends ConsumerWidget {
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: isBuy
-                        ? Colors.green.withValues(alpha: 0.15)
-                        : Colors.red.withValues(alpha: 0.15),
+                        ? scheme.tertiaryContainer
+                        : scheme.errorContainer,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -114,7 +143,9 @@ class _OrderCard extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
-                      color: isBuy ? Colors.green : Colors.red,
+                      color: isBuy
+                          ? scheme.onTertiaryContainer
+                          : scheme.onErrorContainer,
                     ),
                   ),
                 ),
@@ -179,12 +210,12 @@ class _OrderCard extends ConsumerWidget {
                   ),
                 ),
                 FilledButton.tonal(
-                  onPressed: () {},
+                  onPressed: () => _openTradeChat(context, ref),
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 30),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                   ),
-                  child: const Text('Trade', style: TextStyle(fontSize: 12)),
+                  child: const Text('Trade', style: TextStyle(fontSize: 13)),
                 ),
               ],
             ),

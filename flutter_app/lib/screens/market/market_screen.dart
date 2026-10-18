@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../providers/app_providers.dart';
 import '../../models/nostr_models.dart';
@@ -117,7 +118,7 @@ class _ProductCard extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
-        onTap: () {},
+        onTap: () => context.push('/thread', extra: event),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

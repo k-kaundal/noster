@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/app_providers.dart';
 import '../../services/relay_pool.dart';
@@ -19,6 +20,13 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   bool _showNsec = false;
   bool _notificationsEnabled = true;
 
@@ -213,13 +221,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: const Text('Source Code'),
             subtitle: const Text('github.com/nostrfeed'),
             trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () {},
+            onTap: () => _openUrl('https://github.com/nostrfeed'),
           ),
           ListTile(
             leading: const Icon(Icons.description),
             title: const Text('Terms & Privacy'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {},
+            onTap: () => _openUrl('https://nostrfeed.com/terms'),
           ),
           const SizedBox(height: 32),
         ],

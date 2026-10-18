@@ -150,16 +150,16 @@ class _CommunityCard extends StatelessWidget {
                     ),
                     const Spacer(),
                     SizedBox(
-                      height: 30,
+                      height: 44,
                       child: FilledButton.tonal(
                         onPressed: () {},
                         style: FilledButton.styleFrom(
                           padding:
-                              const EdgeInsets.symmetric(horizontal: 14),
+                              const EdgeInsets.symmetric(horizontal: 18),
                           minimumSize: Size.zero,
                         ),
                         child: const Text('Join',
-                            style: TextStyle(fontSize: 12)),
+                            style: TextStyle(fontSize: 13)),
                       ),
                     ),
                   ],

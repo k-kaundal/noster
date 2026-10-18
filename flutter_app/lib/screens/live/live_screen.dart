@@ -1,12 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../providers/app_providers.dart';
 import '../../models/nostr_models.dart';
 
 class LiveScreen extends ConsumerWidget {
   const LiveScreen({super.key});
+
+  void _showGoLiveSheet(BuildContext context, WidgetRef ref) {
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Log in to go live')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Going live needs a streaming service URL — coming soon'),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -19,7 +35,7 @@ class LiveScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
-            onPressed: () {},
+            onPressed: () => context.push('/search'),
             tooltip: 'Search streams',
           ),
         ],
@@ -49,7 +65,7 @@ class LiveScreen extends ConsumerWidget {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
+        onPressed: () => _showGoLiveSheet(context, ref),
         icon: const Icon(Icons.videocam),
         label: const Text('Go Live'),
       ),
@@ -73,7 +89,10 @@ class _StreamCard extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
-        onTap: () {},
+        onTap: () {
+          // Open the stream detail thread — same view the feed uses
+          context.push('/thread', extra: event);
+        },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

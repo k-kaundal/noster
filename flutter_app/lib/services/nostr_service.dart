@@ -122,6 +122,31 @@ class NostrService {
     );
   }
 
+  /// NIP-52 time-based calendar event (kind 31923, addressable).
+  NostrEvent createCalendarEvent({
+    required String title,
+    required int start,
+    String? location,
+    String description = '',
+    String? identifier,
+  }) {
+    _requireSigning();
+    final d = identifier ??
+        'event-${DateTime.now().millisecondsSinceEpoch}-${_auth.pubkey!.substring(0, 8)}';
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: 31923,
+      content: description,
+      tags: [
+        ['d', d],
+        ['title', title],
+        ['start', '$start'],
+        if (location != null && location.isNotEmpty) ['location', location],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
   NostrEvent updateProfile(NostrProfile profile) {
     _requireSigning();
     return authService.signEvent(

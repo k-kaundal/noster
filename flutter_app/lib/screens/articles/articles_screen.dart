@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/app_providers.dart';
 import '../../models/nostr_models.dart';
+import '../../utils/markdown.dart';
 
 class ArticlesScreen extends ConsumerWidget {
   const ArticlesScreen({super.key});
@@ -19,7 +24,7 @@ class ArticlesScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
-            onPressed: () {},
+            onPressed: () => context.push('/search'),
             tooltip: 'Search articles',
           ),
         ],
@@ -67,10 +72,14 @@ class _ArticleCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final title = event.getTag('title') ?? 'Untitled';
+    // Use markdownToText for a clean summary without formatting artifacts
     final summary = event.getTag('summary') ??
-        (event.content.length > 140
-            ? '${event.content.substring(0, 140)}…'
-            : event.content);
+        markdownToText(event.content).substring(
+          0,
+          markdownToText(event.content).length > 180
+              ? 180
+              : markdownToText(event.content).length,
+        );
     final image = event.getTag('image');
     final publishedAt = event.getTag('published_at') != null
         ? DateTime.fromMillisecondsSinceEpoch(
@@ -184,36 +193,99 @@ class _ArticleCard extends ConsumerWidget {
   void _openArticle(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _ArticleReaderScreen(event: event),
+        builder: (_) => ArticleReaderScreen(event: event),
       ),
     );
   }
 }
 
-class _ArticleReaderScreen extends StatelessWidget {
+/// Full article reader with proper Markdown rendering via flutter_markdown.
+class ArticleReaderScreen extends ConsumerWidget {
   final NostrEvent event;
-  const _ArticleReaderScreen({required this.event});
+  const ArticleReaderScreen({super.key, required this.event});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     final title = event.getTag('title') ?? 'Untitled';
     final image = event.getTag('image');
+    final profileAsync = ref.watch(profileProvider(event.pubkey));
 
     return Scaffold(
-      appBar: AppBar(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+      appBar: AppBar(
+        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share_outlined),
+            tooltip: 'Share',
+            onPressed: () {
+              // Share the article
+            },
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Title
             Text(
               title,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    height: 1.3,
+                  ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+
+            // Author row
+            Row(
+              children: [
+                profileAsync.when(
+                  data: (profile) => CircleAvatar(
+                    radius: 16,
+                    backgroundImage: profile?.picture != null
+                        ? CachedNetworkImageProvider(profile!.picture!)
+                        : null,
+                    child: profile?.picture == null
+                        ? const Icon(Icons.person, size: 16)
+                        : null,
+                  ),
+                  loading: () => const CircleAvatar(radius: 16),
+                  error: (_, _) => const CircleAvatar(
+                      radius: 16, child: Icon(Icons.person, size: 16)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        profileAsync.value?.displayNameOrName ??
+                            '${event.pubkey.substring(0, 8)}…',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        timeago.format(
+                          DateTime.fromMillisecondsSinceEpoch(
+                              event.createdAt * 1000),
+                        ),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Hero image
             if (image != null)
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -224,15 +296,128 @@ class _ArticleReaderScreen extends StatelessWidget {
                   errorWidget: (_, _, _) => const SizedBox.shrink(),
                 ),
               ),
-            const SizedBox(height: 16),
-            Text(
-              event.content,
-              style: const TextStyle(fontSize: 16, height: 1.7),
+            if (image != null) const SizedBox(height: 20),
+
+            // Markdown content
+            MarkdownBody(
+              data: event.content,
+              selectable: true,
+              shrinkWrap: true,
+              softLineBreak: true,
+              styleSheet: MarkdownStyleSheet(
+                p: TextStyle(
+                  fontSize: 16,
+                  height: 1.7,
+                  color: scheme.onSurface,
+                ),
+                h1: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: scheme.onSurface,
+                  height: 1.3,
+                ),
+                h2: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: scheme.onSurface,
+                  height: 1.3,
+                ),
+                h3: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface,
+                  height: 1.3,
+                ),
+                h4: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface,
+                ),
+                blockquote: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 15,
+                ),
+                blockquoteDecoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: scheme.primary,
+                      width: 3,
+                    ),
+                  ),
+                ),
+                code: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  backgroundColor: scheme.surfaceContainerHighest,
+                  color: scheme.onSurface,
+                ),
+                codeblockDecoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: scheme.outline.withValues(alpha: 0.2),
+                  ),
+                ),
+                a: TextStyle(
+                  color: scheme.primary,
+                  decoration: TextDecoration.underline,
+                ),
+                listBullet: TextStyle(
+                  color: scheme.onSurface,
+                  fontSize: 16,
+                ),
+                img: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 12,
+                ),
+              ),
+              onTapLink: (text, href, title) {
+                if (href != null) {
+                  _openLink(href);
+                }
+              },
+              imageBuilder: (uri, title, alt) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CachedNetworkImage(
+                      imageUrl: uri.toString(),
+                      fit: BoxFit.cover,
+                      placeholder: (_, _) => Container(
+                        height: 200,
+                        color: scheme.surfaceContainerHighest,
+                        child: const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                      errorWidget: (_, _, _) => Container(
+                        height: 120,
+                        color: scheme.surfaceContainerHighest,
+                        child: const Center(
+                          child: Icon(Icons.broken_image_outlined),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
+
+            const SizedBox(height: 32),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _openLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 }
 

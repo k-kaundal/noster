@@ -36,6 +36,10 @@ class UploadService {
   }
 
   /// Upload raw bytes. Returns the public URL.
+  ///
+  /// Blossom BUD-01 specifies PUT with the raw file bytes as the request body
+  /// and the file's MIME type as Content-Type. The old code sent a POST
+  /// multipart, which most Blossom servers reject or ignore.
   Future<String> uploadBytes(
       Uint8List bytes, String mimeType, String fileName) async {
     final auth = await _authService.getStoredAuth();
@@ -47,7 +51,7 @@ class UploadService {
     final hash = sha256.convert(bytes);
     final hashHex = HEX.encode(hash.bytes);
 
-    // Build the Blossom auth event (kind 24242)
+    // Build the Blossom auth event (kind 24242, per BUD-02)
     final expiration =
         (DateTime.now().millisecondsSinceEpoch ~/ 1000) + 300; // 5 min
     final authEvent = _nostrService.authService.signEvent(
@@ -66,14 +70,13 @@ class UploadService {
     Exception? lastError;
     for (final server in _servers) {
       try {
+        // BUD-01: PUT /upload with raw bytes, not multipart
         final uri = Uri.parse('$server/upload');
-        final request = http.MultipartRequest('POST', uri)
+        final request = http.Request('PUT', uri)
           ..headers['Authorization'] = authHeader
-          ..files.add(http.MultipartFile.fromBytes(
-            'file',
-            bytes,
-            filename: fileName,
-          ));
+          ..headers['Content-Type'] = mimeType
+          ..headers['Content-Length'] = '${bytes.length}'
+          ..bodyBytes = bytes;
 
         final streamed = await request.send().timeout(
           const Duration(seconds: 60),
@@ -83,9 +86,22 @@ class UploadService {
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
           final json = jsonDecode(response.body) as Map<String, dynamic>;
+
+          // BUD-01 returns `{url, sha256, size, type, uploaded, tags: [...]}`
+          // The `url` field is the primary way to get the file's address.
           final url = json['url'] as String?;
           if (url != null && url.isNotEmpty) return url;
-          // Some servers return the sha256 — construct the URL
+
+          // Fallback: some servers put the URL in a tags array
+          final tags = (json['tags'] as List?)
+                  ?.map((t) => List<String>.from(t as List))
+                  .toList() ??
+              [];
+          for (final tag in tags) {
+            if (tag.length >= 2 && tag[0] == 'url') return tag[1];
+          }
+
+          // Last resort: construct from sha256
           final returnedHash = json['sha256'] as String?;
           if (returnedHash != null) {
             return '$server/$returnedHash';

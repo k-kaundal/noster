@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,6 +35,16 @@ class PostCard extends ConsumerWidget {
     final repostedEvent = extractRepostedEvent(event);
     final displayEvent = repostedEvent ?? event;
     final isRepost = repostedEvent != null;
+
+    // ─── Skip non-displayable events ────────────────────────────────
+    // Some events that arrive via kind 1/6/16 filters have content that is
+    // raw JSON rather than a human-readable note. This happens when a
+    // generic repost (kind 16) wraps a non-note kind, or when a kind 1
+    // contains machine-readable JSON. Rendering it as text shows raw JSON
+    // to the user. Instead we show a compact placeholder.
+    if (!_isDisplayable(displayEvent)) {
+      return const SizedBox.shrink();
+    }
 
     final profileAsync = ref.watch(profileProvider(displayEvent.pubkey));
     final reposterProfileAsync = isRepost
@@ -305,7 +317,12 @@ class PostCard extends ConsumerWidget {
   void _handleShare(BuildContext context, WidgetRef ref, NostrEvent displayEvent) {
     final nostr = ref.read(nostrServiceProvider);
     final note1 = nostr.authService.encodeNote(displayEvent.id);
-    Share.share('nostr:$note1');
+    // sharePositionOrigin is required on iOS to anchor the share sheet
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box != null
+        ? box.localToGlobal(Offset.zero) & box.size
+        : const Rect.fromLTWH(0, 0, 100, 100);
+    Share.share('nostr:$note1', sharePositionOrigin: origin);
   }
 
   void _showLoginPrompt(BuildContext context) {
@@ -431,4 +448,57 @@ class _ActionButton extends StatelessWidget {
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
     return count.toString();
   }
+}
+
+/// Whether an event should be rendered as a post card.
+///
+/// Returns false for events whose content is machine-readable JSON rather
+/// than human-readable text. This catches:
+/// - Kind 0 profile metadata wrapped in a generic repost (kind 16)
+/// - Kind 3 contact lists wrapped in a generic repost
+/// - Kind 10002 relay lists wrapped in a generic repost
+/// - Any kind 1 whose content starts with `{` (JSON payload, not a note)
+///
+/// The web app handles this by only attempting `JSON.parse` when content
+/// starts with `{` and validating the parsed object has `id` and `content`
+/// string fields. We mirror that here.
+bool _isDisplayable(NostrEvent event) {
+  // Only kind 1 (text note) should be rendered as a post
+  if (event.kind != 1) return false;
+
+  final trimmed = event.content.trim();
+  if (trimmed.isEmpty) return true; // Empty note is fine (e.g. media-only)
+
+  // If it starts with `{`, it's almost certainly JSON, not a note.
+  // Some clients embed JSON in kind 1 for machine-readable data — those
+  // aren't meant to be read as posts.
+  if (trimmed.startsWith('{')) {
+    // Exception: a tiny number of clients post JSON that IS the note content.
+    // We try to parse it and check if it looks like a Nostr event.
+    try {
+      final parsed = jsonDecode(trimmed) as Map<String, dynamic>;
+      // If it has an `id` and `content` field, it's an embedded event,
+      // not a note. Don't display it.
+      if (parsed.containsKey('id') && parsed.containsKey('content')) {
+        return false;
+      }
+      // If it has a `name` or `about` field, it's profile metadata.
+      if (parsed.containsKey('name') || parsed.containsKey('about')) {
+        return false;
+      }
+      // If it has a `relays` field, it's a relay list.
+      if (parsed.containsKey('relays')) {
+        return false;
+      }
+      // Otherwise it might be a legitimate note that happens to start with `{`.
+      // Let it through — the NoteContent renderer will handle it as text.
+      return true;
+    } catch (_) {
+      // Not valid JSON — treat it as plain text. Some notes genuinely
+      // start with `{` (e.g. "{gm}").
+      return true;
+    }
+  }
+
+  return true;
 }

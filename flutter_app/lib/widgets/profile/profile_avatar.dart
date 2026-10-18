@@ -1,7 +1,7 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/nostr_models.dart';
+import '../common/smart_network_image.dart';
 
 /// Reusable avatar widget that displays a user's profile picture
 /// with a fallback to the first letter of their name.
@@ -45,8 +45,8 @@ class ProfileAvatar extends StatelessWidget {
       backgroundColor: scheme.primaryContainer,
       child: imageUrl != null && imageUrl.isNotEmpty
           ? ClipOval(
-              child: CachedNetworkImage(
-                imageUrl: imageUrl,
+              child: SmartNetworkImage(
+                url: imageUrl,
                 width: radius * 2,
                 height: radius * 2,
                 fit: BoxFit.cover,

@@ -140,13 +140,13 @@ class _SignerStatusCard extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: hasKeys
-                    ? Colors.green.withValues(alpha: 0.15)
+                    ? scheme.tertiaryContainer
                     : scheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
                 hasKeys ? Icons.key : Icons.key_off,
-                color: hasKeys ? Colors.green : scheme.onSurfaceVariant,
+                color: hasKeys ? scheme.onTertiaryContainer : scheme.onSurfaceVariant,
               ),
             ),
             title: Text(
@@ -283,7 +283,7 @@ class _RelaysCard extends StatelessWidget {
                 Icons.circle,
                 size: 10,
                 color: relayStatus[relays[i]] == RelayState.connected
-                    ? Colors.green
+                    ? scheme.tertiary
                     : scheme.onSurfaceVariant,
               ),
               title: Text(

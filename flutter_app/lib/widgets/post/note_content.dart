@@ -1022,13 +1022,27 @@ class _NetworkImageTile extends StatelessWidget {
 }
 
 /// Try to parse an event as a repost and return the embedded original event.
-/// Returns null if not a repost or if JSON parsing fails.
+/// Returns null if not a repost, if JSON parsing fails, or if the embedded
+/// event is not a displayable kind (e.g. a profile or contact list JSON that
+/// a kind-16 generic repost happened to wrap).
 NostrEvent? extractRepostedEvent(NostrEvent event) {
   if (event.kind != 6 && event.kind != 16) return null;
   if (event.content.isEmpty) return null;
+
+  // Only attempt to parse content that looks like JSON
+  final trimmed = event.content.trim();
+  if (!trimmed.startsWith('{')) return null;
+
   try {
-    final json = jsonDecode(event.content) as Map<String, dynamic>;
-    return NostrEvent.fromJson(json);
+    final json = jsonDecode(trimmed) as Map<String, dynamic>;
+    final parsed = NostrEvent.fromJson(json);
+
+    // Kind 6 is specifically a repost of kind 1. Kind 16 can wrap anything,
+    // but we only want to display text notes — wrapping a kind 0 (profile)
+    // or kind 3 (contacts) would render raw JSON as the post body.
+    if (parsed.kind != 1) return null;
+
+    return parsed;
   } catch (_) {
     return null;
   }

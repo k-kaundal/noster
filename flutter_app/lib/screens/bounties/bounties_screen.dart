@@ -141,10 +141,10 @@ class _BountyCard extends ConsumerWidget {
         DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
 
     final statusColor = switch (status) {
-      'open' => Colors.green,
-      'in_progress' => Colors.orange,
-      'completed' => Colors.grey,
-      _ => Colors.green,
+      'open' => scheme.tertiary,
+      'in_progress' => scheme.primary,
+      'completed' => scheme.onSurfaceVariant,
+      _ => scheme.tertiary,
     };
 
     return Card(

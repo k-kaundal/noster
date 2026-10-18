@@ -1,12 +1,15 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 import '../../providers/app_providers.dart';
 import '../../models/nostr_models.dart';
+import '../../widgets/common/smart_network_image.dart';
+import '../../widgets/zap/zap_sheet.dart';
 
 class ReelsScreen extends ConsumerStatefulWidget {
   const ReelsScreen({super.key});
@@ -204,7 +207,48 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
   Future<void> _share() async {
     final source = _ReelVideoSource.of(widget.event);
     final url = source?.url ?? 'nostr:${widget.event.id}';
-    await Share.share(url, subject: 'Nostr reel');
+    // sharePositionOrigin is required on iOS to anchor the share sheet
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box != null
+        ? box.localToGlobal(Offset.zero) & box.size
+        : const Rect.fromLTWH(0, 0, 100, 100);
+    await Share.share(url, subject: 'Nostr reel', sharePositionOrigin: origin);
+  }
+
+  void _handleLike() {
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      _showLoginPrompt();
+      return;
+    }
+    final nostr = ref.read(nostrServiceProvider);
+    nostr.publish(nostr.createReaction(widget.event));
+    ref.invalidate(reactionsProvider(widget.event.id));
+    ref.invalidate(engagementProvider(widget.event.id));
+  }
+
+  void _handleComment() {
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      _showLoginPrompt();
+      return;
+    }
+    // Reels comment thread is the same thread view the feed uses
+    context.push('/thread', extra: widget.event);
+  }
+
+  void _handleZap() {
+    showZapDialog(
+      context: context,
+      targetEvent: widget.event,
+      targetPubkey: widget.event.pubkey,
+    );
+  }
+
+  void _showLoginPrompt() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Log in to interact with reels')),
+    );
   }
 
   @override
@@ -234,8 +278,8 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                     ),
                   )
                 : source?.poster != null
-                    ? CachedNetworkImage(
-                        imageUrl: source!.poster!,
+                    ? SmartNetworkImage(
+                        url: source!.poster!,
                         fit: BoxFit.contain,
                         placeholder: (_, _) => const _VideoLoading(),
                         errorWidget: (_, _, _) => const _VideoLoading(),
@@ -283,13 +327,13 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                 icon: Icons.favorite,
                 label: _formatCount(likes),
                 color: Colors.redAccent,
-                onTap: () {},
+                onTap: _handleLike,
               ),
               const SizedBox(height: 20),
               _ReelAction(
                 icon: Icons.chat_bubble_outline,
                 label: _formatCount(comments),
-                onTap: () {},
+                onTap: _handleComment,
               ),
               const SizedBox(height: 20),
               _ReelAction(
@@ -302,7 +346,7 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                 icon: Icons.bolt,
                 label: 'Zap',
                 color: Colors.amber,
-                onTap: () {},
+                onTap: _handleZap,
               ),
             ],
           ),
