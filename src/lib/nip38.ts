@@ -31,6 +31,7 @@ export const USER_STATUS_KIND = 30315;
  */
 export const STATUS_STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 
+/** The two types the spec defines. Anything else is accepted but not iconified. */
 export type StatusType = 'general' | 'music' | string;
 
 export interface UserStatus {
@@ -46,6 +47,14 @@ export interface UserStatus {
   reference?: string;
   /** Unix seconds, when the author set an expiry. */
   expiresAt?: number;
+  /**
+   * Buzz-style plain status emoji: `["emoji", "🎉"]`.
+   *
+   * Two elements, separate from NIP-30 custom emojis (three or more). This is
+   * what enables emoji-only statuses: blank content plus this tag still reads
+   * as a live status rather than a cleared one.
+   */
+  statusEmoji?: string;
 }
 
 const tagValue = (event: NostrEvent, name: string): string | undefined =>
@@ -55,6 +64,19 @@ function readExpiration(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Reads the Buzz-style plain status emoji, if there is one.
+ *
+ * Distinguished from NIP-30 custom emojis by length: exactly two elements is
+ * a plain emoji, three or more is a custom emoji with a URL. The two shapes
+ * never overlap.
+ */
+function readStatusEmoji(event: NostrEvent): string | undefined {
+  return event.tags.find(
+    ([name, value, url]) => name === 'emoji' && !!value && !url
+  )?.[1];
 }
 
 /** Reads a kind 30315, or null when it is not one worth showing. */
@@ -72,7 +94,19 @@ export function parseUserStatus(event: NostrEvent): UserStatus | null {
     content: event.content,
     reference: tagValue(event, 'r'),
     expiresAt: readExpiration(tagValue(event, 'expiration')),
+    statusEmoji: readStatusEmoji(event),
   };
+}
+
+/**
+ * Whether a status has been cleared.
+ *
+ * Blank content with no status emoji is the spec's way of saying "nothing to
+ * show". Blank content *with* an emoji is still a live status — the emoji is
+ * the whole status.
+ */
+export function isCleared(status: UserStatus): boolean {
+  return !status.content.trim() && !status.statusEmoji;
 }
 
 /**
@@ -80,11 +114,11 @@ export function parseUserStatus(event: NostrEvent): UserStatus | null {
  *
  * Two reasons to hide it: the author set an expiry and it has passed, or the
  * status is older than the staleness window and the author never said when it
- * ends. A cleared status — empty content — is also hidden, which is how an
- * author says "nothing to show" without deleting the event.
+ * ends. A cleared status — empty content with no emoji — is also hidden,
+ * which is how an author says "nothing to show" without deleting the event.
  */
 export function isStatusActive(status: UserStatus, now = Date.now()): boolean {
-  if (!status.content.trim()) return false;
+  if (isCleared(status)) return false;
 
   if (status.expiresAt && status.expiresAt * 1000 <= now) return false;
 
@@ -124,16 +158,24 @@ export function buildStatusTags(input: {
   type: StatusType;
   reference?: string;
   expiresAt?: number;
+  statusEmoji?: string;
 }): string[][] {
   const tags: string[][] = [['d', input.type]];
 
   if (input.reference) tags.push(['r', input.reference]);
   if (input.expiresAt) tags.push(['expiration', String(input.expiresAt)]);
+  if (input.statusEmoji) tags.push(['emoji', input.statusEmoji]);
 
   return tags;
 }
 
-/** The tags to publish to clear a status — same address, empty content. */
+/**
+ * The tags to publish to clear a status — same address, empty content, and
+ * only the `d` tag.
+ *
+ * Stripping everything else avoids leaking a stale URL or reference after the
+ * status is gone. Amethyst's `clear()` does exactly this.
+ */
 export function clearStatusTags(type: StatusType): string[][] {
   return [['d', type]];
 }

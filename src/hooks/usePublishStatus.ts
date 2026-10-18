@@ -13,9 +13,9 @@ import {
  *
  * A status is addressable, so publishing another at the same `d` tag replaces
  * the previous one — there is no "list of statuses" to manage, only the
- * current one per type. Clearing is the same event with empty content, which
- * is how the spec says "nothing to show" without depending on a relay
- * honouring a deletion request.
+ * current one per type. Clearing is the same event with empty content and
+ * only the `d` tag, which is how the spec says "nothing to show" without
+ * depending on a relay honouring a deletion request.
  */
 export function usePublishStatus() {
   const { mutateAsync: createEvent } = useNostrPublish();
@@ -26,7 +26,8 @@ export function usePublishStatus() {
       type: StatusType;
       content: string;
       reference?: string;
-      /** Seconds from now. Omit for the default session-length status. */
+      statusEmoji?: string;
+      /** Seconds from now. Omit for no expiry. */
       expiresInSeconds?: number;
     }) => {
       const expiresAt = input.expiresInSeconds
@@ -40,6 +41,7 @@ export function usePublishStatus() {
           type: input.type,
           reference: input.reference,
           expiresAt,
+          statusEmoji: input.statusEmoji,
         }),
       });
     },
@@ -50,7 +52,12 @@ export function usePublishStatus() {
   });
 }
 
-/** Clears a status by publishing an empty one at the same address. */
+/**
+ * Clears a status by publishing an empty one at the same address.
+ *
+ * Only the `d` tag is kept — stripping everything else avoids leaking a
+ * stale URL or reference after the status is gone.
+ */
 export function useClearStatus() {
   const { mutateAsync: createEvent } = useNostrPublish();
   const queryClient = useQueryClient();

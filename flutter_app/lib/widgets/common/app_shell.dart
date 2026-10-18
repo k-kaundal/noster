@@ -46,12 +46,6 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       ),
       drawer: _buildDrawer(context, auth),
-      floatingActionButton: index == 0 && auth.isLoggedIn && !auth.isReadOnly
-          ? FloatingActionButton(
-              onPressed: () => context.push('/compose'),
-              child: const Icon(Icons.edit),
-            )
-          : null,
     );
   }
 

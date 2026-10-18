@@ -242,7 +242,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   itemBuilder: (context, index) {
                     final msg = thread[index];
                     final isSent = msg.pubkey == auth.pubkey;
-                    return _messageBubble(context, msg, isSent);
+                    return _MessageBubble(
+                      event: msg,
+                      isSent: isSent,
+                    );
                   },
                 );
               },
@@ -262,56 +265,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             (e.pubkey == peerPubkey && e.getTag('p') == myPubkey))
         .toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  }
-
-  Widget _messageBubble(BuildContext context, NostrEvent msg, bool isSent) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final timestamp =
-        DateTime.fromMillisecondsSinceEpoch(msg.createdAt * 1000);
-
-    return Align(
-      alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.72,
-        ),
-        decoration: BoxDecoration(
-          color: isSent ? colorScheme.primary : colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isSent ? 16 : 4),
-            bottomRight: Radius.circular(isSent ? 4 : 16),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment:
-              isSent ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: [
-            Text(
-              msg.content,
-              style: TextStyle(
-                color: isSent
-                    ? colorScheme.onPrimary
-                    : colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              timeago.format(timestamp),
-              style: TextStyle(
-                fontSize: 10,
-                color: isSent
-                    ? colorScheme.onPrimary.withValues(alpha: 0.7)
-                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildInputBar(
@@ -373,17 +326,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     setState(() => _isSending = true);
     try {
       final nostr = ref.read(nostrServiceProvider);
-      final event = nostr.authService.signEvent(
-        privateKey: auth.privateKey!,
-        kind: 4,
-        content: text,
-        tags: [
-          ['p', peerPubkey]
-        ],
-      );
+      final event = nostr.createEncryptedDm(peerPubkey, text);
       nostr.publish(event);
       _messageController.clear();
       ref.invalidate(dmsProvider);
+      // Scroll to bottom after send
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -476,4 +431,99 @@ class Conversation {
     this.lastMessage,
     this.unreadCount = 0,
   });
+}
+
+/// A message bubble that decrypts its content on demand.
+class _MessageBubble extends ConsumerStatefulWidget {
+  final NostrEvent event;
+  final bool isSent;
+
+  const _MessageBubble({
+    required this.event,
+    required this.isSent,
+  });
+
+  @override
+  ConsumerState<_MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends ConsumerState<_MessageBubble> {
+  String? _decrypted;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _decrypt();
+  }
+
+  Future<void> _decrypt() async {
+    final nostr = ref.read(nostrServiceProvider);
+    final result = await nostr.decryptDm(widget.event);
+    if (mounted) {
+      setState(() {
+        _decrypted = result;
+        _failed = result == null;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final timestamp =
+        DateTime.fromMillisecondsSinceEpoch(widget.event.createdAt * 1000);
+    final isSent = widget.isSent;
+
+    final displayText = _failed
+        ? '🔒 Unable to decrypt'
+        : (_decrypted ?? '…');
+
+    return Align(
+      alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.72,
+        ),
+        decoration: BoxDecoration(
+          color: isSent
+              ? colorScheme.primary
+              : colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isSent ? 16 : 4),
+            bottomRight: Radius.circular(isSent ? 4 : 16),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment:
+              isSent ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            Text(
+              displayText,
+              style: TextStyle(
+                color: isSent
+                    ? colorScheme.onPrimary
+                    : colorScheme.onSurfaceVariant,
+                fontStyle: _failed ? FontStyle.italic : FontStyle.normal,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              timeago.format(timestamp),
+              style: TextStyle(
+                fontSize: 10,
+                color: isSent
+                    ? colorScheme.onPrimary.withValues(alpha: 0.7)
+                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

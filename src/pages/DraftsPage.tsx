@@ -21,9 +21,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useMyDrafts } from '@/hooks/useArticles';
-import { useNostrPublish } from '@/hooks/useNostrPublish';
+import { useDeleteDraft } from '@/hooks/useDeleteDraft';
 import { useSeo } from '@/hooks/useSeo';
-import { useToast } from '@/hooks/useToast';
 import { timeAgo } from '@/lib/time';
 import type { Article } from '@/lib/article';
 
@@ -105,35 +104,13 @@ export function DraftsPage() {
 }
 
 function DraftCard({ draft }: { draft: Article }) {
-  const { mutateAsync: publishEvent } = useNostrPublish();
-  const { toast } = useToast();
+  const deleteDraft = useDeleteDraft();
   const [deleting, setDeleting] = useState(false);
 
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      // NIP-37 deletion: an empty wrap at the same address replaces the draft
-      await publishEvent({
-        kind: 31234,
-        content: '',
-        tags: [
-          ['d', draft.slug],
-          ['k', '30023'],
-          ['expiration', String(Math.floor(Date.now() / 1000) + 90 * 86400)],
-        ],
-      });
-
-      toast({
-        title: 'Draft deleted',
-        description: 'Relays that honour replacements will drop it.',
-      });
-    } catch (error) {
-      toast({
-        title: 'Could not delete',
-        description:
-          error instanceof Error ? error.message : 'Something went wrong.',
-        variant: 'destructive',
-      });
+      await deleteDraft.mutateAsync({ identifier: draft.slug });
     } finally {
       setDeleting(false);
     }

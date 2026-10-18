@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/nostr_models.dart';
 import '../services/auth_service.dart';
@@ -254,7 +255,7 @@ final liveStreamsProvider = FutureProvider<List<NostrEvent>>((ref) async {
 });
 
 /// Theme mode
-final themeModeProvider = StateProvider<bool>((ref) => true);
+final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
 
 /// Selected relay
 final selectedRelayProvider = StateProvider<String>((ref) => Env.defaultRelays.first);

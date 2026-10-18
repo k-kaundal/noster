@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -12,6 +13,14 @@ import {
 
 const TIMEOUT = 6000;
 const LIMIT = 300;
+
+export interface RankedApp {
+  handler: AppHandler;
+  /** How many people recommended it. */
+  recommendations: number;
+  /** The kinds it was recommended for. */
+  recommendedFor: number[];
+}
 
 /**
  * Every app handler on the relay, with the recommendations behind them.
@@ -73,6 +82,25 @@ export function useAppDirectory() {
     isLoading: query.isLoading,
     error: query.error as Error | null,
   };
+}
+
+/**
+ * The apps whose name or description matches a search.
+ *
+ * Done in the hook rather than the component so the same filtering is
+ * available anywhere the directory is shown.
+ */
+export function useAppSearch(apps: readonly RankedApp[], search: string) {
+  return useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return apps;
+
+    return apps.filter(
+      ({ handler }) =>
+        handler.name.toLowerCase().includes(term) ||
+        handler.about?.toLowerCase().includes(term)
+    );
+  }, [apps, search]);
 }
 
 export type { AppHandler, AppRecommendation };

@@ -161,11 +161,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
               selected: {_currentThemeMode(ref)},
               onSelectionChanged: (modes) {
-                final mode = modes.first;
-                // The current themeModeProvider is a bool (true = dark).
-                // Map: system defaults to dark for now.
-                ref.read(themeModeProvider.notifier).state =
-                    mode == ThemeMode.dark;
+                ref.read(themeModeProvider.notifier).state = modes.first;
               },
             ),
           ),
@@ -313,8 +309,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   ThemeMode _currentThemeMode(WidgetRef ref) {
-    final isDark = ref.watch(themeModeProvider);
-    return isDark ? ThemeMode.dark : ThemeMode.light;
+    return ref.watch(themeModeProvider);
   }
 
   String _themeLabel(WidgetRef ref) {

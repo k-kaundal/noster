@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import { UserPlus, Check, Sparkles } from 'lucide-react';
@@ -13,12 +12,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useFollows } from '@/hooks/useFollows';
+import { useStarterPacks } from '@/hooks/useStarterPacks';
+import { useFollowAll } from '@/hooks/useFollowAll';
 import { useSeo } from '@/hooks/useSeo';
-import { useToast } from '@/hooks/useToast';
-import { useLists } from '@/hooks/useLists';
 import { genUserName } from '@/lib/genUserName';
-import { STARTER_PACK_KIND, type PeopleList } from '@/lib/lists';
+import type { PeopleList } from '@/lib/starterPacks';
 import { timeAgo } from '@/lib/time';
 
 /**
@@ -41,8 +39,7 @@ export function StarterPacksPage() {
     path: '/starter-packs',
   });
 
-  const { data: lists, isLoading, error } = useLists();
-  const packs = (lists ?? []).filter((list) => list.kind === STARTER_PACK_KIND);
+  const { packs, isLoading, error } = useStarterPacks();
 
   return (
     <Layout>
@@ -93,11 +90,7 @@ export function StarterPacksPage() {
 
 function PackCard({ pack }: { pack: PeopleList }) {
   const { user } = useCurrentUser();
-  const { followingList, followMany, isFollowLoading } = useFollows(
-    user?.pubkey ?? ''
-  );
-  const { toast } = useToast();
-  const [done, setDone] = useState(false);
+  const { followAll, isFollowing, isDone } = useFollowAll();
 
   const author = useAuthor(pack.author);
   const metadata = author.data?.metadata;
@@ -105,46 +98,7 @@ function PackCard({ pack }: { pack: PeopleList }) {
     metadata?.display_name || metadata?.name || genUserName(pack.author);
   const authorNpub = nip19.npubEncode(pack.author);
 
-  const alreadyFollowing = pack.people.filter((pubkey) =>
-    followingList.some((f) => f.pubkey === pubkey)
-  ).length;
-
-  const handleFollowAll = async () => {
-    if (!user) {
-      toast({
-        title: 'Log in first',
-        description: 'You need an account to follow people.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    try {
-      const newFollows = pack.people.filter(
-        (pubkey) => !followingList.some((f) => f.pubkey === pubkey)
-      );
-
-      if (!newFollows.length) {
-        setDone(true);
-        return;
-      }
-
-      await followMany(newFollows);
-
-      setDone(true);
-      toast({
-        title: 'Following',
-        description: `You are now following ${newFollows.length} new ${newFollows.length === 1 ? 'person' : 'people'} from "${pack.title}".`,
-      });
-    } catch (error) {
-      toast({
-        title: 'Could not follow',
-        description:
-          error instanceof Error ? error.message : 'Something went wrong.',
-        variant: 'destructive',
-      });
-    }
-  };
+  const done = isDone(pack.address);
 
   return (
     <Card className="overflow-hidden">
@@ -175,11 +129,6 @@ function PackCard({ pack }: { pack: PeopleList }) {
             <p className="text-sm font-medium">
               {pack.people.length} {pack.people.length === 1 ? 'person' : 'people'}
             </p>
-            {alreadyFollowing > 0 && (
-              <p className="text-xs text-muted-foreground">
-                You follow {alreadyFollowing} already
-              </p>
-            )}
           </div>
         </div>
 
@@ -204,8 +153,8 @@ function PackCard({ pack }: { pack: PeopleList }) {
 
         <Button
           className="w-full"
-          onClick={handleFollowAll}
-          disabled={isFollowLoading || done || !user}
+          onClick={() => followAll(pack)}
+          disabled={isFollowing || done || !user}
           variant={done ? 'outline' : 'default'}
         >
           {done ? (
@@ -213,7 +162,7 @@ function PackCard({ pack }: { pack: PeopleList }) {
               <Check className="mr-2 h-4 w-4" />
               Following
             </>
-          ) : isFollowLoading ? (
+          ) : isFollowing ? (
             'Following…'
           ) : (
             <>

@@ -1,18 +1,15 @@
 import { useState } from 'react';
-import { Code, ExternalLink, Search } from 'lucide-react';
+import { Code, Search } from 'lucide-react';
 
 import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAuthor } from '@/hooks/useAuthor';
-import { useAppDirectory } from '@/hooks/useAppDirectory';
+import { useAppDirectory, useAppSearch } from '@/hooks/useAppDirectory';
 import { useSeo } from '@/hooks/useSeo';
-import { genUserName } from '@/lib/genUserName';
+import { AppCard } from '@/components/apps';
 
 /**
  * Mini apps: what other people use to open Nostr content.
@@ -35,12 +32,7 @@ export function MiniAppsPage() {
 
   const { apps, isLoading, error } = useAppDirectory();
   const [search, setSearch] = useState('');
-
-  const filtered = apps.filter(
-    ({ handler }) =>
-      handler.name.toLowerCase().includes(search.toLowerCase()) ||
-      handler.about?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useAppSearch(apps, search);
 
   return (
     <Layout>
@@ -95,91 +87,13 @@ export function MiniAppsPage() {
           />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
-            {filtered.map(({ handler, recommendations, recommendedFor }) => (
-              <AppCard
-                key={handler.address}
-                handler={handler}
-                recommendations={recommendations}
-                recommendedFor={recommendedFor}
-              />
+            {filtered.map((app) => (
+              <AppCard key={app.handler.address} app={app} />
             ))}
           </div>
         )}
       </div>
     </Layout>
-  );
-}
-
-function AppCard({
-  handler,
-  recommendations,
-}: {
-  handler: ReturnType<typeof useAppDirectory>['apps'][number]['handler'];
-  recommendations: number;
-  recommendedFor: number[];
-}) {
-  const author = useAuthor(handler.author);
-  const metadata = author.data?.metadata;
-  const authorName =
-    metadata?.display_name || metadata?.name || genUserName(handler.author);
-
-  return (
-    <Card>
-      <CardContent className="space-y-4 p-4">
-        <div className="flex items-start gap-3">
-          <Avatar className="h-10 w-10 shrink-0 rounded-lg">
-            <AvatarImage src={handler.picture} alt="" className="rounded-lg" />
-            <AvatarFallback className="rounded-lg text-sm">
-              {handler.name.slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-
-          <div className="min-w-0 flex-1 space-y-1">
-            <h3 className="font-semibold leading-tight">{handler.name}</h3>
-            <p className="text-xs text-muted-foreground">
-              by {authorName}
-            </p>
-          </div>
-        </div>
-
-        {handler.about && (
-          <p className="line-clamp-2 text-sm text-muted-foreground">
-            {handler.about}
-          </p>
-        )}
-
-        <div className="flex flex-wrap gap-1">
-          {handler.kinds.slice(0, 4).map((kind) => (
-            <Badge key={kind} variant="secondary" className="text-xs">
-              kind {kind}
-            </Badge>
-          ))}
-          {handler.kinds.length > 4 && (
-            <Badge variant="outline" className="text-xs">
-              +{handler.kinds.length - 4} more
-            </Badge>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
-          <span>
-            {recommendations} {recommendations === 1 ? 'person uses' : 'people use'} this
-          </span>
-
-          {handler.urlTemplate && (
-            <a
-              href={handler.urlTemplate.replace('<bech32>', '')}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-primary hover:underline"
-            >
-              Open
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 

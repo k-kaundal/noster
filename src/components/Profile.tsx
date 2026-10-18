@@ -29,7 +29,7 @@ import { profilePageSchema } from '@/lib/structuredData';
 import { genUserName } from '@/lib/genUserName';
 import { handleFor } from '@/lib/handle';
 import { Post } from '@/components/Post';
-import { UserStatusLine, StatusEditor } from '@/components/UserStatus';
+import { UserStatusLine, StatusEditor } from '@/components/status';
 import { NoteContent } from '@/components/NoteContent';
 import { ReportNotice } from '@/components/ReportNotice';
 import { AvatarRing } from '@/components/AvatarRing';

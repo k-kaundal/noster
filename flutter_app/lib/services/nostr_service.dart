@@ -182,6 +182,40 @@ class NostrService {
     );
   }
 
+  /// NIP-04 encrypted DM (kind 4).
+  NostrEvent createEncryptedDm(String peerPubkey, String plaintext) {
+    _requireSigning();
+    return authService.signDmEvent(
+      privateKey: _auth.privateKey!,
+      peerPubkey: peerPubkey,
+      plaintext: plaintext,
+    );
+  }
+
+  /// Decrypt a NIP-04 DM event from the current user's perspective.
+  /// Returns null if decryption fails or event isn't a DM.
+  Future<String?> decryptDm(NostrEvent event) async {
+    if (event.kind != 4) return null;
+    if (_auth.privateKey == null) return null;
+    final myPubkey = _auth.pubkey;
+    if (myPubkey == null) return null;
+    // Determine the peer's pubkey: if we sent it, the peer is the 'p' tag;
+    // otherwise the peer is the event author.
+    final peerPubkey = event.pubkey == myPubkey
+        ? event.getTag('p')
+        : event.pubkey;
+    if (peerPubkey == null || peerPubkey.isEmpty) return null;
+    try {
+      return await authService.nip04Decrypt(
+        privateKey: _auth.privateKey!,
+        peerPubkey: peerPubkey,
+        ciphertext: event.content,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _requireSigning() {
     if (!canSign) throw StateError('Must be logged in with signing key');
   }

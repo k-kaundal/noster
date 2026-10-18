@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:bip340/bip340.dart' as bip340;
 import 'package:bech32/bech32.dart';
 import 'package:hex/hex.dart';
+import 'package:pointycastle/export.dart' as pc;
 import '../models/nostr_models.dart';
 
 /// Auth state for the current user.
@@ -155,6 +158,115 @@ class AuthService {
       tags: [
         ['relay', relayUrl],
         ['challenge', challenge],
+      ],
+    );
+  }
+
+  // ── NIP-04 Encrypted DMs ──────────────────────────────────────────
+
+  /// Compute shared secret for NIP-04: ECDH(privkey, pubkey) → 32-byte X coord.
+  String _nip04SharedSecret(String privateKey, String peerPubkey) {
+    // secp256k1 ECDH: multiply peer's point by my scalar, take X coordinate
+    final ecParams = pc.ECDomainParameters('secp256k1');
+    final privBig = BigInt.parse(privateKey, radix: 16);
+    // Decompress the peer's public key (32-byte X-only → full point)
+    final peerPubBytes = _decompressPubkey(peerPubkey);
+    final peerPoint = ecParams.curve.decodePoint(peerPubBytes)!;
+    final shared = (peerPoint * privBig)!;
+    final x = shared.x!.toBigInteger()!;
+    final xHex = x.toRadixString(16).padLeft(64, '0');
+    return xHex;
+  }
+
+  /// Decompress a 32-byte X-only pubkey to a 65-byte uncompressed point.
+  List<int> _decompressPubkey(String xOnlyHex) {
+    final x = BigInt.parse(xOnlyHex, radix: 16);
+    final p = BigInt.parse('FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F', radix: 16);
+    // y² = x³ + 7 (mod p)
+    final xCubed = (x * x * x) % p;
+    final ySquared = (xCubed + BigInt.from(7)) % p;
+    // Compute y = ySquared^((p+1)/4) mod p  (p ≡ 3 mod 4)
+    final exponent = (p + BigInt.one) ~/ BigInt.from(4);
+    var y = ySquared.modPow(exponent, p);
+    // BIP-340: use even Y
+    if (y.isOdd) y = p - y;
+    final yBytes = _bigIntToBytes(y, 32);
+    final xBytes = _bigIntToBytes(x, 32);
+    return [0x04, ...xBytes, ...yBytes];
+  }
+
+  List<int> _bigIntToBytes(BigInt value, int length) {
+    final hex = value.toRadixString(16).padLeft(length * 2, '0');
+    return HEX.decode(hex);
+  }
+
+  /// NIP-04 encrypt: AES-256-CBC with random IV, base64-encoded as `<ct>?iv=<iv>`.
+  Future<String> nip04Encrypt({
+    required String privateKey,
+    required String peerPubkey,
+    required String plaintext,
+  }) async {
+    final sharedHex = _nip04SharedSecret(privateKey, peerPubkey);
+    final key = Uint8List.fromList(HEX.decode(sharedHex));
+    final ivBytes = Uint8List.fromList(
+        List<int>.generate(16, (_) => Random.secure().nextInt(256)));
+    final cipher = pc.CBCBlockCipher(pc.AESEngine())
+      ..init(true, pc.ParametersWithIV(pc.KeyParameter(key), ivBytes));
+    // PKCS7 pad
+    final plainBytes = utf8.encode(plaintext);
+    final padLen = 16 - (plainBytes.length % 16);
+    final padded = Uint8List.fromList([...plainBytes, ...List.filled(padLen, padLen)]);
+    final encrypted = cipher.process(padded);
+    final ctB64 = base64.encode(encrypted);
+    final ivB64 = base64.encode(ivBytes);
+    return '$ctB64?iv=$ivB64';
+  }
+
+  /// NIP-04 decrypt.
+  Future<String> nip04Decrypt({
+    required String privateKey,
+    required String peerPubkey,
+    required String ciphertext,
+  }) async {
+    final parts = ciphertext.split('?iv=');
+    if (parts.length != 2) throw const FormatException('Invalid NIP-04 payload');
+    final ctBytes = base64.decode(parts[0]);
+    final ivBytes = Uint8List.fromList(base64.decode(parts[1]));
+    final sharedHex = _nip04SharedSecret(privateKey, peerPubkey);
+    final key = Uint8List.fromList(HEX.decode(sharedHex));
+    final cipher = pc.CBCBlockCipher(pc.AESEngine())
+      ..init(false, pc.ParametersWithIV(pc.KeyParameter(key), ivBytes));
+    final padded = cipher.process(ctBytes);
+    // PKCS7 unpad
+    final padLen = padded.last;
+    return utf8.decode(padded.sublist(0, padded.length - padLen));
+  }
+
+  /// Sign a NIP-04 encrypted DM event.
+  NostrEvent signDmEvent({
+    required String privateKey,
+    required String peerPubkey,
+    required String plaintext,
+  }) {
+    final sharedHex = _nip04SharedSecret(privateKey, peerPubkey);
+    final key = Uint8List.fromList(HEX.decode(sharedHex));
+    final ivBytes = Uint8List.fromList(
+        List<int>.generate(16, (_) => Random.secure().nextInt(256)));
+    final cipher = pc.CBCBlockCipher(pc.AESEngine())
+      ..init(true, pc.ParametersWithIV(pc.KeyParameter(key), ivBytes));
+    final plainBytes = utf8.encode(plaintext);
+    final padLen = 16 - (plainBytes.length % 16);
+    final padded = Uint8List.fromList([...plainBytes, ...List.filled(padLen, padLen)]);
+    final encrypted = cipher.process(padded);
+    final ctB64 = base64.encode(encrypted);
+    final ivB64 = base64.encode(ivBytes);
+
+    return signEvent(
+      privateKey: privateKey,
+      kind: 4,
+      content: '$ctB64?iv=$ivB64',
+      tags: [
+        ['p', peerPubkey],
       ],
     );
   }

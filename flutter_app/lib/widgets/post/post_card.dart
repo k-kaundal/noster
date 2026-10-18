@@ -8,6 +8,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../models/nostr_models.dart';
 import '../../providers/app_providers.dart';
 import '../../services/auth_service.dart';
+import '../zap/zap_sheet.dart';
 
 /// A rich post card displaying a Nostr event with author info,
 /// content, hashtags, and action buttons.
@@ -263,13 +264,10 @@ class PostCard extends ConsumerWidget {
   }
 
   void _handleZap(BuildContext context, WidgetRef ref, AuthState auth) {
-    if (!auth.isLoggedIn || auth.isReadOnly) {
-      _showLoginPrompt(context);
-      return;
-    }
-    // TODO: Integrate Lightning zap flow
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Zap coming soon! ⚡')),
+    showZapDialog(
+      context: context,
+      targetEvent: event,
+      targetPubkey: event.pubkey,
     );
   }
 

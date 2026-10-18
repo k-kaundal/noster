@@ -42,19 +42,29 @@ export function useUserStatuses(pubkey: string | undefined) {
     staleTime: 60_000,
   });
 
-  const byType = useMemo(() => {
-    const map = new Map<StatusType, UserStatus>();
+  const { byType, general, music, others } = useMemo(() => {
+    const byType = new Map<StatusType, UserStatus>();
+    let general: UserStatus | undefined;
+    let music: UserStatus | undefined;
+    const others: UserStatus[] = [];
+
     for (const status of query.data ?? []) {
-      map.set(status.type, status);
+      byType.set(status.type, status);
+
+      if (status.type === 'general') general = status;
+      else if (status.type === 'music') music = status;
+      else others.push(status);
     }
-    return map;
+
+    return { byType, general, music, others };
   }, [query.data]);
 
   return {
     statuses: query.data ?? [],
     byType,
-    general: byType.get('general'),
-    music: byType.get('music'),
+    general,
+    music,
+    others,
     isLoading: query.isLoading,
   };
 }
