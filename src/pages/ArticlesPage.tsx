@@ -103,12 +103,17 @@ export function ArticlesPage() {
           description="Long-form writing, laid out for reading rather than scrolling."
           action={
             user ? (
-              <Button asChild variant="outline" size="sm">
-                <Link to="/write">
-                  <PenSquare className="mr-2 h-4 w-4" />
-                  Write
-                </Link>
-              </Button>
+              <div className="flex gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/drafts">Drafts</Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/write">
+                    <PenSquare className="mr-2 h-4 w-4" />
+                    Write
+                  </Link>
+                </Button>
+              </div>
             ) : undefined
           }
         />

@@ -25,9 +25,11 @@ const WalletPage = lazy(() => importChunk(() => import("./pages/WalletPage")));
 const EcashPage = lazy(() => importChunk(() => import("./pages/EcashPage")));
 const ServicesPage = lazy(() => importChunk(() => import("./pages/ServicesPage")));
 const WritePage = lazy(() => importChunk(() => import("./pages/WritePage")));
+const DraftsPage = lazy(() => importChunk(() => import("./pages/DraftsPage")));
 const CommunitiesPage = lazy(() => importChunk(() => import("./pages/CommunitiesPage")));
 const GroupsPage = lazy(() => importChunk(() => import("./pages/GroupsPage")));
 const ListsPage = lazy(() => importChunk(() => import("./pages/ListsPage")));
+const StarterPacksPage = lazy(() => importChunk(() => import("./pages/StarterPacksPage")));
 const MarketPage = lazy(() => importChunk(() => import("./pages/MarketPage")));
 const CalendarPage = lazy(() => importChunk(() => import("./pages/CalendarPage")));
 const P2PPage = lazy(() => importChunk(() => import("./pages/P2PPage")));
@@ -39,6 +41,7 @@ const ArticlesPage = lazy(() => importChunk(() => import("./pages/ArticlesPage")
 const MembershipsPage = lazy(() => importChunk(() => import("./pages/MembershipsPage")));
 const SatsDropsPage = lazy(() => importChunk(() => import("./pages/SatsDropsPage")));
 const LiveStreamingPage = lazy(() => importChunk(() => import("./pages/LiveStreamingPage")));
+const LiveStreamPage = lazy(() => importChunk(() => import("./pages/LiveStreamPage")));
 const MiniAppsPage = lazy(() => importChunk(() => import("./pages/MiniAppsPage")));
 const NIP19Page = lazy(() =>
   importChunk(() =>
@@ -104,12 +107,16 @@ export function AppRouter() {
           <Route path="/notifications" element={<NotificationsPage />} />
           {/* NIP-23 long-form articles */}
           <Route path="/write" element={<WritePage />} />
+          {/* NIP-37 drafts, encrypted to the author's own key */}
+          <Route path="/drafts" element={<DraftsPage />} />
           {/* NIP-72 moderated communities */}
           <Route path="/communities" element={<CommunitiesPage />} />
           {/* NIP-29 groups, which live on one relay rather than the network */}
           <Route path="/groups" element={<GroupsPage />} />
           {/* NIP-51 follow sets and starter packs */}
           <Route path="/lists" element={<ListsPage />} />
+          {/* NIP-51 starter packs, laid out for onboarding rather than management */}
+          <Route path="/starter-packs" element={<StarterPacksPage />} />
 
           <Route path="/market" element={<MarketPage />} />
 
@@ -139,6 +146,8 @@ export function AppRouter() {
           <Route path="/sats-drops" element={<SatsDropsPage />} />
           {/* Live Streaming: Broadcast content and earn sats in real-time */}
           <Route path="/live" element={<LiveStreamingPage />} />
+          {/* One live stream, with its chat */}
+          <Route path="/live/:naddr" element={<LiveStreamPage />} />
           {/* Mini Apps: Community-built extensions and tools */}
           <Route path="/mini-apps" element={<MiniAppsPage />} />
           {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
