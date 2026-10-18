@@ -11,6 +11,7 @@ import {
   Plus,
   Send,
   Server,
+  Smile,
   X,
 } from 'lucide-react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -26,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { MentionAutocomplete } from '@/components/MentionAutocomplete';
+import { GifPicker } from '@/components/GifPicker';
 import {
   buildQuoteTags,
   extractMentionPubkeys,
@@ -42,6 +44,7 @@ import { Badge } from '@/components/ui/badge';
 import { useRelays } from '@/hooks/useRelays';
 import { relayDisplayName } from '@/lib/relay';
 import { POLL_KIND, buildPollTags } from '@/lib/poll';
+import { gifImetaTag, type GifResult } from '@/lib/gif';
 import { NoteContent } from '@/components/NoteContent';
 import { ContentWarningField } from '@/components/notes/ContentWarningField';
 import { ExpiryField } from '@/components/notes/ExpiryField';
@@ -64,6 +67,7 @@ export function Compose() {
    */
   const [content, setContent] = useAccountStored<string>('draft', '');
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [selectedGifs, setSelectedGifs] = useState<GifResult[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -96,7 +100,7 @@ export function Compose() {
   // A poll needs a question and at least two answers to be votable
   const pollReady = !pollEnabled || (!!content.trim() && filledChoices.length >= 2);
   const canSubmit =
-    (!!content.trim() || uploadedImages.length > 0) && pollReady;
+    (!!content.trim() || uploadedImages.length > 0 || selectedGifs.length > 0) && pollReady;
 
   /**
    * Whether the box currently holds Markdown.
@@ -186,6 +190,26 @@ export function Compose() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  /**
+   * A selected GIF joins the uploads.
+   *
+   * Treated as an image that needs no uploading — the URL is already hosted,
+   * so it goes straight into the same list as the Blossom uploads and gets
+   * the same `imeta` treatment at publish time.
+   */
+  const handleGifSelect = (gif: GifResult) => {
+    if (uploadedImages.length + selectedGifs.length >= MAX_IMAGES) {
+      toast({
+        title: 'Too many images',
+        description: `You can attach up to ${MAX_IMAGES} images.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSelectedGifs((prev) => [...prev, gif]);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -211,9 +235,15 @@ export function Compose() {
 
     try {
       let postContent = content.trim();
-      if (uploadedImages.length > 0) {
+
+      const allMedia = [
+        ...uploadedImages,
+        ...selectedGifs.map((gif) => gif.url),
+      ];
+
+      if (allMedia.length > 0) {
         if (postContent) postContent += '\n\n';
-        postContent += uploadedImages.join('\n');
+        postContent += allMedia.join('\n');
       }
 
       // Mentions only notify the person if they are also tagged
@@ -251,6 +281,7 @@ export function Compose() {
 
       const tags = [
         ...imetaTags(uploadedImages),
+        ...selectedGifs.map(gifImetaTag),
         ...mentioned.map((pubkey) => ['p', pubkey]),
         ...quoted,
         ...hashtags.map((tag) => ['t', tag]),
@@ -290,6 +321,7 @@ export function Compose() {
 
       setContent('');
       setUploadedImages([]);
+      setSelectedGifs([]);
       setWarningEnabled(false);
       setWarningReason('');
       setPollEnabled(false);
@@ -495,11 +527,13 @@ export function Compose() {
                 </div>
               )}
 
-              {uploadedImages.length > 0 && (
+              {(uploadedImages.length > 0 || selectedGifs.length > 0) && (
                 <div
                   className={cn(
                     'grid gap-2',
-                    uploadedImages.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+                    uploadedImages.length + selectedGifs.length === 1
+                      ? 'grid-cols-1'
+                      : 'grid-cols-2'
                   )}
                 >
                   {uploadedImages.map((url, index) => (
@@ -520,6 +554,33 @@ export function Compose() {
                         className="absolute right-2 top-2 h-7 w-7"
                         onClick={() =>
                           setUploadedImages((prev) =>
+                            prev.filter((_, i) => i !== index)
+                          )
+                        }
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+
+                  {selectedGifs.map((gif, index) => (
+                    <div
+                      key={gif.id}
+                      className="group relative overflow-hidden rounded-lg border"
+                    >
+                      <img
+                        src={gif.url}
+                        alt={gif.title}
+                        className="max-h-56 w-full object-cover"
+                      />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        aria-label={`Remove GIF ${index + 1}`}
+                        className="absolute right-2 top-2 h-7 w-7"
+                        onClick={() =>
+                          setSelectedGifs((prev) =>
                             prev.filter((_, i) => i !== index)
                           )
                         }
@@ -685,7 +746,10 @@ export function Compose() {
                 size="icon"
                 aria-label="Attach an image"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading || uploadedImages.length >= MAX_IMAGES}
+                disabled={
+                  isUploading ||
+                  uploadedImages.length + selectedGifs.length >= MAX_IMAGES
+                }
               >
                 {isUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -693,6 +757,18 @@ export function Compose() {
                   <Image className="h-4 w-4" />
                 )}
               </Button>
+
+              <GifPicker onSelect={handleGifSelect}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Add a GIF"
+                  disabled={uploadedImages.length + selectedGifs.length >= MAX_IMAGES}
+                >
+                  <Smile className="h-4 w-4" />
+                </Button>
+              </GifPicker>
 
               <Button
                 type="button"

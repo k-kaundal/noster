@@ -14,8 +14,20 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   static const _mainRoutes = ['/feed', '/search', '/notifications', '/chat', '/wallet'];
-  static const _mainIcons = [Icons.home_outlined, Icons.search, Icons.notifications_outlined, Icons.chat_bubble_outline, Icons.account_balance_wallet_outlined];
-  static const _mainSelectedIcons = [Icons.home, Icons.search, Icons.notifications, Icons.chat_bubble, Icons.account_balance_wallet];
+  static const _mainIcons = [
+    Icons.home_outlined,
+    Icons.search_outlined,
+    Icons.notifications_outlined,
+    Icons.chat_bubble_outline,
+    Icons.account_balance_wallet_outlined,
+  ];
+  static const _mainSelectedIcons = [
+    Icons.home,
+    Icons.search,
+    Icons.notifications,
+    Icons.chat_bubble,
+    Icons.account_balance_wallet,
+  ];
   static const _mainLabels = ['Feed', 'Search', 'Alerts', 'Chat', 'Wallet'];
 
   int _currentIndex(String location) {
@@ -30,19 +42,53 @@ class _AppShellState extends ConsumerState<AppShell> {
     final location = GoRouterState.of(context).uri.toString();
     final index = _currentIndex(location);
     final auth = ref.watch(authStateProvider);
+    final notificationsAsync = ref.watch(notificationsProvider);
+    final dmsAsync = ref.watch(dmsProvider);
+
+    // Compute badge counts (unread-style: just show total counts as proxy)
+    final notifCount = notificationsAsync.valueOrNull?.length ?? 0;
+    final dmCount = dmsAsync.valueOrNull?.length ?? 0;
 
     return Scaffold(
       body: widget.child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (i) => context.go(_mainRoutes[i]),
+        height: 64,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: List.generate(
           _mainRoutes.length,
-          (i) => NavigationDestination(
-            icon: Icon(_mainIcons[i]),
-            selectedIcon: Icon(_mainSelectedIcons[i]),
-            label: _mainLabels[i],
-          ),
+          (i) {
+            Widget icon = Icon(_mainIcons[i]);
+            Widget selectedIcon = Icon(_mainSelectedIcons[i]);
+
+            // Add badges for notifications & chat
+            if (i == 2 && notifCount > 0) {
+              icon = Badge(
+                label: Text(notifCount > 99 ? '99+' : '$notifCount'),
+                child: icon,
+              );
+              selectedIcon = Badge(
+                label: Text(notifCount > 99 ? '99+' : '$notifCount'),
+                child: selectedIcon,
+              );
+            } else if (i == 3 && dmCount > 0) {
+              icon = Badge(
+                label: Text(dmCount > 99 ? '99+' : '$dmCount'),
+                child: icon,
+              );
+              selectedIcon = Badge(
+                label: Text(dmCount > 99 ? '99+' : '$dmCount'),
+                child: selectedIcon,
+              );
+            }
+
+            return NavigationDestination(
+              icon: icon,
+              selectedIcon: selectedIcon,
+              label: _mainLabels[i],
+            );
+          },
         ),
       ),
       drawer: _buildDrawer(context, auth),
@@ -74,7 +120,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                       ? NetworkImage(auth.profile!.picture!)
                       : null,
                   child: auth.profile?.picture == null
-                      ? Icon(Icons.person, size: 36, color: colorScheme.primary)
+                      ? Icon(Icons.bolt, size: 36, color: colorScheme.primary)
                       : null,
                 ),
                 const SizedBox(height: 10),
@@ -82,11 +128,17 @@ class _AppShellState extends ConsumerState<AppShell> {
                   auth.isLoggedIn
                       ? (auth.profile?.displayNameOrName ?? 'Nostr User')
                       : 'NostrFeed',
-                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 Text(
                   auth.isLoggedIn
-                      ? (auth.isReadOnly ? 'Read-only mode' : '@${auth.profile?.name ?? "anon"}')
+                      ? (auth.isReadOnly
+                          ? 'Read-only mode'
+                          : '@${auth.profile?.name ?? "anon"}')
                       : 'Nostr Operating System',
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
@@ -97,7 +149,10 @@ class _AppShellState extends ConsumerState<AppShell> {
             ListTile(
               leading: const Icon(Icons.login),
               title: const Text('Login'),
-              onTap: () { Navigator.pop(context); context.push('/login'); },
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/login');
+              },
             ),
           if (auth.isLoggedIn) ...[
             ListTile(
@@ -105,13 +160,18 @@ class _AppShellState extends ConsumerState<AppShell> {
               title: const Text('Profile'),
               onTap: () {
                 Navigator.pop(context);
-                if (auth.pubkey != null) context.push('/profile/${auth.pubkey}');
+                if (auth.pubkey != null) {
+                  context.push('/profile/${auth.pubkey}');
+                }
               },
             ),
             ListTile(
               leading: const Icon(Icons.edit_note),
               title: const Text('Write Article'),
-              onTap: () { Navigator.pop(context); context.push('/articles'); },
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/articles');
+              },
             ),
           ],
           const Divider(),
@@ -180,7 +240,10 @@ class _AppShellState extends ConsumerState<AppShell> {
       leading: Icon(icon),
       title: Text(title),
       dense: true,
-      onTap: () { Navigator.pop(context); context.push(route); },
+      onTap: () {
+        Navigator.pop(context);
+        context.push(route);
+      },
     );
   }
 }

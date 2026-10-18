@@ -235,7 +235,7 @@ class NostrService {
   }
 
   Future<List<NostrEvent>> fetchFeed({int limit = 50, int? since, int? until, List<String>? authors}) async {
-    final filter = NostrFilter(kinds: [1], limit: limit, since: since, until: until, authors: authors);
+    final filter = NostrFilter(kinds: [1, 6, 16], limit: limit, since: since, until: until, authors: authors);
     final events = await relayPool.query([filter], timeout: const Duration(seconds: 8));
     events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return events;
