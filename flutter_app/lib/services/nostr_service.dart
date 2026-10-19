@@ -260,7 +260,8 @@ class NostrService {
   }
 
   Future<List<NostrEvent>> fetchFeed({int limit = 50, int? since, int? until, List<String>? authors}) async {
-    final filter = NostrFilter(kinds: [1, 6, 16], limit: limit, since: since, until: until, authors: authors);
+    // Include: text notes, reposts, generic reposts, pictures, videos, articles
+    final filter = NostrFilter(kinds: [1, 6, 16, 20, 21, 22, 30023], limit: limit, since: since, until: until, authors: authors);
     final events = await relayPool.query([filter], timeout: const Duration(seconds: 8));
     events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return events;
@@ -305,8 +306,16 @@ class NostrService {
   }
 
   Future<List<NostrEvent>> fetchNotifications(String pubkey, {int limit = 50}) async {
+    // Notification kinds that target the user via p tag:
+    // 1 = mention/reply, 6 = repost, 7 = reaction, 16 = generic repost,
+    // 9735 = zap receipt, 1111 = NIP-22 comment, 1059 = NIP-17 DM,
+    // 30023 = article mention, 31925 = calendar RSVP
     final events = await relayPool.query([
-      NostrFilter(kinds: [1, 6, 7, 9735], tagFilters: {'p': [pubkey]}, limit: limit),
+      NostrFilter(
+        kinds: [1, 6, 7, 16, 9735, 1111, 1059, 30023, 31925],
+        tagFilters: {'p': [pubkey]},
+        limit: limit,
+      ),
     ], timeout: const Duration(seconds: 8));
     events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return events;

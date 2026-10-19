@@ -1,6 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -36,6 +35,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   late final TextEditingController _nip05Controller;
   late final TextEditingController _lud16Controller;
   bool _isSaving = false;
+  bool _isLoadingProfile = true;
 
   // Image upload state
   bool _isUploadingPicture = false;
@@ -47,16 +47,50 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
-    final profile = ref.read(authStateProvider).profile;
-    _nameController = TextEditingController(text: profile?.name ?? '');
-    _displayNameController =
-        TextEditingController(text: profile?.displayName ?? '');
-    _aboutController = TextEditingController(text: profile?.about ?? '');
-    _pictureController = TextEditingController(text: profile?.picture ?? '');
-    _bannerController = TextEditingController(text: profile?.banner ?? '');
-    _websiteController = TextEditingController(text: profile?.website ?? '');
-    _nip05Controller = TextEditingController(text: profile?.nip05 ?? '');
-    _lud16Controller = TextEditingController(text: profile?.lud16 ?? '');
+    // Initialize with empty controllers — will be populated by _loadProfile()
+    _nameController = TextEditingController();
+    _displayNameController = TextEditingController();
+    _aboutController = TextEditingController();
+    _pictureController = TextEditingController();
+    _bannerController = TextEditingController();
+    _websiteController = TextEditingController();
+    _nip05Controller = TextEditingController();
+    _lud16Controller = TextEditingController();
+
+    // Fetch the latest profile from the relay — authStateProvider.profile
+    // may be stale or empty if the app restarted and hasn't fetched yet
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final auth = ref.read(authStateProvider);
+      final pubkey = auth.pubkey;
+      if (pubkey == null) {
+        setState(() => _isLoadingProfile = false);
+        return;
+      }
+
+      // Fetch from relay — this is the authoritative source
+      final nostr = ref.read(nostrServiceProvider);
+      if (!nostr.isInitialized) await nostr.init();
+      final profile = await nostr.fetchProfile(pubkey);
+
+      if (mounted && profile != null) {
+        _nameController.text = profile.name ?? '';
+        _displayNameController.text = profile.displayName ?? '';
+        _aboutController.text = profile.about ?? '';
+        _pictureController.text = profile.picture ?? '';
+        _bannerController.text = profile.banner ?? '';
+        _websiteController.text = profile.website ?? '';
+        _nip05Controller.text = profile.nip05 ?? '';
+        _lud16Controller.text = profile.lud16 ?? '';
+      }
+    } catch (_) {
+      // Fall back to whatever auth state has — even empty is fine
+    } finally {
+      if (mounted) setState(() => _isLoadingProfile = false);
+    }
   }
 
   @override
@@ -235,11 +269,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+      body: _isLoadingProfile
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
             // ── Banner section ─────────────────────────────────────
             _ImageSection(
               label: 'Banner',

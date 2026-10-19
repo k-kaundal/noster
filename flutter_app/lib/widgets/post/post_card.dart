@@ -463,8 +463,8 @@ class _ActionButton extends StatelessWidget {
 /// starts with `{` and validating the parsed object has `id` and `content`
 /// string fields. We mirror that here.
 bool _isDisplayable(NostrEvent event) {
-  // Only kind 1 (text note) should be rendered as a post
-  if (event.kind != 1) return false;
+  // Only these kinds should be rendered as a post card
+  if (![1, 20, 21, 22, 30023].contains(event.kind)) return false;
 
   final trimmed = event.content.trim();
   if (trimmed.isEmpty) return true; // Empty note is fine (e.g. media-only)

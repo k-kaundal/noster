@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -371,19 +370,49 @@ class ArticleReaderScreen extends ConsumerWidget {
                   color: scheme.onSurfaceVariant,
                   fontSize: 12,
                 ),
+                // Tables: fixed column width so wide tables scroll
+                // horizontally instead of squishing columns into nothing.
+                // Without this a 4+ column table on a phone is unreadable.
+                tableHead: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: scheme.onSurface,
+                ),
+                tableBody: TextStyle(
+                  fontSize: 14,
+                  color: scheme.onSurface,
+                ),
+                tableHeadAlign: TextAlign.left,
+                tableColumnWidth: const IntrinsicColumnWidth(),
+                tableScrollbarThumbVisibility: true,
+                tableCellsPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                tableCellsDecoration: BoxDecoration(
+                  border: Border.all(
+                    color: scheme.outlineVariant,
+                    width: 1,
+                  ),
+                ),
+                tableBorder: TableBorder.all(
+                  color: scheme.outlineVariant,
+                  width: 1,
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               onTapLink: (text, href, title) {
                 if (href != null) {
                   _openLink(href);
                 }
               },
-              imageBuilder: (uri, title, alt) {
+              sizedImageBuilder: (config) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: CachedNetworkImage(
-                      imageUrl: uri.toString(),
+                      imageUrl: config.uri.toString(),
                       fit: BoxFit.cover,
                       placeholder: (_, _) => Container(
                         height: 200,

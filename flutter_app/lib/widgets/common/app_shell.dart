@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/app_providers.dart';
 import '../../services/auth_service.dart';
+import 'smart_network_image.dart';
 
 /// Navigation Architecture:
 /// 
@@ -370,7 +370,7 @@ class ModernDrawer extends ConsumerWidget {
                         icon: Icons.edit_note_rounded,
                         title: 'Write Article',
                         subtitle: 'Create long-form content',
-                        onTap: () => _navigate(context, '/articles'),
+                        onTap: () => _navigate(context, '/compose'),
                       ),
                     ],
                     _DrawerDivider(),
@@ -544,18 +544,25 @@ class ModernDrawer extends ConsumerWidget {
 
 // ─── Drawer Header ──────────────────────────────────────────────────
 
-class _DrawerHeader extends StatelessWidget {
+class _DrawerHeader extends ConsumerWidget {
   final AuthState auth;
 
   const _DrawerHeader({required this.auth});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Fetch the latest profile from the relay — auth.profile may be stale
+    // or null if the app restarted and the kind 0 event hasn't arrived yet
+    final profileAsync = auth.isLoggedIn && auth.pubkey != null
+        ? ref.watch(profileProvider(auth.pubkey!))
+        : null;
+    final profile = profileAsync?.valueOrNull ?? auth.profile;
+    final bannerUrl = profile?.banner;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      // Banner as background image when the user has one, gradient fallback
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -566,88 +573,125 @@ class _DrawerHeader extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          // Avatar
-          Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: CircleAvatar(
-              radius: 36,
-              backgroundColor: Colors.white,
-              backgroundImage: auth.profile?.picture != null
-                  ? CachedNetworkImageProvider(auth.profile!.picture!)
-                  : null,
-              child: auth.profile?.picture == null
-                  ? Icon(Icons.bolt_rounded, size: 40, color: colorScheme.primary)
-                  : null,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Name
-          Text(
-            auth.isLoggedIn
-                ? (auth.profile?.displayNameOrName ?? 'Nostr User')
-                : 'NostrFeed',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-
-          // Subtitle
-          Text(
-            auth.isLoggedIn
-                ? (auth.isReadOnly
-                    ? 'Read-only mode'
-                    : '@${auth.profile?.name ?? "anon"}')
-                : 'Nostr Operating System',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.9),
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-
-          if (auth.isLoggedIn && auth.profile?.nip05 != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+          // Banner image behind everything — only the image is darkened,
+          // text and avatar stay bright on top
+          if (bannerUrl != null && bannerUrl.isNotEmpty)
+            Positioned.fill(
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  const Icon(Icons.verified_rounded, color: Colors.white, size: 14),
-                  const SizedBox(width: 4),
-                  Text(
-                    auth.profile!.nip05!,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  SmartNetworkImage(
+                    url: bannerUrl,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, _, _) => const SizedBox.shrink(),
+                  ),
+                  // Dark overlay ONLY on the image — not on the content above it
+                  Container(
+                    color: Colors.black.withValues(alpha: 0.4),
                   ),
                 ],
               ),
             ),
-          ],
+
+          // Header content on top
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Avatar
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 36,
+                    backgroundColor: Colors.white,
+                    child: profile?.picture != null
+                        ? ClipOval(
+                            child: SmartNetworkImage(
+                              url: profile!.picture!,
+                              width: 72,
+                              height: 72,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, _, _) => Icon(
+                                Icons.bolt_rounded,
+                                size: 40,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                          )
+                        : Icon(Icons.bolt_rounded, size: 40, color: colorScheme.primary),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Name
+                Text(
+                  auth.isLoggedIn
+                      ? (profile?.displayNameOrName ?? 'Nostr User')
+                      : 'NostrFeed',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+
+                // Subtitle
+                Text(
+                  auth.isLoggedIn
+                      ? (auth.isReadOnly
+                          ? 'Read-only mode'
+                          : '@${profile?.name ?? "anon"}')
+                      : 'Nostr Operating System',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.95),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+
+                if (auth.isLoggedIn && profile?.nip05 != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.verified_rounded, color: Colors.white, size: 14),
+                        const SizedBox(width: 4),
+                        Text(
+                          profile!.nip05!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

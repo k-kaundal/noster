@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../config/env.dart';
+import '../../providers/address_providers.dart';
 import '../../providers/app_providers.dart';
-import '../../services/relay_pool.dart';
+import '../../providers/lnbits_providers.dart';
+import '../../services/address_service.dart';
 import '../../services/auth_service.dart';
 
+/// Identity screen: profile, signer, lightning address, NIP-05, and relays.
 class IdentityScreen extends ConsumerWidget {
   const IdentityScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authStateProvider);
-    final relayStatus = ref.watch(relayStatusProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Identity')),
@@ -28,28 +34,30 @@ class IdentityScreen extends ConsumerWidget {
           _SignerStatusCard(auth: auth),
           const SizedBox(height: 20),
 
-          // NIP-05
-          _SectionHeader(title: 'NIP-05 Address'),
+          // Lightning Address
+          _SectionHeader(title: 'Lightning Address'),
           const SizedBox(height: 8),
-          _Nip05Card(auth: auth),
+          const _LightningAddressCard(),
           const SizedBox(height: 20),
 
-          // Linked relays
-          _SectionHeader(title: 'Linked Relays'),
+          // NIP-05 Verified Name
+          _SectionHeader(title: 'Verified Name (NIP-05)'),
           const SizedBox(height: 8),
-          _RelaysCard(relayStatus: relayStatus),
+          const _Nip5Card(),
           const SizedBox(height: 20),
 
-          // Connected apps
-          _SectionHeader(title: 'Connected Apps'),
+          // Free Address
+          _SectionHeader(title: 'Free Address'),
           const SizedBox(height: 8),
-          _ConnectedAppsCard(),
+          const _FreeAddressCard(),
           const SizedBox(height: 24),
         ],
       ),
     );
   }
 }
+
+// ── Profile Card ─────────────────────────────────────────────────────
 
 class _ProfileCard extends ConsumerWidget {
   final AuthState auth;
@@ -122,6 +130,8 @@ class _ProfileCard extends ConsumerWidget {
   }
 }
 
+// ── Signer Status Card ───────────────────────────────────────────────
+
 class _SignerStatusCard extends StatelessWidget {
   final AuthState auth;
   const _SignerStatusCard({required this.auth});
@@ -159,156 +169,682 @@ class _SignerStatusCard extends StatelessWidget {
                   : 'Log in with an nsec to enable signing.',
             ),
           ),
-          if (hasKeys)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Row(
-                children: [
-                  _SignerCapability(label: 'NIP-07', supported: true),
-                  const SizedBox(width: 8),
-                  _SignerCapability(label: 'NIP-44', supported: true),
-                  const SizedBox(width: 8),
-                  _SignerCapability(label: 'NIP-04', supported: false),
-                ],
-              ),
-            ),
         ],
       ),
     );
   }
 }
 
-class _SignerCapability extends StatelessWidget {
-  final String label;
-  final bool supported;
-  const _SignerCapability({required this.label, required this.supported});
+// ── Lightning Address Card ───────────────────────────────────────────
+
+class _LightningAddressCard extends ConsumerWidget {
+  const _LightningAddressCard();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: supported
-            ? scheme.primaryContainer
-            : scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            supported ? Icons.check : Icons.close,
-            size: 12,
-            color: supported
-                ? scheme.onPrimaryContainer
-                : scheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: supported
-                  ? scheme.onPrimaryContainer
-                  : scheme.onSurfaceVariant,
+    final lightning = ref.watch(lightningAddressProvider);
+    final auth = ref.watch(authStateProvider);
+    final lnbits = ref.watch(lnbitsAuthProvider);
+    final hasAddress = ref.watch(hasLightningAddressProvider);
+
+    if (!lnbits.isConnected) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
             ),
+            child: Icon(Icons.bolt_outlined, color: scheme.onSurfaceVariant),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Nip05Card extends StatelessWidget {
-  final AuthState auth;
-  const _Nip05Card({required this.auth});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final nip05 = auth.profile?.nip05;
-
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: scheme.primaryContainer,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(Icons.verified_user, color: scheme.onPrimaryContainer),
+          title: const Text('No wallet connected',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text(
+              'Connect your wallet to get a lightning address'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push('/wallet/lnbits'),
         ),
-        title: Text(
-          nip05 ?? 'No NIP-05 address',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          nip05 != null
-              ? 'Your verified Nostr address'
-              : 'Add a NIP-05 identifier to your profile',
-        ),
-        trailing: nip05 != null
-            ? IconButton(
-                icon: const Icon(Icons.copy, size: 18),
-                onPressed: () {},
-                tooltip: 'Copy',
-              )
-            : null,
-      ),
-    );
-  }
-}
+      );
+    }
 
-class _RelaysCard extends StatelessWidget {
-  final Map<String, RelayState> relayStatus;
-  const _RelaysCard({required this.relayStatus});
+    if (lightning.isLoading) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final relays = relayStatus.isEmpty
-        ? ['wss://relay.nostrfeed.com', 'wss://relay.nostr.band', 'wss://nos.lol']
-        : relayStatus.keys.toList();
+    final address = lightning.primaryAddress;
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
-          for (int i = 0; i < relays.length; i++) ...[
+          if (address != null) ...[
             ListTile(
-              dense: true,
-              leading: Icon(
-                Icons.circle,
-                size: 10,
-                color: relayStatus[relays[i]] == RelayState.connected
-                    ? scheme.tertiary
-                    : scheme.onSurfaceVariant,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.bolt, color: Colors.amber),
               ),
               title: Text(
-                relays[i],
-                style:
-                    const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+                address,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'monospace',
+                    fontSize: 14),
               ),
-              trailing: Text(
-                relayStatus[relays[i]]?.name ?? 'unknown',
-                style: TextStyle(
-                    fontSize: 11, color: scheme.onSurfaceVariant),
+              subtitle: Text(
+                hasAddress
+                    ? 'Published on your profile — anyone can zap you'
+                    : 'Not on your profile yet — publish it to receive zaps',
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.copy, size: 18),
+                tooltip: 'Copy address',
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: address));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Address copied')),
+                  );
+                },
               ),
             ),
-            if (i < relays.length - 1) const Divider(height: 1, indent: 16),
+            if (!hasAddress && auth.isLoggedIn && !auth.isReadOnly)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () async {
+                      try {
+                        await ref
+                            .read(lightningAddressProvider.notifier)
+                            .publishToProfile();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Profile updated — zaps enabled!')),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed: $e')),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.publish, size: 18),
+                    label: const Text('Publish to Profile'),
+                  ),
+                ),
+              ),
+          ] else ...[
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.bolt_outlined, color: scheme.onSurfaceVariant),
+              ),
+              title: const Text('No lightning address',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text(
+                  'Claim a lightning address to receive zaps'),
+            ),
+            if (auth.isLoggedIn && !auth.isReadOnly)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _showClaimDialog(context, ref),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Claim Address'),
+                  ),
+                ),
+              ),
+          ],
+          // Show all addresses if there are multiple
+          if (lightning.addresses.length > 1) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'All addresses (${lightning.addresses.length})',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final addr in lightning.addresses)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Icon(
+                            addr == address
+                                ? Icons.check_circle
+                                : Icons.circle_outlined,
+                            size: 14,
+                            color: addr == address
+                                ? Colors.green
+                                : scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              addr,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontFamily: 'monospace',
+                                color: addr == address
+                                    ? scheme.onSurface
+                                    : scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          // Silent addresses warning
+          if (lightning.silentAddresses.isNotEmpty) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber,
+                      size: 16, color: Colors.orange.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${lightning.silentAddresses.length} address(es) receive money but don\'t publish zap receipts on Nostr.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () =>
+                        ref.read(lightningAddressProvider.notifier).enableZaps(),
+                    child: const Text('Fix', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ),
           ],
         ],
       ),
     );
   }
+
+  void _showClaimDialog(BuildContext context, WidgetRef ref) {
+    final controller = TextEditingController();
+    bool isClaiming = false;
+    String? errorMsg;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Claim Lightning Address'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  labelText: 'Username',
+                  hintText: 'alice',
+                  prefixIcon: const Icon(Icons.alternate_email),
+                  suffixText: '@${Env.lightningAddressDomain}',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This creates a lightning address that people can zap from any Nostr client.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              if (errorMsg != null) ...[
+                const SizedBox(height: 12),
+                Text(errorMsg!,
+                    style: TextStyle(
+                        color: Theme.of(ctx).colorScheme.error,
+                        fontSize: 12)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isClaiming ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: isClaiming
+                  ? null
+                  : () async {
+                      final username = controller.text.trim().toLowerCase();
+                      if (username.isEmpty) return;
+                      setState(() {
+                        isClaiming = true;
+                        errorMsg = null;
+                      });
+                      try {
+                        await ref
+                            .read(lightningAddressProvider.notifier)
+                            .claim(username: username);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text(
+                                    '$username@${Env.lightningAddressDomain} is yours!')),
+                          );
+                        }
+                      } catch (e) {
+                        setState(() {
+                          isClaiming = false;
+                          errorMsg = e.toString();
+                        });
+                      }
+                    },
+              child: const Text('Claim'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _ConnectedAppsCard extends StatelessWidget {
+// ── NIP-05 Card ──────────────────────────────────────────────────────
+
+class _Nip5Card extends ConsumerWidget {
+  const _Nip5Card();
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final nip5 = ref.watch(nip5Provider);
+    final auth = ref.watch(authStateProvider);
+    final lnbits = ref.watch(lnbitsAuthProvider);
+    final hasNip5 = ref.watch(hasNip5Provider);
+
+    if (!lnbits.isConnected) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.verified_outlined, color: scheme.onSurfaceVariant),
+          ),
+          title: const Text('No wallet connected',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text(
+              'Connect your wallet to get a verified NIP-05 name'),
+        ),
+      );
+    }
+
+    if (nip5.isLoading) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    if (!nip5.isAvailable) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.verified_outlined, color: scheme.onSurfaceVariant),
+          ),
+          title: const Text('Not available',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text(
+              'Verified names are not enabled on this LNbits instance'),
+        ),
+      );
+    }
+
+    final identifier = nip5.identifier;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        children: [
+          if (identifier != null) ...[
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.verified, color: scheme.onPrimaryContainer),
+              ),
+              title: Text(
+                identifier,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'monospace',
+                    fontSize: 14),
+              ),
+              subtitle: Text(
+                hasNip5
+                    ? 'Published on your profile — shows the ✓ badge'
+                    : 'Not on your profile yet — publish it to show the ✓',
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.copy, size: 18),
+                tooltip: 'Copy identifier',
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: identifier));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Identifier copied')),
+                  );
+                },
+              ),
+            ),
+            if (!hasNip5 && auth.isLoggedIn && !auth.isReadOnly)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () async {
+                      try {
+                        await ref
+                            .read(nip5Provider.notifier)
+                            .publishToProfile();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Profile updated — you\'re verified!')),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed: $e')),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.publish, size: 18),
+                    label: const Text('Publish to Profile'),
+                  ),
+                ),
+              ),
+          ] else ...[
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.verified_outlined, color: scheme.onSurfaceVariant),
+              ),
+              title: const Text('No verified name',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text(
+                  'Buy a NIP-05 verified name to show the ✓ badge'),
+            ),
+            if (auth.isLoggedIn && !auth.isReadOnly)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _showNip5ClaimDialog(context, ref),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Get Verified Name'),
+                  ),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showNip5ClaimDialog(BuildContext context, WidgetRef ref) {
+    final controller = TextEditingController();
+    bool isSearching = false;
+    bool isClaiming = false;
+    Nip5SearchResult? searchResult;
+    String? errorMsg;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) {
+          Future<void> search(String query) async {
+            if (query.length < 2) {
+              setState(() => searchResult = null);
+              return;
+            }
+            setState(() => isSearching = true);
+            try {
+              final result = await ref
+                  .read(nip5Provider.notifier)
+                  .search(localPart: query);
+              setState(() {
+                searchResult = result;
+                isSearching = false;
+              });
+            } catch (e) {
+              setState(() {
+                isSearching = false;
+                searchResult = null;
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Get Verified Name'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  decoration: InputDecoration(
+                    labelText: 'Choose a name',
+                    hintText: 'alice',
+                    prefixIcon: const Icon(Icons.verified_outlined),
+                    suffixText: '@${Env.nip5Domain}',
+                  ),
+                  onChanged: (v) => search(v.trim().toLowerCase()),
+                ),
+                const SizedBox(height: 12),
+                if (isSearching)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else if (searchResult != null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: searchResult!.available
+                          ? Colors.green.withValues(alpha: 0.1)
+                          : Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          searchResult!.available
+                              ? Icons.check_circle
+                              : Icons.cancel,
+                          color: searchResult!.available
+                              ? Colors.green
+                              : Colors.red,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            searchResult!.available
+                                ? 'Available! ${searchResult!.priceSats != null ? '${searchResult!.priceSats} sats/year' : ''}'
+                                : searchResult!.reason ?? 'Not available',
+                            style: TextStyle(
+                              color: searchResult!.available
+                                  ? Colors.green.shade700
+                                  : Colors.red.shade700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (errorMsg != null) ...[
+                  const SizedBox(height: 12),
+                  Text(errorMsg!,
+                      style: TextStyle(
+                          color: Theme.of(ctx).colorScheme.error,
+                          fontSize: 12)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: isClaiming ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isClaiming ||
+                        searchResult == null ||
+                        !searchResult!.available
+                    ? null
+                    : () async {
+                        final name = controller.text.trim().toLowerCase();
+                        if (name.isEmpty) return;
+                        setState(() {
+                          isClaiming = true;
+                          errorMsg = null;
+                        });
+                        try {
+                          final result = await ref
+                              .read(nip5Provider.notifier)
+                              .claim(
+                                localPart: name,
+                                years: 1,
+                              );
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (context.mounted) {
+                            if (result.bolt11.isNotEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(
+                                        'Invoice created — pay to activate $name')),
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content:
+                                        Text('$name is reserved for you!')),
+                              );
+                            }
+                          }
+                        } catch (e) {
+                          setState(() {
+                            isClaiming = false;
+                            errorMsg = e.toString();
+                          });
+                        }
+                      },
+                child: isClaiming
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Reserve'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── Free Address Card ────────────────────────────────────────────────
+
+class _FreeAddressCard extends ConsumerWidget {
+  const _FreeAddressCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final freeName = ref.watch(freeAddressProvider);
+    final lightning = ref.watch(lightningAddressProvider);
+    final auth = ref.watch(authStateProvider);
+
+    if (freeName == null) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.card_giftcard, color: scheme.onSurfaceVariant),
+          ),
+          title: const Text('No free address',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text('Log in to get your free address'),
+        ),
+      );
+    }
+
+    final fullAddress = '$freeName@${Env.lightningAddressDomain}';
+    final isClaimed = lightning.addresses.contains(fullAddress);
+    final isOnProfile = auth.profile?.lud16 == fullAddress;
+
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
@@ -317,21 +853,80 @@ class _ConnectedAppsCard extends StatelessWidget {
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
+                color: Colors.green.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.apps, color: scheme.onSurfaceVariant),
+              child: const Icon(Icons.card_giftcard, color: Colors.green),
             ),
-            title: const Text('No connected apps',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text(
-                'Apps authorized via Nostr Connect will appear here.'),
+            title: Text(
+              fullAddress,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'monospace',
+                  fontSize: 13),
+            ),
+            subtitle: Text(
+              isOnProfile
+                  ? 'On your profile — anyone can zap you here'
+                  : isClaimed
+                      ? 'Claimed but not on your profile'
+                      : 'Free forever — derived from your pubkey',
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.copy, size: 18),
+              tooltip: 'Copy address',
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: fullAddress));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Address copied')),
+                );
+              },
+            ),
           ),
+          if (!isOnProfile && auth.isLoggedIn && !auth.isReadOnly)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: () async {
+                    try {
+                      if (!isClaimed) {
+                        await ref
+                            .read(lightningAddressProvider.notifier)
+                            .claim(username: freeName);
+                      }
+                      await ref
+                          .read(lightningAddressProvider.notifier)
+                          .publishToProfile(address: fullAddress);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Free address published!')),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed: $e')),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.publish, size: 18),
+                  label: Text(isClaimed
+                      ? 'Publish to Profile'
+                      : 'Claim & Publish'),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 }
+
+// ── Section Header ───────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
   final String title;

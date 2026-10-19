@@ -6,8 +6,18 @@ import '../config/env.dart';
 import '../models/nostr_models.dart';
 import 'auth_service.dart';
 
+/// The compile-time default LNbits URL. The user can override this in
+/// Settings — see `settings_providers.dart`.
+String get defaultLnbitsUrl =>
+    Env.lnbitsUrl.replaceAll(RegExp(r'/+$'), '');
+
 /// Base URL of the LNbits instance this app talks to.
-String get lnbitsUrl => Env.lnbitsUrl.replaceAll(RegExp(r'/+$'), '');
+///
+/// Kept for backwards compatibility. New code should use the configurable
+/// `lnbitsUrlProvider` from `settings_providers.dart` instead, so a user
+/// whose instance has a different `nostr_absolute_request_urls` can point
+/// the app at the right one without a rebuild.
+String get lnbitsUrl => defaultLnbitsUrl;
 
 /// House wallet: a receive-only shared wallet the app can issue invoices on.
 /// The invoice key ships in the bundle; it can only read balance + create
@@ -172,8 +182,13 @@ class LnbitsException implements Exception {
 }
 
 /// Full LNbits REST client matching the web app's `lib/lnbits.ts`.
+///
+/// Constructed with an explicit `baseUrl` when the caller has one — the
+/// notifier passes the user's configured instance — or the compile-time
+/// default otherwise. Every instance of this class talks to exactly one
+/// LNbits deployment; the global `lnbitsUrl` is only the fallback.
 class LnbitsService {
-  LnbitsService({String? baseUrl}) : baseUrl = baseUrl ?? lnbitsUrl;
+  LnbitsService({String? baseUrl}) : baseUrl = baseUrl ?? defaultLnbitsUrl;
 
   final String baseUrl;
 
@@ -368,6 +383,13 @@ class LnbitsService {
   ///
   /// The Flutter app does not have a JS-style `NostrSigner` interface, so the
   /// signer is passed in as a callback from the auth provider.
+  ///
+  /// LNbits validates the `u` tag against its `nostr_absolute_request_urls`
+  /// setting, which defaults to a bare origin. We try every spelling an
+  /// operator might have configured:
+  /// - `https://host/nostr` (the documented default)
+  /// - `https://host/api/v1/auth/nostr` (the endpoint's own path)
+  /// - `https://host` (bare origin, for instances that accept any path)
   Future<String?> loginWithNostrSigned(
     Future<NostrEvent> Function({
       required int kind,
@@ -377,7 +399,19 @@ class LnbitsService {
         signEvent,
   ) async {
     final endpoint = '$baseUrl/api/v1/auth/nostr';
-    final candidates = ['$baseUrl/nostr', endpoint];
+    // LNbits validates the `u` tag against its `nostr_absolute_request_urls`
+    // setting, which defaults to a bare origin. We try every spelling an
+    // operator might have configured:
+    // - `https://host/nostr` (the documented default)
+    // - `https://host/api/v1/auth/nostr` (the endpoint's own path)
+    // - `https://host` (bare origin, for instances that accept any path)
+    // - `https://host/` (trailing slash variant)
+    final candidates = [
+      '$baseUrl/nostr',
+      endpoint,
+      baseUrl,
+      '$baseUrl/',
+    ];
 
     LnbitsException? lastError;
     for (final signedUrl in candidates) {

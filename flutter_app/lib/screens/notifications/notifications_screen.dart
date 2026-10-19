@@ -398,6 +398,14 @@ String _typeFor(NostrEvent e) {
       return 'repost';
     case 9735:
       return 'zap';
+    case 1111:
+      return 'comment';
+    case 1059:
+      return 'dm';
+    case 30023:
+      return 'article_mention';
+    case 31925:
+      return 'rsvp';
     case 1:
     default:
       return 'mention';
@@ -433,6 +441,26 @@ class _NotificationTile extends ConsumerWidget {
           Icons.bolt_rounded,
           Colors.amber.shade700,
           'zapped you',
+        ),
+      'comment' => (
+          Icons.comment_rounded,
+          colorScheme.secondary,
+          'commented on your note',
+        ),
+      'dm' => (
+          Icons.mail_rounded,
+          colorScheme.primary,
+          'sent you a message',
+        ),
+      'article_mention' => (
+          Icons.article_rounded,
+          colorScheme.tertiary,
+          'mentioned you in an article',
+        ),
+      'rsvp' => (
+          Icons.event_available_rounded,
+          colorScheme.primary,
+          'RSVP\'d to your event',
         ),
       _ => (
           Icons.alternate_email_rounded,

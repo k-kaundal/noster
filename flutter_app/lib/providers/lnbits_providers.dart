@@ -78,7 +78,11 @@ String describeLnbitsLoginFailure(Object error,
   if (method != 'nostr') return error.message;
 
   if (RegExp(r"tag 'u'", caseSensitive: false).hasMatch(error.message)) {
-    return '$url is not expecting sign-ins addressed to itself. Add "$url" to its nostr_absolute_request_urls setting — it ships listing only localhost, so every signature is rejected until then.';
+    // Show the actual server error, which names the URL it rejected
+    return '${error.message}\n\n'
+        'This means $url is not expecting sign-ins addressed to itself. '
+        'Add "$url" to its nostr_absolute_request_urls setting — it ships '
+        'listing only localhost, so every signature is rejected until then.';
   }
 
   if (error.status == 404 || error.status == 405) {
