@@ -41,8 +41,24 @@ import 'package:nostrfeed_mobile/core/utils/nip19.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_shell.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
+  final authListenable = ValueNotifier(0);
+  ref
+    ..onDispose(authListenable.dispose)
+    ..listen(authStateProvider, (_, _) => authListenable.value++);
+
   return GoRouter(
     initialLocation: '/feed',
+    refreshListenable: authListenable,
+    redirect: (context, state) {
+      final auth = ref.read(authStateProvider);
+      final onLoginPage = state.matchedLocation == '/login';
+
+      // Not signed in → only the login page is reachable.
+      if (!auth.isLoggedIn && !onLoginPage) return '/login';
+      // Signed in → the login page bounces to the feed.
+      if (auth.isLoggedIn && onLoginPage) return '/feed';
+      return null;
+    },
     routes: [
       // Auth — no shell, full-screen
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),

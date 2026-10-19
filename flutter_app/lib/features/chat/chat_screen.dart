@@ -5,6 +5,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart' show DecryptedDm;
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
@@ -13,7 +14,6 @@ import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/features/chat/providers/dm_store.dart';
 import 'package:nostrfeed_mobile/features/chat/widgets/chat_avatar.dart';
 import 'package:nostrfeed_mobile/features/chat/widgets/chat_date_separator.dart';
-import 'package:nostrfeed_mobile/features/chat/widgets/conversation.dart';
 import 'package:nostrfeed_mobile/features/chat/widgets/message_bubble.dart';
 import 'package:nostrfeed_mobile/features/chat/widgets/new_message_sheet.dart';
 
@@ -86,8 +86,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // ─── Conversation list ─────────────────────────────────────────────
 
   Widget _buildConversationList(BuildContext context) {
-    final dmsAsync = ref.watch(dmsProvider);
-    final auth = ref.watch(authStateProvider);
+    final convosAsync = ref.watch(conversationListProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -132,39 +131,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ],
       ),
-      body: dmsAsync.when(
+      body: convosAsync.when(
         loading: () => _buildLoadingState(colorScheme),
         error: (err, _) => _buildErrorState(context),
-        data: (events) {
-          return FutureBuilder<List<ConversationItem>>(
-            future: _groupIntoConversations(events, auth.pubkey),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return _buildLoadingState(colorScheme);
-              }
-              final conversations = snapshot.data ?? const <ConversationItem>[];
-              if (conversations.isEmpty) {
-                return _buildEmptyState(context);
-              }
-              return RefreshIndicator(
-                onRefresh: () async {
-                  HapticFeedback.mediumImpact();
-                  ref.invalidate(dmsProvider);
-                  await ref.read(dmsProvider.future);
-                },
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: conversations.length,
-                  separatorBuilder: (_, _) => Divider(
-                    height: 1,
-                    indent: 84,
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  ),
-                  itemBuilder: (context, index) =>
-                      _conversationTile(context, conversations[index]),
-                ),
-              );
+        data: (conversations) {
+          if (conversations.isEmpty) {
+            return _buildEmptyState(context);
+          }
+          return RefreshIndicator(
+            onRefresh: () async {
+              HapticFeedback.mediumImpact();
+              ref.invalidate(dmsProvider);
+              await ref.read(dmsProvider.future);
             },
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: conversations.length,
+              separatorBuilder: (_, _) => Divider(
+                height: 1,
+                indent: 84,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
+              itemBuilder: (context, index) =>
+                  _conversationTile(context, conversations[index]),
+            ),
           );
         },
       ),
@@ -222,32 +212,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  /// Group DM events into conversations via the shared [DmStore].
-  /// Decryption happens once in the store; the UI just reads the results.
-  Future<List<ConversationItem>> _groupIntoConversations(
-    List<NostrEvent> events,
-    String? myPubkey,
-  ) async {
-    final store = ref.read(dmStoreProvider);
-    await store.prime(events);
-    return store
-        .conversations(events)
-        .map(
-          (c) => ConversationItem(
-            peerPubkey: c.peer,
-            lastMessage: c.lastEvent,
-            lastText: c.decrypted?.plaintext,
-            lastTimestamp: c.decrypted?.createdAt ?? c.lastEvent.createdAt,
-          ),
-        )
-        .toList();
-  }
-
-  Widget _conversationTile(BuildContext context, ConversationItem conv) {
-    final profileAsync = ref.watch(profileProvider(conv.peerPubkey));
+  Widget _conversationTile(
+    BuildContext context,
+    ({String peer, NostrEvent lastEvent, DecryptedDm? decrypted}) conv,
+  ) {
+    final profileAsync = ref.watch(profileProvider(conv.peer));
     final colorScheme = Theme.of(context).colorScheme;
+    final lastTimestamp =
+        conv.decrypted?.createdAt ?? conv.lastEvent.createdAt;
     final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      conv.lastTimestamp * 1000,
+      lastTimestamp * 1000,
     );
 
     return Material(
@@ -255,7 +229,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       child: InkWell(
         onTap: () {
           HapticFeedback.lightImpact();
-          context.push('/chat/${conv.peerPubkey}');
+          context.push('/chat/${conv.peer}');
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -264,10 +238,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               profileAsync.when(
                 data: (profile) => ChatAvatar(
                   imageUrl: profile?.picture,
-                  name: profile?.displayNameOrName ?? conv.peerPubkey,
+                  name: profile?.displayNameOrName ?? conv.peer,
                 ),
-                loading: () => ChatAvatar(name: conv.peerPubkey),
-                error: (_, _) => ChatAvatar(name: conv.peerPubkey),
+                loading: () => ChatAvatar(name: conv.peer),
+                error: (_, _) => ChatAvatar(name: conv.peer),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -280,7 +254,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           child: profileAsync.when(
                             data: (profile) => Text(
                               profile?.displayNameOrName ??
-                                  _shortKey(conv.peerPubkey),
+                                  _shortKey(conv.peer),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -289,8 +263,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 letterSpacing: -0.2,
                               ),
                             ),
-                            loading: () => Text(_shortKey(conv.peerPubkey)),
-                            error: (_, _) => Text(_shortKey(conv.peerPubkey)),
+                            loading: () => Text(_shortKey(conv.peer)),
+                            error: (_, _) => Text(_shortKey(conv.peer)),
                           ),
                         ),
                         Text(
@@ -315,7 +289,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            conv.lastText ?? '…',
+                            conv.decrypted?.plaintext ?? '…',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -324,27 +298,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ),
                           ),
                         ),
-                        if (conv.unreadCount > 0) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colorScheme.primary,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${conv.unreadCount}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: colorScheme.onPrimary,
-                              ),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ],
@@ -363,6 +316,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final dmsAsync = ref.watch(dmsProvider);
     final profileAsync = ref.watch(profileProvider(peerPubkey));
     final auth = ref.watch(authStateProvider);
+    // Rebuild when the outbox/decryption cache changes (e.g. after sending).
+    ref.watch(dmStoreVersionProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -444,7 +399,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               data: (events) {
                 final store = ref.read(dmStoreProvider);
                 return FutureBuilder<void>(
-                  future: store.prime(events),
+                  // Wait for BOTH the persisted outbox AND event decryption —
+                  // a cold start otherwise shows an empty thread because the
+                  // outbox hasn't loaded from disk yet.
+                  future: store.ready.then((_) => store.prime(events)),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState != ConnectionState.done) {
                       return const Center(child: CircularProgressIndicator());
@@ -605,28 +563,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       // Use NIP-17 gift-wrapped DM (kind 1059) — modern standard with
       // metadata privacy, compatible with Amethyst/0xchat/Damus.
       final event = nostr.createNip17Dm(peerPubkey, text);
-      nostr.publish(event);
       // NIP-17 wraps can't be decrypted by their sender and have a randomized
       // (up-to-2-days-ago) timestamp — so we can't rely on the relay echo to
       // show our own message. Record it in the local outbox so it renders
       // immediately with the correct time.
-      ref
-          .read(dmStoreProvider)
-          .recordSent(
+      ref.read(dmStoreProvider).recordSent(
             peerPubkey: peerPubkey,
             plaintext: text,
             eventId: event.id,
           );
       _messageController.clear();
-      // Rebuild the thread immediately with the outbox message.
-      ref.invalidate(dmsProvider);
-      setState(() {});
+      // dmStoreVersionProvider already bumped by recordSent() — no need to
+      // invalidate dmsProvider (that would trigger a full relay refetch and
+      // rebuild the entire list, causing visible flicker).
       await Future.delayed(const Duration(milliseconds: 100));
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
+        );
+      }
+
+      // Now confirm at least one relay actually accepted the gift wrap.
+      // The message already shows as pending in the UI; if every relay
+      // rejects it (or we're offline) we tell the user instead of letting
+      // the message silently vanish.
+      final accepted = await nostr.publishWithAck(event);
+      if (!accepted && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Message queued — no relay acknowledged it yet. It will be '
+              'retried when you reconnect.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     } catch (e) {

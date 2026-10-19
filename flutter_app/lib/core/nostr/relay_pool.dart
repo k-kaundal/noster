@@ -19,6 +19,9 @@ class RelayConnection {
   /// NIP-42 auth challenge
   String? _authChallenge;
 
+  /// Pending publish confirmations: eventId → completer for the relay's OK.
+  final Map<String, Completer<bool>> _publishAcks = {};
+
   /// Callback to produce a signed auth event.
   Future<NostrEvent> Function(String challenge)? onAuthChallenge;
 
@@ -76,6 +79,11 @@ class RelayConnection {
       if (!c.isCompleted) c.complete();
     }
     _eoseCompleters.clear();
+    // Fail any publishes waiting for an OK — the socket is gone
+    for (final c in _publishAcks.values) {
+      if (!c.isCompleted) c.complete(false);
+    }
+    _publishAcks.clear();
     if (!_intentionallyClosed) _scheduleReconnect();
   }
 
@@ -110,6 +118,15 @@ class RelayConnection {
           }
           break;
         case 'OK':
+          // ["OK", <event_id>, <true|false>, <message>]
+          if (data.length >= 3) {
+            final eventId = data[1] as String;
+            final accepted = data[2] as bool;
+            final completer = _publishAcks.remove(eventId);
+            if (completer != null && !completer.isCompleted) {
+              completer.complete(accepted);
+            }
+          }
           break;
         case 'AUTH':
           _authChallenge = data[1] as String;
@@ -174,9 +191,35 @@ class RelayConnection {
     _eoseCompleters.remove(subId);
   }
 
+  /// Fire-and-forget publish (legacy). Prefer [publishWithAck] for anything
+  /// the user expects to be delivered (DMs, posts).
   void publish(NostrEvent event) {
     if (state == RelayState.connected) {
       _channel?.sink.add(jsonEncode(['EVENT', event.toJson()]));
+    }
+  }
+
+  /// Publish and wait for the relay's OK response.
+  ///
+  /// Returns true if the relay accepted the event, false if rejected, not
+  /// connected, or the wait timed out.
+  Future<bool> publishWithAck(
+    NostrEvent event, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    if (state != RelayState.connected) return false;
+    final completer = Completer<bool>();
+    _publishAcks[event.id] = completer;
+    try {
+      _channel?.sink.add(jsonEncode(['EVENT', event.toJson()]));
+    } catch (_) {
+      _publishAcks.remove(event.id);
+      return false;
+    }
+    try {
+      return await completer.future.timeout(timeout, onTimeout: () => false);
+    } finally {
+      _publishAcks.remove(event.id);
     }
   }
 
@@ -192,6 +235,10 @@ class RelayConnection {
       if (!c.isCompleted) c.complete();
     }
     _eoseCompleters.clear();
+    for (final c in _publishAcks.values) {
+      if (!c.isCompleted) c.complete(false);
+    }
+    _publishAcks.clear();
     _setState(RelayState.disconnected);
   }
 }
@@ -338,6 +385,18 @@ class RelayPool {
     };
 
     return controller.stream;
+  }
+
+  /// Publish to all connected relays and wait for at least one to accept.
+  ///
+  /// Returns true if ≥1 relay acknowledged the event. Never throws.
+  Future<bool> publishWithAck(NostrEvent event) async {
+    final connected = _relays.values.where((r) => r.isConnected).toList();
+    if (connected.isEmpty) return false;
+    final results = await Future.wait(
+      connected.map((r) => r.publishWithAck(event)),
+    );
+    return results.any((accepted) => accepted);
   }
 
   /// Publish to all connected relays (or a targeted subset).

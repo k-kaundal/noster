@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/features/auth/services/key_backup_service.dart';
 
 /// Auth flow inspired by Damus, Amethyst, X, and Threads:
 /// - Hero brand section on top (gradient, logo, tagline)
@@ -32,6 +34,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   // Signup form
   String? _generatedNsec;
   bool _keyBackedUp = false;
+  bool _keySavedToFile = false;
   bool _showBackupKey = false;
 
   @override
@@ -41,35 +44,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  void _showError(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Theme.of(context).colorScheme.error,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  void _showSuccess(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
   Future<void> _runAuth(
       Future<void> Function() action, String errorPrefix) async {
     setState(() => _isLoading = true);
     try {
       await action();
-      if (mounted) context.go('/feed');
+      if (mounted) {
+        AppToast.success(context, 'Welcome to NostrFeed');
+        context.go('/feed');
+      }
     } catch (e) {
-      _showError('$errorPrefix: ${e.toString()}');
+      if (mounted) AppToast.error(context, '$errorPrefix: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -80,7 +65,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _loginWithKey() async {
     final input = _nsecController.text.trim();
     if (input.isEmpty) {
-      _showError('Please enter a private key');
+      AppToast.warning(context, 'Please enter a private key');
       return;
     }
     final notifier = ref.read(authStateProvider.notifier);
@@ -89,18 +74,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } else if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(input)) {
       await _runAuth(() => notifier.loginWithHexKey(input), 'Invalid hex key');
     } else {
-      _showError('Key must start with nsec1 or be a 64-char hex string');
+      AppToast.warning(
+        context,
+        'Key must start with nsec1 or be a 64-char hex string',
+      );
     }
   }
 
   Future<void> _browseReadOnly() async {
     final input = _npubController.text.trim();
     if (input.isEmpty) {
-      _showError('Please enter an npub');
+      AppToast.warning(context, 'Please enter an npub');
       return;
     }
     if (!input.startsWith('npub1')) {
-      _showError('Public key must start with npub1');
+      AppToast.warning(context, 'Public key must start with npub1');
       return;
     }
     final notifier = ref.read(authStateProvider.notifier);
@@ -118,7 +106,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final auth = ref.read(authStateProvider);
       if (auth.privateKey != null) {
         // Convert hex to nsec for display
-        final nsec = ref.read(nostrServiceProvider).authService.encodeNsec(auth.privateKey!);
+        final nsec = ref
+            .read(nostrServiceProvider)
+            .authService
+            .encodeNsec(auth.privateKey!);
         setState(() {
           _generatedNsec = nsec;
           _step = _AuthStep.backup;
@@ -127,7 +118,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         if (mounted) context.go('/feed');
       }
     } catch (e) {
-      _showError('Failed to generate keys: $e');
+      if (mounted) AppToast.error(context, 'Failed to generate keys: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -136,15 +127,59 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _copyKey() async {
     if (_generatedNsec == null) return;
     await Clipboard.setData(ClipboardData(text: _generatedNsec!));
-    _showSuccess('Copied. Paste it somewhere safe — a password manager works.');
+    if (mounted) {
+      AppToast.success(
+        context,
+        'Key copied — store it somewhere safe, like a password manager',
+      );
+    }
+  }
+
+  /// Download the key as a backup file (Files app / Drive / Save-As).
+  Future<void> _downloadKeyFile() async {
+    final auth = ref.read(authStateProvider);
+    final privHex = auth.privateKey;
+    final pubHex = auth.pubkey;
+    if (privHex == null || pubHex == null || _generatedNsec == null) {
+      AppToast.warning(context, 'Generate your key first');
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      final authService = ref.read(nostrServiceProvider).authService;
+      final npub = authService.encodeNpub(pubHex);
+      final saved = await KeyBackupService.saveKeyFile(
+        nsec: _generatedNsec!,
+        hexPrivateKey: privHex,
+        npub: npub,
+        pubkey: pubHex,
+      );
+      if (!mounted) return;
+      if (saved) {
+        _keySavedToFile = true;
+        AppToast.success(context, 'Key file saved — keep it private');
+        setState(() {});
+      }
+      // saved == false → user dismissed the sheet; no toast needed.
+    } catch (e) {
+      if (mounted) AppToast.error(context, 'Could not save file: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _finishSignup() async {
-    if (!_keyBackedUp) {
-      _showError('Please confirm you have saved your key');
+    if (!_keyBackedUp && !_keySavedToFile) {
+      AppToast.warning(
+        context,
+        'Please back up your key first — it\'s the only way back in',
+      );
       return;
     }
-    if (mounted) context.go('/feed');
+    if (mounted) {
+      AppToast.success(context, 'Your account is ready. Welcome to NostrFeed');
+      context.go('/feed');
+    }
   }
 
   Future<void> _pasteFromClipboard(TextEditingController controller) async {
@@ -601,7 +636,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Copy button
+          // Backup actions: download file (primary) + copy (secondary)
+          FilledButton.tonalIcon(
+            onPressed: _isLoading ? null : _downloadKeyFile,
+            icon: Icon(
+              _keySavedToFile ? Icons.check_circle_outline : Icons.download_outlined,
+            ),
+            label: Text(
+              _keySavedToFile ? 'Key file saved' : 'Download key file',
+            ),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _copyKey,
             icon: const Icon(Icons.copy_outlined),
@@ -657,7 +708,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           const SizedBox(height: 24),
 
           FilledButton(
-            onPressed: _keyBackedUp && !_isLoading ? _finishSignup : null,
+            onPressed:
+                (_keyBackedUp || _keySavedToFile) && !_isLoading ? _finishSignup : null,
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(

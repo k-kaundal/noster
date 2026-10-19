@@ -69,6 +69,11 @@ over ~100 lines.
 - **Post interactions** (like/repost/bookmark/zap refresh): go through
   `postActionsProvider` (`features/feed/providers/post_actions.dart`) — never
   inside widgets.
+- **Chat / DMs**: all DM decryption + conversation/thread assembly goes
+  through `dmStoreProvider` (`features/chat/providers/dm_store.dart`). NIP-17
+  gift wraps can NOT be decrypted by their sender and have randomized
+  timestamps — so sent messages must be shown from the store's local outbox,
+  never by re-fetching from relays. `MessageBubble` is presentational only.
 - **Freshness caches** (`profileCache`/`followsCache`) are instance state on
   `NostrService`, injected into `SocialRepository` — never static globals.
 - **Nostr access**: go through `nostrServiceProvider` (facade). Repositories

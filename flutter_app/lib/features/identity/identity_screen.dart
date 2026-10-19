@@ -5,11 +5,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/identity/providers/address_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/services/address_service.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
+import 'package:nostrfeed_mobile/features/auth/services/key_backup_service.dart';
 
 /// Identity screen: profile, signer, lightning address, NIP-05, and relays.
 class IdentityScreen extends ConsumerWidget {
@@ -132,12 +134,12 @@ class _ProfileCard extends ConsumerWidget {
 
 // ── Signer Status Card ───────────────────────────────────────────────
 
-class _SignerStatusCard extends StatelessWidget {
+class _SignerStatusCard extends ConsumerWidget {
   final AuthState auth;
   const _SignerStatusCard({required this.auth});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final hasKeys = auth.isLoggedIn && !auth.isReadOnly;
 
@@ -169,9 +171,98 @@ class _SignerStatusCard extends StatelessWidget {
                   : 'Log in with an nsec to enable signing.',
             ),
           ),
+          if (hasKeys) ...[
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.shield_outlined,
+                          size: 16, color: scheme.error),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Back up your key — there is no password reset.',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _exportKey(context, ref),
+                          icon: const Icon(Icons.download_outlined, size: 18),
+                          label: const Text('Download key file'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _copyKey(context, ref),
+                          icon: const Icon(Icons.copy_outlined, size: 18),
+                          label: const Text('Copy nsec'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _exportKey(BuildContext context, WidgetRef ref) async {
+    final privHex = auth.privateKey;
+    final pubHex = auth.pubkey;
+    if (privHex == null || pubHex == null) return;
+    try {
+      final authService = ref.read(nostrServiceProvider).authService;
+      final saved = await KeyBackupService.saveKeyFile(
+        nsec: authService.encodeNsec(privHex),
+        hexPrivateKey: privHex,
+        npub: authService.encodeNpub(pubHex),
+        pubkey: pubHex,
+      );
+      if (saved && context.mounted) {
+        AppToast.success(context, 'Key file saved — keep it private');
+      }
+    } catch (e) {
+      if (context.mounted) AppToast.error(context, 'Could not save file: $e');
+    }
+  }
+
+  Future<void> _copyKey(BuildContext context, WidgetRef ref) async {
+    final privHex = auth.privateKey;
+    if (privHex == null) return;
+    final nsec = ref.read(nostrServiceProvider).authService.encodeNsec(privHex);
+    await Clipboard.setData(ClipboardData(text: nsec));
+    if (context.mounted) {
+      AppToast.success(context, 'nsec copied — store it somewhere safe');
+    }
   }
 }
 

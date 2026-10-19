@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 
@@ -512,11 +513,7 @@ class ModernDrawer extends ConsumerWidget {
                         title: 'Logout',
                         subtitle: 'Sign out',
                         isDestructive: true,
-                        onTap: () {
-                          ref.read(authStateProvider.notifier).logout();
-                          Navigator.pop(context);
-                          context.go('/feed');
-                        },
+                        onTap: () => _confirmLogout(context, ref, auth),
                       ),
                     ],
                     const SizedBox(height: 16),
@@ -537,6 +534,55 @@ class ModernDrawer extends ConsumerWidget {
     HapticFeedback.lightImpact();
     Navigator.pop(context);
     context.push(route);
+  }
+
+  /// Professional sign-out: confirm first, warn about key backup for
+  /// full accounts (a nsec is unrecoverable once wiped), then toast.
+  Future<void> _confirmLogout(
+    BuildContext context,
+    WidgetRef ref,
+    AuthState auth,
+  ) async {
+    final isReadOnly = auth.isReadOnly;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return AlertDialog(
+          icon: Icon(
+            Icons.logout_rounded,
+            color: scheme.error,
+            size: 32,
+          ),
+          title: const Text('Sign out?'),
+          content: Text(
+            isReadOnly
+                ? 'You are browsing read-only. Signing out removes the public key from this device.'
+                : 'Your secret key will be removed from this device.\n\n'
+                    'If you have not backed up your nsec, you will permanently lose access to this account.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(backgroundColor: scheme.error),
+              child: const Text('Sign out'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    await ref.read(authStateProvider.notifier).logout();
+    if (!context.mounted) return;
+    Navigator.pop(context); // close drawer
+    AppToast.info(context, 'Signed out');
+    context.go('/feed');
   }
 }
 
@@ -563,6 +609,15 @@ class _DrawerHeader extends ConsumerWidget {
     final profile =
         cachedProfile ?? profileAsync?.valueOrNull ?? auth.profile;
     final bannerUrl = profile?.banner;
+
+    String npubShort = '';
+    if (auth.pubkey != null) {
+      final npub =
+          ref.read(nostrServiceProvider).authService.encodeNpub(auth.pubkey!);
+      npubShort = npub.length > 20
+          ? '${npub.substring(0, 12)}…${npub.substring(npub.length - 4)}'
+          : npub;
+    }
 
     return Container(
       width: double.infinity,
@@ -668,34 +723,93 @@ class _DrawerHeader extends ConsumerWidget {
                   ),
                 ),
 
-                if (auth.isLoggedIn && profile?.nip05 != null) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.25),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.verified_rounded, color: Colors.white, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          profile!.nip05!,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                if (auth.isLoggedIn) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      // NIP-05 verified badge
+                      if (profile?.nip05 != null && profile!.nip05!.isNotEmpty)
+                        _HeaderChip(
+                          icon: Icons.verified_rounded,
+                          label: profile.nip05!,
+                        )
+                      else if (npubShort.isNotEmpty)
+                        // npub chip with copy
+                        GestureDetector(
+                          onTap: () async {
+                            final npub = ref
+                                .read(nostrServiceProvider)
+                                .authService
+                                .encodeNpub(auth.pubkey!);
+                            await Clipboard.setData(
+                              ClipboardData(text: npub),
+                            );
+                            if (context.mounted) {
+                              AppToast.success(
+                                context,
+                                'Public key copied',
+                              );
+                            }
+                          },
+                          child: _HeaderChip(
+                            icon: Icons.key_rounded,
+                            label: npubShort,
+                            trailing: Icons.copy_rounded,
                           ),
                         ),
-                      ],
-                    ),
+                      const SizedBox(width: 8),
+                      // Read-only badge
+                      if (auth.isReadOnly)
+                        const _HeaderChip(
+                          icon: Icons.visibility_rounded,
+                          label: 'Read-only',
+                        ),
+                    ],
                   ),
                 ],
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Drawer Header Chip ─────────────────────────────────────────────
+
+class _HeaderChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final IconData? trailing;
+
+  const _HeaderChip({required this.icon, required this.label, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 13),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 5),
+            Icon(trailing, color: Colors.white, size: 12),
+          ],
         ],
       ),
     );

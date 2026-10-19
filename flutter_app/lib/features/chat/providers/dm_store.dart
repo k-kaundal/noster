@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart';
@@ -38,7 +41,26 @@ class ChatMessage {
 /// on the relay round-trip alone makes sent messages vanish or sort wrong).
 class DmStore {
   final Ref _ref;
-  DmStore(this._ref);
+
+  /// Completes once the persisted outbox has been loaded from disk.
+  /// Await this before reading [conversations] or [threadFor] after a cold
+  /// start — otherwise the outbox is still empty and sent messages vanish.
+  late final Future<void> ready;
+
+  /// Bumped every time the outbox or decryption cache changes. The UI
+  /// watches [dmStoreVersionProvider] to rebuild threads/conversation lists
+  /// reactively (e.g. right after sending a message).
+  int _version = 0;
+  int get version => _version;
+
+  DmStore(this._ref) {
+    ready = _restoreOutbox().then((_) => _bump());
+  }
+
+  void _bump() {
+    _version++;
+    _ref.read(dmStoreVersionProvider.notifier).state = _version;
+  }
 
   /// eventId → decrypted payload, for events we successfully decrypted.
   final Map<String, DecryptedDm> _decrypted = {};
@@ -49,6 +71,12 @@ class DmStore {
 
   /// Local outbox: peerPubkey → messages sent by us not yet seen on relays.
   final Map<String, List<ChatMessage>> _outbox = {};
+
+  /// SharedPreferences key for the persisted outbox. NIP-17 gift wraps can
+  /// never be re-fetched by their sender (encrypted to the recipient, signed
+  /// by an ephemeral key), so this on-disk copy is the ONLY way our own sent
+  /// messages survive an app restart.
+  static const _outboxKey = 'dm_outbox_v1';
 
   DecryptedDm? cached(String eventId) => _decrypted[eventId];
 
@@ -72,6 +100,7 @@ class DmStore {
         // A wrap we CAN decrypt that was sent BY us means the peer echoed our
         // own message back (some relay setups) — clear matching outbox entry.
         _reconcileOutbox(d.senderPubkey, d.plaintext, d.createdAt);
+        _bump();
       }
     }
   }
@@ -213,15 +242,91 @@ class DmStore {
       isPending: true,
     );
     _outbox.putIfAbsent(peerPubkey, () => []).insert(0, msg);
+    _persistOutbox();
+    _bump();
+  }
+
+  /// Remove a pending message from the outbox (e.g. publish failed and the
+  /// user discarded it).
+  void removePending(String peerPubkey, String messageId) {
+    final list = _outbox[peerPubkey];
+    if (list == null) return;
+    list.removeWhere((m) => m.id == messageId);
+    if (list.isEmpty) _outbox.remove(peerPubkey);
+    _persistOutbox();
+    _bump();
   }
 
   /// Clear the outbox for a peer (e.g. on logout or manual resync).
-  void clearOutbox(String peerPubkey) => _outbox.remove(peerPubkey);
+  void clearOutbox(String peerPubkey) {
+    _outbox.remove(peerPubkey);
+    _persistOutbox();
+    _bump();
+  }
+
+  // ── Outbox persistence ─────────────────────────────────────────────
+
+  Future<void> _persistOutbox() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = _outbox.map(
+        (peer, msgs) => MapEntry(
+          peer,
+          msgs
+              .map((m) => {
+                    'id': m.id,
+                    'text': m.text,
+                    'senderPubkey': m.senderPubkey,
+                    'recipientPubkey': m.recipientPubkey,
+                    'createdAt': m.createdAt,
+                  })
+              .toList(),
+        ),
+      );
+      await prefs.setString(_outboxKey, jsonEncode(json));
+    } catch (_) {
+      // Persistence is best-effort — never crash the send flow over it.
+    }
+  }
+
+  Future<void> _restoreOutbox() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_outboxKey);
+      if (raw == null || raw.isEmpty) return;
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      _outbox.clear();
+      // Drop pending messages older than 7 days — if no relay has accepted
+      // them by now they never will, and keeping them forever would show
+      // phantom "sending…" messages.
+      final cutoff =
+          DateTime.now().millisecondsSinceEpoch ~/ 1000 - 7 * 24 * 3600;
+      for (final entry in json.entries) {
+        final msgs = (entry.value as List)
+            .map(
+              (m) => ChatMessage(
+                id: m['id'] as String,
+                text: m['text'] as String,
+                senderPubkey: m['senderPubkey'] as String,
+                recipientPubkey: m['recipientPubkey'] as String?,
+                createdAt: m['createdAt'] as int,
+                isPending: true,
+              ),
+            )
+            .where((m) => m.createdAt > cutoff)
+            .toList();
+        if (msgs.isNotEmpty) _outbox[entry.key] = msgs;
+      }
+    } catch (_) {
+      // Corrupted/outdated store — start with an empty outbox.
+    }
+  }
 
   void clearAll() {
     _decrypted.clear();
     _undecryptable.clear();
     _outbox.clear();
+    _persistOutbox();
   }
 
   bool _isInOutbox(String peerPubkey, String plaintext) {
@@ -238,6 +343,7 @@ class DmStore {
       final idx = entry.value.indexWhere((m) => m.text == plaintext);
       if (idx >= 0) {
         entry.value.removeAt(idx);
+        _persistOutbox();
         return;
       }
     }
@@ -245,3 +351,23 @@ class DmStore {
 }
 
 final dmStoreProvider = Provider<DmStore>((ref) => DmStore(ref));
+
+/// Version counter for [DmStore] mutations. Widgets watch this to rebuild
+/// threads/conversation lists reactively when the outbox or decryption cache
+/// changes (e.g. right after sending a message).
+final dmStoreVersionProvider = StateProvider<int>((ref) => 0);
+
+/// Reactive conversation list: combines relay DM events + outbox, decrypts
+/// once, and rebuilds only when the underlying data changes — no FutureBuilder
+/// flicker in the UI.
+final conversationListProvider =
+    FutureProvider.autoDispose<List<({String peer, NostrEvent lastEvent, DecryptedDm? decrypted})>>(
+        (ref) async {
+  final events = await ref.watch(dmsProvider.future);
+  final store = ref.read(dmStoreProvider);
+  await store.ready;
+  await store.prime(events);
+  // Watch the version so this provider re-evaluates when the outbox changes.
+  ref.watch(dmStoreVersionProvider);
+  return store.conversations(events);
+});

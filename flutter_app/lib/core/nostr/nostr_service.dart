@@ -105,6 +105,11 @@ class NostrService {
     relayPool.publish(event);
   }
 
+  /// Publish and wait for at least one relay to accept the event.
+  /// Use this for anything the user expects to be delivered (DMs, posts).
+  Future<bool> publishWithAck(NostrEvent event) =>
+      relayPool.publishWithAck(event);
+
   NostrEvent createPost(String content, {List<List<String>>? tags}) {
     _requireSigning();
     final allTags = <List<String>>[
