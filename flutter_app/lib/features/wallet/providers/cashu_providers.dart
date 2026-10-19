@@ -46,8 +46,10 @@ class CashuWalletNotifier extends Notifier<CashuWalletState> {
   @override
   CashuWalletState build() {
     _service = CashuService(mintUrl: Env.cashuMintUrl);
-    _init();
-    return const CashuWalletState();
+    // Defer the async init so we never touch `state` before build() has
+    // returned the initial value (Riverpod throws otherwise).
+    Future.microtask(_init);
+    return const CashuWalletState(isLoading: true);
   }
 
   Future<void> _init() async {

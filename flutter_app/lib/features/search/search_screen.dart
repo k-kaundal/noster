@@ -129,11 +129,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       backgroundColor: colorScheme.surface,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.menu_rounded),
-          tooltip: 'Menu',
+          icon: const Icon(Icons.arrow_back_rounded),
+          tooltip: 'Back',
           onPressed: () {
             HapticFeedback.lightImpact();
-            Scaffold.of(context).openDrawer();
+            context.pop();
           },
         ),
         title: TextField(

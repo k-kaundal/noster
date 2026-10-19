@@ -42,13 +42,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
 
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu_rounded),
-          tooltip: 'Menu',
-          onPressed: () {
-            HapticFeedback.lightImpact();
-            Scaffold.of(context).openDrawer();
-          },
+        leading: Builder(
+          builder: (scaffoldContext) => IconButton(
+            icon: const Icon(Icons.menu_rounded),
+            tooltip: 'Menu',
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              Scaffold.of(scaffoldContext).openDrawer();
+            },
+          ),
         ),
         title: Row(
           children: [

@@ -57,13 +57,20 @@ class LightningAddressNotifier extends Notifier<LightningAddressState> {
   @override
   LightningAddressState build() {
     _service = AddressService();
+    // fireImmediately would call the listener synchronously during build(),
+    // before the initial state exists — mutating `state` there throws.
+    // Defer the first invocation to a microtask instead.
     ref.listen(lnbitsAuthProvider, (previous, next) {
       if (next.isConnected && next.account != null) {
-        _load();
+        unawaited(_load());
       } else {
         state = const LightningAddressState();
       }
-    }, fireImmediately: true);
+    });
+    final lnbits = ref.read(lnbitsAuthProvider);
+    if (lnbits.isConnected && lnbits.account != null) {
+      Future.microtask(_load);
+    }
     return const LightningAddressState();
   }
 
@@ -270,13 +277,19 @@ class Nip5Notifier extends Notifier<Nip5State> {
   @override
   Nip5State build() {
     _service = AddressService();
+    // fireImmediately would mutate `state` during build() — defer the
+    // initial load to a microtask instead.
     ref.listen(lnbitsAuthProvider, (previous, next) {
       if (next.isConnected && next.account != null) {
-        _load();
+        unawaited(_load());
       } else {
         state = const Nip5State();
       }
-    }, fireImmediately: true);
+    });
+    final lnbits = ref.read(lnbitsAuthProvider);
+    if (lnbits.isConnected && lnbits.account != null) {
+      Future.microtask(_load);
+    }
     return const Nip5State();
   }
 

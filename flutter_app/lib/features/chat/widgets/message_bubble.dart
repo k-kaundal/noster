@@ -1,52 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/features/chat/providers/dm_store.dart';
 
-class MessageBubble extends ConsumerStatefulWidget {
-  final NostrEvent event;
+/// Renders one chat message. The plaintext is already resolved by the
+/// [DmStore] (or carried in the local outbox), so the bubble is a pure
+/// presentational widget — no async decryption per bubble.
+class MessageBubble extends StatelessWidget {
+  final ChatMessage message;
   final bool isSent;
 
-  const MessageBubble({super.key, required this.event, required this.isSent});
-
-  @override
-  ConsumerState<MessageBubble> createState() => _MessageBubbleState();
-}
-
-class _MessageBubbleState extends ConsumerState<MessageBubble> {
-  String? _decryptedText;
-  bool _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _decrypt();
-  }
-
-  Future<void> _decrypt() async {
-    final nostr = ref.read(nostrServiceProvider);
-    final result = await nostr.decryptDm(widget.event);
-    if (mounted) {
-      setState(() {
-        _decryptedText = result?.plaintext;
-        _failed = result == null;
-      });
-    }
-  }
+  const MessageBubble({super.key, required this.message, required this.isSent});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      widget.event.createdAt * 1000,
+      message.createdAt * 1000,
     );
-    final isSent = widget.isSent;
 
-    final displayText = _failed
-        ? '🔒 Unable to decrypt'
-        : (_decryptedText ?? '…');
+    final displayText =
+        message.text.isEmpty ? '🔒 Unable to decrypt' : message.text;
 
     return Align(
       alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
@@ -83,7 +57,8 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                 fontSize: 15,
                 height: 1.35,
                 color: isSent ? Colors.white : colorScheme.onSurface,
-                fontStyle: _failed ? FontStyle.italic : FontStyle.normal,
+                fontStyle:
+                    message.text.isEmpty ? FontStyle.italic : FontStyle.normal,
               ),
             ),
             const SizedBox(height: 3),
@@ -102,7 +77,9 @@ class _MessageBubbleState extends ConsumerState<MessageBubble> {
                 if (isSent) ...[
                   const SizedBox(width: 4),
                   Icon(
-                    Icons.lock_rounded,
+                    message.isPending
+                        ? Icons.schedule_rounded
+                        : Icons.lock_rounded,
                     size: 10,
                     color: Colors.white.withValues(alpha: 0.7),
                   ),

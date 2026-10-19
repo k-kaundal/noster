@@ -115,12 +115,19 @@ class LnbitsAuthNotifier extends Notifier<LnbitsAuthState> {
       final nextKey = next.pubkey;
       if (next.isLoggedIn && nextKey != null && nextKey != prevKey) {
         // New login or account switch
-        _restore();
+        unawaited(_restore());
       } else if (!next.isLoggedIn) {
         // Logged out — drop the wallet session
         state = const LnbitsAuthState();
       }
-    }, fireImmediately: true);
+    });
+    // Restore any persisted wallet session after the initial state exists.
+    // fireImmediately would run the listener before build() returns, and
+    // mutating `state` at that point throws.
+    final auth = ref.read(authStateProvider);
+    if (auth.isLoggedIn && auth.pubkey != null) {
+      Future.microtask(_restore);
+    }
     return const LnbitsAuthState();
   }
 
