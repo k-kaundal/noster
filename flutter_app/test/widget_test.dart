@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:nostrfeed_mobile/theme/app_theme.dart';
-import 'package:nostrfeed_mobile/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 
 void main() {
   test('AppTheme has light and dark themes', () {

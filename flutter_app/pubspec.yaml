@@ -16,7 +16,6 @@ dependencies:
   go_router: ^16.2.0
 
   # Nostr protocol
-  nostr: ^2.0.0
   web_socket_channel: ^3.0.1
   bech32: ^0.2.2
   bip340: ^0.3.0
@@ -25,10 +24,9 @@ dependencies:
   pointycastle: ^4.0.0
 
   # Lightning / Wallets
-  bolt11_decoder: ^1.0.0
-  # QR code scanning — replaced mobile_scanner (doesn't support arm64 simulators)
-  # with qr_code_scanner which works everywhere.
-  qr_code_scanner: ^1.0.1
+  # QR code scanning. mobile_scanner is actively maintained and compatible
+  # with modern AGP versions (qr_code_scanner is abandoned and breaks on AGP 8+).
+  mobile_scanner: ^7.1.3
 
   # Local storage
   shared_preferences: ^2.3.2
@@ -38,7 +36,6 @@ dependencies:
   image_picker: ^1.1.2
   cached_network_image: ^3.4.1
   file_picker: ^10.1.2
-  mime: ^1.0.5
   flutter_svg: ^2.0.10+1
 
   # HTTP & APIs
@@ -54,10 +51,7 @@ dependencies:
   photo_view: ^0.15.0
   intl: ^0.20.2
   uuid: ^4.5.1
-  equatable: ^2.0.5
   flutter_linkify: ^6.0.0
-  linkify: ^5.0.0
-  path_provider: ^2.1.4
   video_player: ^2.14.1
   chewie: ^1.13.1
 

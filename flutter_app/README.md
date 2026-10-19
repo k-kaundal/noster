@@ -1,17 +1,39 @@
-# nostrfeed_mobile
+# NostrFeed Mobile
 
-A new Flutter project.
+NostrFeed — Nostr Operating System for People, Creators & Communities.
+Flutter client (Android / iOS).
 
-## Getting Started
+## Quick start
 
-This project is a starting point for a Flutter application.
+```bash
+flutter pub get
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
+Build-time configuration (relays, LNbits, Cashu mint, premium links) is done
+via `--dart-define`, see `lib/core/config/env.dart`.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Quality gates
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter analyze   # 0 issues in lib/
+flutter test      # deterministic unit + widget tests
+```
+
+## Architecture
+
+Feature-first layout with a shared `core/` layer. See [AGENTS.md](AGENTS.md)
+for the full structure diagram and conventions.
+
+- **State management**: Riverpod (autoDispose providers)
+- **Routing**: go_router (`lib/app/router.dart`)
+- **Nostr**: custom relay pool + repositories under `lib/core/nostr/`
+- **Shared UI kit**: `ErrorView`, `EmptyState`, `SkeletonList`,
+  `AsyncFeedList`, `AppSheet`, `AppDialog` under `lib/core/widgets/`
+
+## Regenerating icons / splash
+
+```bash
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+```
