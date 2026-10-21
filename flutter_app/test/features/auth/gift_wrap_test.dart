@@ -88,5 +88,96 @@ void main() {
         expect(w.createdAt, greaterThan(now - 172800 - 5));
       }
     });
+
+    test('reply includes e tag to the parent rumor', () {
+      final wraps = auth.signGiftWrap(
+        senderPrivateKey: alicePriv,
+        senderPubkey: alicePub,
+        recipientPubkey: bobPub,
+        plaintext: 'this is a reply',
+        replyToId: 'parent-message-id-123',
+      );
+      final rumor = auth.unwrapGiftWrap(
+        recipientPrivateKey: bobPriv,
+        giftWrap: wraps.firstWhere((w) => w.getTag('p') == bobPub),
+      );
+      final tags = (rumor['tags'] as List).cast<List>();
+      final eTags = tags.where((t) => t.isNotEmpty && t[0] == 'e').toList();
+      expect(eTags, hasLength(1));
+      expect(eTags.first[1], 'parent-message-id-123');
+    });
+
+    test('reaction uses kind 7 with e tag', () {
+      final wraps = auth.signGiftWrap(
+        senderPrivateKey: alicePriv,
+        senderPubkey: alicePub,
+        recipientPubkey: bobPub,
+        plaintext: '🔥',
+        kind: 7,
+        extraTags: [
+          ['e', 'reacted-message-id'],
+        ],
+      );
+      final rumor = auth.unwrapGiftWrap(
+        recipientPrivateKey: bobPriv,
+        giftWrap: wraps.firstWhere((w) => w.getTag('p') == bobPub),
+      );
+      expect(rumor['kind'], 7);
+      expect(rumor['content'], '🔥');
+    });
+
+    test('file message uses kind 15 with metadata tags', () {
+      final wraps = auth.signGiftWrap(
+        senderPrivateKey: alicePriv,
+        senderPubkey: alicePub,
+        recipientPubkey: bobPub,
+        plaintext: 'https://blossom.example/img.jpg',
+        kind: 15,
+        extraTags: [
+          ['m', 'image/jpeg'],
+          ['alt', 'a photo'],
+        ],
+      );
+      final rumor = auth.unwrapGiftWrap(
+        recipientPrivateKey: bobPriv,
+        giftWrap: wraps.firstWhere((w) => w.getTag('p') == bobPub),
+      );
+      expect(rumor['kind'], 15);
+      final tags = (rumor['tags'] as List).cast<List>();
+      expect(tags.any((t) => t[0] == 'm' && t[1] == 'image/jpeg'), isTrue);
+    });
+
+    test('subject tag is carried in the rumor', () {
+      final wraps = auth.signGiftWrap(
+        senderPrivateKey: alicePriv,
+        senderPubkey: alicePub,
+        recipientPubkey: bobPub,
+        plaintext: 'hello room',
+        subject: 'Weekend plans',
+      );
+      final rumor = auth.unwrapGiftWrap(
+        recipientPrivateKey: bobPriv,
+        giftWrap: wraps.firstWhere((w) => w.getTag('p') == bobPub),
+      );
+      final tags = (rumor['tags'] as List).cast<List>();
+      expect(
+        tags.any((t) => t[0] == 'subject' && t[1] == 'Weekend plans'),
+        isTrue,
+      );
+    });
+
+    test('expiration tag is set on both rumor and wrap (disappearing)', () {
+      final exp = (DateTime.now().millisecondsSinceEpoch ~/ 1000) + 3600;
+      final wraps = auth.signGiftWrap(
+        senderPrivateKey: alicePriv,
+        senderPubkey: alicePub,
+        recipientPubkey: bobPub,
+        plaintext: 'self-destruct',
+        expiration: exp,
+      );
+      for (final w in wraps) {
+        expect(w.getTag('expiration'), '$exp');
+      }
+    });
   });
 }

@@ -38,14 +38,95 @@ class DmRepository {
   ///
   /// Returns TWO gift wraps per NIP-17: one for the recipient, one for the
   /// sender (so the sender's clients can decrypt and show their own message).
-  List<NostrEvent> createNip17Dm(String peerPubkey, String plaintext) {
+  List<NostrEvent> createNip17Dm(
+    String peerPubkey,
+    String plaintext, {
+    String? replyToId,
+    String? subject,
+  }) {
     ctx.requireSigning();
     return ctx.authService.signGiftWrap(
       senderPrivateKey: ctx.auth.privateKey!,
       senderPubkey: ctx.auth.pubkey!,
       recipientPubkey: peerPubkey,
       plaintext: plaintext,
+      replyToId: replyToId,
+      subject: subject,
     );
+  }
+
+  /// NIP-17 reaction (kind 7 rumor) on a chat message — emoji reactions
+  /// inside encrypted chats, per NIP-17 rumor definitions.
+  List<NostrEvent> createNip17Reaction(
+    String peerPubkey, {
+    required String messageId,
+    String emoji = '+',
+  }) {
+    ctx.requireSigning();
+    return ctx.authService.signGiftWrap(
+      senderPrivateKey: ctx.auth.privateKey!,
+      senderPubkey: ctx.auth.pubkey!,
+      recipientPubkey: peerPubkey,
+      plaintext: emoji,
+      kind: 7,
+      extraTags: [
+        ['e', messageId],
+      ],
+    );
+  }
+
+  /// NIP-17 file message (kind 15 rumor) — share a file/image in an
+  /// encrypted chat. The content is the file URL; metadata goes in tags.
+  List<NostrEvent> createNip17FileMessage(
+    String peerPubkey, {
+    required String url,
+    String? mimeType,
+    String? alt,
+    String? blurhash,
+  }) {
+    ctx.requireSigning();
+    return ctx.authService.signGiftWrap(
+      senderPrivateKey: ctx.auth.privateKey!,
+      senderPubkey: ctx.auth.pubkey!,
+      recipientPubkey: peerPubkey,
+      plaintext: url,
+      kind: 15,
+      extraTags: [
+        if (mimeType != null) ['m', mimeType],
+        if (alt != null) ['alt', alt],
+        if (blurhash != null) ['blurhash', blurhash],
+      ],
+    );
+  }
+
+  /// NIP-17 GROUP chat room: wraps one rumor for every member of the room
+  /// (recipients + self). The room identity is the set of p-tags; adding or
+  /// removing a member creates a NEW room with clean history (per NIP-17).
+  /// Returns one gift wrap per recipient plus the sender copy.
+  List<NostrEvent> createNip17GroupMessage(
+    List<String> memberPubkeys,
+    String plaintext, {
+    String? subject,
+    String? replyToId,
+  }) {
+    ctx.requireSigning();
+    final wraps = <NostrEvent>[];
+    final me = ctx.auth.pubkey!;
+    // Deduplicate members and always include a self copy.
+    final recipients = {...memberPubkeys, me};
+    for (final member in recipients) {
+      wraps.addAll(
+        ctx.authService.signGiftWrap(
+          senderPrivateKey: ctx.auth.privateKey!,
+          senderPubkey: me,
+          recipientPubkey: member,
+          plaintext: plaintext,
+          subject: subject,
+          replyToId: replyToId,
+        ),
+      );
+    }
+    return wraps;
   }
 
   /// NIP-17 DM inbox relay list (kind 10050) — tells OTHER users where to

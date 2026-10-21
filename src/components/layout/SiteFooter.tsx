@@ -48,6 +48,9 @@ export function SiteFooter({ className }: { className?: string }) {
       <Link to="/privacy" className="hover:text-foreground hover:underline">
         Privacy
       </Link>
+      <Link to="/safety" className="hover:text-foreground hover:underline">
+        Safety
+      </Link>
 
       <a
         href={COMMUNITY.url}

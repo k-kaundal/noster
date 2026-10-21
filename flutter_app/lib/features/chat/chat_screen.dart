@@ -36,6 +36,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scrollController = ScrollController();
   bool _isSending = false;
 
+  /// The message being replied to (NIP-17 reply via 'e' tag). Set by
+  /// swiping a bubble, cleared after send or via the cancel button.
+  ChatMessage? _replyingTo;
+
   @override
   void dispose() {
     _messageController.dispose();
@@ -536,16 +540,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           children: [
                             if (showDateSeparator)
                               ChatDateSeparator(timestamp: msg.createdAt),
-                            MessageBubble(
-                              key: ValueKey(msg.id),
-                              message: msg,
-                              isSent: isSent,
-                              onRetry: msg.status == MessageStatus.failed
-                                  ? () => _retryMessage(peerPubkey, msg)
+                            // Swipe right → reply to this message (NIP-17
+                            // 'e' tag reply). Only for text messages.
+                            GestureDetector(
+                              onHorizontalDragEnd: msg.text.isNotEmpty
+                                  ? (_) {
+                                      HapticFeedback.lightImpact();
+                                      setState(() => _replyingTo = msg);
+                                    }
                                   : null,
-                              onDelete: msg.status == MessageStatus.failed
-                                  ? () => _deleteFailed(peerPubkey, msg)
-                                  : null,
+                              child: MessageBubble(
+                                key: ValueKey(msg.id),
+                                message: msg,
+                                isSent: isSent,
+                                onRetry: msg.status == MessageStatus.failed
+                                    ? () => _retryMessage(peerPubkey, msg)
+                                    : null,
+                                onDelete: msg.status == MessageStatus.failed
+                                    ? () => _deleteFailed(peerPubkey, msg)
+                                    : null,
+                              ),
                             ),
                           ],
                         );
@@ -574,14 +588,64 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     String peerPubkey,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
+    final replying = _replyingTo;
 
-    return Container(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 8,
-        top: 8,
-        bottom: MediaQuery.of(context).viewPadding.bottom + 8,
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Reply preview (NIP-17 reply): shows what you're replying to.
+        if (replying != null)
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              border: Border(
+                left: BorderSide(color: colorScheme.primary, width: 3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.reply_rounded, size: 16, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Reply to',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      Text(
+                        replying.text.isEmpty ? '🔒 message' : replying.text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  onPressed: () => setState(() => _replyingTo = null),
+                ),
+              ],
+            ),
+          ),
+        Container(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 8,
+            top: 8,
+            bottom: MediaQuery.of(context).viewPadding.bottom + 8,
+          ),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
@@ -654,6 +718,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ],
       ),
+        ),
+      ],
     );
   }
 
@@ -668,7 +734,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       final nostr = ref.read(nostrServiceProvider);
       // NIP-17 gift-wrapped DM (kind 1059). Returns TWO wraps: the
       // recipient's and our own copy (so our other devices can decrypt).
-      final giftWraps = nostr.createNip17Dm(peerPubkey, text);
+      final giftWraps = nostr.createNip17Dm(
+        peerPubkey,
+        text,
+        replyToId: _replyingTo?.id,
+      );
+      final repliedTo = _replyingTo;
       final recipientWrap = giftWraps.first;
       // Record locally so the message renders immediately (pending state).
       final localId = store.recordSent(
@@ -677,6 +748,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         eventId: recipientWrap.id,
       );
       _messageController.clear();
+      // Clear the reply state AFTER capturing it for the wrap.
+      if (repliedTo != null) setState(() => _replyingTo = null);
       // Opening this thread marked incoming messages read; sending also
       // implies read.
       store.markThreadRead(peerPubkey);

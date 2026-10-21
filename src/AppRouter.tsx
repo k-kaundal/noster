@@ -44,6 +44,7 @@ const LiveStreamingPage = lazy(() => importChunk(() => import("./pages/LiveStrea
 const LiveStreamPage = lazy(() => importChunk(() => import("./pages/LiveStreamPage")));
 const MiniAppsPage = lazy(() => importChunk(() => import("./pages/MiniAppsPage")));
 const PrivacyPolicyPage = lazy(() => importChunk(() => import("./pages/PrivacyPolicyPage")));
+const SafetyPage = lazy(() => importChunk(() => import("./pages/SafetyPage")));
 const NIP19Page = lazy(() =>
   importChunk(() =>
     import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
@@ -153,6 +154,8 @@ export function AppRouter() {
           <Route path="/mini-apps" element={<MiniAppsPage />} />
           {/* Privacy Policy — public page required by Google Play */}
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          {/* Child safety standards — required by Google Play for social apps */}
+          <Route path="/safety" element={<SafetyPage />} />
           {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
           <Route path="/settings" element={<SettingsPage />} />
 
