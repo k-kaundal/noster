@@ -9,6 +9,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
@@ -73,7 +75,18 @@ class _PostCardState extends ConsumerState<PostCard> {
       return const SizedBox.shrink();
     }
 
+    // Content filter: spam and explicit content hide; NIP-36 warnings and
+    // #nsfw tags render behind a tap-to-reveal cover. Blocked authors
+    // disappear entirely.
     final profileAsync = ref.watch(profileProvider(displayEvent.pubkey));
+    final verdict = filteredEventVerdict(
+      ref,
+      displayEvent,
+      authorProfile: profileAsync.valueOrNull,
+    );
+    if (verdict.action == FilterAction.hide) {
+      return const SizedBox.shrink();
+    }
     final reposterProfileAsync = isRepost
         ? ref.watch(profileProvider(widget.event.pubkey))
         : null;
@@ -265,7 +278,14 @@ class _PostCardState extends ConsumerState<PostCard> {
               // ─── Content ───────────────────────────────────────
               // Articles (kind 30023) render as a compact preview card that
               // opens the full reader — never the full markdown inline.
-              if (displayEvent.kind == 30023)
+              if (verdict.action == FilterAction.warn)
+                _ContentWarningCover(
+                  reason: verdict.reason,
+                  child: displayEvent.kind == 30023
+                      ? ArticleCard(event: displayEvent)
+                      : NoteContent(event: displayEvent),
+                )
+              else if (displayEvent.kind == 30023)
                 ArticleCard(event: displayEvent)
               else ...[
                 NoteContent(event: displayEvent),
@@ -473,13 +493,17 @@ class _PostCardState extends ConsumerState<PostCard> {
 // ─── Post Options Menu ──────────────────────────────────────────────
 
 /// 3-dot menu on every post: Report (NIP-56, required by Google Play's
-/// child-safety review), plus Copy link / Copy text.
-class _PostOptionsMenu extends StatelessWidget {
+/// child-safety review), Block author (UGC policy requires a block
+/// mechanism), plus Copy text.
+class _PostOptionsMenu extends ConsumerWidget {
   final NostrEvent event;
   const _PostOptionsMenu({required this.event});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isBlocked =
+        ref.watch(blockedAuthorsProvider).contains(event.pubkey);
+
     return PopupMenuButton<String>(
       icon: Icon(
         Icons.more_vert_rounded,
@@ -488,7 +512,7 @@ class _PostOptionsMenu extends StatelessWidget {
       ),
       tooltip: 'Post options',
       padding: EdgeInsets.zero,
-      onSelected: (value) {
+      onSelected: (value) async {
         switch (value) {
           case 'report':
             showReportDialog(
@@ -499,6 +523,22 @@ class _PostOptionsMenu extends StatelessWidget {
           case 'copy_text':
             Clipboard.setData(ClipboardData(text: event.content));
             AppToast.success(context, 'Text copied');
+          case 'block':
+            final notifier = ref.read(blockedAuthorsProvider.notifier);
+            if (isBlocked) {
+              await notifier.remove(event.pubkey);
+              if (context.mounted) {
+                AppToast.success(context, 'Author unblocked');
+              }
+            } else {
+              await notifier.add(event.pubkey);
+              if (context.mounted) {
+                AppToast.success(
+                  context,
+                  'Author blocked — their posts are hidden',
+                );
+              }
+            }
         }
       },
       itemBuilder: (context) => [
@@ -516,6 +556,21 @@ class _PostOptionsMenu extends StatelessWidget {
                 'Report post',
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'block',
+          child: Row(
+            children: [
+              Icon(
+                isBlocked
+                    ? Icons.person_add_outlined
+                    : Icons.person_off_outlined,
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Text(isBlocked ? 'Unblock author' : 'Block author'),
             ],
           ),
         ),
@@ -764,4 +819,72 @@ int _zapAmountSats(NostrEvent receipt) {
   }
 
   return 0;
+}
+
+/// NIP-36: content the author marked sensitive, behind a tap-to-reveal
+/// cover. The cover exists because the poster asked for it — this is their
+/// label, respected, not the app second-guessing their post.
+class _ContentWarningCover extends StatefulWidget {
+  final String reason;
+  final Widget child;
+  const _ContentWarningCover({required this.reason, required this.child});
+
+  @override
+  State<_ContentWarningCover> createState() => _ContentWarningCoverState();
+}
+
+class _ContentWarningCoverState extends State<_ContentWarningCover> {
+  bool _revealed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_revealed) return widget.child;
+
+    final scheme = Theme.of(context).colorScheme;
+    final label = switch (widget.reason) {
+      'nsfw-tag' => 'Tagged #nsfw by the author',
+      _ => 'Marked as sensitive by the author',
+    };
+
+    return InkWell(
+      onTap: () => setState(() => _revealed = true),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.visibility_off_outlined,
+                size: 28, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 8),
+            Text(
+              'Sensitive content',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Tap to view',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: scheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/features/feed/providers/feed_notifier.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
   const ComposeScreen({super.key});
@@ -94,9 +95,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       nostr.publish(event);
 
       // Refresh all feeds so the new post shows up immediately everywhere
-      // (home feed, profile, following tab).
-      ref.invalidate(feedProvider);
-      ref.invalidate(followingFeedProvider);
+      // (home feed, profile, following tab). The notifiers merge the new
+      // post in silently — no skeleton flicker.
+      ref.read(globalFeedProvider.notifier).refresh();
+      ref.read(followingFeedNotifierProvider.notifier).refresh();
       ref.invalidate(trendingProvider);
       final auth = ref.read(authStateProvider);
       if (auth.pubkey != null) {

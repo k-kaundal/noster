@@ -15,6 +15,7 @@ import 'package:nostrfeed_mobile/features/wallet/wallet_screen.dart';
 import 'package:nostrfeed_mobile/features/wallet/nwc_screen.dart';
 import 'package:nostrfeed_mobile/features/wallet/cashu_wallet_screen.dart';
 import 'package:nostrfeed_mobile/features/wallet/lnbits_screen.dart';
+import 'package:nostrfeed_mobile/features/wallet/lndhub_screen.dart';
 import 'package:nostrfeed_mobile/features/wallet/buy_name_screen.dart';
 import 'package:nostrfeed_mobile/features/settings/settings_screen.dart';
 import 'package:nostrfeed_mobile/features/bookmarks/bookmarks_screen.dart';
@@ -168,6 +169,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Wallet detail screens
       GoRoute(path: '/wallet/nwc', builder: (_, _) => const NwcScreen()),
       GoRoute(path: '/wallet/cashu', builder: (_, _) => const CashuWalletScreen()),
+      GoRoute(path: '/wallet/lndhub', builder: (_, _) => const LndHubScreen()),
       GoRoute(path: '/wallet/lnbits', builder: (_, _) => const LnbitsScreen()),
       GoRoute(path: '/wallet/buy-name', builder: (_, _) => const BuyNameScreen()),
 

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shimmer/shimmer.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
@@ -155,6 +156,62 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final profileAsync = ref.watch(profileProvider(targetPubkey));
     final isOwnProfile = auth.pubkey == targetPubkey;
 
+    // Content filter: a blocked account, or one whose name/bio is explicit,
+    // gets a placeholder — never its content. Your own profile always shows.
+    final filter = ref.watch(contentFilterProvider);
+    final isBlocked =
+        ref.watch(blockedAuthorsProvider).contains(targetPubkey);
+    final profile = profileAsync.valueOrNull;
+    if (!isOwnProfile &&
+        (isBlocked || filter.isExplicitProfile(profile))) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Profile')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  isBlocked
+                      ? Icons.person_off_outlined
+                      : Icons.visibility_off_outlined,
+                  size: 56,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  isBlocked ? 'Account blocked' : 'Profile hidden',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  isBlocked
+                      ? 'You blocked this account. Their posts and profile are hidden.'
+                      : 'This profile was hidden by your content filter.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (isBlocked) ...[
+                  const SizedBox(height: 16),
+                  OutlinedButton(
+                    onPressed: () => ref
+                        .read(blockedAuthorsProvider.notifier)
+                        .remove(targetPubkey),
+                    child: const Text('Unblock'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: profileAsync.when(
         data: (profile) => _buildProfile(context, targetPubkey, profile, isOwnProfile),
@@ -182,6 +239,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final followersAsync = ref.watch(followersProvider(pubkey));
     final userPostsAsync = ref.watch(userPostsProvider(pubkey));
     final auth = ref.watch(authStateProvider);
+    final isBlockedAuthor =
+        ref.watch(blockedAuthorsProvider).contains(pubkey);
 
     final isFollowing = followsAsync.value?.contains(pubkey) ?? false;
     final followersCount = followersAsync.valueOrNull ?? 0;
@@ -248,7 +307,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     icon: const Icon(Icons.more_vert_rounded,
                         color: Colors.white),
                     tooltip: 'Profile options',
-                    onSelected: (value) {
+                    onSelected: (value) async {
                       if (value == 'report') {
                         showReportDialog(context, pubkey: widget.pubkey);
                       } else if (value == 'copy_npub') {
@@ -258,6 +317,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             .encodeNpub(widget.pubkey!);
                         Clipboard.setData(ClipboardData(text: npub));
                         AppToast.success(context, 'Public key copied');
+                      } else if (value == 'block') {
+                        final pk = widget.pubkey;
+                        if (pk == null) return;
+                        final notifier =
+                            ref.read(blockedAuthorsProvider.notifier);
+                        if (isBlockedAuthor) {
+                          await notifier.remove(pk);
+                          if (context.mounted) {
+                            AppToast.success(context, 'Account unblocked');
+                          }
+                        } else {
+                          await notifier.add(pk);
+                          if (context.mounted) {
+                            AppToast.success(
+                              context,
+                              'Account blocked — their posts are hidden',
+                            );
+                          }
+                        }
                       }
                     },
                     itemBuilder: (context) => [
@@ -277,6 +355,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                 color: Theme.of(context).colorScheme.error,
                               ),
                             ),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'block',
+                        child: Row(
+                          children: [
+                            Icon(
+                              isBlockedAuthor
+                                  ? Icons.person_add_outlined
+                                  : Icons.person_off_outlined,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(isBlockedAuthor
+                                ? 'Unblock account'
+                                : 'Block account'),
                           ],
                         ),
                       ),

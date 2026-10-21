@@ -9,6 +9,7 @@ import 'package:nostrfeed_mobile/features/identity/providers/address_providers.d
 import 'package:nostrfeed_mobile/features/wallet/providers/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/invoice_qr.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 /// Amounts people actually ask for, so most requests need no typing.
 const _presets = [1000, 5000, 21000, 100000];
@@ -41,6 +42,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
   bool _isPaid = false;
   bool _isWorking = false;
   String? _errorMsg;
+  bool _showAddressQr = false;
 
   Timer? _poll;
 
@@ -63,7 +65,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
       _errorMsg = null;
     });
     try {
-      final wallet = ref.read(lnbitsAuthProvider).account?.wallets.first;
+      final wallet = ref.read(lnbitsAuthProvider).activeWallet;
       if (wallet?.inkey == null) {
         throw const LnbitsException('No invoice key available', 0);
       }
@@ -246,6 +248,19 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
                       ),
                     ),
                     IconButton(
+                      icon: Icon(
+                        _showAddressQr
+                            ? Icons.text_fields_rounded
+                            : Icons.qr_code_rounded,
+                        size: 16,
+                      ),
+                      tooltip: _showAddressQr ? 'Hide QR' : 'Show QR',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => setState(
+                        () => _showAddressQr = !_showAddressQr,
+                      ),
+                    ),
+                    IconButton(
                       icon: const Icon(Icons.copy_rounded, size: 16),
                       tooltip: 'Copy address',
                       visualDensity: VisualDensity.compact,
@@ -261,6 +276,26 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
                   'Any amount, any number of times — no invoice needed.',
                   style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
                 ),
+                // The address as a scannable QR — a payer's wallet scans it
+                // the same way it scans an invoice.
+                if (_showAddressQr) ...[
+                  const SizedBox(height: 12),
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: QrImageView(
+                        data: 'lightning:$address',
+                        size: 160,
+                        backgroundColor: Colors.white,
+                        errorCorrectionLevel: QrErrorCorrectLevel.M,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

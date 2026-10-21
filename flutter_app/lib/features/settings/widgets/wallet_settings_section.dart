@@ -157,9 +157,7 @@ class WalletSettingsSection extends ConsumerWidget {
             subtitle: const Text(
                 'Force a re-check of payments stuck on "pending"'),
             onTap: () async {
-              final wallet = lnbits.account?.wallets.isEmpty == false
-                  ? lnbits.account!.wallets.first
-                  : null;
+              final wallet = lnbits.activeWallet;
               final key = wallet?.inkey ?? wallet?.adminkey;
               if (key == null) return;
               try {

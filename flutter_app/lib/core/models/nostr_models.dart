@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:hex/hex.dart';
 
+export 'package:nostrfeed_mobile/core/utils/text_sanitize.dart';
+
 /// Nostr event per NIP-01.
 class NostrEvent {
   final String id;
@@ -90,7 +92,12 @@ class NostrEvent {
     return sha256.convert(utf8.encode(data)).toString();
   }
 
-  /// First tag value by name (sanitized for safe rendering).
+  /// First tag value by name — sanitized for safe rendering.
+  ///
+  /// Tag values arrive from arbitrary relays and can carry lone UTF-16
+  /// surrogates; a Text widget fed one crashes the paint pipeline. The
+  /// sanitization here is the one that used to be missing on half the
+  /// screens (articles, calendar, bounties read titles raw).
   String? getTag(String name) {
     for (final t in tags) {
       if (t.isNotEmpty && t[0] == name && t.length > 1) {
@@ -100,11 +107,23 @@ class NostrEvent {
     return null;
   }
 
-  /// All tag values by name (sanitized for safe rendering).
+  /// All tag values by name (each sanitized for safe rendering).
   List<String> getTags(String name) => tags
       .where((t) => t.isNotEmpty && t[0] == name && t.length > 1)
       .map((t) => _sanitize(t[1]))
       .toList();
+
+  /// The raw, unsanitized value — for logic that compares or parses rather
+  /// than renders (bolt11 invoices, JSON descriptions, addresses). Only
+  /// reach for this when the value is never going into a Text widget.
+  String? getTagRaw(String name) {
+    for (final t in tags) {
+      if (t.isNotEmpty && t[0] == name && t.length > 1) {
+        return t[1];
+      }
+    }
+    return null;
+  }
 
   /// All 'e' tag event IDs.
   List<String> get eventRefs => getTags('e');

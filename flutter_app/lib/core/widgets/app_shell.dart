@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/providers/app_info_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
@@ -1161,12 +1162,15 @@ class _DrawerDivider extends StatelessWidget {
 
 // ─── Drawer Footer ──────────────────────────────────────────────────
 
-class _DrawerFooter extends StatelessWidget {
+class _DrawerFooter extends ConsumerWidget {
   const _DrawerFooter();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
+    // The version comes from the platform bundle (pubspec `version:`), not
+    // a string someone has to remember to bump.
+    final version = ref.watch(appVersionProvider);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1210,7 +1214,7 @@ class _DrawerFooter extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'v1.0.0',
+                  version.isEmpty ? '…' : 'v$version',
                   style: TextStyle(
                     fontSize: 11,
                     color: colorScheme.onSurfaceVariant,

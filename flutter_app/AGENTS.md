@@ -336,6 +336,153 @@ over ~100 lines.
   `mounted`; wrap fire-and-forget futures in `unawaited()`.
 - **Secrets**: never hardcode — use `--dart-define` with `Env` class.
 
+## Feed architecture (offline-first, FB/Insta-style)
+
+- **FeedStore** (`features/feed/providers/feed_store.dart`): bounded JSON
+  cache in SharedPreferences (300 events per feed). Cold start renders the
+  cache on the first frame — posts, not skeletons.
+- **FeedNotifier** (`feed_notifier.dart`): `FeedState(events, isRefreshing,
+  hasMore, isLoadingMore, newCount, error, lastSyncedAt)`. Pipeline:
+  disk → silent network refresh (merges, no re-order, no skeleton) →
+  persist. Live subscription counts new posts into `newCount` (the "N new
+  posts" pill — NEVER auto-inserts, that yanks scroll position).
+  `loadMore()` walks the `until` cursor for infinite scroll.
+- **Providers**: `globalFeedProvider`, `followingFeedNotifierProvider` —
+  NotifierProviders (not autoDispose). Refresh after posting goes through
+  `.refresh()` (silent merge), never `ref.invalidate` (that flickered).
+- **FeedScreen**: RefreshIndicator + offline banner (slim strip, feed stays
+  usable) + new-posts pill + pagination spinner. Tabs keepAlive.
+- **Connectivity** (`core/providers/connectivity_providers.dart`):
+  `connectivity_plus` stream → `isOfflineProvider`; `connectivityWatcherProvider`
+  reconnects dead relays on offline→online (watched at app root).
+- **Profiles**: `profileProvider` is keepAlive (NOT autoDispose) — the
+  10-min `profileCache` handles staleness; disposing on scroll-away was
+  the avatar flicker. `userPostsProvider` is also keepAlive (profile tabs
+  all filter the same list; disposing per tab re-fetched it).
+
+## App version
+
+- `core/providers/app_info_providers.dart`: `packageInfoProvider` +
+  `appVersionProvider` read the platform bundle (pubspec `version:`) via
+  `package_info_plus`. The drawer footer and Settings → App Version use it
+  — NEVER hardcode a version string (the old `v1.0.0` lied on day two).
+
+## QR flows (scan + share)
+
+- **Shared scanner**: `core/widgets/qr_scan_sheet.dart` — `showQrScanSheet()`
+  full-screen camera sheet (mobile_scanner), returns the scanned string.
+  Used by Send (recipient) and LndHub (connect). NWC keeps its own inline
+  scanner. New scan needs → use this sheet, don't grow another copy.
+- **Send dialog**: recipient field has Paste + Scan; a scanned QR is
+  normalized (strips `lightning:` prefix, uppercase bolt11).
+- **Receive dialog**: the lightning address has a QR toggle (scannable as
+  `lightning:addr`); minted invoices use `InvoiceQrView` (QR + Copy +
+  Share — share emits `lightning:<bolt11>`).
+
+## Payment decode (GetZap Decoder)
+
+- **API**: `POST /api/v1/payments/decode` `{data}` — decodes bolt11/LNURL
+  (bech32) server-side → amount, destination, description, expiry. It does
+  NOT decode lightning addresses (those resolve via LNURL-pay instead).
+- **Service**: `WalletToolsService.decodePayment` + `decodePaymentProvider`
+  (family, keyed on the invoice string). Wired into the Send dialog as
+  `_DecodedInvoiceCard` — destination/description/expiry shown before the
+  sats leave, so a malformed or surprising invoice is caught in review.
+
+## LndHub wallet (BlueWallet protocol)
+
+- **Protocol**: `lndhub://login:password@host` QR (BlueWallet export, Zeus,
+  Alby, Umbrel, BTCPay "LNDhub API"). Login+password → `POST /auth` → OAuth
+  access token; then `/getbalance`, `/payinvoice`, `/addinvoice`,
+  `/getuserinvoices`, `/gettxs`. Token auto-refreshes on 401 once.
+- **Files**: `services/lndhub_service.dart` (credentials + API),
+  `providers/lndhub_providers.dart` (state, credentials in secure storage
+  `lndhub:credentials`), `lndhub_screen.dart` (scan/paste connect).
+  Route `/wallet/lndhub`, card on the wallet hub.
+- **Spending**: `payWithAnyWallet` tries LNbits → NWC → Cashu → LndHub;
+  `WalletKind.lndhub`. `hasPayingWallet` counts a connected hub.
+- **Tests**: `test/features/wallet/lndhub_test.dart` (URI parse + tx parse).
+
+## Relay management (Settings → Relays)
+
+- **State**: `features/settings/providers/relay_settings_providers.dart` —
+  `RelaySettingsNotifier` holds `ManagedRelay(url, read, write)`, persisted
+  to SharedPreferences (`settings:managed_relays_v1`, survives restarts).
+- **Read/write intent actually drives behavior**: the notifier maintains the
+  module-level `readRelayUrls`/`writeRelayUrls` sets, and `RelayPool.query`
+  skips write-only relays while `RelayPool.publishWithAck` skips read-only
+  ones (empty sets = first run, everything allowed). The old screen had
+  toggles wired to nothing.
+- **NIP-65 sync** (kind 10002): `publishList()` writes `r` tags
+  (read/write markers), `mergeFromNetwork()` merges the user's published
+  list (remote wins per-URL). The screen's cloud-sync action runs
+  merge → publish so every client agrees.
+
+## Multi-wallet LNbits accounts
+
+- **LNbits accounts hold several wallets** (users API: create/share/delete,
+  `GET/POST /users/api/v1/user/{id}/wallet`). One account = one sign-in,
+  many wallets (spending vs savings).
+- **Active wallet**: `LnbitsAuthState.activeWalletId` (persisted per Nostr
+  pubkey in secure storage, `lnbits:active_wallet`) and
+  `LnbitsAuthState.activeWallet` getter — the stored choice wins when it
+  still exists, else the first wallet. NEVER read `wallets.first` directly:
+  use `lnbits.activeWallet` (state) or `lnbitsActiveWalletProvider` (widget).
+  `createAndActivateWallet(name)` adds a wallet and switches to it.
+- **Switcher UI**: the balance card on `lnbits_screen.dart` shows
+  "N wallets — tap to switch" when the account holds >1; the bottom sheet
+  picks or creates. The wallet hub (`wallet_screen.dart`) names the active
+  wallet on its card.
+- **Multiple USERS**: already handled — session tokens are keyed per Nostr
+  pubkey (`lnbits:tokens:<pubkey>`), so each Nostr account gets its own
+  LNbits session + its own active-wallet choice.
+
+## Content moderation (NSFW / spam filtering)
+
+- **Library**: `core/moderation/content_filter.dart` — pure, testable
+  `ContentFilter` class. `verdictForEvent` / `verdictForProfile` return a
+  `FilterVerdict(FilterAction.show/hide/warn, reason)`. Term lists in
+  `filter_terms.dart` (explicit-adult only, 30+ languages, trimmed from
+  LDNOOBW + the documented Nostr spam dataset). Matching runs on
+  `normalize()`d text: case fold, diacritic/homoglyph strip, separator
+  removal, leet digit-fold via `_evasionForms`, long-term (≥6 char) token
+  prefix match. Word-boundary token match — "sex" does not match "Essex".
+- **Providers**: `core/moderation/moderation_providers.dart` —
+  `nsfwFilterProvider` / `spamFilterProvider` (toggles, default ON,
+  SharedPreferences), `blockedWordsProvider`, `blockedAuthorsProvider`
+  (local-first, NIP-51 kind 10000 sync via `muteListSyncProvider`),
+  `contentFilterProvider`, `filteredEventVerdict(ref, event, {authorProfile})`.
+- **Hook points**: `PostCard` (hide + NIP-36 warn cover `_ContentWarningCover`),
+  `ProfileScreen` (blocked/NSFW placeholder), `SearchScreen` people+posts
+  tabs, `ExploreScreen` hashtag chips + People-to-follow. Block actions:
+  post 3-dot menu → "Block author"; profile 3-dot menu → "Block account";
+  manage lists in Settings → Content filters.
+- **Spam links**: `search.html`-class search-spam paths, known spam hosts
+  (t.me spam waves, postimg QR spam), link dumps (>3 URLs or >60% link
+  characters) hide outright.
+- **Hashtag spam** (the `#ziwei-comm-anchor` class — bots planting tags in
+  feeds, fought the same way as Amethyst's `hasExcessiveHashtags`): an
+  anchor-shaped tag (`-comm-anchor`/`-anchor`/… suffixes), a hashtag-only
+  post, hashtags + ≤2 camouflage words, and >5 hashtags (content + t tags)
+  all hide. Author labels beat spam shape — a lone `#nsfw` warns, not hides.
+- **Store compliance**: Play UGC + Apple 1.2 require hidden-by-default
+  explicit content, report + block. Report dialog is NIP-56 (child safety
+  first); block is local + NIP-51 mute list.
+
+## Post rendering edge cases (the "empty post" family)
+
+- **Media-only posts** (content was only image/video URLs) render ONLY the
+  media — `NoteContent` collapses the text column when no visible segment
+  remains (`hasVisibleText`). Audio/plain links count as visible.
+- **Raw 64-char hex keys** in content resolve to a mention label (the
+  person's name) via `_HexKeySegment` + `_MentionLabel` — never the wall of
+  hex itself.
+- **UTF-16 safety**: `NostrEvent.getTag`/`getTags` sanitize by default
+  (lone surrogates in titles/names/descriptions were crashing the paint
+  pipeline). Use `getTagRaw` only for values that never reach a Text widget
+  (bolt11, JSON blobs, addresses). `nostr_models.dart` re-exports
+  `text_sanitize.dart` so `sanitizeText` is available wherever models are.
+
 ## In-app documentation
 
 - **Docs** (`features/docs/`): user-facing guides, not developer docs.

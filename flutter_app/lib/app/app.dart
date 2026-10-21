@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/app/router.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/providers/connectivity_providers.dart';
 import 'package:nostrfeed_mobile/core/services/local_notification_service.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/features/chat/providers/dm_notifier.dart';
@@ -58,6 +60,12 @@ class _NostrFeedAppState extends ConsumerState<NostrFeedApp>
     ref.watch(dmLiveListenerProvider);
     // Real-time social engagement: likes, comments, reposts, zaps, follows.
     ref.watch(socialLiveListenerProvider);
+    // NIP-51 mute list: fetch and merge the user's blocked words/authors
+    // once per session, so their blocks follow them across clients.
+    ref.watch(muteListSyncProvider);
+    // Connectivity watcher: reconnect dead relays the moment the network
+    // comes back (offline → online), so feeds/notifications resume at once.
+    ref.watch(connectivityWatcherProvider);
 
     // Notification taps deep-link into the app (set once the router exists).
     LocalNotificationService.instance.onNotificationTap = (route) {

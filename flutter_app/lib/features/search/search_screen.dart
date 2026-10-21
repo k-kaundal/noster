@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
@@ -477,6 +479,14 @@ class _PostTile extends ConsumerWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final profile = ref.watch(profileProvider(event.pubkey)).value;
+
+    // Content filter: spam/NSFW/blocked posts do not appear in search.
+    final verdict =
+        filteredEventVerdict(ref, event, authorProfile: profile);
+    if (verdict.action == FilterAction.hide) {
+      return const SizedBox.shrink();
+    }
+
     final name = profile?.displayNameOrName ??
         '${event.pubkey.substring(0, 8)}…';
     final time = DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
@@ -588,6 +598,13 @@ class _PersonTile extends ConsumerWidget {
       final json = jsonDecode(event.content) as Map<String, dynamic>;
       profile = NostrProfile.fromJson(json);
     } catch (_) {}
+
+    // Content filter: explicit or blocked profiles do not appear in search.
+    final filter = ref.watch(contentFilterProvider);
+    if (filter.verdictForProfile(profile, event.pubkey).action !=
+        FilterAction.show) {
+      return const SizedBox.shrink();
+    }
 
     final name = profile?.displayNameOrName ??
         '${event.pubkey.substring(0, 8)}…';

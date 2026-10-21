@@ -59,14 +59,34 @@ class NoteContent extends ConsumerWidget {
     final render = _ContentParser.splitForRender(segments, event);
     final imeta = MediaUtils.parseImeta(event);
 
+    // Media-only post: the whole content was image/video URLs, so the text
+    // column has nothing but invisible hidden-URL spans — an "empty card"
+    // (author + timestamp, no body) is the bug that drew attention here.
+    // Collapse the text column entirely and show only the media.
+    final hasVisibleText = render.textSegments.any(
+      (s) =>
+          (s is _TextSegment && s.text.trim().isNotEmpty) ||
+          (s is _FormattedTextSegment && s.text.trim().isNotEmpty) ||
+          // Image/video URLs were pulled out of textSegments already, so a
+          // URL segment still here is a visible link (plain or audio).
+          s is _UrlSegment ||
+          s is _NostrRefSegment ||
+          s is _HashtagSegment ||
+          s is _CodeBlockSegment ||
+          s is _HeaderSegment ||
+          s is _BlockquoteSegment ||
+          s is _ListItemSegment,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _ContentRenderer(
-          segments: render.textSegments,
-          defaultStyle: defaultStyle,
-          maxLines: maxLines,
-        ),
+        if (hasVisibleText)
+          _ContentRenderer(
+            segments: render.textSegments,
+            defaultStyle: defaultStyle,
+            maxLines: maxLines,
+          ),
         if (showImages && render.images.isNotEmpty) ...[
           const SizedBox(height: 8),
           _ImageGallery(urls: render.images, imeta: imeta),
@@ -141,6 +161,13 @@ class _ContentParser {
     r'\b(npub1[a-z0-9]{20,}|nsec1[a-z0-9]{20,}|nprofile1[a-z0-9]{20,})\b',
     caseSensitive: false,
   );
+  // Bare 64-char hex keys dumped into content — the "just long keys" posts.
+  // A raw pubkey renders as an unreadable 64-char wall; treat it like a
+  // mention so it resolves to a name.
+  static final _bareHexRegex = RegExp(
+    r'(?<![0-9a-z])[0-9a-f]{64}(?![0-9a-z])',
+    caseSensitive: false,
+  );
   static final _imageRegex = RegExp(
     r'\.(jpg|jpeg|png|gif|webp|svg|avif|heic|bmp)(\?[^\s]*)?$',
     caseSensitive: false,
@@ -213,6 +240,18 @@ class _ContentParser {
       }
     }
 
+    // Bare hex pubkeys — resolve to a name like a mention.
+    for (final m in _bareHexRegex.allMatches(processedContent)) {
+      final overlaps = matches.any(
+        (x) =>
+            (m.start >= x.start && m.start < x.end) ||
+            (m.end > x.start && m.end <= x.end),
+      );
+      if (!overlaps) {
+        matches.add((start: m.start, end: m.end, type: _SegmentType.hexKey));
+      }
+    }
+
     // URLs
     for (final m in _urlRegex.allMatches(processedContent)) {
       final overlaps = matches.any(
@@ -261,6 +300,9 @@ class _ContentParser {
           break;
         case _SegmentType.nostrRef:
           segments.add(_NostrRefSegment(text));
+          break;
+        case _SegmentType.hexKey:
+          segments.add(_HexKeySegment(text));
           break;
       }
       cursor = m.end;
@@ -453,7 +495,7 @@ class _ContentParser {
 
 // ─── Segment Types ───────────────────────────────────────────────────
 
-enum _SegmentType { url, hashtag, nostrRef }
+enum _SegmentType { url, hashtag, nostrRef, hexKey }
 
 abstract class _Segment {}
 
@@ -481,6 +523,11 @@ class _HashtagSegment extends _Segment {
 class _NostrRefSegment extends _Segment {
   final String ref;
   _NostrRefSegment(this.ref);
+}
+
+class _HexKeySegment extends _Segment {
+  final String hex;
+  _HexKeySegment(this.hex);
 }
 
 class _CodeBlockSegment extends _Segment {
@@ -602,6 +649,24 @@ class _ContentRenderer extends StatelessWidget {
           // WidgetSpan with a live profile lookup. Other refs (note/event/
           // address/key) get typed icons + tap-through.
           currentSpans.add(_nostrRefSpan(context, segment.ref));
+          break;
+
+        case _HexKeySegment():
+          // A raw 64-char hex key renders as the person's name, like a
+          // mention — never the unreadable wall of hex itself.
+          currentSpans.add(
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: _MentionLabel(
+                pubkey: segment.hex,
+                style: defaultStyle.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          );
           break;
 
         case _CodeBlockSegment():

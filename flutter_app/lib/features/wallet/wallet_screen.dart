@@ -11,6 +11,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/cashu_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/invoice_qr.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/lnbits_providers.dart';
+import 'package:nostrfeed_mobile/features/wallet/providers/lndhub_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/nwc_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/services/nwc_service.dart';
@@ -106,7 +107,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
     ColorScheme colorScheme,
   ) {
     final account = lnbits.account!;
-    final wallet = account.wallets.isEmpty ? null : account.wallets.first;
+    final wallet = lnbits.activeWallet;
     final balance = wallet?.balanceSats ?? 0;
     final formatter = NumberFormat('#,###');
 
@@ -242,15 +243,16 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // LNbits wallet (primary)
+        // LNbits wallet (primary) — the ACTIVE wallet when the account
+        // holds several, named so the user can tell them apart.
         _walletCard(
           context,
           icon: Icons.account_balance,
-          title: 'NostrFeed Wallet',
-          subtitle: 'ln.nostrfeed.com',
-          balance: lnbits.account?.wallets.isEmpty == false
-              ? lnbits.account!.wallets.first.balanceSats
-              : 0,
+          title: lnbits.activeWallet?.name ?? 'NostrFeed Wallet',
+          subtitle: lnbits.account != null && lnbits.account!.wallets.length > 1
+              ? 'ln.nostrfeed.com · ${lnbits.account!.wallets.length} wallets'
+              : 'ln.nostrfeed.com',
+          balance: lnbits.activeWallet?.balanceSats ?? 0,
           isActive: true,
           color: Colors.blue,
           onTap: () => context.push('/wallet/lnbits'),
@@ -282,6 +284,21 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
           isActive: cashu.totalSats > 0,
           color: Colors.teal,
           onTap: () => context.push('/wallet/cashu'),
+        ),
+        const SizedBox(height: 8),
+
+        // LndHub wallet (BlueWallet/Zeus/Alby-style custodial QR)
+        _walletCard(
+          context,
+          icon: Icons.hub_rounded,
+          title: 'LndHub',
+          subtitle: ref.watch(lndHubProvider).isConnected
+              ? ref.watch(lndHubProvider).credentials!.host.replaceFirst('https://', '')
+              : 'BlueWallet / Zeus / Alby QR',
+          balance: ref.watch(lndHubProvider).balanceSats ?? 0,
+          isActive: ref.watch(lndHubProvider).isConnected,
+          color: Colors.indigo,
+          onTap: () => context.push('/wallet/lndhub'),
         ),
       ],
     );

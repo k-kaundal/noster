@@ -79,9 +79,7 @@ class LightningAddressNotifier extends Notifier<LightningAddressState> {
     final lnbits = ref.read(lnbitsAuthProvider);
     if (!lnbits.isConnected || lnbits.account == null) return;
 
-    final wallet = lnbits.account!.wallets.isEmpty
-        ? null
-        : lnbits.account!.wallets.first;
+    final wallet = lnbits.activeWallet;
     if (wallet?.inkey == null) return;
 
     state = state.copyWith(isLoading: true, clearError: true);
@@ -133,9 +131,7 @@ class LightningAddressNotifier extends Notifier<LightningAddressState> {
       throw const AddressException('Connect your wallet first');
     }
 
-    final wallet = lnbits.account!.wallets.isEmpty
-        ? null
-        : lnbits.account!.wallets.first;
+    final wallet = lnbits.activeWallet;
     if (wallet?.adminkey == null) {
       throw const AddressException('No wallet with admin key available');
     }
@@ -240,9 +236,7 @@ class LightningAddressNotifier extends Notifier<LightningAddressState> {
     final lnbits = ref.read(lnbitsAuthProvider);
     if (!lnbits.isConnected || lnbits.account == null) return;
 
-    final wallet = lnbits.account!.wallets.isEmpty
-        ? null
-        : lnbits.account!.wallets.first;
+    final wallet = lnbits.activeWallet;
     if (wallet?.adminkey == null) return;
 
     final targets = chosen != null ? [chosen] : state.silentAddresses;

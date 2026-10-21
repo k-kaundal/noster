@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
+import 'package:nostrfeed_mobile/core/providers/app_info_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
@@ -198,6 +200,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Divider(),
 
           // -------------------------------------------------------------------
+          // Content filters
+          // -------------------------------------------------------------------
+          _sectionHeader('Content filters'),
+          SwitchListTile(
+            secondary: const Icon(Icons.visibility_off_outlined),
+            title: const Text('Hide explicit content'),
+            subtitle: const Text(
+                'NSFW posts, profiles and names, in any language'),
+            value: ref.watch(nsfwFilterProvider),
+            onChanged: (val) =>
+                ref.read(nsfwFilterProvider.notifier).toggle(val),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.link_off_rounded),
+            title: const Text('Hide spam links'),
+            subtitle: const Text(
+                'Link dumps, search-spam links and known spam domains'),
+            value: ref.watch(spamFilterProvider),
+            onChanged: (val) =>
+                ref.read(spamFilterProvider.notifier).toggle(val),
+          ),
+          ListTile(
+            leading: const Icon(Icons.text_fields_rounded),
+            title: const Text('Blocked words'),
+            subtitle: Text(
+              ref.watch(blockedWordsProvider).isEmpty
+                  ? 'Posts containing these words are hidden'
+                  : '${ref.watch(blockedWordsProvider).length} blocked',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _showBlockedWordsSheet(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_off_outlined),
+            title: const Text('Blocked accounts'),
+            subtitle: Text(
+              ref.watch(blockedAuthorsProvider).isEmpty
+                  ? 'Accounts you have blocked'
+                  : '${ref.watch(blockedAuthorsProvider).length} blocked',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _showBlockedAuthorsSheet(context),
+          ),
+          const Divider(),
+
+          // -------------------------------------------------------------------
           // Notifications
           // -------------------------------------------------------------------
           _sectionHeader('Notifications'),
@@ -215,10 +263,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // About
           // -------------------------------------------------------------------
           _sectionHeader('About'),
-          const ListTile(
-            leading: Icon(Icons.info),
-            title: Text('App Version'),
-            subtitle: Text('NostrFeed v1.0.0'),
+          ListTile(
+            leading: const Icon(Icons.info),
+            title: const Text('App Version'),
+            subtitle: Text(
+              ref.watch(appVersionProvider).isEmpty
+                  ? 'NostrFeed'
+                  : 'NostrFeed v${ref.watch(appVersionProvider)}',
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.code),
@@ -356,6 +408,216 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             child: const Text('Logout'),
           ),
+        ],
+      ),
+    );
+  }
+
+  void _showBlockedWordsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _BlockedWordsSheet(),
+    );
+  }
+
+  void _showBlockedAuthorsSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _BlockedAuthorsSheet(),
+    );
+  }
+}
+
+// ─── Blocked words management ───────────────────────────────────────────
+
+class _BlockedWordsSheet extends ConsumerStatefulWidget {
+  const _BlockedWordsSheet();
+
+  @override
+  ConsumerState<_BlockedWordsSheet> createState() =>
+      _BlockedWordsSheetState();
+}
+
+class _BlockedWordsSheetState extends ConsumerState<_BlockedWordsSheet> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final words = ref.watch(blockedWordsProvider).toList()..sort();
+    final scheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Blocked words',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Any post containing one of these words is hidden. They sync to '
+            'your NIP-51 mute list when you are logged in.',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  decoration: const InputDecoration(
+                    hintText: 'Add a word…',
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _add(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(onPressed: _add, child: const Text('Add')),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (words.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'No blocked words yet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+            )
+          else
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: words.length,
+                itemBuilder: (context, i) => ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(words[i]),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => ref
+                        .read(blockedWordsProvider.notifier)
+                        .remove(words[i]),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _add() async {
+    final word = _controller.text.trim();
+    if (word.isEmpty) return;
+    await ref.read(blockedWordsProvider.notifier).add(word);
+    _controller.clear();
+  }
+}
+
+// ─── Blocked accounts management ────────────────────────────────────────
+
+class _BlockedAuthorsSheet extends ConsumerWidget {
+  const _BlockedAuthorsSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final blocked = ref.watch(blockedAuthorsProvider).toList();
+    final scheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Blocked accounts',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Their posts, profiles and messages are hidden. The list syncs '
+            'to your NIP-51 mute list when you are logged in.',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          if (blocked.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'No blocked accounts. Block someone from a post’s menu.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+            )
+          else
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: blocked.length,
+                itemBuilder: (context, i) {
+                  final pk = blocked[i];
+                  final profile =
+                      ref.watch(profileProvider(pk)).valueOrNull;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: SafeAvatar(
+                      imageUrl: profile?.picture,
+                      radius: 16,
+                      fallback: const Icon(Icons.person, size: 16),
+                    ),
+                    title: Text(
+                      profile?.displayNameOrName ??
+                          '${pk.substring(0, 12)}…',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: TextButton(
+                      onPressed: () =>
+                          ref.read(blockedAuthorsProvider.notifier).remove(pk),
+                      child: const Text('Unblock'),
+                    ),
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );

@@ -362,7 +362,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
       BuildContext context, ColorScheme colorScheme, LnbitsAuthState lnbits) {
     final account = lnbits.account!;
     final formatter = NumberFormat('#,###');
-    final wallet = account.wallets.isEmpty ? null : account.wallets.first;
+    final wallet = lnbits.activeWallet;
     final balance = wallet?.balanceSats ?? 0;
 
     return NestedScrollView(
@@ -478,18 +478,169 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
               ),
             ),
           const SizedBox(height: 8),
-          // Wallet count indicator when multiple wallets exist
+          // Wallet switcher when the account holds several — tap to pick the
+          // one the app spends/receives from.
           if (lnbits.account != null && lnbits.account!.wallets.length > 1)
-            Text(
-              '${lnbits.account!.wallets.length} wallets',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 12,
+            InkWell(
+              onTap: () => _showWalletSwitcher(context, lnbits),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.account_balance_wallet_outlined,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${wallet?.name ?? 'Wallet'} · '
+                      '${lnbits.account!.wallets.length} wallets — tap to switch',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 12,
+                      ),
+                    ),
+                    Icon(
+                      Icons.expand_more_rounded,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
       ),
     );
+  }
+
+  /// Pick which of the account's wallets the app spends/receives from, or
+  /// create a new one (spending vs savings without a second sign-in).
+  void _showWalletSwitcher(BuildContext context, LnbitsAuthState lnbits) {
+    final account = lnbits.account!;
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Your wallets',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Everything — balance, send, receive, your lightning address — '
+                'uses the one you pick.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              for (final w in account.wallets)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    w.id == lnbits.activeWallet?.id
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off,
+                    color: w.id == lnbits.activeWallet?.id
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text(
+                    w.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    '${w.balanceSats} sats',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  onTap: () async {
+                    await ref
+                        .read(lnbitsAuthProvider.notifier)
+                        .setActiveWallet(w.id);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                ),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.add_rounded),
+                title: const Text('New wallet'),
+                subtitle: const Text(
+                    'Separate spending from savings, same sign-in'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _createNamedWallet(context);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createNamedWallet(BuildContext context) async {
+    final controller = TextEditingController();
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New wallet'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Name',
+            hintText: 'Savings',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    final name = controller.text.trim();
+    if (created != true || name.isEmpty || !mounted) return;
+
+    final ok = await ref
+        .read(lnbitsAuthProvider.notifier)
+        .createAndActivateWallet(name);
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Wallet "$name" created')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ref.read(lnbitsAuthProvider).error ?? 'Could not create wallet',
+          ),
+        ),
+      );
+    }
   }
 
   Widget _actionButtons(

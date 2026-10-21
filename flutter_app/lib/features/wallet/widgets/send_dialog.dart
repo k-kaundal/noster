@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/core/widgets/qr_scan_sheet.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/wallet_tools_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart';
@@ -47,6 +50,15 @@ class _SendDialogState extends ConsumerState<SendDialog> {
       ? readInvoiceSats(_target.value)
       : null;
 
+  /// The decoded invoice, when the target is a bolt11. Debounced — decoding
+  /// on every keystroke would hammer the endpoint while an invoice is being
+  /// pasted character by character.
+  String? get _decodeKey {
+    if (_target.kind != PaymentTargetKind.invoice) return null;
+    final v = _target.value.trim();
+    return v.length > 20 ? v : null;
+  }
+
   bool get _needsAmount =>
       (_target.kind == PaymentTargetKind.invoice && _invoiceSats == null) ||
       _target.kind == PaymentTargetKind.address ||
@@ -72,6 +84,24 @@ class _SendDialogState extends ConsumerState<SendDialog> {
     }
   }
 
+  /// Scan a recipient QR — bolt11 invoice, lightning address, or LNURL.
+  /// A wallet QR on a shop terminal is the commonest way to be handed one.
+  Future<void> _scan() async {
+    final scanned = await showQrScanSheet(
+      context,
+      title: 'Scan recipient',
+      hint: 'Point at a bolt11 invoice, lightning address, or LNURL QR.',
+    );
+    if (scanned == null || !mounted) return;
+    // QRs often come uppercased or wrapped in "lightning:" — normalize.
+    var value = scanned.trim();
+    if (value.toLowerCase().startsWith('lightning:')) {
+      value = value.substring('lightning:'.length);
+    }
+    _destController.text = value;
+    setState(() => _errorMsg = null);
+  }
+
   Future<void> _send() async {
     if (!_ready) return;
     setState(() {
@@ -79,7 +109,7 @@ class _SendDialogState extends ConsumerState<SendDialog> {
       _errorMsg = null;
     });
     try {
-      final wallet = ref.read(lnbitsAuthProvider).account?.wallets.first;
+      final wallet = ref.read(lnbitsAuthProvider).activeWallet;
       if (wallet?.adminkey == null) {
         throw const LnbitsException('Admin key required to send', 0);
       }
@@ -91,11 +121,15 @@ class _SendDialogState extends ConsumerState<SendDialog> {
         final info = await resolveLnurlPay(_target.value);
         if (info == null) {
           throw const LnbitsException(
-              'Could not resolve that address to a payable invoice', 0);
+            'Could not resolve that address to a payable invoice',
+            0,
+          );
         }
         if (_sats < info.minSats || _sats > info.maxSats) {
           throw LnbitsException(
-              'That address takes ${info.minSats}–${info.maxSats} sats', 0);
+            'That address takes ${info.minSats}–${info.maxSats} sats',
+            0,
+          );
         }
         final invoice = await fetchInvoice(
           info: info,
@@ -106,7 +140,9 @@ class _SendDialogState extends ConsumerState<SendDialog> {
         );
         if (invoice == null || invoice.isEmpty) {
           throw const LnbitsException(
-              'The recipient did not return an invoice', 0);
+            'The recipient did not return an invoice',
+            0,
+          );
         }
         bolt11 = invoice;
       }
@@ -165,17 +201,30 @@ class _SendDialogState extends ConsumerState<SendDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Recipient — one box for everything.
+              // Recipient — one box for everything, plus paste and scan.
               TextField(
                 controller: _destController,
                 decoration: InputDecoration(
                   labelText: 'Recipient',
                   hintText: 'name@domain.com · lnbc… · lnurl…',
                   prefixIcon: const Icon(Icons.bolt),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.content_paste_rounded, size: 18),
-                    tooltip: 'Paste',
-                    onPressed: _paste,
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.content_paste_rounded, size: 18),
+                        tooltip: 'Paste',
+                        onPressed: _paste,
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.qr_code_scanner_rounded,
+                          size: 18,
+                        ),
+                        tooltip: 'Scan QR',
+                        onPressed: _scan,
+                      ),
+                    ],
                   ),
                 ),
                 maxLines: 3,
@@ -187,6 +236,11 @@ class _SendDialogState extends ConsumerState<SendDialog> {
               ),
               const SizedBox(height: 8),
               _TargetHint(target: target, invoiceSats: invoiceSats),
+
+              // Decoded invoice card — who and what is about to be paid,
+              // from the server's decoder (GetZap Decoder), so a malformed
+              // or surprising invoice is caught before the sats leave.
+              if (_decodeKey != null) _DecodedInvoiceCard(invoice: _decodeKey!),
 
               // Amount — only when the destination doesn't already name it.
               if (_needsAmount) ...[
@@ -218,8 +272,10 @@ class _SendDialogState extends ConsumerState<SendDialog> {
               // Balance + over-balance warning.
               const SizedBox(height: 14),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: _overBalance
                       ? scheme.errorContainer.withValues(alpha: 0.4)
@@ -228,11 +284,13 @@ class _SendDialogState extends ConsumerState<SendDialog> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.account_balance_wallet_outlined,
-                        size: 16,
-                        color: _overBalance
-                            ? scheme.error
-                            : scheme.onSurfaceVariant),
+                    Icon(
+                      Icons.account_balance_wallet_outlined,
+                      size: 16,
+                      color: _overBalance
+                          ? scheme.error
+                          : scheme.onSurfaceVariant,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -304,8 +362,8 @@ class _SendDialogState extends ConsumerState<SendDialog> {
             _sending
                 ? 'Sending…'
                 : _sats > 0
-                    ? 'Send ${_formatSats(_sats)} sats'
-                    : 'Send',
+                ? 'Send ${_formatSats(_sats)} sats'
+                : 'Send',
           ),
         ),
       ],
@@ -324,6 +382,128 @@ class _SendDialogState extends ConsumerState<SendDialog> {
   }
 }
 
+/// The decoded invoice: destination, amount, description, expiry — the
+/// answer to "what am I actually paying", from the server's decoder.
+class _DecodedInvoiceCard extends ConsumerWidget {
+  final String invoice;
+  const _DecodedInvoiceCard({required this.invoice});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final decoded = ref.watch(decodePaymentProvider(invoice));
+
+    return decoded.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+      error: (_, _) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, size: 14, color: scheme.error),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Could not decode this invoice — check it before paying.',
+                style: TextStyle(fontSize: 12, color: scheme.error),
+              ),
+            ),
+          ],
+        ),
+      ),
+      data: (payment) {
+        if (payment.amountSats == null && payment.destination == null) {
+          return const SizedBox.shrink();
+        }
+        return Container(
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.verified_outlined,
+                    size: 14,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'DECODED INVOICE',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.1,
+                      color: scheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (payment.description != null &&
+                  payment.description!.isNotEmpty)
+                _row(context, 'For', payment.description!),
+              if (payment.destination != null &&
+                  payment.destination!.isNotEmpty)
+                _row(context, 'To', _shorten(payment.destination!)),
+              if (payment.expirySeconds != null)
+                _row(context, 'Expires in', _expiry(payment.expirySeconds!)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _row(BuildContext context, String label, String value) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _shorten(String s) => s.length > 24 ? '${s.substring(0, 24)}…' : s;
+
+  String _expiry(int seconds) {
+    if (seconds < 120) return '$seconds seconds';
+    if (seconds < 7200) return '${seconds ~/ 60} minutes';
+    return '${seconds ~/ 3600} hours';
+  }
+}
+
 /// A one-line read of what the pasted string was understood to be.
 class _TargetHint extends StatelessWidget {
   final PaymentTarget target;
@@ -336,32 +516,28 @@ class _TargetHint extends StatelessWidget {
     final sats = invoiceSats;
     final (icon, text, color) = switch (target.kind) {
       PaymentTargetKind.invoice => (
-          Icons.receipt_long,
-          sats != null
-              ? 'Invoice • ${_formatSats(sats)} sats'
-              : 'Invoice • any amount',
-          Colors.green.shade700,
-        ),
+        Icons.receipt_long,
+        sats != null
+            ? 'Invoice • ${_formatSats(sats)} sats'
+            : 'Invoice • any amount',
+        Colors.green.shade700,
+      ),
       PaymentTargetKind.address => (
-          Icons.alternate_email,
-          'Lightning address',
-          scheme.primary,
-        ),
-      PaymentTargetKind.lnurl => (
-          Icons.link,
-          'LNURL',
-          scheme.primary,
-        ),
+        Icons.alternate_email,
+        'Lightning address',
+        scheme.primary,
+      ),
+      PaymentTargetKind.lnurl => (Icons.link, 'LNURL', scheme.primary),
       PaymentTargetKind.empty => (
-          Icons.info_outline,
-          'Paste an invoice, lightning address, or LNURL',
-          scheme.onSurfaceVariant,
-        ),
+        Icons.info_outline,
+        'Paste an invoice, lightning address, or LNURL',
+        scheme.onSurfaceVariant,
+      ),
       PaymentTargetKind.unknown => (
-          Icons.error_outline,
-          "That doesn't look payable",
-          scheme.error,
-        ),
+        Icons.error_outline,
+        "That doesn't look payable",
+        scheme.error,
+      ),
     };
     return Row(
       children: [
@@ -370,7 +546,11 @@ class _TargetHint extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
       ],

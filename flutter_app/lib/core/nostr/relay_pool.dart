@@ -4,6 +4,8 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:uuid/uuid.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/features/settings/providers/relay_settings_providers.dart'
+    show readRelayUrls, writeRelayUrls;
 
 enum RelayState { disconnected, connecting, connected, authRequired, error }
 
@@ -337,8 +339,9 @@ class RelayPool {
     await Future.wait(futures.map((f) => f.catchError((_) {})));
   }
 
-  /// Query events with EOSE tracking — returns when all connected relays
-  /// have sent EOSE or timeout, whichever comes first.
+  /// Query events with EOSE tracking — returns when all connected READ
+  /// relays have sent EOSE or timeout, whichever comes first. A relay the
+  /// user marked write-only is never asked for events.
   Future<List<NostrEvent>> query(
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 5),
@@ -349,6 +352,11 @@ class RelayPool {
     final subscriptions = <(RelayConnection, String)>[];
 
     for (final relay in _relays.values) {
+      // Honor the read-intent set when one exists (empty = first run).
+      if (readRelayUrls.isNotEmpty &&
+          !readRelayUrls.contains(normalizeRelayUrl(relay.url))) {
+        continue;
+      }
       if (relay.isConnected) {
         final sub = relay.subscribeWithEose(filters);
         subscriptions.add((relay, sub.id));
@@ -445,11 +453,21 @@ class RelayPool {
     return controller.stream;
   }
 
-  /// Publish to all connected relays and wait for at least one to accept.
+  /// Publish to all connected WRITE relays and wait for at least one to
+  /// accept. The Manage Relays screen's read/write toggles drive this — a
+  /// relay the user marked read-only is never asked to store anything.
   ///
   /// Returns true if ≥1 relay acknowledged the event. Never throws.
   Future<bool> publishWithAck(NostrEvent event) async {
-    final connected = _relays.values.where((r) => r.isConnected).toList();
+    var connected = _relays.values.where((r) => r.isConnected).toList();
+    // Honor the write-intent set when one exists (empty = first run, before
+    // the settings notifier has loaded — publish everywhere then).
+    if (writeRelayUrls.isNotEmpty) {
+      final allowed = connected
+          .where((r) => writeRelayUrls.contains(normalizeRelayUrl(r.url)))
+          .toList();
+      if (allowed.isNotEmpty) connected = allowed;
+    }
     if (connected.isEmpty) return false;
     final results = await Future.wait(
       connected.map((r) => r.publishWithAck(event)),

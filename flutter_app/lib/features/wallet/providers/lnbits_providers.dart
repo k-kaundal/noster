@@ -19,6 +19,12 @@ export 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart'
 /// SECURITY: Tokens are stored in FlutterSecureStorage (Keychain/Keystore),
 /// NOT SharedPreferences, because they can spend from wallets.
 const _kWalletTokensKey = 'lnbits:tokens';
+
+/// Storage key for the user's chosen ACTIVE wallet id, per Nostr pubkey.
+/// An LNbits account can hold several wallets (create/share/delete via the
+/// users API); the app spent from `wallets.first` before this existed, which
+/// silently paid from the wrong wallet the moment an account had two.
+const _kActiveWalletKey = 'lnbits:active_wallet';
 const _secureStorage = FlutterSecureStorage();
 
 /// State held by [LnbitsAuthNotifier].
@@ -29,6 +35,10 @@ class LnbitsAuthState {
   /// The session token issued by LNbits.
   final String? token;
 
+  /// The id of the wallet the user spends/receives from, when the account
+  /// has more than one. Null falls back to the first wallet.
+  final String? activeWalletId;
+
   /// True while a login/logout operation is in flight.
   final bool isLoading;
 
@@ -38,15 +48,32 @@ class LnbitsAuthState {
   const LnbitsAuthState({
     this.account,
     this.token,
+    this.activeWalletId,
     this.isLoading = false,
     this.error,
   });
 
   bool get isConnected => account != null;
 
+  /// The wallet the user is operating. The stored choice wins when it still
+  /// exists; otherwise the first wallet (a deleted choice falls back
+  /// gracefully rather than breaking every payment).
+  LnbitsWallet? get activeWallet {
+    final wallets = account?.wallets ?? const <LnbitsWallet>[];
+    if (wallets.isEmpty) return null;
+    final chosen = activeWalletId;
+    if (chosen != null) {
+      for (final w in wallets) {
+        if (w.id == chosen) return w;
+      }
+    }
+    return wallets.first;
+  }
+
   LnbitsAuthState copyWith({
     LnbitsUser? account,
     String? token,
+    String? activeWalletId,
     bool? isLoading,
     String? error,
     bool clearAccount = false,
@@ -55,6 +82,7 @@ class LnbitsAuthState {
     return LnbitsAuthState(
       account: clearAccount ? null : (account ?? this.account),
       token: token ?? this.token,
+      activeWalletId: activeWalletId ?? this.activeWalletId,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
     );
@@ -181,7 +209,13 @@ class LnbitsAuthNotifier extends Notifier<LnbitsAuthState> {
 
       state = state.copyWith(token: token, isLoading: true, clearError: true);
       final account = await _service.getAccount(token);
-      state = LnbitsAuthState(account: account, token: token, isLoading: false);
+      final activeWalletId = await _readActiveWalletId(auth.pubkey!);
+      state = LnbitsAuthState(
+        account: account,
+        token: token,
+        activeWalletId: activeWalletId,
+        isLoading: false,
+      );
     } catch (e) {
       if (LnbitsService.isMissingSession(e)) {
         // Session expired or invalid — clean up the stored token so we don't
@@ -222,6 +256,53 @@ class LnbitsAuthNotifier extends Notifier<LnbitsAuthState> {
     } catch (_) {}
   }
 
+  // ── Active wallet (multi-wallet accounts) ──────────────────────────
+
+  Future<String?> _readActiveWalletId(String pubkey) async {
+    try {
+      return await _secureStorage.read(key: '$_kActiveWalletKey:$pubkey');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Choose which of the account's wallets the user spends/receives from.
+  /// Persisted per Nostr pubkey so the choice survives restarts and follows
+  /// the right wallet to the right key.
+  Future<void> setActiveWallet(String walletId) async {
+    final auth = ref.read(authStateProvider);
+    state = state.copyWith(activeWalletId: walletId);
+    if (auth.pubkey != null) {
+      try {
+        await _secureStorage.write(
+          key: '$_kActiveWalletKey:${auth.pubkey}',
+          value: walletId,
+        );
+      } catch (_) {}
+    }
+  }
+
+  /// Create another wallet on the same LNbits account and switch to it.
+  /// The users API supports several wallets per account — this is how a
+  /// person separates spending from savings without a second sign-in.
+  Future<bool> createAndActivateWallet(String name) async {
+    final token = state.token;
+    final auth = ref.read(authStateProvider);
+    if (token == null || auth.pubkey == null) return false;
+
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final created = await _service.createWallet(token: token, name: name);
+      final updated = await _service.getAccount(token);
+      state = state.copyWith(account: updated, isLoading: false);
+      await setActiveWallet(created.id);
+      return true;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      return false;
+    }
+  }
+
   // ── Finish sign-in: provision wallet if needed ────────────────────
 
   /// Everything that has to happen after a token is issued, whichever way it
@@ -239,14 +320,32 @@ class LnbitsAuthNotifier extends Notifier<LnbitsAuthState> {
       await _service.createWallet(token: token);
       // Re-fetch so the new wallet is in the account
       final updated = await _service.getAccount(token);
-      state = LnbitsAuthState(account: updated, token: token, isLoading: false);
+      final auth = ref.read(authStateProvider);
+      final activeWalletId = auth.pubkey != null
+          ? await _readActiveWalletId(auth.pubkey!)
+          : null;
+      state = LnbitsAuthState(
+        account: updated,
+        token: token,
+        activeWalletId: activeWalletId,
+        isLoading: false,
+      );
 
       // New wallet: claim the free lightning address so the user can receive
       // zaps immediately. This mirrors the web flow where `useIdentity` claims
       // the free address after wallet creation.
       await _claimFreeLightningAddress(updated);
     } else {
-      state = LnbitsAuthState(account: account, token: token, isLoading: false);
+      final auth = ref.read(authStateProvider);
+      final activeWalletId = auth.pubkey != null
+          ? await _readActiveWalletId(auth.pubkey!)
+          : null;
+      state = LnbitsAuthState(
+        account: account,
+        token: token,
+        activeWalletId: activeWalletId,
+        isLoading: false,
+      );
     }
     return token;
   }
@@ -527,10 +626,10 @@ final lnbitsAuthProvider =
   LnbitsAuthNotifier.new,
 );
 
-/// The active wallet (first one) on the connected account.
+/// The active wallet on the connected account — the user's stored choice
+/// when the account holds several, the first wallet otherwise.
 final lnbitsActiveWalletProvider = Provider<LnbitsWallet?>((ref) {
-  final account = ref.watch(lnbitsAuthProvider).account;
-  return account?.wallets.isEmpty == false ? account!.wallets.first : null;
+  return ref.watch(lnbitsAuthProvider).activeWallet;
 });
 
 /// Wallets on the connected account.

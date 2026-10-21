@@ -16,9 +16,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // QR + invoice + copy button all render.
+    // QR + invoice + copy/share buttons all render.
     expect(find.text(bolt11), findsOneWidget);
-    expect(find.text('Copy invoice'), findsOneWidget);
+    expect(find.text('Copy'), findsOneWidget);
+    expect(find.text('Share'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

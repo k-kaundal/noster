@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 
@@ -53,19 +54,42 @@ class InvoiceQrView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.tonalIcon(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: bolt11));
-              AppToast.success(context, 'Invoice copied');
-            },
-            icon: const Icon(Icons.copy_rounded, size: 18),
-            label: const Text('Copy invoice'),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: bolt11));
+                  AppToast.success(context, 'Invoice copied');
+                },
+                icon: const Icon(Icons.copy_rounded, size: 18),
+                label: const Text('Copy'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _share(context),
+                icon: const Icon(Icons.share_outlined, size: 18),
+                label: const Text('Share'),
+              ),
+            ),
+          ],
         ),
         ],
       ),
+    );
+  }
+
+  /// Share the invoice as `lightning:<bolt11>` — the form wallets scan.
+  void _share(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box != null
+        ? box.localToGlobal(Offset.zero) & box.size
+        : const Rect.fromLTWH(0, 0, 100, 100);
+    Share.share(
+      'lightning:$bolt11',
+      sharePositionOrigin: origin,
     );
   }
 }

@@ -172,9 +172,7 @@ class _NwcBodyState extends ConsumerState<_NwcBody> {
     try {
       final lnbits = ref.read(lnbitsAuthProvider);
       final token = lnbits.token;
-      final wallet = lnbits.account?.wallets.isEmpty == false
-          ? lnbits.account!.wallets.first
-          : null;
+      final wallet = lnbits.activeWallet;
       if (token == null || wallet == null) {
         throw StateError('Connect your wallet first');
       }

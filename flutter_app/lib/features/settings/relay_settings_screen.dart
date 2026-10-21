@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
-import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/features/settings/providers/relay_settings_providers.dart';
 
-/// Relay management screen: view connected relays, toggle read/write,
-/// add new relays, and see suggested relays.
+/// Relay management: connection status per relay, read/write intent that
+/// actually drives queries and publishes, and NIP-65 list sync.
+///
+/// The set is persisted locally and (on demand) published as a NIP-65
+/// kind 10002 list, so the same relays follow the user across clients.
 class RelaySettingsScreen extends ConsumerStatefulWidget {
   const RelaySettingsScreen({super.key});
 
@@ -17,8 +23,9 @@ class RelaySettingsScreen extends ConsumerStatefulWidget {
 
 class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
   final _addRelayController = TextEditingController();
+  Timer? _statusTimer;
+  bool _syncBusy = false;
 
-  /// Well-known relays suggested for quick adding.
   static const _suggestedRelays = [
     'wss://relay.damus.io',
     'wss://relay.nostr.band',
@@ -30,71 +37,73 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
     'wss://relay.nostrfeed.com',
   ];
 
-  // Local read/write state (not yet persisted to relay config events).
-  final Map<String, bool> _readStates = {};
-  final Map<String, bool> _writeStates = {};
+  @override
+  void initState() {
+    super.initState();
+    // Connection state changes on its own (reconnects, auth) — refresh the
+    // status map periodically while the screen is open rather than never.
+    _statusTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      final pool = ref.read(nostrServiceProvider).relayPool;
+      ref.read(relayStatusProvider.notifier).state = pool.relayStates;
+    });
+  }
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     _addRelayController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final relays = ref.watch(relaySettingsProvider);
     final relayStatus = ref.watch(relayStatusProvider);
     final colorScheme = Theme.of(context).colorScheme;
+    final auth = ref.watch(authStateProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Relays')),
+      appBar: AppBar(
+        title: const Text('Relays'),
+        actions: [
+          if (auth.isLoggedIn && !auth.isReadOnly)
+            IconButton(
+              icon: _syncBusy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cloud_sync_outlined),
+              tooltip: 'Sync with NIP-65 list',
+              onPressed: _syncBusy ? null : _syncNip65,
+            ),
+        ],
+      ),
       body: ListView(
         children: [
-          // -------------------------------------------------------------------
-          // Connected relays
-          // -------------------------------------------------------------------
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text(
-              'CONNECTED RELAYS',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: colorScheme.primary,
-                letterSpacing: 1.2,
-              ),
-            ),
-          ),
-          if (relayStatus.isEmpty)
+          _sectionHeader('CONNECTED RELAYS', colorScheme),
+          if (relays.isEmpty)
             Padding(
               padding: const EdgeInsets.all(24),
               child: Center(
                 child: Text(
-                  'No relays connected',
+                  'No relays configured. Add one below.',
                   style: TextStyle(color: colorScheme.onSurfaceVariant),
                 ),
               ),
             )
           else
-            ...relayStatus.entries.map((entry) =>
-                _relayTile(context, entry.key, entry.value)),
-
-          const Divider(height: 32),
-
-          // -------------------------------------------------------------------
-          // Add relay
-          // -------------------------------------------------------------------
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Text(
-              'ADD RELAY',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: colorScheme.primary,
-                letterSpacing: 1.2,
+            ...relays.map(
+              (r) => _relayTile(
+                context,
+                r,
+                relayStatus[r.url] ?? RelayState.disconnected,
               ),
             ),
-          ),
+
+          const Divider(height: 32),
+          _sectionHeader('ADD RELAY', colorScheme),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -112,6 +121,7 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                           horizontal: 12, vertical: 10),
                     ),
                     keyboardType: TextInputType.url,
+                    onSubmitted: (_) => _addRelay(),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -125,80 +135,75 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
           ),
 
           const Divider(height: 32),
+          _sectionHeader('SUGGESTED RELAYS', colorScheme),
+          ..._suggestedRelays
+              .where((url) => !relays.any(
+                  (r) => r.url == url.replaceAll(RegExp(r'/$'), '')))
+              .map(
+                (url) => ListTile(
+                  leading: const Icon(Icons.cloud_outlined),
+                  title: Text(
+                    url,
+                    style: const TextStyle(
+                        fontFamily: 'monospace', fontSize: 13),
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(Icons.add_circle_outline,
+                        color: colorScheme.primary),
+                    tooltip: 'Add this relay',
+                    onPressed: () => ref
+                        .read(relaySettingsProvider.notifier)
+                        .addRelay(url),
+                  ),
+                  dense: true,
+                ),
+              ),
 
-          // -------------------------------------------------------------------
-          // Suggested relays
-          // -------------------------------------------------------------------
+          const Divider(height: 32),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            padding: const EdgeInsets.all(16),
             child: Text(
-              'SUGGESTED RELAYS',
+              'Read relays are queried for posts; write relays receive what '
+              'you publish. "Sync" publishes this set as your NIP-65 relay '
+              'list (kind 10002) and merges the one already on the network, '
+              'so other clients use the same relays.',
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: colorScheme.primary,
-                letterSpacing: 1.2,
+                color: colorScheme.onSurfaceVariant,
+                height: 1.4,
               ),
             ),
           ),
-          ..._suggestedRelays
-              .where((url) => !relayStatus.containsKey(url))
-              .map((url) => ListTile(
-                    leading: const Icon(Icons.cloud_outlined),
-                    title: Text(
-                      url,
-                      style: const TextStyle(
-                          fontFamily: 'monospace', fontSize: 13),
-                    ),
-                    trailing: IconButton(
-                      icon: Icon(Icons.add_circle_outline,
-                          color: colorScheme.primary),
-                      tooltip: 'Add this relay',
-                      onPressed: () => _addSuggestedRelay(url),
-                    ),
-                    dense: true,
-                  )),
-          const SizedBox(height: 32),
         ],
       ),
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Relay tile
-  // ---------------------------------------------------------------------------
+  Widget _sectionHeader(String title, ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: colorScheme.primary,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
 
-  Widget _relayTile(BuildContext context, String url, RelayState state) {
+  Widget _relayTile(BuildContext context, ManagedRelay relay, RelayState state) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    // Initialise toggles if not yet set.
-    _readStates.putIfAbsent(url, () => true);
-    _writeStates.putIfAbsent(url, () => true);
-
-    Color statusColor;
-    String statusLabel;
-    switch (state) {
-      case RelayState.connected:
-        statusColor = Colors.green;
-        statusLabel = 'Connected';
-        break;
-      case RelayState.connecting:
-        statusColor = Colors.orange;
-        statusLabel = 'Connecting';
-        break;
-      case RelayState.authRequired:
-        statusColor = Colors.blue;
-        statusLabel = 'Auth Required';
-        break;
-      case RelayState.disconnected:
-        statusColor = Colors.red;
-        statusLabel = 'Disconnected';
-        break;
-      case RelayState.error:
-        statusColor = Colors.red;
-        statusLabel = 'Error';
-        break;
-    }
+    final (statusColor, statusLabel) = switch (state) {
+      RelayState.connected => (Colors.green, 'Connected'),
+      RelayState.connecting => (Colors.orange, 'Connecting'),
+      RelayState.authRequired => (Colors.blue, 'Auth required'),
+      RelayState.disconnected => (Colors.red, 'Disconnected'),
+      RelayState.error => (Colors.red, 'Error'),
+    };
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -215,12 +220,13 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                        color: statusColor.withValues(alpha: 0.4), blurRadius: 4),
+                        color: statusColor.withValues(alpha: 0.4),
+                        blurRadius: 4),
                   ],
                 ),
               ),
               title: Text(
-                url,
+                relay.url,
                 style: const TextStyle(
                     fontFamily: 'monospace',
                     fontSize: 13,
@@ -231,10 +237,9 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                 style: TextStyle(color: statusColor, fontSize: 12),
               ),
               trailing: IconButton(
-                icon:
-                    Icon(Icons.delete_outline, color: colorScheme.error),
+                icon: Icon(Icons.delete_outline, color: colorScheme.error),
                 tooltip: 'Remove relay',
-                onPressed: () => _removeRelay(url),
+                onPressed: () => _removeRelay(relay.url),
               ),
             ),
             Padding(
@@ -244,16 +249,20 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                   Expanded(
                     child: _toggleChip(
                       'Read',
-                      _readStates[url]!,
-                      (val) => setState(() => _readStates[url] = val),
+                      relay.read,
+                      (val) => ref
+                          .read(relaySettingsProvider.notifier)
+                          .setRead(relay.url, val),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: _toggleChip(
                       'Write',
-                      _writeStates[url]!,
-                      (val) => setState(() => _writeStates[url] = val),
+                      relay.write,
+                      (val) => ref
+                          .read(relaySettingsProvider.notifier)
+                          .setWrite(relay.url, val),
                     ),
                   ),
                 ],
@@ -281,44 +290,23 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Actions
-  // ---------------------------------------------------------------------------
-
   void _addRelay() {
     final url = _addRelayController.text.trim();
     if (url.isEmpty) return;
     if (!url.startsWith('wss://') && !url.startsWith('ws://')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Relay URL must start with wss:// or ws://')),
-      );
+      AppToast.warning(context, 'Relay URL must start with wss://');
       return;
     }
-
-    final nostr = ref.read(nostrServiceProvider);
-    nostr.relayPool.addRelay(url);
-    _updateRelayStatus(nostr);
+    ref.read(relaySettingsProvider.notifier).addRelay(url);
     _addRelayController.clear();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added $url')),
-    );
-  }
-
-  void _addSuggestedRelay(String url) {
-    final nostr = ref.read(nostrServiceProvider);
-    nostr.relayPool.addRelay(url);
-    _updateRelayStatus(nostr);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added $url')),
-    );
+    AppToast.success(context, 'Relay added');
   }
 
   void _removeRelay(String url) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Remove Relay'),
+        title: const Text('Remove relay'),
         content: Text('Remove $url?'),
         actions: [
           TextButton(
@@ -327,11 +315,7 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
           ),
           FilledButton(
             onPressed: () {
-              final nostr = ref.read(nostrServiceProvider);
-              nostr.relayPool.removeRelay(url);
-              _updateRelayStatus(nostr);
-              _readStates.remove(url);
-              _writeStates.remove(url);
+              ref.read(relaySettingsProvider.notifier).removeRelay(url);
               Navigator.pop(ctx);
             },
             style: FilledButton.styleFrom(
@@ -344,8 +328,22 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
     );
   }
 
-  void _updateRelayStatus(NostrService nostr) {
-    ref.read(relayStatusProvider.notifier).state =
-        nostr.relayPool.relayStates;
+  Future<void> _syncNip65() async {
+    setState(() => _syncBusy = true);
+    try {
+      final notifier = ref.read(relaySettingsProvider.notifier);
+      // Merge the network list first (remote wins for relays it names),
+      // then publish the merged set back so every client agrees.
+      await notifier.mergeFromNetwork();
+      final ok = await notifier.publishList();
+      if (!mounted) return;
+      if (ok) {
+        AppToast.success(context, 'Relay list synced (NIP-65)');
+      } else {
+        AppToast.error(context, 'Could not publish the relay list');
+      }
+    } finally {
+      if (mounted) setState(() => _syncBusy = false);
+    }
   }
 }
