@@ -3,8 +3,8 @@ import { cn } from '@/lib/utils';
 
 /** The author's other projects, promoted across the site. */
 export const AUTHOR = {
-  handle: '@kkworld',
-  url: 'https://x.com/kkworld',
+  handle: '@k_k_kaundal',
+  url: 'https://x.com/k_k_kaundal',
 } as const;
 
 /**
@@ -44,6 +44,9 @@ export function SiteFooter({ className }: { className?: string }) {
       </Link>
       <Link to="/services" className="hover:text-foreground hover:underline">
         Wallet &amp; mint
+      </Link>
+      <Link to="/privacy" className="hover:text-foreground hover:underline">
+        Privacy
       </Link>
 
       <a

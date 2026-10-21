@@ -187,10 +187,6 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
          */
         return watchRelayHealth(
           new NRelay1(url, {
-            // Configure reconnection with exponential backoff
-            reconnectTimeout: 5000,   // Start with 5 second delay
-            maxReconnectTime: 60000,  // Cap at 60 seconds
-            requestTimeout: 3000,     // Timeout individual requests after 3 seconds
             /**
              * NIP-42. Nostrify drives the protocol; this decides whether to
              * answer at all, which it does only for relays the reader chose —

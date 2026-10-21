@@ -1,21 +1,14 @@
-import { Link } from 'react-router-dom';
-import { nip19 } from 'nostr-tools';
-import { Radio, Users } from 'lucide-react';
+import { Radio } from 'lucide-react';
 
 import { Layout } from '@/components/Layout';
 import { PageHeader } from '@/components/PageHeader';
 import { RelaySelector } from '@/components/RelaySelector';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAuthor } from '@/hooks/useAuthor';
 import { useLiveEvents } from '@/hooks/useLiveEvents';
 import { useRouteSeo } from '@/hooks/useSeo';
-import { genUserName } from '@/lib/genUserName';
-import { hostOf, isWatchable, type LiveEvent } from '@/lib/nip53';
-import { relativeTime } from '@/lib/time';
+import { type LiveEvent } from '@/lib/nip53';
+import { StreamCard } from '@/components/live';
 
 /**
  * Live activities, from NIP-53.
@@ -93,98 +86,6 @@ function Shelf({ title, items }: { title: string; items: LiveEvent[] }) {
         ))}
       </div>
     </section>
-  );
-}
-
-function StreamCard({ live }: { live: LiveEvent }) {
-  const host = hostOf(live);
-  const author = useAuthor(host);
-  const metadata = author.data?.metadata;
-
-  const name = metadata?.display_name || metadata?.name || genUserName(host);
-  const watchable = isWatchable(live);
-  const npub = nip19.npubEncode(host);
-
-  return (
-    <Card className="overflow-hidden">
-      {live.image && (
-        <div className="aspect-video w-full overflow-hidden bg-muted">
-          <img
-            src={live.image}
-            alt=""
-            loading="lazy"
-            className="h-full w-full object-cover"
-          />
-        </div>
-      )}
-
-      <CardContent className="space-y-3 p-4">
-        <div className="flex items-start gap-2">
-          <h3 className="min-w-0 flex-1 text-base leading-snug">{live.title}</h3>
-
-          {watchable && (
-            <Badge className="shrink-0 gap-1.5 border-transparent bg-destructive text-destructive-foreground">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-              LIVE
-            </Badge>
-          )}
-        </div>
-
-        {live.summary && (
-          <p className="line-clamp-2 text-sm text-muted-foreground">
-            {live.summary}
-          </p>
-        )}
-
-        <div className="flex items-center gap-2">
-          <Link to={`/${npub}`} className="flex min-w-0 items-center gap-2">
-            <Avatar className="h-6 w-6">
-              <AvatarImage src={metadata?.picture} alt="" />
-              <AvatarFallback className="text-[10px]">
-                {name.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <span className="truncate text-sm text-muted-foreground hover:text-foreground">
-              {name}
-            </span>
-          </Link>
-
-          {live.currentParticipants !== undefined && (
-            <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[11px] tabular-nums text-muted-foreground">
-              <Users className="h-3 w-3" />
-              {live.currentParticipants.toLocaleString()}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/*
-            A link out, not a player. The stream is on the host's own
-            infrastructure and this app has never touched it — opening it in
-            place would mean claiming responsibility for whatever it serves.
-          */}
-          {watchable ? (
-            <Button asChild size="sm" className="flex-1">
-              <a href={live.streaming} target="_blank" rel="noopener noreferrer">
-                Watch
-              </a>
-            </Button>
-          ) : live.recording ? (
-            <Button asChild size="sm" variant="outline" className="flex-1">
-              <a href={live.recording} target="_blank" rel="noopener noreferrer">
-                Watch the recording
-              </a>
-            </Button>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              {live.starts
-                ? `Starts ${relativeTime(live.starts * 1000)}`
-                : 'No time announced yet'}
-            </p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 

@@ -14,6 +14,7 @@ import {
   PenSquare,
   MessagesSquare,
   QrCode,
+  Smile,
   UserRound,
   Zap,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import { profilePageSchema } from '@/lib/structuredData';
 import { genUserName } from '@/lib/genUserName';
 import { handleFor } from '@/lib/handle';
 import { Post } from '@/components/Post';
+import { UserStatusLine, StatusEditor } from '@/components/status';
 import { NoteContent } from '@/components/NoteContent';
 import { ReportNotice } from '@/components/ReportNotice';
 import { AvatarRing } from '@/components/AvatarRing';
@@ -90,6 +92,7 @@ export function Profile({ pubkey }: ProfileProps) {
   const { followerCount } = useFollowers(pubkey);
   const { toast } = useToast();
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
 
   /**
    * The profile page asks the relays for a kind 0 of its own, and used to
@@ -261,6 +264,7 @@ export function Profile({ pubkey }: ProfileProps) {
           <div className="flex flex-col gap-4">
             <div className="order-2 grid grid-cols-2 gap-2 sm:order-1 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
               {isCurrentUser ? (
+                <>
                 <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
                   <DialogTrigger asChild>
                     <Button variant="outline" size="sm">
@@ -286,6 +290,18 @@ export function Profile({ pubkey }: ProfileProps) {
                     <BadgeSettings />
                   </DialogContent>
                 </Dialog>
+
+                {/* NIP-38 status, set from here rather than buried in Edit
+                    profile — it changes too often to live in a form */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsStatusOpen(true)}
+                >
+                  <Smile className="mr-2 h-4 w-4" />
+                  Status
+                </Button>
+                </>
               ) : (
                 <>
                   {/* Zapping a person rather than a note. Hidden by the dialog
@@ -355,6 +371,10 @@ export function Profile({ pubkey }: ProfileProps) {
               <TrustScore pubkey={pubkey} />
             </div>
               <p className="text-sm text-muted-foreground">@{username}</p>
+
+              {/* NIP-38: a short "what are you up to" line, shown only when
+                  the author set one that has not expired */}
+              <UserStatusLine pubkey={pubkey} className="flex flex-wrap gap-x-3 gap-y-1" />
             </div>
           </div>
 
@@ -513,6 +533,9 @@ export function Profile({ pubkey }: ProfileProps) {
           />
         </TabsContent>
       </Tabs>
+
+      {/* NIP-38 status editor, opened from the Status button in the header */}
+      <StatusEditor open={isStatusOpen} onOpenChange={setIsStatusOpen} />
     </div>
   );
 }

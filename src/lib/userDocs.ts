@@ -520,7 +520,7 @@ did not resolve, and retrying will not change that.
 
 ## Still stuck
 
-Reach the author at [@kkworld](https://x.com/kkworld). Include what you did,
+Reach the author at [@k_k_kaundal](https://x.com/k_k_kaundal). Include what you did,
 what you expected, and what actually appeared — a screenshot of the error beats
 a description of it.
 `,

@@ -47,12 +47,17 @@ const ListsPage = () => {
           title="Lists"
           description="Groups of people someone thought belonged together."
           action={
-            user ? (
-              <Button onClick={() => setCreating(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                New list
+            <div className="flex gap-2">
+              <Button variant="outline" asChild>
+                <Link to="/starter-packs">Starter packs</Link>
               </Button>
-            ) : undefined
+              {user && (
+                <Button onClick={() => setCreating(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New list
+                </Button>
+              )}
+            </div>
           }
         />
 

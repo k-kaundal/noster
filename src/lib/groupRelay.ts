@@ -22,11 +22,7 @@ function connect(url: string): NRelay1 {
   const existing = connections.get(url);
   if (existing) return existing;
 
-  const relay = new NRelay1(url, {
-    reconnectTimeout: 5000,
-    maxReconnectTime: 60000,
-    requestTimeout: 5000,
-  });
+  const relay = new NRelay1(url);
 
   connections.set(url, relay);
   return relay;

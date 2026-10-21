@@ -148,11 +148,22 @@ export function ReelPlayer({
     <div className="relative h-full w-full snap-start snap-always overflow-hidden rounded-none bg-black sm:rounded-2xl">
       {source && (
         <video
-          ref={videoRef}
+          ref={(element) => {
+            // Merge into the existing ref so the play/pause effect still works
+            (videoRef as { current: HTMLVideoElement | null }).current = element;
+            // iOS Safari needs these as actual HTML attributes, not React
+            // props — without them a tap opens the native browser player
+            // instead of playing inline like Instagram
+            if (element) {
+              element.setAttribute('playsinline', '');
+              element.setAttribute('webkit-playsinline', '');
+            }
+          }}
           src={source.url}
           poster={source.image}
           loop
           playsInline
+          autoPlay={isActive && !gated}
           muted={muted}
           preload={isActive ? 'auto' : 'none'}
           aria-label={video.alt ?? video.title ?? 'Short video'}
