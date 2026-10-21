@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
@@ -194,14 +194,10 @@ class _OrderCard extends ConsumerWidget {
             Row(
               children: [
                 profileAsync.when(
-                  data: (profile) => CircleAvatar(
+                  data: (profile) => SafeAvatar(
+                    imageUrl: profile?.picture,
                     radius: 14,
-                    backgroundImage: profile?.picture != null
-                        ? CachedNetworkImageProvider(profile!.picture!)
-                        : null,
-                    child: profile?.picture == null
-                        ? const Icon(Icons.person, size: 14)
-                        : null,
+                    fallback: const Icon(Icons.person, size: 14),
                   ),
                   loading: () => const CircleAvatar(radius: 14),
                   error: (_, _) =>

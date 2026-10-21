@@ -6,11 +6,26 @@ import 'package:nostrfeed_mobile/features/chat/providers/dm_store.dart';
 /// Renders one chat message. The plaintext is already resolved by the
 /// [DmStore] (or carried in the local outbox), so the bubble is a pure
 /// presentational widget — no async decryption per bubble.
+///
+/// Outgoing messages show a delivery tick: clock (sending), single tick
+/// (delivered to a relay), error (failed — tap to retry).
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isSent;
 
-  const MessageBubble({super.key, required this.message, required this.isSent});
+  /// Called when the user taps a FAILED outgoing message (to retry).
+  final VoidCallback? onRetry;
+
+  /// Called when the user long-presses a FAILED outgoing message (to delete).
+  final VoidCallback? onDelete;
+
+  const MessageBubble({
+    super.key,
+    required this.message,
+    required this.isSent,
+    this.onRetry,
+    this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -21,8 +36,9 @@ class MessageBubble extends StatelessWidget {
 
     final displayText =
         message.text.isEmpty ? '🔒 Unable to decrypt' : message.text;
+    final failed = message.status == MessageStatus.failed;
 
-    return Align(
+    final bubble = Align(
       alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 2),
@@ -76,13 +92,7 @@ class MessageBubble extends StatelessWidget {
                 ),
                 if (isSent) ...[
                   const SizedBox(width: 4),
-                  Icon(
-                    message.isPending
-                        ? Icons.schedule_rounded
-                        : Icons.lock_rounded,
-                    size: 10,
-                    color: Colors.white.withValues(alpha: 0.7),
-                  ),
+                  _DeliveryIcon(status: message.status),
                 ],
               ],
             ),
@@ -90,5 +100,43 @@ class MessageBubble extends StatelessWidget {
         ),
       ),
     );
+
+    // Failed messages are tappable (retry) and long-pressable (delete).
+    if (failed && (onRetry != null || onDelete != null)) {
+      return GestureDetector(
+        onTap: onRetry,
+        onLongPress: onDelete,
+        child: bubble,
+      );
+    }
+    return bubble;
+  }
+}
+
+/// Delivery status icon for outgoing messages:
+/// clock (sending) → single tick (delivered) → error (failed, tap to retry).
+class _DeliveryIcon extends StatelessWidget {
+  final MessageStatus status;
+  const _DeliveryIcon({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (status) {
+      MessageStatus.pending => Icon(
+          Icons.schedule_rounded,
+          size: 12,
+          color: Colors.white.withValues(alpha: 0.5),
+        ),
+      MessageStatus.sent => Icon(
+          Icons.done_rounded,
+          size: 12,
+          color: Colors.white.withValues(alpha: 0.9),
+        ),
+      MessageStatus.failed => const Icon(
+          Icons.error_outline_rounded,
+          size: 12,
+          color: Colors.white,
+        ),
+    };
   }
 }

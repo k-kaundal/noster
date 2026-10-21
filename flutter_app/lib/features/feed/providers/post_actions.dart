@@ -33,10 +33,10 @@ class PostActions {
       final userReaction =
           reactions.where((e) => e.pubkey == auth.pubkey).firstOrNull;
       if (userReaction != null) {
-        nostr.publish(nostr.createDeletion(userReaction.id));
+        nostr.publishEvent(nostr.createDeletion(userReaction.id));
       }
     } else {
-      nostr.publish(nostr.createReaction(event));
+      nostr.publishEvent(nostr.createReaction(event));
     }
     _scheduleEngagementRefresh(event.id);
   }
@@ -58,10 +58,10 @@ class PostActions {
       final userRepost =
           reposts.where((e) => e.pubkey == auth.pubkey).firstOrNull;
       if (userRepost != null) {
-        nostr.publish(nostr.createDeletion(userRepost.id));
+        nostr.publishEvent(nostr.createDeletion(userRepost.id));
       }
     } else {
-      nostr.publish(nostr.createRepost(event));
+      nostr.publishEvent(nostr.createRepost(event));
     }
     _scheduleEngagementRefresh(event.id);
   }

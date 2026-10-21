@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
@@ -210,14 +210,10 @@ class _BountyCard extends ConsumerWidget {
               Row(
                 children: [
                   profileAsync.when(
-                    data: (profile) => CircleAvatar(
+                    data: (profile) => SafeAvatar(
+                      imageUrl: profile?.picture,
                       radius: 12,
-                      backgroundImage: profile?.picture != null
-                          ? CachedNetworkImageProvider(profile!.picture!)
-                          : null,
-                      child: profile?.picture == null
-                          ? const Icon(Icons.person, size: 12)
-                          : null,
+                      fallback: const Icon(Icons.person, size: 12),
                     ),
                     loading: () => const CircleAvatar(radius: 12),
                     error: (_, _) =>

@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/feed/widgets/post_card.dart';
 
@@ -37,123 +37,62 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   Widget build(BuildContext context) {
     final auth = ref.watch(authStateProvider);
     final colorScheme = Theme.of(context).colorScheme;
-    final notificationsAsync = ref.watch(notificationsProvider);
-    final notifCount = notificationsAsync.valueOrNull?.length ?? 0;
 
+    // AppBar is owned by AppShell (drawer lives there). The feed screen
+    // provides only its body: a slim sub-header with the For You / Following
+    // tabs + quick actions, then the feed itself.
     return Scaffold(
-      appBar: AppBar(
-        leading: Builder(
-          builder: (scaffoldContext) => IconButton(
-            icon: const Icon(Icons.menu_rounded),
-            tooltip: 'Menu',
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              Scaffold.of(scaffoldContext).openDrawer();
-            },
-          ),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [colorScheme.primary, colorScheme.tertiary],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.primary.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+      body: Column(
+        children: [
+          Material(
+            color: colorScheme.surface,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TabBar(
+                    controller: _tabController,
+                    tabs: const [
+                      Tab(text: 'For You'),
+                      Tab(text: 'Following'),
+                    ],
                   ),
-                ],
-              ),
-              child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              'NostrFeed',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          // Search button
-          IconButton(
-            icon: const Icon(Icons.search_rounded),
-            tooltip: 'Search',
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              context.push('/search');
-            },
-          ),
-          // Notifications bell with badge
-          IconButton(
-            icon: Badge(
-              isLabelVisible: notifCount > 0,
-              label: Text(
-                notifCount > 99 ? '99+' : '$notifCount',
-                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-              ),
-              backgroundColor: colorScheme.error,
-              textColor: colorScheme.onError,
-              child: const Icon(Icons.notifications_outlined),
-            ),
-            tooltip: 'Notifications',
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              context.push('/notifications');
-            },
-          ),
-          // Profile avatar
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                if (auth.isLoggedIn && auth.pubkey != null) {
-                  context.push('/profile/${auth.pubkey}');
-                } else {
-                  context.push('/login');
-                }
-              },
-              child: CircleAvatar(
-                radius: 16,
-                backgroundColor: colorScheme.primaryContainer,
-                backgroundImage: auth.profile?.picture != null
-                    ? CachedNetworkImageProvider(auth.profile!.picture!)
-                    : null,
-                child: auth.profile?.picture == null
-                    ? Icon(
+                ),
+                // Profile avatar (search + notifications live in the AppBar)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      if (auth.isLoggedIn && auth.pubkey != null) {
+                        context.push('/profile/${auth.pubkey}');
+                      } else {
+                        context.push('/login');
+                      }
+                    },
+                    child: SafeAvatar(
+                      imageUrl: auth.profile?.picture,
+                      radius: 16,
+                      backgroundColor: colorScheme.primaryContainer,
+                      fallback: Icon(
                         Icons.person_rounded,
                         size: 18,
                         color: colorScheme.onPrimaryContainer,
-                      )
-                    : null,
-              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'For You'),
-            Tab(text: 'Following'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [
-          _GlobalFeedTab(),
-          _FollowingFeedTab(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: const [
+                _GlobalFeedTab(),
+                _FollowingFeedTab(),
+              ],
+            ),
+          ),
         ],
       ),
       floatingActionButton: auth.isLoggedIn && !auth.isReadOnly

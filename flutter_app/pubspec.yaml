@@ -32,6 +32,9 @@ dependencies:
   shared_preferences: ^2.3.2
   flutter_secure_storage: ^9.2.2
 
+  # Local push notifications (background listener like FB/Insta)
+  flutter_local_notifications: ^19.5.0
+
   # Media & files
   image_picker: ^1.1.2
   cached_network_image: ^3.4.1

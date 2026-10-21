@@ -9,6 +9,7 @@ import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/features/identity/providers/address_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/cashu_providers.dart';
+import 'package:nostrfeed_mobile/features/wallet/widgets/invoice_qr.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/nwc_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart';
@@ -52,38 +53,50 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
     final hasLnbits = lnbits.isConnected;
     final hasNwc = nwc.isConnected;
 
+    // AppBar is owned by AppShell (hamburger → drawer). Wallet settings
+    // action moves into a small row above the body.
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Wallet'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Wallet Settings',
-            onPressed: () => context.push('/wallet/nwc'),
+      body: Column(
+        children: [
+          // Wallet settings action (was the AppBar action).
+          if (auth.isLoggedIn)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+              child: Row(
+                children: [
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    tooltip: 'Wallet Settings',
+                    onPressed: () => context.push('/wallet/nwc'),
+                  ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: !auth.isLoggedIn
+                ? const WalletLoginPrompt()
+                : lnbits.isLoading && !lnbits.isConnected
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Connecting to your wallet…'),
+                      ],
+                    ),
+                  )
+                : hasLnbits
+                ? _lnbitsWalletView(context, lnbits, colorScheme)
+                : hasNwc
+                ? _nwcWalletView(context, nwc, colorScheme)
+                : _noWalletView(context, colorScheme),
           ),
         ],
       ),
-      body: !auth.isLoggedIn
-          ? const WalletLoginPrompt()
-          : lnbits.isLoading && !lnbits.isConnected
-              ? const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Connecting to your wallet…'),
-                    ],
-                  ),
-                )
-              : hasLnbits
-                  ? _lnbitsWalletView(context, lnbits, colorScheme)
-                  : hasNwc
-                      ? _nwcWalletView(context, nwc, colorScheme)
-                      : _noWalletView(context, colorScheme),
     );
   }
-
 
   // ── LNbits wallet view (primary) ─────────────────────────────────────
 
@@ -128,7 +141,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                     const Spacer(),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
@@ -330,9 +345,8 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                     ),
                     Text(
                       subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -351,15 +365,17 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                   ),
                   Text(
                     'sats',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_right,
-                  color: colorScheme.onSurfaceVariant, size: 20),
+              Icon(
+                Icons.chevron_right,
+                color: colorScheme.onSurfaceVariant,
+                size: 20,
+              ),
             ],
           ),
         ),
@@ -374,8 +390,10 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
   ) {
     if (wallet == null) {
       return Center(
-        child: Text('No wallet activity',
-            style: TextStyle(color: colorScheme.onSurfaceVariant)),
+        child: Text(
+          'No wallet activity',
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
       );
     }
     return _PaymentsListInline(apiKey: wallet.inkey ?? wallet.adminkey ?? '');
@@ -391,12 +409,16 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
     // The accurate lightning address: the one actually claimed on LNbits
     // (primaryAddress), falling back to the free address derived from pubkey,
     // falling back to whatever the profile advertises (may be stale).
-    final accurateAddress = lightning.primaryAddress ??
-        (freeAddress != null ? '$freeAddress@${Env.lightningAddressDomain}' : null) ??
+    final accurateAddress =
+        lightning.primaryAddress ??
+        (freeAddress != null
+            ? '$freeAddress@${Env.lightningAddressDomain}'
+            : null) ??
         auth.profile?.lud16;
 
     // Whether the profile's lud16 matches what LNbits actually has.
-    final profileMatchesWallet = auth.profile?.lud16 != null &&
+    final profileMatchesWallet =
+        auth.profile?.lud16 != null &&
         lightning.addresses.contains(auth.profile!.lud16);
 
     return ListView(
@@ -439,10 +461,12 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                         tooltip: 'Copy address',
                         onPressed: () {
                           Clipboard.setData(
-                              ClipboardData(text: accurateAddress));
+                            ClipboardData(text: accurateAddress),
+                          );
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                                content: Text('Lightning address copied')),
+                              content: Text('Lightning address copied'),
+                            ),
                           );
                         },
                       ),
@@ -454,16 +478,14 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                   else if (!profileMatchesWallet && auth.profile?.lud16 != null)
                     Text(
                       'Your profile shows a different address. Update it to match.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colorScheme.error,
-                          ),
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: colorScheme.error),
                     )
                   else if (auth.profile?.lud16 == null)
                     Text(
                       'Not published to your Nostr profile yet.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                 ] else ...[
                   Text(
@@ -475,9 +497,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                     Text(
                       'Your free address: $freeAddress@${Env.lightningAddressDomain}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontFamily: 'monospace',
-                          ),
+                        color: colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                      ),
                     ),
                 ],
               ],
@@ -589,8 +611,11 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
               children: [
                 Row(
                   children: [
-                    Icon(Icons.bolt,
-                        color: Colors.white.withValues(alpha: 0.9), size: 20),
+                    Icon(
+                      Icons.bolt,
+                      color: Colors.white.withValues(alpha: 0.9),
+                      size: 20,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       nwcState.activeConnection?.alias ?? 'NWC Wallet',
@@ -667,9 +692,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
         children: [
           _nwcTransactionList(nwcState.transactions ?? [], colorScheme),
           _nwcTransactionList(
-            (nwcState.transactions ?? [])
-                .where((t) => t.isIncoming)
-                .toList(),
+            (nwcState.transactions ?? []).where((t) => t.isIncoming).toList(),
             colorScheme,
           ),
           _nwcSettingsTab(context, nwcState, colorScheme),
@@ -679,17 +702,24 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
   }
 
   Widget _nwcTransactionList(
-      List<NwcTransaction> txs, ColorScheme colorScheme) {
+    List<NwcTransaction> txs,
+    ColorScheme colorScheme,
+  ) {
     if (txs.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long,
-                size: 48, color: colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.receipt_long,
+              size: 48,
+              color: colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 12),
-            Text('No transactions yet',
-                style: TextStyle(color: colorScheme.onSurfaceVariant)),
+            Text(
+              'No transactions yet',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
           ],
         ),
       );
@@ -704,12 +734,19 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
   }
 
   Widget _nwcTransactionTile(
-      BuildContext context, NwcTransaction tx, ColorScheme colorScheme) {
+    BuildContext context,
+    NwcTransaction tx,
+    ColorScheme colorScheme,
+  ) {
     final formatter = NumberFormat('#,###');
     final isIncoming = tx.isIncoming;
     final amountColor = isIncoming ? Colors.green : colorScheme.error;
 
+    // Pending incoming transactions are tappable → re-show the invoice QR
+    // (the wallet activity tab shares the same InvoiceQrView as LNbits).
+    final showQr = !tx.isSettled && isIncoming && tx.invoice != null;
     return ListTile(
+      onTap: showQr ? () => showInvoiceQrDialog(context, tx.invoice!) : null,
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
@@ -724,10 +761,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
       ),
       title: Text(
         '${isIncoming ? '+' : '-'}${formatter.format(tx.amountSats)} sats',
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: amountColor,
-        ),
+        style: TextStyle(fontWeight: FontWeight.w600, color: amountColor),
       ),
       subtitle: tx.description != null
           ? Text(tx.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
@@ -738,16 +772,25 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
         children: [
           Text(
             timeago.format(
-                DateTime.fromMillisecondsSinceEpoch(tx.createdAt * 1000)),
+              DateTime.fromMillisecondsSinceEpoch(tx.createdAt * 1000),
+            ),
             style: Theme.of(context).textTheme.bodySmall,
           ),
           if (!tx.isSettled)
-            Text(
-              'Pending',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.orange,
-                    fontWeight: FontWeight.w600,
-                  ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.qr_code_rounded,
+                    size: 12, color: Colors.orange.shade700),
+                const SizedBox(width: 3),
+                Text(
+                  showQr ? 'Pending · tap for QR' : 'Pending',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.orange.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
             ),
         ],
       ),
@@ -755,7 +798,10 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
   }
 
   Widget _nwcSettingsTab(
-      BuildContext context, NwcState nwcState, ColorScheme colorScheme) {
+    BuildContext context,
+    NwcState nwcState,
+    ColorScheme colorScheme,
+  ) {
     final auth = ref.watch(authStateProvider);
     final lightning = ref.watch(lightningAddressProvider);
     final freeAddress = ref.watch(freeAddressProvider);
@@ -763,8 +809,11 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
     final cashu = ref.watch(cashuWalletProvider);
 
     // Accurate lightning address from LNbits pay links (or free address).
-    final accurateAddress = lightning.primaryAddress ??
-        (freeAddress != null ? '$freeAddress@${Env.lightningAddressDomain}' : null) ??
+    final accurateAddress =
+        lightning.primaryAddress ??
+        (freeAddress != null
+            ? '$freeAddress@${Env.lightningAddressDomain}'
+            : null) ??
         auth.profile?.lud16;
 
     return ListView(
@@ -834,10 +883,12 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                         tooltip: 'Copy address',
                         onPressed: () {
                           Clipboard.setData(
-                              ClipboardData(text: accurateAddress));
+                            ClipboardData(text: accurateAddress),
+                          );
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                                content: Text('Lightning address copied')),
+                              content: Text('Lightning address copied'),
+                            ),
                           );
                         },
                       ),
@@ -849,9 +900,8 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                   else if (auth.profile?.lud16 == null)
                     Text(
                       'Not published to your Nostr profile yet.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                 ] else ...[
                   Text(
@@ -863,9 +913,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                     Text(
                       'Your free address: $freeAddress@${Env.lightningAddressDomain}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontFamily: 'monospace',
-                          ),
+                        color: colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                      ),
                     ),
                 ],
               ],
@@ -935,11 +985,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
           clipBehavior: Clip.antiAlias,
           child: Container(
             width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest
-                  .withValues(alpha: 0.4),
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             ),
             child: Column(
               children: [
@@ -949,41 +997,36 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                     color: colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(24),
                   ),
-                  child:
-                      Icon(Icons.bolt, size: 32, color: colorScheme.primary),
+                  child: Icon(Icons.bolt, size: 32, color: colorScheme.primary),
                 ),
                 const SizedBox(height: 24),
                 Text(
                   'Set up your wallet',
-                  style:
-                      Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                  style: Theme.of(context).textTheme.headlineMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
                 Text(
                   'One tap creates a lightning wallet and an address like',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: colorScheme.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'you@ln.nostrfeed.com',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.bold,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'that people can zap from any Nostr client.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: colorScheme.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
@@ -993,7 +1036,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                   label: const Text('Create my wallet'),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 32, vertical: 16),
+                      horizontal: 32,
+                      vertical: 16,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -1107,11 +1152,16 @@ class _PaymentsListInlineState extends ConsumerState<_PaymentsListInline> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long,
-                size: 48, color: colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.receipt_long,
+              size: 48,
+              color: colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 12),
-            Text('No payments yet',
-                style: TextStyle(color: colorScheme.onSurfaceVariant)),
+            Text(
+              'No payments yet',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
           ],
         ),
       );
@@ -1143,14 +1193,10 @@ class _PaymentsListInlineState extends ConsumerState<_PaymentsListInline> {
             ),
             title: Text(
               '${isIncoming ? '+' : '-'}${formatter.format(p.amountSats)} sats',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w600, color: color),
             ),
             subtitle: p.memo != null
-                ? Text(p.memo!,
-                    maxLines: 1, overflow: TextOverflow.ellipsis)
+                ? Text(p.memo!, maxLines: 1, overflow: TextOverflow.ellipsis)
                 : null,
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1159,16 +1205,17 @@ class _PaymentsListInlineState extends ConsumerState<_PaymentsListInline> {
                 if (p.timestampMs != null)
                   Text(
                     timeago.format(
-                        DateTime.fromMillisecondsSinceEpoch(p.timestampMs!)),
+                      DateTime.fromMillisecondsSinceEpoch(p.timestampMs!),
+                    ),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 if (p.isPending)
                   Text(
                     'Pending',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.orange,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: Colors.orange,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
               ],
             ),
@@ -1193,7 +1240,10 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(color: backgroundColor, child: tabBar);
   }
 

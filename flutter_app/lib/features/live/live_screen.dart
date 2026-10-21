@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 
 class LiveScreen extends ConsumerWidget {
@@ -182,14 +183,10 @@ class _StreamCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   profileAsync.when(
-                    data: (profile) => CircleAvatar(
+                    data: (profile) => SafeAvatar(
+                      imageUrl: profile?.picture,
                       radius: 16,
-                      backgroundImage: profile?.picture != null
-                          ? CachedNetworkImageProvider(profile!.picture!)
-                          : null,
-                      child: profile?.picture == null
-                          ? const Icon(Icons.person, size: 16)
-                          : null,
+                      fallback: const Icon(Icons.person, size: 16),
                     ),
                     loading: () => const CircleAvatar(radius: 16),
                     error: (_, _) =>

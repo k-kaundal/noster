@@ -6,14 +6,17 @@ import 'package:bech32/bech32.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay_router.dart';
 
 class SocialRepository {
   final RelayPool relayPool;
   final NostrContext ctx;
+  final RelayRouter relayRouter;
 
   /// Freshness caches owned by `NostrService` and injected here — see
   /// `profileCache` / `followsCache` for rationale.
-  final Map<String, ({NostrProfile profile, int createdAt})> profileCache;
+  final Map<String, ({NostrProfile profile, int createdAt, int fetchedAt})>
+  profileCache;
   final Map<String, ({List<String> follows, int createdAt})> followsCache;
 
   SocialRepository(
@@ -21,40 +24,94 @@ class SocialRepository {
     this.ctx,
     this.profileCache,
     this.followsCache,
+    this.relayRouter,
   );
+
+  /// How long a cached profile is trusted before re-querying relays.
+  /// Profiles rarely change; refetching every render made feeds feel slow.
+  static const _profileTtlSeconds = 600; // 10 minutes
 
   Future<NostrProfile?> fetchProfile(String pubkey) async {
     final cached = profileCache[pubkey];
 
-    // Query default relays first
+    // TTL FAST PATH: a recently-fetched profile is returned immediately with
+    // NO relay round-trip (this was the main feed slowdown — every post card
+    // + avatar re-queried relays on every navigation).
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    if (cached != null && now - cached.fetchedAt < _profileTtlSeconds) {
+      return cached.profile;
+    }
+
+    // Query default (already-connected) relays first with a short timeout —
+    // the vast majority of profiles resolve here in <1s. The outbox-model
+    // lookups below only run when this misses.
     var events = await relayPool.query([
       NostrFilter(kinds: [0], authors: [pubkey], limit: 1),
-    ], timeout: const Duration(seconds: 6));
+    ], timeout: const Duration(seconds: 3));
 
-    // If not found on default relays, try indexer relays as a fallback —
-    // profiles published only to smaller relays will still resolve.
     if (events.isEmpty) {
-      events = await relayPool.query(
-        [NostrFilter(kinds: [0], authors: [pubkey], limit: 1)],
-        timeout: const Duration(seconds: 6),
+      // NIP-65 outbox model: query the user's WRITE relays (where THEY
+      // publish their kind-0). Runs concurrently, capped at top 3 relays
+      // and a short per-relay timeout so a dead relay can't stall the UI.
+      final writeRelays = await relayRouter
+          .getWriteRelays(pubkey)
+          .timeout(const Duration(seconds: 3), onTimeout: () => []);
+      if (writeRelays.isNotEmpty) {
+        final results = await Future.wait(
+          writeRelays.take(3).map(
+                (url) => relayPool.queryOnRelay(
+                  url,
+                  [NostrFilter(kinds: [0], authors: [pubkey], limit: 1)],
+                  timeout: const Duration(seconds: 2),
+                ),
+              ),
+        );
+        events = results.expand((e) => e).toList();
+      }
+    }
+
+    if (events.isEmpty) {
+      // Last resort: well-known indexer relays (concurrent, short timeout).
+      final results = await Future.wait(
+        RelayRouter.indexerRelays.take(3).map(
+              (url) => relayPool.queryOnRelay(
+                url,
+                [NostrFilter(kinds: [0], authors: [pubkey], limit: 1)],
+                timeout: const Duration(seconds: 2),
+              ),
+            ),
       );
+      events = results.expand((e) => e).toList();
     }
 
     if (events.isNotEmpty) {
       try {
+        // Multiple relays each return their own revision of the replaceable
+        // kind-0 — taking events.first picks one at random (often STALE,
+        // which is why profile fields go missing after a refresh). Sort by
+        // created_at and take the NEWEST.
+        events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         final relayEvent = events.first;
         final relayProfile = NostrProfile.fromJson(
           jsonDecode(relayEvent.content) as Map<String, dynamic>,
         );
         // Only overwrite cache if relay has a NEWER kind-0 than what we
         // already have. Otherwise our local write is fresher — keep it.
+        final fetchedAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         if (cached == null || relayEvent.createdAt >= cached.createdAt) {
           profileCache[pubkey] = (
             profile: relayProfile,
             createdAt: relayEvent.createdAt,
+            fetchedAt: fetchedAt,
           );
           return relayProfile;
         }
+        // Refresh the TTL so we don't re-query for another 10 minutes.
+        profileCache[pubkey] = (
+          profile: cached.profile,
+          createdAt: cached.createdAt,
+          fetchedAt: fetchedAt,
+        );
         return cached.profile;
       } catch (_) {
         // Fall through to cache

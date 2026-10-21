@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart' show DecryptedDm;
+import 'package:nostrfeed_mobile/core/nostr/dm_delivery.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
@@ -50,27 +52,50 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // here so all downstream code (which expects 64-char hex) works.
     final normalized = normalizePubkey(widget.peerNpub!);
     if (normalized == null) {
-      // Invalid identifier — show a friendly error
+      // Invalid identifier — friendly error with its own back button
+      // (the shell AppBar is hidden on chat threads).
       return Scaffold(
-        appBar: AppBar(title: const Text('Chat')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline, size: 48),
-                const SizedBox(height: 16),
-                const Text('Invalid recipient identifier'),
-                const SizedBox(height: 8),
-                Text(
-                  widget.peerNpub!,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+        body: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).viewPadding.top,
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    tooltip: 'Back',
+                    onPressed: () => context.pop(),
+                  ),
+                ],
+              ),
             ),
-          ),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48),
+                      const SizedBox(height: 16),
+                      const Text('Invalid recipient identifier'),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.peerNpub!,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -89,74 +114,59 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final convosAsync = ref.watch(conversationListProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
+    // AppBar is owned by AppShell (hamburger → drawer). This view adds its
+    // action row (search + new message) inline at the top of the body.
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        leading: widget.peerNpub == null
-            ? Builder(
-                builder: (scaffoldContext) => IconButton(
-                  icon: const Icon(Icons.menu_rounded),
-                  tooltip: 'Menu',
+      body: Column(
+        children: [
+          // Action row: new message (search lives in the AppBar).
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+            child: Row(
+              children: [
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.add_comment_outlined),
+                  tooltip: 'New message',
                   onPressed: () {
                     HapticFeedback.lightImpact();
-                    Scaffold.of(scaffoldContext).openDrawer();
+                    _showNewMessageDialog(context);
                   },
                 ),
-              )
-            : IconButton(
-                icon: const Icon(Icons.arrow_back_rounded),
-                tooltip: 'Back',
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  context.pop();
-                },
-              ),
-        title: const Text('Messages'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search_rounded),
-            tooltip: 'Search',
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              context.push('/search');
-            },
+              ],
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.add_comment_outlined),
-            tooltip: 'New message',
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              _showNewMessageDialog(context);
-            },
+          Expanded(
+            child: convosAsync.when(
+              loading: () => _buildLoadingState(colorScheme),
+              error: (err, _) => _buildErrorState(context),
+              data: (conversations) {
+                if (conversations.isEmpty) {
+                  return _buildEmptyState(context);
+                }
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    HapticFeedback.mediumImpact();
+                    ref.invalidate(dmsProvider);
+                    await ref.read(dmsProvider.future);
+                  },
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: conversations.length,
+                    separatorBuilder: (_, _) => Divider(
+                      height: 1,
+                      indent: 84,
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                    ),
+                    itemBuilder: (context, index) =>
+                        _conversationTile(context, conversations[index]),
+                  ),
+                );
+              },
+            ),
           ),
         ],
-      ),
-      body: convosAsync.when(
-        loading: () => _buildLoadingState(colorScheme),
-        error: (err, _) => _buildErrorState(context),
-        data: (conversations) {
-          if (conversations.isEmpty) {
-            return _buildEmptyState(context);
-          }
-          return RefreshIndicator(
-            onRefresh: () async {
-              HapticFeedback.mediumImpact();
-              ref.invalidate(dmsProvider);
-              await ref.read(dmsProvider.future);
-            },
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: conversations.length,
-              separatorBuilder: (_, _) => Divider(
-                height: 1,
-                indent: 84,
-                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-              ),
-              itemBuilder: (context, index) =>
-                  _conversationTile(context, conversations[index]),
-            ),
-          );
-        },
       ),
     );
   }
@@ -223,6 +233,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final timestamp = DateTime.fromMillisecondsSinceEpoch(
       lastTimestamp * 1000,
     );
+    // Unread count for this peer (cleared when the thread is opened).
+    final dms = ref.watch(dmsProvider).valueOrNull ?? const <NostrEvent>[];
+    final unread = ref.read(dmStoreProvider).unreadFor(dms, conv.peer);
 
     return Material(
       color: Colors.transparent,
@@ -295,9 +308,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             style: TextStyle(
                               fontSize: 14,
                               color: colorScheme.onSurfaceVariant,
+                              fontWeight: unread > 0
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
                             ),
                           ),
                         ),
+                        if (unread > 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              unread > 99 ? '99+' : '$unread',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.onPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ],
@@ -318,75 +355,137 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final auth = ref.watch(authStateProvider);
     // Rebuild when the outbox/decryption cache changes (e.g. after sending).
     ref.watch(dmStoreVersionProvider);
+    // Opening this thread marks its messages as read (clears unread badge).
+    // MUST run post-frame: markThreadRead bumps dmStoreVersionProvider, and
+    // modifying a provider DURING build is illegal (crashes the frame).
+    final store = ref.read(dmStoreProvider);
+    final dmsForRead = dmsAsync.valueOrNull ?? const <NostrEvent>[];
+    var latestTs = 0;
+    for (final e in dmsForRead) {
+      if (e.createdAt > latestTs) latestTs = e.createdAt;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        store.markThreadRead(peerPubkey, latestKnownTs: latestTs);
+      }
+    });
     final colorScheme = Theme.of(context).colorScheme;
 
+    // Chat threads are IMMERSIVE: AppShell hides its AppBar on /chat/<pubkey>,
+    // so this header owns the whole top area — back button, peer identity,
+    // encryption status, and profile shortcut in one row (WhatsApp/Telegram
+    // style). The conversation list ("/chat" tab) keeps the shell AppBar.
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      appBar: AppBar(
-        elevation: 0,
-        scrolledUnderElevation: 2,
-        backgroundColor: colorScheme.surface,
-        titleSpacing: 0,
-        title: profileAsync.when(
-          data: (profile) => InkWell(
-            onTap: () => context.push('/profile/$peerPubkey'),
-            child: Row(
-              children: [
-                ChatAvatar(
-                  imageUrl: profile?.picture,
-                  name: profile?.displayNameOrName ?? peerPubkey,
-                  radius: 18,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        profile?.displayNameOrName ?? _shortKey(peerPubkey),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
+      body: Column(
+        children: [
+          // Immersive thread header.
+          Material(
+            color: colorScheme.surface,
+            child: Padding(
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).viewPadding.top,
+              ),
+              child: profileAsync.when(
+                data: (profile) => InkWell(
+                  onTap: () => context.push('/profile/$peerPubkey'),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+                    child: Row(
+                      children: [
+                        // Back button (shell AppBar is hidden on threads).
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          tooltip: 'Back',
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            context.pop();
+                          },
                         ),
-                      ),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.lock_rounded,
-                            size: 11,
-                            color: colorScheme.primary,
+                        ChatAvatar(
+                          imageUrl: profile?.picture,
+                          name: profile?.displayNameOrName ?? peerPubkey,
+                          radius: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                profile?.displayNameOrName ??
+                                    _shortKey(peerPubkey),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.lock_rounded,
+                                    size: 11,
+                                    color: colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'End-to-end encrypted',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: colorScheme.primary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 3),
-                          Text(
-                            'Encrypted',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.person_outline_rounded),
+                          tooltip: 'View profile',
+                          onPressed: () =>
+                              context.push('/profile/$peerPubkey'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                loading: () => SizedBox(
+                  height: 64,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        onPressed: () => context.pop(),
                       ),
+                      const SizedBox(width: 12),
+                      Text(_shortKey(peerPubkey)),
                     ],
                   ),
                 ),
-              ],
+                error: (_, _) => SizedBox(
+                  height: 64,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        onPressed: () => context.pop(),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(_shortKey(peerPubkey)),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-          loading: () => Text(_shortKey(peerPubkey)),
-          error: (_, _) => Text(_shortKey(peerPubkey)),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert_rounded),
-            onPressed: () => context.push('/profile/$peerPubkey'),
+          Divider(
+            height: 1,
+            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
-        ],
-      ),
-      body: Column(
-        children: [
           Expanded(
             child: dmsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -441,6 +540,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               key: ValueKey(msg.id),
                               message: msg,
                               isSent: isSent,
+                              onRetry: msg.status == MessageStatus.failed
+                                  ? () => _retryMessage(peerPubkey, msg)
+                                  : null,
+                              onDelete: msg.status == MessageStatus.failed
+                                  ? () => _deleteFailed(peerPubkey, msg)
+                                  : null,
                             ),
                           ],
                         );
@@ -558,24 +663,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     HapticFeedback.mediumImpact();
     setState(() => _isSending = true);
+    final store = ref.read(dmStoreProvider);
     try {
       final nostr = ref.read(nostrServiceProvider);
-      // Use NIP-17 gift-wrapped DM (kind 1059) — modern standard with
-      // metadata privacy, compatible with Amethyst/0xchat/Damus.
-      final event = nostr.createNip17Dm(peerPubkey, text);
-      // NIP-17 wraps can't be decrypted by their sender and have a randomized
-      // (up-to-2-days-ago) timestamp — so we can't rely on the relay echo to
-      // show our own message. Record it in the local outbox so it renders
-      // immediately with the correct time.
-      ref.read(dmStoreProvider).recordSent(
-            peerPubkey: peerPubkey,
-            plaintext: text,
-            eventId: event.id,
-          );
+      // NIP-17 gift-wrapped DM (kind 1059). Returns TWO wraps: the
+      // recipient's and our own copy (so our other devices can decrypt).
+      final giftWraps = nostr.createNip17Dm(peerPubkey, text);
+      final recipientWrap = giftWraps.first;
+      // Record locally so the message renders immediately (pending state).
+      final localId = store.recordSent(
+        peerPubkey: peerPubkey,
+        plaintext: text,
+        eventId: recipientWrap.id,
+      );
       _messageController.clear();
-      // dmStoreVersionProvider already bumped by recordSent() — no need to
-      // invalidate dmsProvider (that would trigger a full relay refetch and
-      // rebuild the entire list, causing visible flicker).
+      // Opening this thread marked incoming messages read; sending also
+      // implies read.
+      store.markThreadRead(peerPubkey);
       await Future.delayed(const Duration(milliseconds: 100));
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -585,34 +689,80 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         );
       }
 
-      // Now confirm at least one relay actually accepted the gift wrap.
-      // The message already shows as pending in the UI; if every relay
-      // rejects it (or we're offline) we tell the user instead of letting
-      // the message silently vanish.
-      final accepted = await nostr.publishWithAck(event);
-      if (!accepted && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Message queued — no relay acknowledged it yet. It will be '
-              'retried when you reconnect.',
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
+      // ── Fast delivery ─────────────────────────────────────────────
+      // Publish IMMEDIATELY to connected relays + the well-known DM relays
+      // (relay.primal.net is in both — Primal users read DMs there). The
+      // recipient's kind-10050 inbox lookup happens in the background as a
+      // boost and never delays the tick.
+      final selfWrap = giftWraps.length > 1 ? giftWraps[1] : null;
+      final immediateTargets = {
+        ...nostr.relayPool.connectedUrls,
+        ...DmDelivery.fallbackDmRelays,
+      }.toList();
+      final delivered = await nostr.relayPool.publishWithAckTo(
+        recipientWrap,
+        immediateTargets,
+      );
+      if (selfWrap != null) {
+        // Self copy — fire and forget, not on the critical path.
+        nostr.publishWithAck(selfWrap).ignore();
+      }
+      if (!mounted) return;
+      store.markStatus(
+        peerPubkey,
+        localId,
+        delivered ? MessageStatus.sent : MessageStatus.failed,
+      );
+      if (!delivered) {
+        AppToast.warning(
+          context,
+          'Message not delivered — no relay acknowledged it. Tap the message to retry.',
         );
       }
+
+      // Background boost: find the recipient's DM inbox relays (NIP-17
+      // kind 10050 + NIP-65 read relays) and republish there, so users on
+      // relays outside our defaults still get it.
+      Future(() async {
+        try {
+          final inbox = await nostr.dmDelivery.deliveryRelaysFor(peerPubkey);
+          final readRelays = await nostr.relayRouter.getReadRelays(peerPubkey);
+          final extra = {...inbox, ...readRelays}
+              .where((u) => !nostr.relayPool.connectedUrls.contains(u))
+              .take(4)
+              .toList();
+          if (extra.isNotEmpty) {
+            await nostr.relayPool.publishWithAckTo(recipientWrap, extra);
+          }
+        } catch (_) {
+          // Boost is best-effort — the message already went out.
+        }
+      }).ignore();
+      // Refresh relay DMs shortly after so our self-copy wrap arrives and
+      // the outbox entry reconciles into a real relay-backed message.
+      Future.delayed(const Duration(seconds: 3), () {
+        if (!mounted) return;
+        ref.invalidate(dmsProvider);
+      });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to send: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      if (mounted) AppToast.error(context, 'Failed to send: $e');
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
+  }
+
+  /// Re-publish a failed message: remove the old entry and send again.
+  Future<void> _retryMessage(String peerPubkey, ChatMessage msg) async {
+    final auth = ref.read(authStateProvider);
+    ref.read(dmStoreProvider).removePending(peerPubkey, msg.id);
+    _messageController.text = msg.text;
+    await _send(auth, peerPubkey);
+  }
+
+  /// Discard a failed outgoing message.
+  void _deleteFailed(String peerPubkey, ChatMessage msg) {
+    ref.read(dmStoreProvider).removePending(peerPubkey, msg.id);
+    AppToast.info(context, 'Message deleted');
   }
 
   Widget _buildEmptyState(BuildContext context) {

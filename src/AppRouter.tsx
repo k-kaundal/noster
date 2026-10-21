@@ -43,6 +43,7 @@ const SatsDropsPage = lazy(() => importChunk(() => import("./pages/SatsDropsPage
 const LiveStreamingPage = lazy(() => importChunk(() => import("./pages/LiveStreamingPage")));
 const LiveStreamPage = lazy(() => importChunk(() => import("./pages/LiveStreamPage")));
 const MiniAppsPage = lazy(() => importChunk(() => import("./pages/MiniAppsPage")));
+const PrivacyPolicyPage = lazy(() => importChunk(() => import("./pages/PrivacyPolicyPage")));
 const NIP19Page = lazy(() =>
   importChunk(() =>
     import("./pages/NIP19Page").then((m) => ({ default: m.NIP19Page }))
@@ -150,6 +151,8 @@ export function AppRouter() {
           <Route path="/live/:naddr" element={<LiveStreamPage />} />
           {/* Mini Apps: Community-built extensions and tools */}
           <Route path="/mini-apps" element={<MiniAppsPage />} />
+          {/* Privacy Policy — public page required by Google Play */}
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
           {/* Appearance, NIP-51 mutes, NIP-17 message relays */}
           <Route path="/settings" element={<SettingsPage />} />
 

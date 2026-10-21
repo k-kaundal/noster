@@ -15,6 +15,7 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/utils/markdown.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/zap/zap_sheet.dart';
 
 class ArticlesScreen extends ConsumerWidget {
@@ -144,14 +145,10 @@ class _ArticleCard extends ConsumerWidget {
                   Row(
                     children: [
                       profileAsync.when(
-                        data: (profile) => CircleAvatar(
+                        data: (profile) => SafeAvatar(
+                          imageUrl: profile?.picture,
                           radius: 12,
-                          backgroundImage: profile?.picture != null
-                              ? CachedNetworkImageProvider(profile!.picture!)
-                              : null,
-                          child: profile?.picture == null
-                              ? const Icon(Icons.person, size: 12)
-                              : null,
+                          fallback: const Icon(Icons.person, size: 12),
                         ),
                         loading: () => const CircleAvatar(radius: 12),
                         error: (_, _) => const CircleAvatar(
@@ -349,14 +346,10 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
             Row(
               children: [
                 profileAsync.when(
-                  data: (profile) => CircleAvatar(
+                  data: (profile) => SafeAvatar(
+                    imageUrl: profile?.picture,
                     radius: 16,
-                    backgroundImage: profile?.picture != null
-                        ? CachedNetworkImageProvider(profile!.picture!)
-                        : null,
-                    child: profile?.picture == null
-                        ? const Icon(Icons.person, size: 16)
-                        : null,
+                    fallback: const Icon(Icons.person, size: 16),
                   ),
                   loading: () => const CircleAvatar(radius: 16),
                   error: (_, _) => const CircleAvatar(
@@ -625,7 +618,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
   void _handleLike() {
     final nostr = ref.read(nostrServiceProvider);
     final reaction = nostr.createReaction(event, content: '+');
-    nostr.publish(reaction);
+    nostr.publishEvent(reaction);
     HapticFeedback.mediumImpact();
     // Refresh engagement
     Future.delayed(const Duration(seconds: 1), () {
@@ -645,7 +638,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
   void _handleRepost() {
     final nostr = ref.read(nostrServiceProvider);
     final repost = nostr.createRepost(event);
-    nostr.publish(repost);
+    nostr.publishEvent(repost);
     HapticFeedback.mediumImpact();
     Future.delayed(const Duration(seconds: 1), () {
       ref.invalidate(addressableEngagementProvider(_coordinate));
@@ -877,7 +870,7 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
         content: text,
         root: widget.rootEvent,
       );
-      nostr.publish(comment);
+      nostr.publishEvent(comment);
       _commentController.clear();
       HapticFeedback.mediumImpact();
       // Refresh comments and engagement
@@ -1095,14 +1088,10 @@ class _CommentTile extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           profileAsync.when(
-            data: (profile) => CircleAvatar(
+            data: (profile) => SafeAvatar(
+              imageUrl: profile?.picture,
               radius: 18,
-              backgroundImage: profile?.picture != null
-                  ? CachedNetworkImageProvider(profile!.picture!)
-                  : null,
-              child: profile?.picture == null
-                  ? const Icon(Icons.person, size: 18)
-                  : null,
+              fallback: const Icon(Icons.person, size: 18),
             ),
             loading: () => const CircleAvatar(radius: 18),
             error: (_, _) => const CircleAvatar(

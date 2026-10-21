@@ -45,7 +45,7 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
         widget.rootEvent.id,
         widget.rootEvent.pubkey,
       );
-      nostr.publish(replyEvent);
+      nostr.publishEvent(replyEvent);
       _replyController.clear();
 
       // Refresh replies

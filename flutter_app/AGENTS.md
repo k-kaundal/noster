@@ -69,13 +69,71 @@ over ~100 lines.
 - **Post interactions** (like/repost/bookmark/zap refresh): go through
   `postActionsProvider` (`features/feed/providers/post_actions.dart`) — never
   inside widgets.
+- **Post rendering** (`features/feed/widgets/note_content.dart` + friends):
+  - Media URLs are classified by `MediaUtils.classify` (image/video/audio/
+    other) — extensionless Blossom/media hosts default to image.
+  - NIP-92 `imeta` tags are parsed by `MediaUtils.parseImeta` (dimensions,
+    blurhash, alt, fallback) — portrait images keep their aspect ratio.
+  - Videos render via `VideoCard` (direct files → in-app player, YouTube/
+    Vimeo/etc. → branded external link).
+  - Articles (kind 30023) ALWAYS render as `ArticleCard` preview → tap opens
+    `ArticleReaderScreen`. Never render full markdown inline in feeds.
+  - Polls (kind 1068, NIP-88) render via `PollCard` with voting + tallied
+    results (`PollResults.tally` follows NIP-88 counting rules).
+  - A lone plain link in a short post gets a `LinkPreviewCard`.
 - **Chat / DMs**: all DM decryption + conversation/thread assembly goes
   through `dmStoreProvider` (`features/chat/providers/dm_store.dart`). NIP-17
   gift wraps can NOT be decrypted by their sender and have randomized
   timestamps — so sent messages must be shown from the store's local outbox,
   never by re-fetching from relays. `MessageBubble` is presentational only.
+  Delivery status is tracked via `MessageStatus` (pending → sent after
+  `publishWithAck`, failed → tap to retry / long-press to delete). Unread
+  counts use per-peer last-read watermarks (`markThreadRead`) — the chat tab
+  badge shows TOTAL unread, and `dmNotifierProvider` shows an in-app banner
+  for incoming DMs. Incoming DMs arrive via the real-time subscription
+  (`dmLiveEventsProvider` → `dmLiveListenerProvider` → `DmStore.ingest`) —
+  NIP-17 backdates created_at up to 2 days, so unread/banner decisions use
+  ARRIVAL time (`arrivalTsOf`), never the event's created_at.
+- **Auth race guard**: `AuthNotifier._init` restores the session async; it
+  MUST NOT overwrite state if `state != _initial` when the read resolves
+  (an explicit login/logout/test-write beat it). Keep this guard. The user's
+  profile is also persisted to secure storage (`saveStoredProfile`) so cold
+  starts show it immediately.
+- **NIP-65 outbox model**: profile/metadata fetches route through
+  `relayRouter` (`core/nostr/relay_router.dart`) — query a user's WRITE
+  relays for their events, publish to their READ relays for mentions/DMs.
+  `fetchProfile` order: TTL cache (10 min) → default relays → user write
+  relays → indexers. **Interactions** (like/repost/reply/comment/delete)
+  publish via `nostr.publishEvent(event)` — it acks on our relays AND
+  republishes to tagged users' read relays in the background. Never call
+  `nostr.publish()` for events with p-tags.
+- **NIP-17 self-copy**: `signGiftWrap` seals EACH wrap to its own target
+  (recipient copy → recipient, sender copy → sender). Never share one seal
+  between wraps — the sender can't decrypt it (this caused "unable to decrypt").
+- **DM banner**: `DmAlertBanner` lives ABOVE the router (MaterialApp.builder)
+  — navigate via `ref.read(routerProvider).push(...)`, never `context.push`.
 - **Freshness caches** (`profileCache`/`followsCache`) are instance state on
   `NostrService`, injected into `SocialRepository` — never static globals.
+- **Auth & routing**: `routerProvider` redirects to `/login` when signed out
+  (and away from `/login` when signed in) — never push `/login` manually as
+  a substitute for signing out. Sign-out goes through the drawer confirmation
+  dialog (`AppShell._confirmLogout`).
+- **Key backup**: use `KeyBackupService.saveKeyFile` (auth feature) to export
+  nsec as a file — offered at signup and from the Identity screen.
+- **Toasts**: always `AppToast.success/error/info/warning` — never raw
+  `SnackBar(content: Text(...))`. Toasts auto-replace (no stacking) and
+  strip `Exception: ` prefixes.
+- **AppBar architecture**: `AppShell` owns THE AppBar for the 4 tab routes
+  (hamburger ↔ drawer works because the leading's context is below the
+  drawer Scaffold; Flutter auto-generates the back button on pushed
+  routes). Tab screens render **body-only** Scaffolds — never give a tab
+  screen its own AppBar, and never hand-roll a drawer button inside a
+  screen (it resolves to the screen's inner, drawer-less Scaffold).
+  Global actions (search, notifications, 3-dot overflow with profile/
+  bookmarks/settings/theme/docs) live in the shell AppBar. The shell AppBar
+  is **hidden on chat threads** (`/chat/<pubkey>`) — threads are immersive
+  and render their own header (back button + peer identity + encryption
+  status).
 - **Nostr access**: go through `nostrServiceProvider` (facade). Repositories
   are also exposed as `nostr.feed`, `nostr.engagement`, `nostr.social`,
   `nostr.dms` — prefer those for new code.

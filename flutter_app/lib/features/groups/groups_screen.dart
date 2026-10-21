@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
@@ -76,16 +76,12 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
             children: [
               Row(
                 children: [
-                  CircleAvatar(
+                  SafeAvatar(
+                    imageUrl: picture,
                     radius: 26,
-                    backgroundImage: picture != null
-                        ? CachedNetworkImageProvider(picture)
-                        : null,
                     backgroundColor: scheme.primaryContainer,
-                    child: picture == null
-                        ? Icon(Icons.group,
-                            color: scheme.onPrimaryContainer)
-                        : null,
+                    fallback: Icon(Icons.group,
+                        color: scheme.onPrimaryContainer),
                   ),
                   const SizedBox(width: 12),
                   Expanded(

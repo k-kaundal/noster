@@ -26,25 +26,44 @@ final authStateProvider = NotifierProvider<AuthNotifier, AuthState>(
 class AuthNotifier extends Notifier<AuthState> {
   late final NostrService _nostr;
 
+  /// The initial state [build] returned. If [state] has moved on from this
+  /// by the time the async storage read resolves, an explicit auth action
+  /// happened and the restore must not overwrite it (race guard).
+  static const _initial = AuthState();
+
   @override
   AuthState build() {
     _nostr = ref.read(nostrServiceProvider);
     _init();
-    return const AuthState();
+    return _initial;
   }
 
   Future<void> _init() async {
+    AuthState stored;
     try {
-      state = await _nostr.authService.getStoredAuth();
-    } catch (_) {}
+      stored = await _nostr.authService.getStoredAuth();
+    } catch (_) {
+      stored = const AuthState();
+    }
+    // State was changed explicitly (login/logout/test) while the storage
+    // read was in flight — the newer state wins, drop the stale restore.
+    if (state != _initial) return;
+    state = stored;
     if (state.isLoggedIn) _loadProfile();
   }
 
   Future<void> _loadProfile() async {
-    if (state.pubkey != null) {
-      final profile = await _nostr.fetchProfile(state.pubkey!);
-      state = state.copyWith(profile: profile);
-    }
+    if (state.pubkey == null) return;
+    // Capture what we already have (from secure storage / fresh update) —
+    // fetchProfile returns the NEWEST version it can find, but when relays
+    // lag it may return the locally-cached fresh one, and when relays are
+    // unreachable it returns the cache (possibly stale or null).
+    final relayProfile = await _nostr.fetchProfile(state.pubkey!);
+    // Never DOWNGRADE: if the relay returned nothing, keep what we have.
+    if (relayProfile == null) return;
+    state = state.copyWith(profile: relayProfile);
+    // Persist so the next cold start shows this profile immediately.
+    await _nostr.authService.saveStoredProfile(relayProfile);
   }
 
   Future<void> loginWithNsec(String nsec) async {
@@ -97,10 +116,15 @@ class AuthNotifier extends Notifier<AuthState> {
       _nostr.profileCache[state.pubkey!] = (
         profile: profile,
         createdAt: event.createdAt,
+        fetchedAt: event.createdAt,
       );
     }
 
     state = state.copyWith(profile: profile);
+
+    // Persist locally so the profile survives app restarts — otherwise the
+    // next cold start shows an empty profile until relays respond.
+    await _nostr.authService.saveStoredProfile(profile);
 
     // Invalidate all profile-dependent providers so every screen that
     // displays this user's info rebuilds with the latest data.
@@ -369,7 +393,7 @@ final dmsProvider = FutureProvider.autoDispose<List<NostrEvent>>((ref) async {
   final nostr = await _initNostr(ref);
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return [];
-  return nostr.fetchDMs(auth.pubkey!);
+  return nostr.fetchDMs(auth.pubkey!, limit: 200);
 });
 
 /// Lists

@@ -450,6 +450,107 @@ class RelayPool {
     }
   }
 
+  /// Ensure a connection exists for [url] (ad-hoc, not persisted to
+  /// [relayUrls]) and kick off connect. Returns immediately — connection
+  /// happens in the background.
+  void ensureConnection(String url) {
+    final normalized = normalizeRelayUrl(url);
+    if (!_relays.containsKey(normalized)) {
+      final conn = RelayConnection(normalized);
+      conn.onAuthChallenge = authHandler != null
+          ? (challenge) => authHandler!(normalized, challenge)
+          : null;
+      _relays[normalized] = conn;
+      conn.connect().catchError((_) {});
+    }
+  }
+
+  /// Query a SINGLE relay (ad-hoc connection created if needed) with EOSE
+  /// tracking. Returns as soon as the relay sends EOSE or [timeout] hits —
+  /// much faster than subscribe-with-fixed-timeout for one-off lookups.
+  Future<List<NostrEvent>> queryOnRelay(
+    String url,
+    List<NostrFilter> filters, {
+    Duration timeout = const Duration(seconds: 3),
+    Duration connectWait = const Duration(seconds: 2),
+  }) async {
+    final normalized = normalizeRelayUrl(url);
+    var conn = _relays[normalized];
+    if (conn == null) {
+      conn = RelayConnection(normalized);
+      conn.onAuthChallenge = authHandler != null
+          ? (challenge) => authHandler!(normalized, challenge)
+          : null;
+      _relays[normalized] = conn;
+      conn.connect().catchError((_) {});
+    }
+    final connection = conn;
+
+    // Wait for connection (bounded).
+    final deadline = DateTime.now().add(connectWait);
+    while (!connection.isConnected && DateTime.now().isBefore(deadline)) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    if (!connection.isConnected) return [];
+
+    final events = <NostrEvent>[];
+    final seen = <String>{};
+    final sub = connection.subscribeWithEose(filters);
+    final listener = sub.stream.listen((e) {
+      if (seen.add(e.id)) events.add(e);
+    });
+    try {
+      await Future.any([sub.eose, Future.delayed(timeout)]);
+    } finally {
+      await listener.cancel();
+      connection.unsubscribe(sub.id);
+    }
+    return events;
+  }
+
+  /// Publish to a specific set of relays and wait for at least one to ack.
+  /// All targets connect CONCURRENTLY; we wait briefly for any to come up,
+  /// publish to all connected ones at once, and return on the first ack.
+  Future<bool> publishWithAckTo(
+    NostrEvent event,
+    List<String> relayUrls, {
+    Duration connectWait = const Duration(milliseconds: 1500),
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    final targets = <RelayConnection>[];
+    for (final url in relayUrls) {
+      final normalized = normalizeRelayUrl(url);
+      var conn = _relays[normalized];
+      if (conn == null) {
+        conn = RelayConnection(normalized);
+        conn.onAuthChallenge = authHandler != null
+            ? (challenge) => authHandler!(normalized, challenge)
+            : null;
+        _relays[normalized] = conn;
+        conn.connect().catchError((_) {});
+      }
+      targets.add(conn);
+    }
+
+    // Already-connected relays publish immediately; new ones get a SHORT
+    // shared window — not 3s each (that made sends take 10-20s).
+    final onlineNow = targets.where((c) => c.isConnected).toList();
+    if (onlineNow.isEmpty) {
+      final deadline = DateTime.now().add(connectWait);
+      while (targets.every((c) => !c.isConnected) &&
+          DateTime.now().isBefore(deadline)) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+    }
+    final online = targets.where((c) => c.isConnected).toList();
+    if (online.isEmpty) return false;
+
+    final results = await Future.wait(
+      online.map((c) => c.publishWithAck(event, timeout: timeout)),
+    );
+    return results.any((ok) => ok);
+  }
+
   void removeRelay(String url) {
     final normalized = normalizeRelayUrl(url);
     _relays[normalized]?.disconnect();

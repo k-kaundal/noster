@@ -3,8 +3,10 @@ import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
+import 'package:nostrfeed_mobile/core/nostr/dm_delivery.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay_router.dart';
 import 'package:nostrfeed_mobile/core/nostr/repositories/feed_repository.dart';
 import 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart';
 import 'package:nostrfeed_mobile/core/nostr/repositories/social_repository.dart';
@@ -31,14 +33,20 @@ class NostrService {
   late final SocialRepository social;
   late final DmRepository dms;
 
-  /// In-memory cache of the latest known profile per pubkey, with the
-  /// `created_at` timestamp of the kind-0 event it came from. Used to prefer
-  /// locally-known fresher data over possibly-stale relay responses right
-  /// after a profile update (relays can lag for a few seconds).
+  /// DM delivery routing (recipient inbox relays + Primal fallbacks).
+  late final DmDelivery dmDelivery;
+
+  /// NIP-65 outbox routing (per-user write/read relays).
+  late final RelayRouter relayRouter;
+
+  /// In-memory cache of the latest known profile per pubkey: the kind-0
+  /// `created_at` (freshness vs relay revisions) plus a local `fetchedAt`
+  /// wall-clock timestamp for TTL-based fast paths.
   ///
   /// Instance state (was a global static map) — owned by this service and
   /// shared with [SocialRepository] via constructor injection.
-  final Map<String, ({NostrProfile profile, int createdAt})> profileCache = {};
+  final Map<String, ({NostrProfile profile, int createdAt, int fetchedAt})>
+  profileCache = {};
 
   /// In-memory cache of the latest known follow list per pubkey, with the
   /// `created_at` timestamp of the kind-3 event it came from. Same purpose
@@ -53,8 +61,17 @@ class NostrService {
     _ctx = NostrContext(authService, () => _auth);
     engagement = EngagementRepository(relayPool);
     feed = FeedRepository(relayPool, engagement);
-    social = SocialRepository(relayPool, _ctx, profileCache, followsCache);
+    // relayRouter must exist before SocialRepository (it's a constructor arg).
+    relayRouter = RelayRouter(relayPool);
+    social = SocialRepository(
+      relayPool,
+      _ctx,
+      profileCache,
+      followsCache,
+      relayRouter,
+    );
     dms = DmRepository(_ctx);
+    dmDelivery = DmDelivery(relayPool);
   }
 
   AuthState get auth => _auth;
@@ -103,6 +120,50 @@ class NostrService {
 
   void publish(NostrEvent event) {
     relayPool.publish(event);
+  }
+
+  /// NIP-65-aware publish for events that tag other users (reactions,
+  /// replies, reposts, comments, deletions).
+  ///
+  /// Per NIP-65, an event tagging a user should be published to:
+  ///  1. The author's write relays — our connected defaults (immediate).
+  ///  2. Each tagged user's READ relays — looked up in the background and
+  ///     republished there, so recipients on other relays (e.g. a Primal
+  ///     user who only watches relay.primal.net) actually get notified.
+  ///
+  /// Returns the immediate ack from our connected relays; the outbox-model
+  /// republish is fire-and-forget and never blocks the UI.
+  Future<bool> publishEvent(NostrEvent event) async {
+    // 1. Immediate publish to connected relays (includes the big public
+    //    ones most users read: damus, primal, nostr.band).
+    final ackFuture = relayPool.publishWithAck(event);
+
+    // 2. Background: tagged users' read relays (NIP-65 outbox model).
+    final recipients = event.pubkeyRefs
+        .where((pk) => pk != _auth.pubkey)
+        .toSet()
+        .toList();
+    if (recipients.isNotEmpty) {
+      Future(() async {
+        try {
+          final extra = <String>{};
+          for (final pk in recipients.take(5)) {
+            extra.addAll(await relayRouter.getReadRelays(pk));
+          }
+          final targets = extra
+              .where((u) => !relayPool.connectedUrls.contains(u))
+              .take(6)
+              .toList();
+          if (targets.isNotEmpty) {
+            await relayPool.publishWithAckTo(event, targets);
+          }
+        } catch (_) {
+          // Outbox republish is best-effort — the event is already out.
+        }
+      }).ignore();
+    }
+
+    return ackFuture;
   }
 
   /// Publish and wait for at least one relay to accept the event.
@@ -477,7 +538,7 @@ class NostrService {
 
   /// NIP-17 gift-wrapped DM (kind 1059) — modern, metadata-private.
   /// Most current clients (Amethyst, 0xchat, Damus) send DMs this way.
-  NostrEvent createNip17Dm(String peerPubkey, String plaintext) =>
+  List<NostrEvent> createNip17Dm(String peerPubkey, String plaintext) =>
       dms.createNip17Dm(peerPubkey, plaintext);
 
   /// Decrypt a DM event from the current user's perspective.

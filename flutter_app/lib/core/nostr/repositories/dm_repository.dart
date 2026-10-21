@@ -5,10 +5,16 @@ import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
 class DecryptedDm {
   final String plaintext;
   final String senderPubkey;
+
+  /// The REAL recipient (from the rumor's 'p' tag for NIP-17). Null when it
+  /// can't be determined (e.g. legacy kind 4 where the p-tag is on the event).
+  final String? recipientPubkey;
+
   final int createdAt;
   const DecryptedDm({
     required this.plaintext,
     required this.senderPubkey,
+    this.recipientPubkey,
     required this.createdAt,
   });
 }
@@ -29,13 +35,32 @@ class DmRepository {
 
   /// NIP-17 gift-wrapped DM (kind 1059) — modern, metadata-private.
   /// Most current clients (Amethyst, 0xchat, Damus) send DMs this way.
-  NostrEvent createNip17Dm(String peerPubkey, String plaintext) {
+  ///
+  /// Returns TWO gift wraps per NIP-17: one for the recipient, one for the
+  /// sender (so the sender's clients can decrypt and show their own message).
+  List<NostrEvent> createNip17Dm(String peerPubkey, String plaintext) {
     ctx.requireSigning();
     return ctx.authService.signGiftWrap(
       senderPrivateKey: ctx.auth.privateKey!,
       senderPubkey: ctx.auth.pubkey!,
       recipientPubkey: peerPubkey,
       plaintext: plaintext,
+    );
+  }
+
+  /// NIP-17 DM inbox relay list (kind 10050) — tells OTHER users where to
+  /// send us gift wraps. Without it, senders fall back to well-known DM
+  /// relays (Primal etc.), which is unreliable.
+  NostrEvent createDmInboxRelayList(List<String> relayUrls) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 10050,
+      content: '',
+      tags: [
+        for (final url in relayUrls) ['relay', url],
+        ['client', 'nostrfeed'],
+      ],
     );
   }
 
@@ -63,9 +88,23 @@ class DmRepository {
         final rumorPubkey = rumor['pubkey'] as String;
         final rumorContent = rumor['content'] as String;
         final rumorTs = rumor['created_at'] as int;
+        // Extract the peer from the rumor's 'p' tag. For a message we sent,
+        // this is the recipient; for a message to us, this is us (the sender
+        // p-tags themselves in their own copy per NIP-17).
+        final rumorTags = rumor['tags'] as List?;
+        String? recipient;
+        if (rumorTags != null) {
+          for (final tag in rumorTags) {
+            if (tag is List && tag.isNotEmpty && tag[0] == 'p' && tag.length > 1) {
+              recipient = tag[1] as String?;
+              break;
+            }
+          }
+        }
         return DecryptedDm(
           plaintext: rumorContent,
           senderPubkey: rumorPubkey,
+          recipientPubkey: recipient,
           createdAt: rumorTs,
         );
       } catch (_) {

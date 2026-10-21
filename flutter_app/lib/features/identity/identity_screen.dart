@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/identity/providers/address_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
@@ -74,16 +74,12 @@ class _ProfileCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            CircleAvatar(
+            SafeAvatar(
+              imageUrl: auth.profile?.picture,
               radius: 30,
-              backgroundImage: auth.profile?.picture != null
-                  ? CachedNetworkImageProvider(auth.profile!.picture!)
-                  : null,
               backgroundColor: scheme.primaryContainer,
-              child: auth.profile?.picture == null
-                  ? Icon(Icons.person,
-                      size: 30, color: scheme.onPrimaryContainer)
-                  : null,
+              fallback: Icon(Icons.person,
+                  size: 30, color: scheme.onPrimaryContainer),
             ),
             const SizedBox(width: 14),
             Expanded(

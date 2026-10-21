@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +8,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/zap/zap_sheet.dart';
 
@@ -33,14 +33,9 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
   Widget build(BuildContext context) {
     final videosAsync = ref.watch(videosProvider);
 
+    // AppBar is owned by AppShell (hamburger → drawer).
     return Scaffold(
       backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('Reels', style: TextStyle(color: Colors.white)),
-      ),
       body: videosAsync.when(
         loading: () => const Center(
           child: CircularProgressIndicator(color: Colors.white54),
@@ -50,8 +45,9 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
           onRetry: () => ref.invalidate(videosProvider),
         ),
         data: (events) {
-          final playable =
-              events.where((e) => _ReelVideoSource.of(e) != null).toList();
+          final playable = events
+              .where((e) => _ReelVideoSource.of(e) != null)
+              .toList();
           if (playable.isEmpty) {
             return const EmptyState(
               icon: Icons.video_library_outlined,
@@ -124,8 +120,10 @@ class _ReelVideoSource {
   }
 
   static bool _looksLikeVideo(String url) {
-    return RegExp(r'\.(mp4|mov|webm|m4v)(\?|$)', caseSensitive: false)
-        .hasMatch(url);
+    return RegExp(
+      r'\.(mp4|mov|webm|m4v)(\?|$)',
+      caseSensitive: false,
+    ).hasMatch(url);
   }
 }
 
@@ -160,8 +158,7 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
     final source = _ReelVideoSource.of(widget.event);
     if (source == null) return;
 
-    final controller =
-        VideoPlayerController.networkUrl(Uri.parse(source.url));
+    final controller = VideoPlayerController.networkUrl(Uri.parse(source.url));
     _controller = controller;
 
     try {
@@ -242,7 +239,7 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
       return;
     }
     final nostr = ref.read(nostrServiceProvider);
-    nostr.publish(nostr.createReaction(widget.event));
+    nostr.publishEvent(nostr.createReaction(widget.event));
     ref.invalidate(reactionsProvider(widget.event.id));
     ref.invalidate(engagementProvider(widget.event.id));
   }
@@ -312,13 +309,13 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                     ),
                   )
                 : source?.poster != null
-                    ? SmartNetworkImage(
-                        url: source!.poster!,
-                        fit: BoxFit.contain,
-                        placeholder: (_, _) => const _VideoLoading(),
-                        errorWidget: (_, _, _) => const _VideoLoading(),
-                      )
-                    : const _VideoLoading(),
+                ? SmartNetworkImage(
+                    url: source!.poster!,
+                    fit: BoxFit.contain,
+                    placeholder: (_, _) => const _VideoLoading(),
+                    errorWidget: (_, _, _) => const _VideoLoading(),
+                  )
+                : const _VideoLoading(),
           ),
         ),
 
@@ -345,9 +342,7 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                 _muted ? Icons.volume_off : Icons.volume_up,
                 color: Colors.white,
               ),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.black45,
-              ),
+              style: IconButton.styleFrom(backgroundColor: Colors.black45),
             ),
           ),
 
@@ -397,18 +392,16 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
               Row(
                 children: [
                   profileAsync.when(
-                    data: (profile) => CircleAvatar(
+                    data: (profile) => SafeAvatar(
+                      imageUrl: profile?.picture,
                       radius: 18,
-                      backgroundImage: profile?.picture != null
-                          ? CachedNetworkImageProvider(profile!.picture!)
-                          : null,
-                      child: profile?.picture == null
-                          ? const Icon(Icons.person, size: 18)
-                          : null,
+                      fallback: const Icon(Icons.person, size: 18),
                     ),
                     loading: () => const CircleAvatar(radius: 18),
                     error: (_, _) => const CircleAvatar(
-                        radius: 18, child: Icon(Icons.person, size: 18)),
+                      radius: 18,
+                      child: Icon(Icons.person, size: 18),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -480,13 +473,13 @@ class _ReelAction extends StatelessWidget {
           Icon(icon, color: color ?? Colors.white, size: 30),
           if (label.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(label,
-                style: const TextStyle(color: Colors.white, fontSize: 11)),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white, fontSize: 11),
+            ),
           ],
         ],
       ),
     );
   }
 }
-
-

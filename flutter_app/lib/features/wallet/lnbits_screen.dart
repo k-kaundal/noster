@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/buy_name_section.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/current_address_section.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/existing_wallet_sign_in_dialog.dart';
+import 'package:nostrfeed_mobile/features/wallet/widgets/receive_dialog.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/free_address_section.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/payments_list.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/wallet_login_prompt.dart';
@@ -500,7 +499,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
         children: [
           Expanded(
             child: FilledButton.icon(
-              onPressed: () => _showReceiveDialog(context),
+              onPressed: () => showDialog(context: context, builder: (_) => const ReceiveDialog()),
               icon: const Icon(Icons.arrow_downward),
               label: const Text('Receive'),
               style: FilledButton.styleFrom(
@@ -759,143 +758,6 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
   }
 
   // ── Dialogs ──────────────────────────────────────────────────────────
-
-  void _showReceiveDialog(BuildContext context) {
-    final amountController = TextEditingController();
-    final memoController = TextEditingController();
-    String? invoice;
-    bool isWorking = false;
-    String? errorMsg;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Receive Payment'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (invoice == null) ...[
-                  TextField(
-                    controller: amountController,
-                    decoration: const InputDecoration(
-                      labelText: 'Amount (sats)',
-                      hintText: '0',
-                      prefixIcon: Icon(Icons.currency_bitcoin),
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: memoController,
-                    decoration: const InputDecoration(
-                      labelText: 'Memo (optional)',
-                      prefixIcon: Icon(Icons.description),
-                    ),
-                  ),
-                ] else ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: QrImageView(
-                      data: invoice!.toUpperCase(),
-                      size: 200,
-                      backgroundColor: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SelectableText(
-                    invoice!,
-                    style: Theme.of(ctx).textTheme.bodySmall,
-                    maxLines: 3,
-                  ),
-                ],
-                if (errorMsg != null) ...[
-                  const SizedBox(height: 12),
-                  Text(errorMsg!,
-                      style: TextStyle(
-                          color: Theme.of(ctx).colorScheme.error,
-                          fontSize: 12),
-                      textAlign: TextAlign.center),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: isWorking ? null : () => Navigator.pop(ctx),
-              child: Text(invoice == null ? 'Cancel' : 'Close'),
-            ),
-            if (invoice == null)
-              FilledButton.icon(
-                onPressed: isWorking
-                    ? null
-                    : () async {
-                        final amount =
-                            int.tryParse(amountController.text.trim());
-                        if (amount == null || amount <= 0) return;
-                        setState(() {
-                          isWorking = true;
-                          errorMsg = null;
-                        });
-                        try {
-                          final wallet = ref
-                              .read(lnbitsAuthProvider)
-                              .account
-                              ?.wallets
-                              .first;
-                          if (wallet?.inkey == null) {
-                            throw const LnbitsException(
-                                'No invoice key available', 0);
-                          }
-                          final service = LnbitsService();
-                          final inv = await service.createInvoice(
-                            apiKey: wallet!.inkey!,
-                            amountSats: amount,
-                            memo: memoController.text.trim().isEmpty
-                                ? null
-                                : memoController.text.trim(),
-                          );
-                          setState(() {
-                            invoice = inv.bolt11;
-                            isWorking = false;
-                          });
-                        } catch (e) {
-                          setState(() {
-                            isWorking = false;
-                            errorMsg = e.toString();
-                          });
-                        }
-                      },
-                icon: isWorking
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.add),
-                label: const Text('Create Invoice'),
-              )
-            else
-              TextButton.icon(
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: invoice!));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Invoice copied')),
-                  );
-                },
-                icon: const Icon(Icons.copy),
-                label: const Text('Copy'),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 
   void _showSendDialog(BuildContext context) {
     final invoiceController = TextEditingController();

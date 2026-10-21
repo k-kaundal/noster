@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart';
+import 'package:nostrfeed_mobile/features/wallet/widgets/invoice_qr.dart';
 
 // ── Payments list ────────────────────────────────────────────────────────
 
@@ -109,6 +110,11 @@ class _PaymentsListState extends ConsumerState<PaymentsList> {
           final color = isIncoming ? Colors.green : colorScheme.error;
 
           return ListTile(
+            // Pending incoming payments are tappable → re-show the QR so
+            // the payer can still scan and complete the payment.
+            onTap: p.isPending && isIncoming && p.bolt11 != null
+                ? () => showInvoiceQrDialog(context, p.bolt11!)
+                : null,
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -143,12 +149,20 @@ class _PaymentsListState extends ConsumerState<PaymentsList> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 if (p.isPending)
-                  Text(
-                    'Pending',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.orange,
-                          fontWeight: FontWeight.w600,
-                        ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.qr_code_rounded,
+                          size: 12, color: Colors.orange.shade700),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Pending · tap for QR',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.orange.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
                   ),
               ],
             ),

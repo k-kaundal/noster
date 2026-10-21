@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +12,7 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 
 /// Provider holding the current search query text.
 final searchQueryProvider = StateProvider<String>((ref) => '');
@@ -677,7 +677,7 @@ class _PersonTile extends ConsumerWidget {
                         ? follows.where((p) => p != event.pubkey).toList()
                         : [...follows, event.pubkey];
                     final ev = nostr.updateFollows(updated);
-                    nostr.publish(ev);
+                    nostr.publishEvent(ev);
                     ref.invalidate(followsProvider);
                   },
                   style: FilledButton.styleFrom(
@@ -834,24 +834,14 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final url = imageUrl;
 
-    if (url != null && url.isNotEmpty) {
-      return CircleAvatar(
-        radius: 24,
-        backgroundImage: CachedNetworkImageProvider(url),
-        onBackgroundImageError: (_, _) {},
-        backgroundColor: colorScheme.surfaceContainerHighest,
-      );
-    }
-
-    return CircleAvatar(
+    return SafeAvatar(
+      imageUrl: imageUrl,
       radius: 24,
       backgroundColor: colorScheme.primaryContainer,
-      child: Text(
+      fallback: Text(
         initial,
         style: TextStyle(
           color: colorScheme.onPrimaryContainer,

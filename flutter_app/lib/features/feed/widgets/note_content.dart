@@ -10,7 +10,10 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/utils/media.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
+import 'package:nostrfeed_mobile/features/feed/widgets/link_preview_card.dart';
+import 'package:nostrfeed_mobile/features/feed/widgets/video_card.dart';
 
 /// Renders a Nostr event's content with full markdown support:
 /// - Headers (#, ##, ###, etc.)
@@ -48,31 +51,46 @@ class NoteContent extends ConsumerWidget {
     final defaultStyle = textStyle ??
         Theme.of(context).textTheme.bodyMedium!.copyWith(height: 1.45);
 
-    // Parse content into segments
+    // Parse + split: text stays inline, media renders as rich tiles below.
     final segments = _ContentParser.parse(content);
-
-    // Separate image URLs to render at the bottom
-    final imageUrls = <String>[];
-    for (final segment in segments) {
-      if (segment is _UrlSegment && segment.isImage && showImages) {
-        imageUrls.add(segment.url);
-      }
-    }
+    final render = _ContentParser.splitForRender(segments, event);
+    final imeta = MediaUtils.parseImeta(event);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _ContentRenderer(
-          segments: segments,
+          segments: render.textSegments,
           defaultStyle: defaultStyle,
           maxLines: maxLines,
         ),
-        if (showImages && imageUrls.isNotEmpty) ...[
+        if (showImages && render.images.isNotEmpty) ...[
           const SizedBox(height: 8),
-          _ImageGallery(urls: imageUrls),
+          _ImageGallery(urls: render.images, imeta: imeta),
         ],
+        // Videos render as playable/branded cards (all types).
+        for (final videoUrl in render.videos)
+          VideoCard(url: videoUrl, imeta: imeta[videoUrl]),
+        // A lone plain link (the post is basically just a shared URL) gets a
+        // rich preview card — inline in the text too, plus the card below.
+        if (_shouldShowLinkCard(render)) LinkPreviewCard(url: render.links.first),
       ],
     );
+  }
+
+  /// Show a link preview card only when the post is dominated by a single
+  /// plain link (no images/videos, and the link IS most of the text).
+  bool _shouldShowLinkCard(
+      ({List<_Segment> textSegments, List<String> images, List<String> videos, List<String> links})
+          render) {
+    if (render.links.length != 1) return false;
+    if (render.images.isNotEmpty || render.videos.isNotEmpty) return false;
+    final textOnly = render.textSegments
+        .whereType<_TextSegment>()
+        .map((s) => s.text)
+        .join()
+        .trim();
+    return textOnly.length < 80;
   }
 }
 
@@ -89,7 +107,7 @@ class _ContentParser {
     caseSensitive: false,
   );
   static final _imageRegex = RegExp(
-    r'\.(jpg|jpeg|png|gif|webp|svg)(\?[^\s]*)?$',
+    r'\.(jpg|jpeg|png|gif|webp|svg|avif|heic|bmp)(\?[^\s]*)?$',
     caseSensitive: false,
   );
   static final _codeBlockRegex = RegExp(
@@ -192,6 +210,46 @@ class _ContentParser {
     }
 
     return segments;
+  }
+
+  /// Split parsed segments into render groups: text (with links/hashtags),
+  /// image URLs, video URLs, and plain external links (for link previews).
+  static ({
+    List<_Segment> textSegments,
+    List<String> images,
+    List<String> videos,
+    List<String> links,
+  }) splitForRender(List<_Segment> segments, NostrEvent event) {
+    final images = <String>[];
+    final videos = <String>[];
+    final links = <String>[];
+    final textSegments = <_Segment>[];
+
+    for (final s in segments) {
+      if (s is _UrlSegment) {
+        final mediaType = MediaUtils.classify(s.url);
+        switch (mediaType) {
+          case MediaType.image:
+            images.add(s.url);
+          case MediaType.video:
+            videos.add(s.url);
+          case MediaType.audio:
+          case MediaType.other:
+            // Plain links stay inline in text AND get a preview card if
+            // they're the only content (common for shared links).
+            links.add(s.url);
+            textSegments.add(s);
+        }
+      } else {
+        textSegments.add(s);
+      }
+    }
+    return (
+      textSegments: textSegments,
+      images: images,
+      videos: videos,
+      links: links,
+    );
   }
 
   static void _addTextSegments(
@@ -851,12 +909,21 @@ class _ListItem extends StatelessWidget {
 
 class _ImageGallery extends StatelessWidget {
   final List<String> urls;
-  const _ImageGallery({required this.urls});
+  final Map<String, ImetaInfo> imeta;
+  const _ImageGallery({required this.urls, this.imeta = const {}});
 
   @override
   Widget build(BuildContext context) {
     if (urls.length == 1) {
-      return _NetworkImageTile(url: urls.first, height: 240);
+      final url = urls.first;
+      // NIP-92: use declared dimensions for a correctly-sized tile
+      // (portrait images no longer get cropped to a landscape strip).
+      final ar = imeta[url]?.aspectRatio;
+      return _NetworkImageTile(
+        url: url,
+        height: ar != null && ar < 0.8 ? 360 : 240,
+        alt: imeta[url]?.alt,
+      );
     }
     final crossCount = urls.length == 2 ? 2 : (urls.length == 3 ? 3 : 2);
     return GridView.count(
@@ -867,7 +934,11 @@ class _ImageGallery extends StatelessWidget {
       crossAxisSpacing: 4,
       childAspectRatio: 1,
       children: urls.take(4).map((url) {
-        return _NetworkImageTile(url: url, height: double.infinity);
+        return _NetworkImageTile(
+          url: url,
+          height: double.infinity,
+          alt: imeta[url]?.alt,
+        );
       }).toList(),
     );
   }
@@ -876,7 +947,8 @@ class _ImageGallery extends StatelessWidget {
 class _NetworkImageTile extends StatelessWidget {
   final String url;
   final double height;
-  const _NetworkImageTile({required this.url, required this.height});
+  final String? alt;
+  const _NetworkImageTile({required this.url, required this.height, this.alt});
 
   bool get _isSvg => url.toLowerCase().endsWith('.svg');
 

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
@@ -98,7 +98,7 @@ class _EventCard extends ConsumerWidget {
     // For now, send a reaction as acknowledgment — full RSVP kind support
     // needs the calendar event to be addressable (kind 31922/31923).
     final nostr = ref.read(nostrServiceProvider);
-    nostr.publish(nostr.createReaction(event, content: response == 'yes' ? '✅' : '🤔'));
+    nostr.publishEvent(nostr.createReaction(event, content: response == 'yes' ? '✅' : '🤔'));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('RSVP "$response" sent')),
     );
@@ -215,19 +215,15 @@ class _EventCard extends ConsumerWidget {
                               attendees > 4 ? 4 : attendees,
                               (i) => Positioned(
                                 left: i * 14.0,
-                                child: CircleAvatar(
+                                child: SafeAvatar(
+                                  imageUrl: i == 0
+                                      ? profileAsync.value?.picture
+                                      : null,
                                   radius: 11,
                                   backgroundColor: scheme.secondaryContainer,
-                                  backgroundImage: i == 0 &&
-                                          profileAsync.value?.picture != null
-                                      ? CachedNetworkImageProvider(
-                                          profileAsync.value!.picture!)
-                                      : null,
-                                  child: i != 0 || profileAsync.value?.picture == null
-                                      ? Icon(Icons.person,
-                                          size: 10,
-                                          color: scheme.onSecondaryContainer)
-                                      : null,
+                                  fallback: Icon(Icons.person,
+                                      size: 10,
+                                      color: scheme.onSecondaryContainer),
                                 ),
                               ),
                             ),

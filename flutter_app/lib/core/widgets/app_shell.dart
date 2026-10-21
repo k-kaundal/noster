@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
+import 'package:nostrfeed_mobile/features/chat/providers/dm_store.dart';
+import 'package:nostrfeed_mobile/features/notifications/providers/notification_center.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 
 /// Navigation Architecture:
@@ -72,6 +75,16 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     super.dispose();
   }
 
+  /// AppBar title for the current location. Matches the tab routes; pushed
+  /// detail screens get a generic empty title (the back button shows).
+  String _titleFor(String location) {
+    if (location.startsWith('/feed')) return 'NostrFeed';
+    if (location.startsWith('/reels')) return 'Reels';
+    if (location.startsWith('/chat')) return 'Messages';
+    if (location.startsWith('/wallet')) return 'Wallet';
+    return '';
+  }
+
   int _currentIndex(String location) {
     if (location.startsWith('/profile/')) {
       final auth = ref.read(authStateProvider);
@@ -109,11 +122,69 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     final location = GoRouterState.of(context).uri.toString();
     final index = _currentIndex(location);
     final dmsAsync = ref.watch(dmsProvider);
+    // Rebuild badge when decryption/outbox/read-state changes.
+    ref.watch(dmStoreVersionProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
-    final dmCount = dmsAsync.valueOrNull?.length ?? 0;
+    // Chat tab badge = TOTAL UNREAD messages (not raw event count).
+    final dms = dmsAsync.valueOrNull ?? const <NostrEvent>[];
+    final dmCount = ref.read(dmStoreProvider).totalUnread(dms);
+    // Bell badge = unread social notifications (live engagement center).
+    final notifUnread = ref.watch(unreadNotificationsProvider);
+
+    // AppShell owns the AppBar. This is what makes the drawer button work:
+    // the AppBar's auto-generated leading (hamburger on tab screens, back
+    // button on pushed screens) gets a BuildContext *below THIS Scaffold*
+    // (the one that owns the drawer). A menu button built inside a child
+    // screen's own Scaffold resolves `Scaffold.of` to that inner, drawer-less
+    // Scaffold and does nothing — that was the "menu doesn't open" bug.
+    //
+    // Exception: chat THREADS (/chat/<pubkey>) are immersive — the thread
+    // renders its own header with the peer's identity (avatar/name/encryption
+    // status), so the generic shell AppBar would just duplicate it.
+    final hideAppBar = location.startsWith('/chat/');
 
     return Scaffold(
+      appBar: hideAppBar
+          ? null
+          : AppBar(
+              title: Text(_titleFor(location)),
+              actions: [
+                // Global search
+                IconButton(
+                  icon: const Icon(Icons.search_rounded),
+                  tooltip: 'Search',
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    context.push('/search');
+                  },
+                ),
+                // Notifications bell with badge = UNREAD social notifications
+                // (likes, comments, reposts, zaps, follows) — not DM count.
+                IconButton(
+                  icon: Badge(
+                    isLabelVisible: notifUnread > 0,
+                    label: Text(
+                      notifUnread > 99 ? '99+' : '$notifUnread',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    backgroundColor: colorScheme.error,
+                    textColor: colorScheme.onError,
+                    child: const Icon(Icons.notifications_outlined),
+                  ),
+                  tooltip: 'Notifications',
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    context.push('/notifications');
+                  },
+                ),
+                // Overflow menu (profile, bookmarks, settings, theme, docs)
+                const _ShellOverflowMenu(),
+              ],
+            ),
       body: widget.child,
       extendBody: true,
       bottomNavigationBar: Container(
@@ -154,7 +225,9 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
                   selectedIcon: _mainSelectedIcons[i],
                   label: _mainLabels[i],
                   isSelected: i == index,
-                  badgeCount: i == 3 ? dmCount : 0,
+                  // Badge only on the CHAT tab (index 2). Index 3 is Wallet
+                  // — showing the DM count there was a bug.
+                  badgeCount: i == 2 ? dmCount : 0,
                   onTap: () => _onDestinationSelected(i),
                 ),
               ),
@@ -164,6 +237,91 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
       ),
       drawer: const ModernDrawer(),
     );
+  }
+}
+
+// ─── Shell Overflow Menu ────────────────────────────────────────────
+
+/// The 3-dot "more options" menu in the shell AppBar: quick navigation
+/// (Profile / Bookmarks / Settings / Docs) plus a theme switch.
+class _ShellOverflowMenu extends ConsumerWidget {
+  const _ShellOverflowMenu();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authStateProvider);
+    final themeMode = ref.watch(themeModeProvider);
+
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert_rounded),
+      tooltip: 'More options',
+      onSelected: (value) => _onSelected(context, ref, value, auth),
+      itemBuilder: (context) => [
+        if (auth.isLoggedIn) ...[
+          _navItem(Icons.person_outline_rounded, 'Profile', 'profile'),
+          _navItem(Icons.bookmark_outline_rounded, 'Bookmarks', 'bookmarks'),
+          const PopupMenuDivider(),
+        ],
+        _navItem(Icons.settings_outlined, 'Settings', 'settings'),
+        _navItem(Icons.help_outline_rounded, 'Docs & Help', 'docs'),
+        const PopupMenuDivider(),
+        CheckedPopupMenuItem(
+          value: 'theme_system',
+          checked: themeMode == ThemeMode.system,
+          child: const Text('System theme'),
+        ),
+        CheckedPopupMenuItem(
+          value: 'theme_light',
+          checked: themeMode == ThemeMode.light,
+          child: const Text('Light theme'),
+        ),
+        CheckedPopupMenuItem(
+          value: 'theme_dark',
+          checked: themeMode == ThemeMode.dark,
+          child: const Text('Dark theme'),
+        ),
+      ],
+    );
+  }
+
+  PopupMenuItem<String> _navItem(IconData icon, String label, String value) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
+  void _onSelected(
+    BuildContext context,
+    WidgetRef ref,
+    String value,
+    AuthState auth,
+  ) {
+    switch (value) {
+      case 'profile':
+        if (auth.pubkey != null) context.push('/profile/${auth.pubkey}');
+      case 'bookmarks':
+        context.push('/bookmarks');
+      case 'settings':
+        context.push('/settings');
+      case 'docs':
+        context.push('/docs');
+      case 'theme_system':
+        ref.read(themeModeProvider.notifier).state = ThemeMode.system;
+        AppToast.info(context, 'Theme follows your system');
+      case 'theme_light':
+        ref.read(themeModeProvider.notifier).state = ThemeMode.light;
+        AppToast.info(context, 'Light theme');
+      case 'theme_dark':
+        ref.read(themeModeProvider.notifier).state = ThemeMode.dark;
+        AppToast.info(context, 'Dark theme');
+    }
   }
 }
 

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
 import 'package:nostrfeed_mobile/features/settings/relay_settings_screen.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
@@ -45,14 +45,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _sectionHeader('Profile'),
           if (auth.isLoggedIn)
             ListTile(
-              leading: CircleAvatar(
+              leading: SafeAvatar(
+                imageUrl: auth.profile?.picture,
                 radius: 24,
-                backgroundImage: auth.profile?.picture != null
-                    ? CachedNetworkImageProvider(auth.profile!.picture!)
-                    : null,
-                child: auth.profile?.picture == null
-                    ? const Icon(Icons.person)
-                    : null,
+                fallback: const Icon(Icons.person),
               ),
               title: Text(
                 auth.profile?.displayNameOrName ?? 'Nostr User',

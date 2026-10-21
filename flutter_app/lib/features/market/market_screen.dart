@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 
 class MarketScreen extends ConsumerStatefulWidget {
@@ -173,14 +174,10 @@ class _ProductCard extends ConsumerWidget {
                   Row(
                     children: [
                       profileAsync.when(
-                        data: (profile) => CircleAvatar(
+                        data: (profile) => SafeAvatar(
+                          imageUrl: profile?.picture,
                           radius: 9,
-                          backgroundImage: profile?.picture != null
-                              ? CachedNetworkImageProvider(profile!.picture!)
-                              : null,
-                          child: profile?.picture == null
-                              ? const Icon(Icons.person, size: 9)
-                              : null,
+                          fallback: const Icon(Icons.person, size: 9),
                         ),
                         loading: () => const CircleAvatar(radius: 9),
                         error: (_, _) =>

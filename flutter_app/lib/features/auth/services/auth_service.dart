@@ -50,6 +50,7 @@ class AuthService {
   static const _privKeyKey = 'nostr_privkey';
   static const _pubKeyKey = 'nostr_pubkey';
   static const _readOnlyKey = 'nostr_readonly';
+  static const _profileKey = 'nostr_profile';
 
   final _bech32 = const Bech32Codec();
 
@@ -66,16 +67,55 @@ class AuthService {
           .read(key: _readOnlyKey)
           .timeout(const Duration(seconds: 3), onTimeout: () => null);
 
+      // Restore the locally-saved profile so the UI shows name/avatar
+      // immediately — before any relay round-trip. Without this, a cold
+      // start shows an empty profile until relays respond (and if relays
+      // are slow, the profile looks "lost").
+      final cachedProfile = await _readStoredProfile();
+
       if (privKey != null && pubKey != null) {
-        return AuthState(pubkey: pubKey, privateKey: privKey, isLoggedIn: true);
+        return AuthState(
+          pubkey: pubKey,
+          privateKey: privKey,
+          isLoggedIn: true,
+          profile: cachedProfile,
+        );
       }
       if (readOnly != null) {
-        return AuthState(pubkey: readOnly, isLoggedIn: true, isReadOnly: true);
+        return AuthState(
+          pubkey: readOnly,
+          isLoggedIn: true,
+          isReadOnly: true,
+          profile: cachedProfile,
+        );
       }
     } catch (_) {
       // Storage unavailable — return logged out
     }
     return const AuthState();
+  }
+
+  /// Persist the user's profile locally (secure storage) so it survives
+  /// app restarts. Called whenever we have a fresh profile.
+  Future<void> saveStoredProfile(NostrProfile profile) async {
+    try {
+      await _store.write(
+        key: _profileKey,
+        value: jsonEncode(profile.toJson()),
+      );
+    } catch (_) {}
+  }
+
+  Future<NostrProfile?> _readStoredProfile() async {
+    try {
+      final raw = await _store
+          .read(key: _profileKey)
+          .timeout(const Duration(seconds: 3), onTimeout: () => null);
+      if (raw == null || raw.isEmpty) return null;
+      return NostrProfile.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Login with nsec1... private key.
@@ -542,7 +582,17 @@ class AuthService {
   ///
   /// Flow: rumor → seal(kind 13, signed by sender) → gift wrap(kind 1059,
   /// signed by random key, encrypted to recipient).
-  NostrEvent signGiftWrap({
+  ///
+  /// Per NIP-17, TWO gift wraps are produced for every DM:
+  ///  1. one for the recipient
+  ///  2. one for the sender (so the sender's own clients can decrypt and
+  ///     display their own message — Amethyst, 0xchat, Damus all do this)
+  ///
+  /// The sender's copy is critical for cross-platform compatibility: without
+  /// it, the sender can never re-fetch their own message from relays (the
+  /// gift wrap is encrypted to the recipient, and the ephemeral key is
+  /// discarded).
+  List<NostrEvent> signGiftWrap({
     required String senderPrivateKey,
     required String senderPubkey,
     required String recipientPubkey,
@@ -564,50 +614,71 @@ class AuthService {
     };
     final rumorJson = jsonEncode(rumor);
 
-    // 2. Seal: kind 13, NIP-44 encrypted sender → recipient, signed by sender.
-    final sealedContent = nip44Encrypt(
-      privateKey: senderPrivateKey,
-      peerPubkey: recipientPubkey,
-      plaintext: rumorJson,
-    );
-    final seal = signEvent(
-      privateKey: senderPrivateKey,
-      kind: 13,
-      content: sealedContent,
-      tags: const [],
-    );
-    final sealJson = jsonEncode(seal.toJson());
+    // 2. Seal: kind 13, NIP-44 encrypted sender → wrap target, signed by
+    //    sender. Per NIP-17 each gift wrap (recipient copy + sender copy)
+    //    contains its OWN seal encrypted to THAT wrap's target — the sender
+    //    copy must be sealed sender→sender, otherwise the sender can't
+    //    decrypt their own message (this was the "unable to decrypt" bug).
+    //    Seal timestamps are randomized per NIP-17 so the real send time
+    //    doesn't leak through the wrap's encryption.
+    final giftWraps = <NostrEvent>[];
+    for (final targetPubkey in [recipientPubkey, senderPubkey]) {
+      final sealedContent = nip44Encrypt(
+        privateKey: senderPrivateKey,
+        peerPubkey: targetPubkey,
+        plaintext: rumorJson,
+      );
+      final sealTs = now - Random.secure().nextInt(172800);
+      final sealId = NostrEvent.computeId(
+        senderPubkey,
+        sealTs,
+        13,
+        const [],
+        sealedContent,
+      );
+      final sealSig = bip340.sign(senderPrivateKey, sealId, randomHex(32));
+      final seal = NostrEvent(
+        id: sealId,
+        pubkey: senderPubkey,
+        createdAt: sealTs,
+        kind: 13,
+        tags: const [],
+        content: sealedContent,
+        sig: sealSig,
+      );
+      final sealJson = jsonEncode(seal.toJson());
 
-    // 3. Gift wrap: kind 1059, NIP-44 encrypted ephemeral → recipient,
-    //    signed by random ephemeral key (for metadata privacy).
-    final ephemeral = generateEphemeralKeypair();
-    final giftContent = nip44Encrypt(
-      privateKey: ephemeral.priv,
-      peerPubkey: recipientPubkey,
-      plaintext: sealJson,
-    );
-    // Randomize timestamp ±2 days
-    final giftTs = now - Random.secure().nextInt(172800);
-    final giftTags = [
-      ['p', recipientPubkey],
-    ];
-    final giftId = NostrEvent.computeId(
-      ephemeral.pub,
-      giftTs,
-      1059,
-      giftTags,
-      giftContent,
-    );
-    final giftSig = bip340.sign(ephemeral.priv, giftId, '');
-    return NostrEvent(
-      id: giftId,
-      pubkey: ephemeral.pub,
-      createdAt: giftTs,
-      kind: 1059,
-      tags: giftTags,
-      content: giftContent,
-      sig: giftSig,
-    );
+      // 3. Gift wrap: kind 1059, NIP-44 encrypted ephemeral → wrap target,
+      //    signed by random ephemeral key (metadata privacy).
+      final ephemeral = generateEphemeralKeypair();
+      final giftContent = nip44Encrypt(
+        privateKey: ephemeral.priv,
+        peerPubkey: targetPubkey,
+        plaintext: sealJson,
+      );
+      final giftTs = now - Random.secure().nextInt(172800);
+      final giftTags = [
+        ['p', targetPubkey],
+      ];
+      final giftId = NostrEvent.computeId(
+        ephemeral.pub,
+        giftTs,
+        1059,
+        giftTags,
+        giftContent,
+      );
+      final giftSig = bip340.sign(ephemeral.priv, giftId, randomHex(32));
+      giftWraps.add(NostrEvent(
+        id: giftId,
+        pubkey: ephemeral.pub,
+        createdAt: giftTs,
+        kind: 1059,
+        tags: giftTags,
+        content: giftContent,
+        sig: giftSig,
+      ));
+    }
+    return giftWraps;
   }
 
   /// Unwrap a NIP-17 gift-wrap event (kind 1059).

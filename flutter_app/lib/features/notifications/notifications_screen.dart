@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +6,8 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/features/notifications/providers/notification_center.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
@@ -29,6 +30,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     ('reaction', 'Reactions', Icons.favorite_rounded),
     ('repost', 'Reposts', Icons.repeat_rounded),
     ('zap', 'Zaps', Icons.bolt_rounded),
+    ('follow', 'Following', Icons.person_add_alt_1_rounded),
   ];
 
   late AnimationController _animationController;
@@ -46,6 +48,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       curve: Curves.easeIn,
     );
     _animationController.forward();
+    // Opening the notifications screen marks all notifications as read
+    // (clears the bell badge).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(notificationCenterProvider).markAllRead();
+      }
+    });
   }
 
   @override
@@ -275,6 +284,8 @@ String _typeFor(NostrEvent e) {
       return 'comment';
     case 1059:
       return 'dm';
+    case 3:
+      return 'follow';
     case 30023:
       return 'article_mention';
     case 31925:
@@ -324,6 +335,11 @@ class _NotificationTile extends ConsumerWidget {
           Icons.mail_rounded,
           colorScheme.primary,
           'sent you a message',
+        ),
+      'follow' => (
+          Icons.person_add_alt_1_rounded,
+          colorScheme.primary,
+          'started following you',
         ),
       'article_mention' => (
           Icons.article_rounded,
@@ -428,8 +444,65 @@ class _NotificationTile extends ConsumerWidget {
   }
 
   void _open(BuildContext context, WidgetRef ref, NostrEvent event) {
-    final target = event.getTag('p') ?? event.pubkey;
-    context.push('/profile/$target');
+    final type = _typeFor(event);
+    switch (type) {
+      case 'dm':
+        // DM notification: the sender is the event author (for kind 4) or the
+        // ephemeral wrapper (for kind 1059). Navigate to the chat thread with
+        // the sender — for 1059 we need to decrypt to get the real sender.
+        // The peer is always the event author for incoming DMs.
+        _openDmThread(context, ref, event);
+      case 'mention':
+      case 'comment':
+      case 'article_mention':
+        // Navigate to the thread/post where the mention happened.
+        final rootId = event.getTag('e') ?? event.getTag('a');
+        if (rootId != null) {
+          context.push('/thread', extra: event);
+        } else {
+          context.push('/profile/${event.pubkey}');
+        }
+      case 'reaction':
+      case 'repost':
+      case 'zap':
+        // Navigate to the post that was liked/reposted/zapped.
+        final targetId = event.getTag('e') ?? event.getTag('a');
+        if (targetId != null) {
+          context.push('/thread', extra: event);
+        } else {
+          context.push('/profile/${event.pubkey}');
+        }
+      case 'follow':
+        // New follower → open THEIR profile.
+        context.push('/profile/${event.pubkey}');
+      case 'rsvp':
+        // Navigate to the calendar event.
+        final eventId = event.getTag('e') ?? event.getTag('a');
+        if (eventId != null) {
+          context.push('/thread', extra: event);
+        } else {
+          context.push('/profile/${event.pubkey}');
+        }
+      default:
+        // Fallback: go to the author's profile, not our own.
+        context.push('/profile/${event.pubkey}');
+    }
+  }
+
+  void _openDmThread(BuildContext context, WidgetRef ref, NostrEvent event) {
+    if (event.kind == 4) {
+      // NIP-04: the peer is the event author.
+      context.push('/chat/${event.pubkey}');
+    } else if (event.kind == 1059) {
+      // NIP-17: we need to decrypt to find the real sender. The chat screen
+      // will handle decryption via DmStore.prime().
+      // For now, navigate to the chat list — the conversation should appear
+      // there once decrypted. In the future we could decrypt here and push
+      // directly to the thread.
+      context.go('/chat');
+    } else {
+      context.go('/chat');
+    }
   }
 }
 
@@ -440,24 +513,14 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final url = imageUrl;
 
-    if (url != null && url.isNotEmpty) {
-      return CircleAvatar(
-        radius: 24,
-        backgroundImage: CachedNetworkImageProvider(url),
-        onBackgroundImageError: (_, _) {},
-        backgroundColor: colorScheme.surfaceContainerHighest,
-      );
-    }
-
-    return CircleAvatar(
+    return SafeAvatar(
+      imageUrl: imageUrl,
       radius: 24,
       backgroundColor: colorScheme.primaryContainer,
-      child: Text(
+      fallback: Text(
         initial,
         style: TextStyle(
           color: colorScheme.onPrimaryContainer,

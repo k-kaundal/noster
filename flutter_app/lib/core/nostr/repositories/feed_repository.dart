@@ -130,12 +130,13 @@ class FeedRepository {
     int limit = 50,
   }) async {
     // Notification kinds that target the user via p tag:
-    // 1 = mention/reply, 6 = repost, 7 = reaction, 16 = generic repost,
-    // 9735 = zap receipt, 1111 = NIP-22 comment, 1059 = NIP-17 DM,
-    // 30023 = article mention, 31925 = calendar RSVP
+    // 1 = mention/reply, 3 = new follower (contact list), 4 = NIP-04 DM,
+    // 6 = repost, 7 = reaction, 16 = generic repost, 9735 = zap receipt,
+    // 1111 = NIP-22 comment, 1059 = NIP-17 DM, 30023 = article mention,
+    // 31925 = calendar RSVP
     final events = await relayPool.query([
       NostrFilter(
-        kinds: [1, 6, 7, 16, 9735, 1111, 1059, 30023, 31925],
+        kinds: [1, 3, 4, 6, 7, 16, 9735, 1111, 1059, 30023, 31925],
         tagFilters: {
           'p': [pubkey],
         },
@@ -160,14 +161,23 @@ class FeedRepository {
     ], timeout: const Duration(seconds: 8));
   }
 
-  Future<List<NostrEvent>> fetchDMs(String pubkey, {int limit = 50}) async {
+  Future<List<NostrEvent>> fetchDMs(String pubkey, {int limit = 200}) async {
     return relayPool.query([
-      NostrFilter(kinds: [4, 1059], authors: [pubkey], limit: limit),
+      // Kind 4 (NIP-04 legacy): sent by us
+      NostrFilter(kinds: [4], authors: [pubkey], limit: limit),
+      // Kind 4: sent TO us
       NostrFilter(
-        kinds: [4, 1059],
-        tagFilters: {
-          'p': [pubkey],
-        },
+        kinds: [4],
+        tagFilters: {'p': [pubkey]},
+        limit: limit,
+      ),
+      // Kind 1059 (NIP-17 gift wrap): sent TO us (including our own copy
+      // which is also p-tagged to us per NIP-17).
+      // NOTE: We can't query by author for NIP-17 — the author is a random
+      // ephemeral key, not the real sender.
+      NostrFilter(
+        kinds: [1059],
+        tagFilters: {'p': [pubkey]},
         limit: limit,
       ),
     ], timeout: const Duration(seconds: 8));

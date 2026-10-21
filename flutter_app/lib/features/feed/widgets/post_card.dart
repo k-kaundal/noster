@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,8 +10,11 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
 import 'package:nostrfeed_mobile/features/feed/providers/post_actions.dart';
+import 'package:nostrfeed_mobile/features/feed/widgets/article_card.dart';
+import 'package:nostrfeed_mobile/features/feed/widgets/poll_card.dart';
 import 'package:nostrfeed_mobile/features/zap/zap_sheet.dart';
 import 'package:nostrfeed_mobile/features/feed/widgets/note_content.dart';
 
@@ -189,25 +191,20 @@ class _PostCardState extends ConsumerState<PostCard> {
                   GestureDetector(
                     onTap: () =>
                         context.push('/profile/${displayEvent.pubkey}'),
-                    child: CircleAvatar(
+                    child: SafeAvatar(
+                      imageUrl: authorPicture,
                       radius: 22,
                       backgroundColor: colorScheme.primaryContainer,
-                      backgroundImage:
-                          authorPicture != null && authorPicture.isNotEmpty
-                          ? CachedNetworkImageProvider(authorPicture)
-                          : null,
-                      child: authorPicture == null || authorPicture.isEmpty
-                          ? Text(
-                              authorName.isNotEmpty
-                                  ? authorName[0].toUpperCase()
-                                  : '?',
-                              style: TextStyle(
-                                color: colorScheme.onPrimaryContainer,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            )
-                          : null,
+                      fallback: Text(
+                        authorName.isNotEmpty
+                            ? authorName[0].toUpperCase()
+                            : '?',
+                        style: TextStyle(
+                          color: colorScheme.onPrimaryContainer,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -262,7 +259,15 @@ class _PostCardState extends ConsumerState<PostCard> {
               const SizedBox(height: 10),
 
               // ─── Content ───────────────────────────────────────
-              NoteContent(event: displayEvent),
+              // Articles (kind 30023) render as a compact preview card that
+              // opens the full reader — never the full markdown inline.
+              if (displayEvent.kind == 30023)
+                ArticleCard(event: displayEvent)
+              else ...[
+                NoteContent(event: displayEvent),
+                // NIP-88 polls (kind 1068 embedded in feeds or referenced).
+                if (displayEvent.kind == 1068) PollCard(event: displayEvent),
+              ],
               const SizedBox(height: 12),
 
               // ─── Action bar ────────────────────────────────────
