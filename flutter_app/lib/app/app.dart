@@ -10,11 +10,43 @@ import 'package:nostrfeed_mobile/features/notifications/providers/notification_c
 import 'package:nostrfeed_mobile/features/notifications/widgets/social_alert_banner.dart';
 
 /// Root application widget. Wires up the router and theme.
-class NostrFeedApp extends ConsumerWidget {
+class NostrFeedApp extends ConsumerStatefulWidget {
   const NostrFeedApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NostrFeedApp> createState() => _NostrFeedAppState();
+}
+
+class _NostrFeedAppState extends ConsumerState<NostrFeedApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// When the app returns to the foreground (Android kills idle sockets
+  /// after ~20min–1hr), reconnect any dead relays — each reconnect then
+  /// re-issues its live subscriptions, so the feed/DMs/notifications resume
+  /// without an app restart.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final nostr = ref.read(nostrServiceProvider);
+      if (nostr.isInitialized) {
+        nostr.relayPool.reconnectDead();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeModeProvider);
 

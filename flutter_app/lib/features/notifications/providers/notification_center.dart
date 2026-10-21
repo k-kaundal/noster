@@ -35,6 +35,31 @@ class SocialEvent {
         }
       } catch (_) {}
     }
+    // Fallback: parse the bolt11 invoice amount prefix (lnbc<amt><mult>).
+    final bolt11 = event.getTag('bolt11');
+    if (bolt11 != null) {
+      final match =
+          RegExp(r'^lnbc(\d+)([munp]?)', caseSensitive: false).firstMatch(bolt11);
+      if (match != null) {
+        final value = BigInt.parse(match.group(1)!);
+        final mult = match.group(2) ?? '';
+        const satsPerBtc = 100000000;
+        BigInt sats;
+        switch (mult.toLowerCase()) {
+          case 'm':
+            sats = value * BigInt.from(satsPerBtc) ~/ BigInt.from(1000);
+          case 'u':
+            sats = value * BigInt.from(satsPerBtc) ~/ BigInt.from(1000000);
+          case 'n':
+            sats = value * BigInt.from(satsPerBtc) ~/ BigInt.from(1000000000);
+          case 'p':
+            sats = value * BigInt.from(satsPerBtc) ~/ BigInt.from(1000000000000);
+          default:
+            sats = value * BigInt.from(satsPerBtc);
+        }
+        return sats.toInt();
+      }
+    }
     return 0;
   }
 }

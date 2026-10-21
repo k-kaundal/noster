@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/utils/text_sanitize.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
 
 /// The compile-time default LNbits URL. The user can override this in
@@ -52,7 +53,7 @@ class LnbitsWallet {
 
   factory LnbitsWallet.fromJson(Map<String, dynamic> json) => LnbitsWallet(
         id: json['id'] as String,
-        name: json['name'] as String? ?? 'Wallet',
+        name: sanitizeText(json['name'] as String? ?? 'Wallet'),
         balanceMsat: _readBalanceMsat(json),
         adminkey: json['adminkey'] as String?,
         inkey: json['inkey'] as String?,
@@ -120,7 +121,8 @@ class LnbitsPayment {
       fee: (json['fee'] as num?)?.toInt() ?? 0,
       bolt11: json['bolt11'] as String?,
       status: json['status'] as String? ?? 'pending',
-      memo: json['memo'] as String?,
+      // Free text from the payer — rendered in the payments list.
+      memo: sanitizeTextOrNull(json['memo'] as String?),
       preimage: json['preimage'] as String?,
       timestampMs: ts,
       tag: json['tag'] as String?,
@@ -155,9 +157,11 @@ class LnbitsUser {
 
   factory LnbitsUser.fromJson(Map<String, dynamic> json) => LnbitsUser(
         id: json['id'] as String,
-        username: json['username'] as String?,
+        // API-sourced — rendered on the wallet/identity screens; a lone
+        // surrogate here crashes the text engine.
+        username: sanitizeTextOrNull(json['username'] as String?),
         pubkey: json['pubkey'] as String?,
-        email: json['email'] as String?,
+        email: sanitizeTextOrNull(json['email'] as String?),
         wallets: ((json['wallets'] as List?) ?? [])
             .whereType<Map<String, dynamic>>()
             .map(LnbitsWallet.fromJson)
@@ -177,8 +181,10 @@ class LnbitsException implements Exception {
 
   const LnbitsException(this.message, this.status, [this.body]);
 
+  /// Server `detail` text is rendered via toString — sanitize so a malformed
+  /// server message can't crash the text engine.
   @override
-  String toString() => message;
+  String toString() => sanitizeText(message);
 }
 
 /// Full LNbits REST client matching the web app's `lib/lnbits.ts`.

@@ -10,6 +10,8 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/feed/widgets/note_content.dart';
+import 'package:nostrfeed_mobile/features/groups/group_info_sheet.dart';
+import 'package:nostrfeed_mobile/features/groups/providers/group_providers.dart';
 
 /// NIP-29 relay-group chat room: kind 9 (chat) / kind 11 (thread) / kind 1
 /// messages tagged with the group's `h` id, fetched from relays + live
@@ -79,6 +81,20 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
         });
       }
     });
+  }
+
+  /// Admin: delete a group message (NIP-29 kind 9005).
+  Future<void> _deleteMessage(NostrEvent event) async {
+    try {
+      await ref.read(groupControllerProvider).deleteMessage(_groupId, event.id);
+      setState(() {
+        _messages.removeWhere((m) => m.id == event.id);
+        _seen.remove(event.id);
+      });
+      if (mounted) AppToast.info(context, 'Message deleted');
+    } catch (e) {
+      if (mounted) AppToast.error(context, 'Delete failed: $e');
+    }
   }
 
   Future<void> _send() async {
@@ -161,6 +177,25 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline_rounded),
+            tooltip: 'Group info',
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: GroupInfoSheet(groupEvent: widget.groupEvent),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -210,6 +245,12 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                             event: _messages[index],
                             isMine:
                                 _messages[index].pubkey == auth.pubkey,
+                            canDelete: ref
+                                    .watch(isGroupAdminProvider(_groupId))
+                                    .value ??
+                                false,
+                            onDelete: () =>
+                                _deleteMessage(_messages[index]),
                           ),
                         ),
                       ),
@@ -294,8 +335,15 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
 class _ChatBubble extends ConsumerWidget {
   final NostrEvent event;
   final bool isMine;
+  final bool canDelete;
+  final VoidCallback? onDelete;
 
-  const _ChatBubble({required this.event, required this.isMine});
+  const _ChatBubble({
+    required this.event,
+    required this.isMine,
+    this.canDelete = false,
+    this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -306,7 +354,7 @@ class _ChatBubble extends ConsumerWidget {
         '${event.pubkey.substring(0, 8)}…';
     final time = DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
 
-    return Padding(
+    final bubble = Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -385,5 +433,14 @@ class _ChatBubble extends ConsumerWidget {
         ],
       ),
     );
+
+    // Admin: long-press a bubble → delete (NIP-29 kind 9005).
+    if (canDelete && onDelete != null) {
+      return GestureDetector(
+        onLongPress: onDelete,
+        child: bubble,
+      );
+    }
+    return bubble;
   }
 }

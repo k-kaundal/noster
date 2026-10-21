@@ -1,7 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:go_router/go_router.dart';
 
+import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
+import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
+import 'package:nostrfeed_mobile/features/premium/providers/premium_providers.dart';
+import 'package:nostrfeed_mobile/features/premium/services/admission_service.dart';
+
+/// Premium: verified names (NIP-05) + paid relay + lightning addresses.
 class PremiumScreen extends ConsumerStatefulWidget {
   const PremiumScreen({super.key});
 
@@ -10,226 +20,367 @@ class PremiumScreen extends ConsumerStatefulWidget {
 }
 
 class _PremiumScreenState extends ConsumerState<PremiumScreen> {
-  int _selectedPlan = 1; // default: monthly
+  bool _relayBusy = false;
 
-  static const _plans = [
-    _Plan(
-      name: 'Monthly',
-      price: '10,000',
-      period: 'month',
-      savings: null,
-    ),
-    _Plan(
-      name: 'Yearly',
-      price: '100,000',
-      period: 'year',
-      savings: 'Save 17%',
-    ),
-    _Plan(
-      name: 'Lifetime',
-      price: '500,000',
-      period: 'one-time',
-      savings: 'Best value',
-    ),
-  ];
+  /// Payment first, connect after. Shows the invoice QR when no in-app
+  /// wallet could pay, so it can be paid from any external wallet.
+  Future<void> _connectPaidRelay() async {
+    if (_relayBusy) return;
+    setState(() => _relayBusy = true);
+    try {
+      final outcome = await ref.read(connectPaidRelayProvider)();
+      if (!mounted) return;
+      switch (outcome.result) {
+        case PaidRelayConnectResult.connected:
+          AppToast.success(context, 'Connected to paid relay');
+        case PaidRelayConnectResult.invoicePending:
+          final invoice = outcome.invoice;
+          if (invoice?.bolt11 != null) {
+            await _showAdmissionInvoice(invoice!);
+          }
+        case PaidRelayConnectResult.awaitingAdmission:
+          AppToast.info(
+            context,
+            'Payment sent — waiting for the relay to confirm it. '
+            'Check back in a moment.',
+          );
+        case PaidRelayConnectResult.unreachable:
+          AppToast.error(
+            context,
+            outcome.error ?? "Couldn't reach the relay",
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _relayBusy = false);
+    }
+  }
 
-  static const _features = [
-    _Feature(
-      icon: Icons.storage,
-      title: 'Premium relay access',
-      description: 'Guaranteed uptime, low latency, and higher rate limits.',
-    ),
-    _Feature(
-      icon: Icons.cloud_upload,
-      title: 'Media storage',
-      description: 'Upload images and videos up to 100MB per file.',
-    ),
-    _Feature(
-      icon: Icons.bolt,
-      title: 'Priority zaps',
-      description: 'Your zaps are routed with priority for instant delivery.',
-    ),
-    _Feature(
-      icon: Icons.analytics,
-      title: 'Advanced analytics',
-      description: 'Detailed insights into your audience and engagement.',
-    ),
-    _Feature(
-      icon: Icons.verified,
-      title: 'Verified badge',
-      description: 'Display a premium badge on your Nostr profile.',
-    ),
-    _Feature(
-      icon: Icons.support_agent,
-      title: 'Priority support',
-      description: 'Direct access to the NostrFeed team for help.',
-    ),
-  ];
+  /// The relay minted an invoice but no in-app wallet could pay it during the
+  /// connect flow — show the pay sheet (Pay button retry + QR fallback), and
+  /// connect once the payment is confirmed.
+  Future<void> _showAdmissionInvoice(AdmissionInvoice invoice) async {
+    final outcome = await showPayInvoiceSheet(
+      context,
+      title: 'Pay relay admission',
+      bolt11: invoice.bolt11!,
+      amountSats: invoice.amountSats > 0 ? invoice.amountSats : null,
+      memo: 'One-time, tied to your key',
+      checkPaid: _checkAdmissionPaid(invoice),
+    );
+    if (!mounted) return;
+    if (outcome == InvoicePayResult.paid) {
+      // Payment confirmed → NOW connect (payment first, connect after).
+      final nostr = ref.read(nostrServiceProvider);
+      if (!nostr.isInitialized) await nostr.init();
+      await nostr.relayPool.addRelay(Env.paidRelay);
+      if (mounted) {
+        AppToast.success(context, 'Admission paid — connected to paid relay');
+      }
+    }
+    ref.invalidate(myAdmissionProvider);
+    ref.invalidate(paidRelayStatusProvider);
+  }
+
+  /// Polls the invoice's status route + the admission check once — either
+  /// one saying yes is enough.
+  Future<bool> Function() _checkAdmissionPaid(AdmissionInvoice invoice) {
+    return () async {
+      final auth = ref.read(authStateProvider);
+      final pubkey = auth.pubkey;
+      if (pubkey == null) return false;
+      final service = ref.read(admissionServiceProvider);
+      final statusUrl = invoice.statusUrl;
+      final results = await Future.wait([
+        statusUrl != null
+            ? service.pollStatus(statusUrl)
+            : Future.value(AdmissionInvoiceStatus.unknown),
+        service.check(pubkey),
+      ]);
+      return results[0] == AdmissionInvoiceStatus.completed ||
+          results[1] == AdmissionState.admitted;
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final auth = ref.watch(authStateProvider);
+    final isPremium = ref.watch(isPremiumProvider).value ?? false;
+    final entitlements = ref.watch(premiumEntitlementsProvider).valueOrNull;
+    final relayStatus = ref.watch(paidRelayStatusProvider).valueOrNull;
+    final admission = relayStatus?.admission ?? AdmissionState.unknown;
+    final feeSats = ref.watch(admissionFeeProvider).valueOrNull ??
+        AdmissionService.fallbackAdmissionSats;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Premium')),
+    return DetailScaffold(
+      title: 'Premium',
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Hero header
-          _HeroHeader(),
-          const SizedBox(height: 28),
+          // Hero
+          _Hero(isPremium: isPremium),
+          const SizedBox(height: 20),
 
-          // Features
-          Text(
-            'What\'s included',
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          ..._features.map((f) => _FeatureTile(feature: f)),
-          const SizedBox(height: 28),
+          // ── Current entitlements ──
+          if (entitlements != null && entitlements.hasAny) ...[
+            _EntitlementsCard(entitlements: entitlements),
+            const SizedBox(height: 20),
+          ],
 
-          // Pricing
-          Text(
-            'Choose a plan',
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: List.generate(_plans.length, (i) {
-              final plan = _plans[i];
-              return Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                      right: i < _plans.length - 1 ? 8 : 0),
-                  child: _PlanCard(
-                    plan: plan,
-                    selected: _selectedPlan == i,
-                    onTap: () => setState(() => _selectedPlan = i),
+          // ── Feature 1: Verified name (NIP-05) ──
+          _FeatureCard(
+            icon: Icons.verified_rounded,
+            iconColor: scheme.primary,
+            title: 'Verified Name (NIP-05)',
+            description:
+                'Your name, verified everywhere on Nostr. people find and trust you instantly.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _DomainChipRow(),
+                const SizedBox(height: 10),
+                Text(
+                  'e.g. you@${Env.nip5Domain} or you@getzap.me — shown next to your name with a ✓ check.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                    height: 1.4,
                   ),
                 ),
-              );
-            }),
-          ),
-          const SizedBox(height: 24),
-
-          // Subscribe CTA
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: FilledButton.icon(
-              onPressed: auth.isLoggedIn ? () {} : null,
-              icon: const Icon(Icons.workspace_premium),
-              label: Text(
-                auth.isLoggedIn
-                    ? 'Subscribe with Lightning'
-                    : 'Log in to subscribe',
-                style: const TextStyle(fontSize: 16),
-              ),
+                const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: auth.isLoggedIn
+                      ? () => context.push('/identity')
+                      : null,
+                  icon: const Icon(Icons.verified_outlined, size: 18),
+                  label: const Text('Claim your name'),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Cancel anytime. Payment via Lightning Network.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          const SizedBox(height: 14),
+
+          // ── Feature 2: Paid relay (payment first, connect after) ──
+          _FeatureCard(
+            icon: Icons.speed_rounded,
+            iconColor: Colors.orange.shade700,
+            title: 'Paid Relay Access',
+            description:
+                'Guaranteed uptime, spam-free, higher rate limits, priority event delivery via ${Env.paidRelay.replaceFirst('wss://', '')}.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    children: [
+                      _RelayStatusRow(
+                        ok: admission == AdmissionState.admitted,
+                        label: admission == AdmissionState.admitted
+                            ? 'Admission paid'
+                            : admission == AdmissionState.unpaid
+                                ? 'Admission not paid yet'
+                                : "Couldn't check admission",
+                        scheme: scheme,
+                      ),
+                      const SizedBox(height: 8),
+                      _RelayStatusRow(
+                        ok: relayStatus?.connected == true,
+                        label: relayStatus?.connected == true
+                            ? 'Connected to paid relay'
+                            : 'Not connected',
+                        scheme: scheme,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: auth.isLoggedIn && !_relayBusy
+                      ? _connectPaidRelay
+                      : null,
+                  icon: _relayBusy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.bolt_rounded, size: 18),
+                  label: Text(
+                    relayStatus?.connected == true
+                        ? 'Connected'
+                        : admission == AdmissionState.admitted
+                            ? 'Connect to paid relay'
+                            : 'Pay ${_formatSats(feeSats)} sats & connect',
+                  ),
+                ),
+                if (admission != AdmissionState.admitted) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'One-time admission, tied to your key. Payment happens first — the relay connects once it confirms you.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
+          const SizedBox(height: 14),
+
+          // ── Feature 3: Lightning address ──
+          _FeatureCard(
+            icon: Icons.bolt_rounded,
+            iconColor: Colors.amber.shade700,
+            title: 'Lightning Address',
+            description:
+                'Receive zaps from any Nostr client to your own address. Works with your wallet.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (entitlements != null &&
+                    entitlements.lightningAddresses.isNotEmpty)
+                  for (final addr in entitlements.lightningAddresses)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: _CopyRow(text: addr),
+                    )
+                else
+                  Text(
+                    'e.g. you@${Env.lightningAddressDomain}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: auth.isLoggedIn
+                      ? () => context.push('/identity')
+                      : null,
+                  icon: const Icon(Icons.bolt_outlined, size: 18),
+                  label: Text(
+                    entitlements?.lightningAddresses.isNotEmpty == true
+                        ? 'Manage addresses'
+                        : 'Get a lightning address',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ── What else is included ──
+          _IncludedCard(),
           const SizedBox(height: 24),
+
+          if (!auth.isLoggedIn)
+            Center(
+              child: Text(
+                'Log in to claim names and connect the paid relay',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _HeroHeader extends StatelessWidget {
+class _RelayStatusRow extends StatelessWidget {
+  final bool ok;
+  final String label;
+  final ColorScheme scheme;
+  const _RelayStatusRow({
+    required this.ok,
+    required this.label,
+    required this.scheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(
+          ok ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+          size: 18,
+          color: ok ? Colors.green : scheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: ok ? Colors.green.shade700 : scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _formatSats(int sats) {
+  final s = sats.toString();
+  final buf = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    final idx = s.length - i;
+    buf.write(s[i]);
+    if (idx > 1 && idx % 3 == 1) buf.write(',');
+  }
+  return buf.toString();
+}
+
+class _Hero extends StatelessWidget {
+  final bool isPremium;
+  const _Hero({required this.isPremium});
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [scheme.primary, scheme.tertiary],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.workspace_premium, size: 40, color: Colors.white),
-          const SizedBox(height: 12),
-          const Text(
-            'NostrFeed Premium',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Unlock the full power of Nostr with premium relays, media storage, and exclusive features.',
-            style: TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Feature {
-  final IconData icon;
-  final String title;
-  final String description;
-  const _Feature(
-      {required this.icon, required this.title, required this.description});
-}
-
-class _FeatureTile extends StatelessWidget {
-  final _Feature feature;
-  const _FeatureTile({required this.feature});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(feature.icon,
-                size: 20, color: scheme.onPrimaryContainer),
-          ),
-          const SizedBox(width: 12),
+          const Icon(Icons.workspace_premium_rounded,
+              size: 36, color: Colors.white),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(feature.title,
-                    style:
-                        const TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
                 Text(
-                  feature.description,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant,
-                      height: 1.4),
+                  isPremium ? 'You\'re Premium ✓' : 'NostrFeed Premium',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isPremium
+                      ? 'Verified name, paid relay, and lightning address are active.'
+                      : 'Verified name, paid relay, and your lightning address — all in one.',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),
@@ -240,92 +391,226 @@ class _FeatureTile extends StatelessWidget {
   }
 }
 
-class _Plan {
-  final String name;
-  final String price;
-  final String period;
-  final String? savings;
-  const _Plan({
-    required this.name,
-    required this.price,
-    required this.period,
-    this.savings,
-  });
-}
+class _FeatureCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String description;
+  final Widget child;
 
-class _PlanCard extends StatelessWidget {
-  final _Plan plan;
-  final bool selected;
-  final VoidCallback onTap;
-  const _PlanCard(
-      {required this.plan, required this.selected, required this.onTap});
+  const _FeatureCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.description,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: selected
-              ? scheme.primaryContainer
-              : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected ? scheme.primary : Colors.transparent,
-            width: 2,
-          ),
-        ),
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              plan.name,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: selected
-                    ? scheme.onPrimaryContainer
-                    : scheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 6),
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Icon(Icons.bolt,
-                    size: 14,
-                    color: selected ? scheme.primary : scheme.onSurfaceVariant),
-                Text(
-                  plan.price,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: selected ? scheme.primary : scheme.onSurface,
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 20, color: iconColor),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 10),
             Text(
-              '/${plan.period}',
+              description,
               style: TextStyle(
-                  fontSize: 10,
-                  color: selected
-                      ? scheme.onPrimaryContainer
-                      : scheme.onSurfaceVariant),
-            ),
-            if (plan.savings != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                plan.savings!,
-                style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.green.shade700),
+                fontSize: 13,
+                color: scheme.onSurfaceVariant,
+                height: 1.45,
               ),
-            ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DomainChipRow extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final domains = [Env.nip5Domain, 'getzap.me'];
+    return Wrap(
+      spacing: 6,
+      children: [
+        for (final d in domains)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Theme.of(context)
+                  .colorScheme
+                  .primaryContainer
+                  .withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'you@$d',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'monospace',
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _EntitlementsCard extends StatelessWidget {
+  final PremiumEntitlements entitlements;
+  const _EntitlementsCard({required this.entitlements});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      color: scheme.primaryContainer.withValues(alpha: 0.3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'YOUR PREMIUM',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.4,
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            for (final name in entitlements.nip5Names)
+              _CopyRow(text: name, icon: Icons.verified_rounded),
+            for (final addr in entitlements.lightningAddresses)
+              _CopyRow(text: addr, icon: Icons.bolt_rounded),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CopyRow extends StatelessWidget {
+  final String text;
+  final IconData? icon;
+  const _CopyRow({required this.text, this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 15, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 6),
+          ],
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            tooltip: 'Copy',
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: text));
+              AppToast.success(context, 'Copied');
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IncludedCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final items = [
+      (Icons.check_circle_outline_rounded, 'Verified ✓ next to your name everywhere'),
+      (Icons.check_circle_outline_rounded, 'Spam-free, low-latency paid relay'),
+      (Icons.check_circle_outline_rounded, 'Higher rate limits + priority delivery'),
+      (Icons.check_circle_outline_rounded, 'Zaps straight to your own address'),
+      (Icons.check_circle_outline_rounded, 'Media uploads up to 100MB'),
+      (Icons.check_circle_outline_rounded, 'Priority support from the team'),
+    ];
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'ALSO INCLUDED',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.4,
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (final (icon, text) in items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 18, color: Colors.green.shade600),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        text,
+                        style: const TextStyle(fontSize: 13, height: 1.35),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

@@ -489,13 +489,44 @@ class MintInfo {
   });
 
   factory MintInfo.fromJson(Map<String, dynamic> json) => MintInfo(
-        name: json['name'] as String? ?? 'Unknown Mint',
+        name: _sanitize(json['name'] as String? ?? 'Unknown Mint'),
         pubkey: json['pubkey'] as String?,
         version: json['version'] as String?,
-        description: json['description'] as String?,
+        description: _sanitizeNullable(json['description'] as String?),
         nuts: (json['nuts'] as Map<String, dynamic>?) ?? {},
       );
 }
+
+/// Mint metadata comes from arbitrary mint servers — sanitize malformed
+/// UTF-16 so it never crashes the text engine.
+String _sanitize(String input) {
+  final codes = input.codeUnits;
+  final out = StringBuffer();
+  var i = 0;
+  while (i < codes.length) {
+    final u = codes[i];
+    if (u >= 0xD800 && u <= 0xDBFF) {
+      if (i + 1 < codes.length && codes[i + 1] >= 0xDC00 && codes[i + 1] <= 0xDFFF) {
+        out.writeCharCode(u);
+        out.writeCharCode(codes[i + 1]);
+        i += 2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    if (u >= 0xDC00 && u <= 0xDFFF) {
+      i++;
+      continue;
+    }
+    out.writeCharCode(u);
+    i++;
+  }
+  return out.toString();
+}
+
+String? _sanitizeNullable(String? input) =>
+    input == null ? null : _sanitize(input);
 
 class CashuException implements Exception {
   final String message;

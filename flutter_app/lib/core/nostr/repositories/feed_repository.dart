@@ -323,10 +323,52 @@ class FeedRepository {
     ], timeout: const Duration(seconds: 8));
   }
 
+  /// Fetch P2P trade orders (NIP-69 kind 38383), pending first.
+  Future<List<NostrEvent>> fetchP2POrders({int limit = 50}) async {
+    final events = await relayPool.query([
+      NostrFilter(kinds: [38383], limit: limit),
+    ], timeout: const Duration(seconds: 8));
+    events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return events;
+  }
+
   Future<List<NostrEvent>> fetchLiveStreams({int limit = 20}) async {
     return relayPool.query([
       NostrFilter(kinds: [30311], limit: limit),
     ], timeout: const Duration(seconds: 8));
+  }
+
+  /// Live chat messages (kind 1311) for one live activity coordinate.
+  Future<List<NostrEvent>> fetchLiveChat(
+    String coordinate, {
+    int limit = 100,
+    int? until,
+  }) async {
+    final events = await relayPool.query([
+      NostrFilter(
+        kinds: [1311],
+        tagFilters: {
+          'a': [coordinate],
+        },
+        limit: limit,
+        until: until,
+      ),
+    ], timeout: const Duration(seconds: 6));
+    events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return events;
+  }
+
+  /// Live subscription for new live chat messages on one activity.
+  Stream<NostrEvent> subscribeLiveChat(String coordinate) {
+    return relayPool.subscribe([
+      NostrFilter(
+        kinds: [1311],
+        tagFilters: {
+          'a': [coordinate],
+        },
+        since: DateTime.now().millisecondsSinceEpoch ~/ 1000 - 60,
+      ),
+    ]);
   }
 
   /// Fetch a single event by ID.
@@ -346,22 +388,58 @@ class FeedRepository {
   }
 
   /// Fetch video/reel events (kind 1 with media URLs or kind 21/22 video).
+  /// Fetch video events for the reels feed.
+  ///
+  /// NIP-71: kind 22 = short-form portrait video (reels/shorts), kind 21 =
+  /// normal (landscape) video. The playable source + poster live in `imeta`
+  /// tags (NIP-92). Kind-1 notes with video URLs are included as a fallback
+  /// since many clients still post videos that way.
   Future<List<NostrEvent>> fetchVideos({int limit = 50}) async {
-    final events = await relayPool.query([
-      NostrFilter(kinds: [1, 21, 22], limit: limit * 2),
+    // Query dedicated video events first (kind 22 reels are the priority).
+    final videoEvents = await relayPool.query([
+      NostrFilter(kinds: [22, 21], limit: limit),
     ], timeout: const Duration(seconds: 8));
-    // Filter to events with video URLs
-    final videos = events.where((e) {
-      final c = e.content.toLowerCase();
-      return c.contains('.mp4') ||
-          c.contains('.mov') ||
-          c.contains('.webm') ||
-          c.contains('youtube.com') ||
-          c.contains('youtu.be') ||
-          c.contains('vimeo.com');
-    }).toList();
+
+    // Fallback: kind-1 notes carrying a video URL.
+    final noteEvents = await relayPool.query([
+      NostrFilter(kinds: [1], limit: limit),
+    ], timeout: const Duration(seconds: 6));
+
+    final videos = <NostrEvent>[];
+    final seen = <String>{};
+
+    // Dedicated video events first — they're the canonical NIP-71 format.
+    for (final e in videoEvents) {
+      if (seen.add(e.id) && _hasVideoSource(e)) videos.add(e);
+    }
+    // Then kind-1 notes with a video URL (lower priority, deduped).
+    for (final e in noteEvents) {
+      if (seen.add(e.id) && _hasVideoSource(e)) videos.add(e);
+    }
+
     videos.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return videos.take(limit).toList();
+  }
+
+  /// True when an event has a playable video source: an imeta video tag
+  /// (NIP-71) or a video URL in the content.
+  bool _hasVideoSource(NostrEvent e) {
+    // imeta video tag (NIP-71 canonical source).
+    for (final tag in e.tags) {
+      if (tag.isEmpty || tag[0] != 'imeta') continue;
+      final hasUrl = tag.any((p) => p.startsWith('url '));
+      final isVideo = tag.any((p) => p.startsWith('m video/'));
+      if (hasUrl && isVideo) return true;
+    }
+    // Video URL in content (kind-1 fallback).
+    final c = e.content.toLowerCase();
+    return c.contains('.mp4') ||
+        c.contains('.mov') ||
+        c.contains('.webm') ||
+        c.contains('.m4v') ||
+        c.contains('youtube.com') ||
+        c.contains('youtu.be') ||
+        c.contains('vimeo.com');
   }
 
   /// Fetch popular hashtags from recent events.

@@ -121,6 +121,35 @@ class DmStore {
     _bump();
   }
 
+  /// Re-arrival guard: when a thread is marked read, its already-known live
+  /// events get their arrival time clamped to the watermark — so the live
+  /// subscription re-delivering them moments later can't re-fire unread
+  /// counts or notifications (the "opening chat re-notifies" bug).
+  void _clampReadEvents(String peerPubkey, int watermark) {
+    final auth = _ref.read(authStateProvider);
+    final myPubkey = auth.pubkey;
+    if (myPubkey == null) return;
+    for (final entry in _liveEvents.entries) {
+      final e = entry.value;
+      // Only events that involve this peer.
+      final d = _decrypted[e.id];
+      final involvesPeer = (e.kind == 1059 &&
+              d != null &&
+              (d.senderPubkey == peerPubkey ||
+                  (d.senderPubkey == myPubkey &&
+                      d.recipientPubkey == peerPubkey))) ||
+          (e.kind == 4 &&
+              ((e.pubkey == peerPubkey && e.getTag('p') == myPubkey) ||
+                  (e.pubkey == myPubkey && e.getTag('p') == peerPubkey)));
+      if (involvesPeer) {
+        final arrival = _arrivalTs[e.id];
+        if (arrival != null && arrival > watermark) {
+          _arrivalTs[e.id] = watermark;
+        }
+      }
+    }
+  }
+
   /// All events known to the store: relay-fetched + live-ingested, deduped.
   List<NostrEvent> _withLive(List<NostrEvent> events) {
     if (_liveEvents.isEmpty) return events;
@@ -151,6 +180,16 @@ class DmStore {
   /// relay-fetched ones). See [_arrivalTs] for why this exists.
   int? arrivalTsOf(String eventId) => _arrivalTs[eventId];
 
+  /// The last-read watermark for a peer (0 = nothing read yet).
+  int lastReadFor(String peerPubkey) => _lastRead[peerPubkey] ?? 0;
+
+  /// True when [eventId] arrived (or was created) after the peer's last-read
+  /// watermark — i.e. it genuinely counts as "new" for notifications.
+  bool isUnreadFrom(String peerPubkey, NostrEvent event, int eventTs) {
+    final effective = _arrivalTs[event.id] ?? eventTs;
+    return effective > (_lastRead[peerPubkey] ?? 0);
+  }
+
   // ── Read tracking / unread counts ──────────────────────────────────
 
   /// Mark every message in the thread with [peerPubkey] as read.
@@ -170,6 +209,9 @@ class DmStore {
     final existing = _lastRead[peerPubkey] ?? 0;
     if (watermark <= existing) return;
     _lastRead[peerPubkey] = watermark;
+    // Clamp known live events to the watermark so the live subscription
+    // re-delivering them can't re-fire unread counts or notifications.
+    _clampReadEvents(peerPubkey, watermark);
     _bump();
     try {
       final prefs = await SharedPreferences.getInstance();

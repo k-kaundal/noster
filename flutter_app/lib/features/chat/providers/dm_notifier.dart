@@ -73,6 +73,22 @@ class DmNotifier extends Notifier<DmAlert?> {
       if (d == null) continue;
       // Only incoming messages from someone else.
       if (d.senderPubkey == myPubkey) continue;
+
+      // ── Don't notify for already-READ messages ─────────────────────
+      // The subscription re-delivers recent messages when you open chat and
+      // stamps them with the current arrival time — without this check,
+      // opening chat re-fires a "new message" notification for messages you
+      // already read. A message only notifies when it arrives AFTER the
+      // peer's last-read watermark AND after any prior alert for it.
+      final store = ref.read(dmStoreProvider);
+      final created = d.createdAt;
+      if (!store.isUnreadFrom(c.peer, c.lastEvent, created)) {
+        // Keep the dedupe watermark ahead so this event never alerts later.
+        final ts = store.arrivalTsOf(c.lastEvent.id) ?? created;
+        if ((_alerted[c.peer] ?? 0) < ts) _alerted[c.peer] = ts;
+        continue;
+      }
+
       final ts = _effectiveTs(c);
       final alreadyAlerted = _alerted[c.peer] ?? 0;
       if (ts <= alreadyAlerted) continue;

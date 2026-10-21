@@ -215,6 +215,28 @@ void main() {
         expect(store.threadFor(const [], _peer), hasLength(1));
       });
 
+      test('marking read clamps live events — no re-notify on re-delivery', () async {
+        final c = _makeContainer();
+        addTearDown(c.dispose);
+        final store = c.read(dmStoreProvider);
+        await store.ready;
+
+        // A message arrives live → unread = 1.
+        final live = _kind4(id: 'clamp1', from: _peer, to: _me, createdAt: 100);
+        await store.ingest(live);
+        expect(store.unreadFor(const [], _peer), 1);
+
+        // User opens the thread → marked read → unread = 0.
+        await store.markThreadRead(_peer);
+        expect(store.unreadFor(const [], _peer), 0);
+
+        // The live subscription re-delivers the SAME event (arrival would be
+        // "now" again) — must NOT re-count as unread (the "opening chat
+        // re-notifies" bug).
+        expect(store.isUnreadFrom(_peer, live, 100), isFalse);
+        expect(store.unreadFor(const [], _peer), 0);
+      });
+
       test('live-ingested messages show arrival time, not backdated created_at', () async {
         final c = _makeContainer();
         addTearDown(c.dispose);

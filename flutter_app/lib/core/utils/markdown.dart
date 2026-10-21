@@ -276,3 +276,31 @@ String markdownToText(String source) {
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 }
+
+/// Strip malformed UTF-16 (lone surrogates) so markdown-derived text never
+/// crashes the text engine.
+String sanitizeMarkdownText(String source) {
+  final codes = source.codeUnits;
+  final out = StringBuffer();
+  var i = 0;
+  while (i < codes.length) {
+    final u = codes[i];
+    if (u >= 0xD800 && u <= 0xDBFF) {
+      if (i + 1 < codes.length && codes[i + 1] >= 0xDC00 && codes[i + 1] <= 0xDFFF) {
+        out.writeCharCode(u);
+        out.writeCharCode(codes[i + 1]);
+        i += 2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    if (u >= 0xDC00 && u <= 0xDFFF) {
+      i++;
+      continue;
+    }
+    out.writeCharCode(u);
+    i++;
+  }
+  return out.toString();
+}

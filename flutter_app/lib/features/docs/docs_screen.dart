@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 
@@ -130,18 +131,153 @@ class _DocsScreenState extends State<DocsScreen> {
           ),
         ),
       ),
-      body: filtered.isEmpty
-          ? const EmptyState(
-              icon: Icons.menu_book_outlined,
-              title: 'No docs found',
-              subtitle: 'Try a different search term.',
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // ── Community links ─────────────────────────────────────
+          if (_selectedCategory == 'All' && _query.isEmpty) ...[
+            const _CommunitySection(),
+            const SizedBox(height: 16),
+          ],
+
+          // ── Doc cards ──────────────────────────────────────────
+          if (filtered.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 48),
+              child: EmptyState(
+                icon: Icons.menu_book_outlined,
+                title: 'No docs found',
+                subtitle: 'Try a different search term.',
+              ),
             )
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: filtered.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, i) => _DocCard(doc: filtered[i]),
+          else
+            for (final doc in filtered)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _DocCard(doc: doc),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Community section ─────────────────────────────────────────────
+
+class _CommunitySection extends StatelessWidget {
+  const _CommunitySection();
+
+  static const _discordUrl = 'https://discord.gg/CDe6sRwDsd';
+  static const _telegramUrl = 'https://t.me/nostrfeed';
+
+  Future<void> _open(String url) async {
+    final uri = Uri.parse(url);
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            'COMMUNITY',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.5,
+              color: scheme.primary,
             ),
+          ),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: _CommunityCard(
+                icon: Icons.discord_rounded,
+                title: 'Discord',
+                subtitle: 'Nostr dev server',
+                color: const Color(0xFF5865F2),
+                onTap: () => _open(_discordUrl),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _CommunityCard(
+                icon: Icons.telegram_rounded,
+                title: 'Telegram',
+                subtitle: '@nostrfeed channel',
+                color: const Color(0xFF229ED9),
+                onTap: () => _open(_telegramUrl),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _CommunityCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _CommunityCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 26),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

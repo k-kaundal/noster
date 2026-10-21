@@ -24,16 +24,49 @@ class NostrEvent {
   });
 
   factory NostrEvent.fromJson(Map<String, dynamic> json) => NostrEvent(
-        id: json['id'] as String,
-        pubkey: json['pubkey'] as String,
+        id: _sanitize(json['id'] as String),
+        pubkey: _sanitize(json['pubkey'] as String),
         createdAt: json['created_at'] as int,
         kind: json['kind'] as int,
         tags: (json['tags'] as List)
-            .map((t) => List<String>.from(t as List))
+            .map((t) =>
+                List<String>.from((t as List).map((x) => _sanitize('$x'))))
             .toList(),
-        content: json['content'] as String,
-        sig: json['sig'] as String,
+        content: _sanitize(json['content'] as String),
+        sig: _sanitize(json['sig'] as String),
       );
+
+  /// Relay data can carry malformed UTF-16 (lone surrogates) that crashes
+  /// Flutter's text engine. Strip it at the SOURCE so no screen ever sees it.
+  static String _sanitize(String input) {
+    final codes = input.codeUnits;
+    final out = StringBuffer();
+    var i = 0;
+    while (i < codes.length) {
+      final u = codes[i];
+      if (u >= 0xD800 && u <= 0xDBFF) {
+        if (i + 1 < codes.length && codes[i + 1] >= 0xDC00 && codes[i + 1] <= 0xDFFF) {
+          out.writeCharCode(u);
+          out.writeCharCode(codes[i + 1]);
+          i += 2;
+          continue;
+        }
+        i++;
+        continue;
+      }
+      if (u >= 0xDC00 && u <= 0xDFFF) {
+        i++;
+        continue;
+      }
+      out.writeCharCode(u);
+      i++;
+    }
+    return out.toString();
+  }
+
+  /// Nullable variant of [_sanitize] for profile fields.
+  static String? _sanitizeNullable(String? input) =>
+      input == null ? null : _sanitize(input);
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -57,18 +90,20 @@ class NostrEvent {
     return sha256.convert(utf8.encode(data)).toString();
   }
 
-  /// First tag value by name.
+  /// First tag value by name (sanitized for safe rendering).
   String? getTag(String name) {
     for (final t in tags) {
-      if (t.isNotEmpty && t[0] == name && t.length > 1) return t[1];
+      if (t.isNotEmpty && t[0] == name && t.length > 1) {
+        return _sanitize(t[1]);
+      }
     }
     return null;
   }
 
-  /// All tag values by name.
+  /// All tag values by name (sanitized for safe rendering).
   List<String> getTags(String name) => tags
       .where((t) => t.isNotEmpty && t[0] == name && t.length > 1)
-      .map((t) => t[1])
+      .map((t) => _sanitize(t[1]))
       .toList();
 
   /// All 'e' tag event IDs.
@@ -213,15 +248,18 @@ class NostrProfile {
   });
 
   factory NostrProfile.fromJson(Map<String, dynamic> j) => NostrProfile(
-        name: j['name'] as String?,
-        displayName: j['display_name'] as String?,
-        about: j['about'] as String?,
-        picture: j['picture'] as String?,
-        banner: j['banner'] as String?,
-        website: j['website'] as String?,
-        nip05: j['nip05'] as String?,
-        lud16: j['lud16'] as String?,
-        lud06: j['lud06'] as String?,
+        name: NostrEvent._sanitizeNullable(j['name'] as String?),
+        displayName: NostrEvent._sanitizeNullable(j['display_name'] as String?),
+        about: NostrEvent._sanitizeNullable(j['about'] as String?),
+        // These reach Text widgets (the profile handle renders `nip05`) and
+        // image HTTP headers (picture/banner URLs) — a lone surrogate crashes
+        // both the text engine and the header codec, so sanitize them too.
+        picture: NostrEvent._sanitizeNullable(j['picture'] as String?),
+        banner: NostrEvent._sanitizeNullable(j['banner'] as String?),
+        website: NostrEvent._sanitizeNullable(j['website'] as String?),
+        nip05: NostrEvent._sanitizeNullable(j['nip05'] as String?),
+        lud16: NostrEvent._sanitizeNullable(j['lud16'] as String?),
+        lud06: NostrEvent._sanitizeNullable(j['lud06'] as String?),
         bot: j['bot'] as bool?,
       );
 
@@ -238,7 +276,12 @@ class NostrProfile {
         if (bot != null) 'bot': bot,
       };
 
-  String get displayNameOrName => displayName ?? name ?? 'Anonymous';
+  String get displayNameOrName {
+    final raw = displayName ?? name ?? 'Anonymous';
+    // Sanitize at render too — profile data can arrive via caches/paths that
+    // bypass fromJson, and a lone surrogate here crashes the text engine.
+    return NostrEvent._sanitize(raw);
+  }
 
   NostrProfile copyWith({
     String? name,

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
-import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
+import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/features/calendar/providers/calendar_providers.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
@@ -15,19 +18,16 @@ class CalendarScreen extends ConsumerStatefulWidget {
 }
 
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
-  DateTime _focusedMonth = DateTime.now();
-
   void _showNewEventSheet(BuildContext context) {
     final auth = ref.read(authStateProvider);
     if (!auth.isLoggedIn || auth.isReadOnly) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Log in to create events')),
-      );
+      AppToast.warning(context, 'Log in to create events');
       return;
     }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      showDragHandle: true,
       builder: (_) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -39,69 +39,93 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final events = ref.watch(calendarProvider);
+    final eventsAsync = ref.watch(upcomingEventsProvider);
+    final auth = ref.watch(authStateProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(DateFormat('MMMM yyyy').format(_focusedMonth)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
-            onPressed: () => setState(() => _focusedMonth =
-                DateTime(_focusedMonth.year, _focusedMonth.month - 1)),
-          ),
-          IconButton(
-            icon: const Icon(Icons.today),
-            onPressed: () => setState(() => _focusedMonth = DateTime.now()),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            onPressed: () => setState(() => _focusedMonth =
-                DateTime(_focusedMonth.year, _focusedMonth.month + 1)),
-          ),
-        ],
-      ),
+    return DetailScaffold(
+      title: 'Calendar',
       body: AsyncFeedList<NostrEvent>(
-        value: events,
-        onRefresh: () => ref.refresh(calendarProvider.future),
-        emptyState: const EmptyState(
+        value: eventsAsync,
+        onRefresh: () => ref.refresh(calendarEventsProvider.future),
+        emptyState: EmptyState(
           icon: Icons.calendar_month_outlined,
-          title: 'No events this month',
+          title: 'No upcoming events',
           subtitle: 'Calendar events from Nostr will appear here.',
+          action: auth.isLoggedIn
+              ? FilledButton.icon(
+                  onPressed: () => _showNewEventSheet(context),
+                  icon: const Icon(Icons.event),
+                  label: const Text('Create an event'),
+                )
+              : null,
         ),
         separator: const SizedBox(height: 12),
         padding: const EdgeInsets.all(16),
-        itemBuilder: (context, event) => _EventCard(event: event),
+        itemBuilder: (context, event) => EventCard(event: event),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showNewEventSheet(context),
-        icon: const Icon(Icons.event),
-        label: const Text('New Event'),
-      ),
+      floatingActionButton: auth.isLoggedIn
+          ? FloatingActionButton.extended(
+              onPressed: () => _showNewEventSheet(context),
+              icon: const Icon(Icons.event),
+              label: const Text('New Event'),
+            )
+          : null,
     );
   }
 }
 
-class _EventCard extends ConsumerWidget {
-  final NostrEvent event;
-  const _EventCard({required this.event});
+// ─── Event card with real NIP-52 RSVP ───────────────────────────────
 
-  void _handleRsvp(BuildContext context, WidgetRef ref, String response) {
+class EventCard extends ConsumerWidget {
+  final NostrEvent event;
+  const EventCard({super.key, required this.event});
+
+  String get _coordinate {
+    final d = event.getTag('d') ?? '';
+    return '${event.kind}:${event.pubkey}:$d';
+  }
+
+  bool get _isDateBased => event.kind == 31922;
+
+  DateTime? get _startDate {
+    final start = event.getTag('start');
+    if (start == null) return null;
+    if (_isDateBased) {
+      return DateTime.tryParse(start); // YYYY-MM-DD
+    }
+    final ts = int.tryParse(start);
+    return ts != null
+        ? DateTime.fromMillisecondsSinceEpoch(ts * 1000)
+        : null;
+  }
+
+  Future<void> _rsvp(BuildContext context, WidgetRef ref, String status) async {
     final auth = ref.read(authStateProvider);
     if (!auth.isLoggedIn || auth.isReadOnly) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Log in to RSVP')),
-      );
+      AppToast.warning(context, 'Log in to RSVP');
       return;
     }
-    // NIP-52 RSVP is a kind 31925 reaction to a calendar event.
-    // For now, send a reaction as acknowledgment — full RSVP kind support
-    // needs the calendar event to be addressable (kind 31922/31923).
-    final nostr = ref.read(nostrServiceProvider);
-    nostr.publishEvent(nostr.createReaction(event, content: response == 'yes' ? '✅' : '🤔'));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('RSVP "$response" sent')),
-    );
+    try {
+      final nostr = ref.read(nostrServiceProvider);
+      final rsvp = nostr.createCalendarRsvp(
+        calendarEvent: event,
+        status: status,
+      );
+      await nostr.publishEvent(rsvp);
+      ref.invalidate(rsvpsProvider(_coordinate));
+      ref.invalidate(myRsvpProvider(_coordinate));
+      ref.invalidate(rsvpCountsProvider(_coordinate));
+      if (context.mounted) {
+        final label = switch (status) {
+          'accepted' => 'Going',
+          'tentative' => 'Maybe',
+          _ => 'Can\'t go',
+        };
+        AppToast.success(context, 'RSVP: $label');
+      }
+    } catch (e) {
+      if (context.mounted) AppToast.error(context, 'RSVP failed: $e');
+    }
   }
 
   @override
@@ -109,14 +133,15 @@ class _EventCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final title = event.getTag('title') ?? 'Untitled Event';
     final location = event.getTag('location');
-    final startTs = event.getTag('start');
-    final startDate = startTs != null
-        ? DateTime.fromMillisecondsSinceEpoch(int.tryParse(startTs) != null
-            ? int.parse(startTs) * 1000
-            : event.createdAt * 1000)
-        : DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
-    final attendees = event.getTags('p').length + 1;
+    final startDate = _startDate;
     final profileAsync = ref.watch(profileProvider(event.pubkey));
+    final rsvpCountsAsync = ref.watch(rsvpCountsProvider(_coordinate));
+    final myRsvpAsync = ref.watch(myRsvpProvider(_coordinate));
+
+    final counts = rsvpCountsAsync.valueOrNull;
+    final myStatus = myRsvpAsync.valueOrNull;
+    final isLoggedIn =
+        ref.watch(authStateProvider.select((a) => a.isLoggedIn && !a.isReadOnly));
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -127,35 +152,46 @@ class _EventCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Date badge
-            Container(
-              width: 58,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    DateFormat('MMM').format(startDate).toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onPrimaryContainer,
-                      letterSpacing: 0.5,
+            if (startDate != null)
+              Container(
+                width: 58,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      DateFormat('MMM').format(startDate).toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onPrimaryContainer,
+                        letterSpacing: 0.5,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${startDate.day}',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: scheme.onPrimaryContainer,
+                    Text(
+                      '${startDate.day}',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: scheme.onPrimaryContainer,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              )
+            else
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.event, color: scheme.onSurfaceVariant),
               ),
-            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -171,11 +207,22 @@ class _EventCard extends ConsumerWidget {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(Icons.schedule,
-                          size: 13, color: scheme.onSurfaceVariant),
+                      Icon(
+                        _isDateBased
+                            ? Icons.calendar_today_outlined
+                            : Icons.schedule_rounded,
+                        size: 13,
+                        color: scheme.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 4),
                       Text(
-                        DateFormat('EEE, h:mm a').format(startDate),
+                        startDate != null
+                            ? _isDateBased
+                                ? DateFormat('EEE, MMM d yyyy')
+                                    .format(startDate)
+                                : DateFormat('EEE, MMM d • h:mm a')
+                                    .format(startDate)
+                            : 'Date TBD',
                         style: TextStyle(
                             fontSize: 12, color: scheme.onSurfaceVariant),
                       ),
@@ -201,59 +248,67 @@ class _EventCard extends ConsumerWidget {
                       ],
                     ),
                   ],
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 6),
+                  // Organizer + RSVP counts
                   Row(
                     children: [
-                      // Attendee avatars — shrink to fit
-                      Flexible(
-                        flex: 0,
-                        child: SizedBox(
-                          height: 22,
-                          width: 64,
-                          child: Stack(
-                            children: List.generate(
-                              attendees > 4 ? 4 : attendees,
-                              (i) => Positioned(
-                                left: i * 14.0,
-                                child: SafeAvatar(
-                                  imageUrl: i == 0
-                                      ? profileAsync.value?.picture
-                                      : null,
-                                  radius: 11,
-                                  backgroundColor: scheme.secondaryContainer,
-                                  fallback: Icon(Icons.person,
-                                      size: 10,
-                                      color: scheme.onSecondaryContainer),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                      SafeAvatar(
+                        imageUrl: profileAsync.value?.picture,
+                        radius: 10,
+                        fallback: const Icon(Icons.person, size: 10),
                       ),
-                      const SizedBox(width: 4),
-                      Flexible(
+                      const SizedBox(width: 5),
+                      Expanded(
                         child: Text(
-                          '$attendees attending',
+                          'by ${profileAsync.value?.displayNameOrName ?? '${event.pubkey.substring(0, 8)}…'}',
                           style: TextStyle(
-                              fontSize: 12,
+                              fontSize: 11,
                               color: scheme.onSurfaceVariant),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      _RsvpButton(
-                        label: 'Yes',
-                        selected: false,
-                        onTap: () => _handleRsvp(context, ref, 'yes'),
-                      ),
-                      const SizedBox(width: 6),
-                      _RsvpButton(
-                        label: 'Maybe',
-                        selected: false,
-                        onTap: () => _handleRsvp(context, ref, 'maybe'),
-                      ),
+                      if (counts != null &&
+                          (counts.accepted > 0 || counts.tentative > 0))
+                        Text(
+                          [
+                            if (counts.accepted > 0)
+                              '${counts.accepted} going',
+                            if (counts.tentative > 0)
+                              '${counts.tentative} maybe',
+                          ].join(' · '),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.primary,
+                          ),
+                        ),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  // RSVP buttons
+                  if (isLoggedIn)
+                    Row(
+                      children: [
+                        _RsvpButton(
+                          label: 'Going',
+                          selected: myStatus == 'accepted',
+                          onTap: () => _rsvp(context, ref, 'accepted'),
+                        ),
+                        const SizedBox(width: 6),
+                        _RsvpButton(
+                          label: 'Maybe',
+                          selected: myStatus == 'tentative',
+                          onTap: () => _rsvp(context, ref, 'tentative'),
+                        ),
+                        const SizedBox(width: 6),
+                        _RsvpButton(
+                          label: 'Can\'t go',
+                          selected: myStatus == 'declined',
+                          onTap: () => _rsvp(context, ref, 'declined'),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -281,13 +336,13 @@ class _RsvpButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(22),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 44, minWidth: 60),
+          constraints: const BoxConstraints(minHeight: 40, minWidth: 56),
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
             label,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
               color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
             ),
@@ -298,7 +353,8 @@ class _RsvpButton extends StatelessWidget {
   }
 }
 
-/// Bottom sheet for creating a NIP-52 calendar event (kind 31923, time-based).
+// ─── New event sheet (kind 31923 time-based + date-based option) ────
+
 class _NewEventSheet extends ConsumerStatefulWidget {
   const _NewEventSheet();
 
@@ -310,7 +366,10 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
   final _titleController = TextEditingController();
   final _locationController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _tagsController = TextEditingController();
   DateTime _start = DateTime.now().add(const Duration(days: 1));
+  DateTime? _end;
+  bool _allDay = false;
   bool _publishing = false;
 
   @override
@@ -318,6 +377,7 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
     _titleController.dispose();
     _locationController.dispose();
     _descriptionController.dispose();
+    _tagsController.dispose();
     super.dispose();
   }
 
@@ -329,6 +389,10 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
       lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
     if (date == null || !mounted) return;
+    if (_allDay) {
+      setState(() => _start = date);
+      return;
+    }
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_start),
@@ -339,39 +403,67 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
     });
   }
 
-  Future<void> _publish() async {
-    if (_titleController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Title is required')),
-      );
+  Future<void> _pickEnd() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _end ?? _start,
+      firstDate: _start,
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (date == null || !mounted) return;
+    if (_allDay) {
+      setState(() => _end = date);
       return;
     }
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_end ?? _start),
+    );
+    if (time == null || !mounted) return;
+    setState(() {
+      _end = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    });
+  }
 
+  Future<void> _publish() async {
+    if (_titleController.text.trim().isEmpty) {
+      AppToast.warning(context, 'Title is required');
+      return;
+    }
     setState(() => _publishing = true);
     try {
       final nostr = ref.read(nostrServiceProvider);
-      final startTs = _start.millisecondsSinceEpoch ~/ 1000;
+      final startTs = _allDay
+          ? DateTime(_start.year, _start.month, _start.day)
+                  .millisecondsSinceEpoch ~/
+              1000
+          : _start.millisecondsSinceEpoch ~/ 1000;
+      final endMs = _end?.millisecondsSinceEpoch;
+      final endTs = endMs != null ? endMs ~/ 1000 : null;
+      final tags = _tagsController.text
+          .split(RegExp(r'[,\s]+'))
+          .map((t) => t.trim().replaceAll(RegExp(r'^#'), ''))
+          .where((t) => t.isNotEmpty)
+          .toList();
       final event = nostr.createCalendarEvent(
         title: _titleController.text.trim(),
         start: startTs,
+        end: endTs,
         location: _locationController.text.trim().isEmpty
             ? null
             : _locationController.text.trim(),
         description: _descriptionController.text.trim(),
+        hashtags: tags.isEmpty ? null : tags,
       );
-      nostr.publish(event);
+      await nostr.publishEvent(event);
       if (!mounted) return;
-      ref.invalidate(calendarProvider);
+      ref.invalidate(calendarEventsProvider);
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Event published')),
-      );
+      AppToast.success(context, 'Event published');
     } catch (e) {
       if (!mounted) return;
       setState(() => _publishing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to publish: $e')),
-      );
+      AppToast.error(context, 'Publish failed: $e');
     }
   }
 
@@ -379,7 +471,7 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -408,10 +500,34 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
               ),
             ),
             const SizedBox(height: 12),
+            // All-day toggle
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('All-day event'),
+              subtitle: const Text('No specific time (date-based)'),
+              value: _allDay,
+              onChanged: (v) => setState(() => _allDay = v),
+            ),
             OutlinedButton.icon(
               onPressed: _pickStart,
               icon: const Icon(Icons.schedule),
-              label: Text(DateFormat('EEE, MMM d • h:mm a').format(_start)),
+              label: Text(
+                _allDay
+                    ? DateFormat('EEE, MMM d yyyy').format(_start)
+                    : DateFormat('EEE, MMM d • h:mm a').format(_start),
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _pickEnd,
+              icon: const Icon(Icons.event_available_outlined),
+              label: Text(
+                _end == null
+                    ? 'Add end time (optional)'
+                    : _allDay
+                        ? 'Ends ${DateFormat('EEE, MMM d yyyy').format(_end!)}'
+                        : 'Ends ${DateFormat('EEE, MMM d • h:mm a').format(_end!)}',
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -427,6 +543,14 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
               maxLines: 3,
               decoration: const InputDecoration(
                 labelText: 'Description',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _tagsController,
+              decoration: const InputDecoration(
+                labelText: 'Hashtags, comma separated (optional)',
                 border: OutlineInputBorder(),
               ),
             ),

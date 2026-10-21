@@ -120,6 +120,45 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  // Supported external wallets hint — users know what to paste.
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.info_outline_rounded,
+                                size: 15, color: colorScheme.primary),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Works with any NWC wallet',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Alby · Zeus · Wallet of Satoshi · Mutiny · Phoenix · Breez · Alby Hub\n'
+                          'In your wallet: find "Nostr Wallet Connect" → copy the connection URI or QR.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.4,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   Row(
                     children: [

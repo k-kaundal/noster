@@ -1,222 +1,226 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
-import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
+import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/features/live/go_live_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
-import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+import 'package:nostrfeed_mobile/features/live/models/live_event.dart';
+import 'package:nostrfeed_mobile/features/live/providers/live_providers.dart';
 
+/// Live home: currently-live + upcoming NIP-53 activities.
 class LiveScreen extends ConsumerWidget {
   const LiveScreen({super.key});
 
-  void _showGoLiveSheet(BuildContext context, WidgetRef ref) {
-    final auth = ref.read(authStateProvider);
-    if (!auth.isLoggedIn || auth.isReadOnly) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Log in to go live')),
-      );
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Going live needs a streaming service URL — coming soon'),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Placeholder: reuse communities provider for live stream events
-    final streams = ref.watch(communitiesProvider);
+    final eventsAsync = ref.watch(liveEventsProvider);
+    final auth = ref.watch(authStateProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Live Streams'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () => context.push('/search'),
-            tooltip: 'Search streams',
+    return DetailScaffold(
+      title: 'Live',
+      body: eventsAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Failed to load live streams'),
+              TextButton(
+                onPressed: () => ref.invalidate(liveEventsProvider),
+                child: const Text('Retry'),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: streams.when(
-        loading: () => const _LiveSkeletonGrid(),
-        error: (err, _) => ErrorView(
-          message: 'Failed to load live streams',
-          onRetry: () => ref.invalidate(communitiesProvider),
         ),
         data: (events) {
+          final live = events.where((e) => e.isLive).toList();
+          final planned = events.where((e) => e.isPlanned).toList();
+          final ended = events.where((e) => e.isEnded).toList();
+
           if (events.isEmpty) {
             return const EmptyState(
               icon: Icons.live_tv_outlined,
               title: 'No live streams right now',
-              subtitle:
-                  'When someone goes live on Nostr, they\'ll appear here.',
+              subtitle: 'When someone goes live on Nostr, they\'ll appear here.',
             );
           }
+
           return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(communitiesProvider),
-            child: GridView.builder(
+            onRefresh: () async => ref.invalidate(liveEventsProvider),
+            child: ListView(
               padding: const EdgeInsets.all(12),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 320,
-                mainAxisExtent: 230,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: events.length,
-              itemBuilder: (context, i) => _StreamCard(event: events[i]),
+              children: [
+                if (live.isNotEmpty) ...[
+                  _SectionHeader(title: 'Live Now (${live.length})'),
+                  for (final e in live) _LiveCard(event: e),
+                  const SizedBox(height: 16),
+                ],
+                if (planned.isNotEmpty) ...[
+                  _SectionHeader(title: 'Upcoming (${planned.length})'),
+                  for (final e in planned) _LiveCard(event: e),
+                  const SizedBox(height: 16),
+                ],
+                if (ended.isNotEmpty) ...[
+                  _SectionHeader(title: 'Recent'),
+                  for (final e in ended.take(10)) _LiveCard(event: e),
+                ],
+              ],
             ),
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showGoLiveSheet(context, ref),
-        icon: const Icon(Icons.videocam),
-        label: const Text('Go Live'),
+      floatingActionButton: auth.isLoggedIn
+          ? FloatingActionButton.extended(
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                showDragHandle: true,
+                builder: (_) => const GoLiveSheet(),
+              ),
+              icon: const Icon(Icons.sensors_rounded),
+              label: const Text('Go Live'),
+              backgroundColor: Colors.red,
+            )
+          : null,
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.4,
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
 }
 
-class _StreamCard extends ConsumerWidget {
-  final NostrEvent event;
-  const _StreamCard({required this.event});
+class _LiveCard extends ConsumerWidget {
+  final LiveEvent event;
+  const _LiveCard({required this.event});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final title = event.getTag('title') ?? 'Live Stream';
-    final image = event.getTag('image');
-    final viewers = 10 + (event.id.hashCode % 5000).abs();
-    final profileAsync = ref.watch(profileProvider(event.pubkey));
+    final hostAsync = ref.watch(profileProvider(event.hostPubkey));
+    final host = hostAsync.valueOrNull;
 
     return Card(
+      margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
-        onTap: () {
-          // Open the stream detail thread — same view the feed uses
-          context.push('/thread', extra: event);
-        },
+        onTap: () => context.push('/live/room', extra: event),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Thumbnail with LIVE badge
+            // Thumbnail + status badge
             Stack(
               children: [
                 SizedBox(
-                  height: 130,
+                  height: 150,
                   width: double.infinity,
-                  child: image != null
+                  child: event.image != null
                       ? CachedNetworkImage(
-                          imageUrl: image,
+                          imageUrl: event.image!,
                           fit: BoxFit.cover,
-                          placeholder: (_, _) =>
-                              Container(color: scheme.surfaceContainerHighest),
-                          errorWidget: (_, _, _) => _ThumbFallback(),
+                          errorWidget: (_, _, _) =>
+                              _ThumbFallback(scheme: scheme),
                         )
-                      : _ThumbFallback(),
+                      : _ThumbFallback(scheme: scheme),
                 ),
                 Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.circle, size: 8, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text(
-                          'LIVE',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
+                  top: 10,
+                  left: 10,
+                  child: _StatusBadge(status: event.status),
+                ),
+                if (event.isLive && event.currentParticipants != null)
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.visibility_rounded,
+                              color: Colors.white, size: 12),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${event.currentParticipants}',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 11),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                Positioned(
-                  bottom: 8,
-                  right: 8,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.visibility,
-                            size: 12, color: Colors.white),
-                        const SizedBox(width: 4),
-                        Text(
-                          _formatViewers(viewers),
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 11),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
             Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  profileAsync.when(
-                    data: (profile) => SafeAvatar(
-                      imageUrl: profile?.picture,
-                      radius: 16,
-                      fallback: const Icon(Icons.person, size: 16),
-                    ),
-                    loading: () => const CircleAvatar(radius: 16),
-                    error: (_, _) =>
-                        const CircleAvatar(radius: 16, child: Icon(Icons.person, size: 16)),
+                  SafeAvatar(
+                    imageUrl: host?.picture,
+                    radius: 18,
+                    fallback: const Icon(Icons.person, size: 18),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          title,
+                          event.title,
                           style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 13),
-                          maxLines: 2,
+                              fontWeight: FontWeight.bold, fontSize: 14),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          profileAsync.value?.displayNameOrName ??
-                              '${event.pubkey.substring(0, 8)}…',
+                          [
+                            host?.displayNameOrName ??
+                                '${event.hostPubkey.substring(0, 8)}…',
+                            if (event.isPlanned && event.starts != null)
+                              DateFormat('MMM d, h:mm a').format(
+                                DateTime.fromMillisecondsSinceEpoch(
+                                    event.starts! * 1000),
+                              ),
+                          ].join(' · '),
                           style: TextStyle(
-                              fontSize: 11,
-                              color: scheme.onSurfaceVariant),
+                              fontSize: 12, color: scheme.onSurfaceVariant),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
+                  if (event.isLive)
+                    Icon(Icons.play_circle_fill_rounded,
+                        color: scheme.primary, size: 28),
                 ],
               ),
             ),
@@ -225,74 +229,57 @@ class _StreamCard extends ConsumerWidget {
       ),
     );
   }
-
-  String _formatViewers(int n) {
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k watching';
-    return '$n watching';
-  }
 }
 
-class _ThumbFallback extends StatelessWidget {
+class _StatusBadge extends StatelessWidget {
+  final LiveStatus status;
+  const _StatusBadge({required this.status});
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final (label, color) = switch (status) {
+      LiveStatus.live => ('LIVE', Colors.red),
+      LiveStatus.planned => ('UPCOMING', Colors.blue),
+      LiveStatus.ended => ('ENDED', Colors.grey),
+    };
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [scheme.primaryContainer, scheme.tertiaryContainer],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: color,
+        borderRadius: BorderRadius.circular(6),
       ),
-      child: Center(
-        child: Icon(Icons.live_tv,
-            size: 40, color: scheme.onPrimaryContainer),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }
 }
 
-/// Grid-shaped loading skeleton for the live streams grid.
-/// Rebuilt from the shared [SkeletonTheme] + [SkeletonBox] primitives so it
-/// works in both light and dark mode.
-class _LiveSkeletonGrid extends StatelessWidget {
-  const _LiveSkeletonGrid();
+class _ThumbFallback extends StatelessWidget {
+  final ColorScheme scheme;
+  const _ThumbFallback({required this.scheme});
 
   @override
   Widget build(BuildContext context) {
-    return SkeletonTheme(
-      child: GridView.builder(
-        padding: const EdgeInsets.all(12),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 320,
-          mainAxisExtent: 230,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [scheme.primary, scheme.tertiary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        itemCount: 6,
-        itemBuilder: (context, _) => Card(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SkeletonBox(
-                height: 130,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
-              ),
-              Padding(
-                padding: EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SkeletonLine(height: 12),
-                    SizedBox(height: 6),
-                    SkeletonLine(height: 10, width: 120),
-                  ],
-                ),
-              ),
-            ],
-          ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.live_tv_rounded,
+          color: Colors.white.withValues(alpha: 0.5),
+          size: 44,
         ),
       ),
     );

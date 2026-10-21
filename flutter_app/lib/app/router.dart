@@ -19,7 +19,13 @@ import 'package:nostrfeed_mobile/features/wallet/buy_name_screen.dart';
 import 'package:nostrfeed_mobile/features/settings/settings_screen.dart';
 import 'package:nostrfeed_mobile/features/bookmarks/bookmarks_screen.dart';
 import 'package:nostrfeed_mobile/features/communities/communities_screen.dart';
+import 'package:nostrfeed_mobile/features/communities/community_detail_screen.dart';
 import 'package:nostrfeed_mobile/features/articles/articles_screen.dart';
+import 'package:nostrfeed_mobile/features/lists/list_detail_screen.dart';
+import 'package:nostrfeed_mobile/features/lists/models/nostr_list.dart';
+import 'package:nostrfeed_mobile/features/groups/group_chat_screen.dart';
+import 'package:nostrfeed_mobile/features/live/live_room_screen.dart';
+import 'package:nostrfeed_mobile/features/live/models/live_event.dart';
 import 'package:nostrfeed_mobile/features/market/market_screen.dart';
 import 'package:nostrfeed_mobile/features/explore/explore_screen.dart';
 import 'package:nostrfeed_mobile/features/explore/trending_screen.dart';
@@ -49,6 +55,10 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/feed',
     refreshListenable: authListenable,
+    // Dismiss the keyboard on every navigation — a stale keyboard (e.g. from
+    // the reel upload sheet) must never survive a route change and cover the
+    // bottom nav on the destination screen.
+    observers: [_KeyboardDismissObserver()],
     redirect: (context, state) {
       final auth = ref.read(authStateProvider);
       final onLoginPage = state.matchedLocation == '/login';
@@ -70,7 +80,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           // Primary bottom-nav tabs
           GoRoute(path: '/feed', builder: (_, _) => const FeedScreen()),
-          GoRoute(path: '/reels', builder: (_, _) => const ReelsScreen()),
           GoRoute(path: '/chat', builder: (_, _) => const ChatScreen()),
           GoRoute(path: '/wallet', builder: (_, _) => const WalletScreen()),
         ],
@@ -132,7 +141,29 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/calendar', builder: (_, _) => const CalendarScreen()),
       GoRoute(path: '/communities', builder: (_, _) => const CommunitiesScreen()),
       GoRoute(path: '/groups', builder: (_, _) => const GroupsScreen()),
+      // Reels — full-screen immersive page (like Instagram), no bottom nav.
+      GoRoute(path: '/reels', builder: (_, _) => const ReelsScreen()),
       GoRoute(path: '/live', builder: (_, _) => const LiveScreen()),
+      GoRoute(
+        path: '/live/room',
+        builder: (_, state) => LiveRoomScreen(event: state.extra as LiveEvent),
+      ),
+      GoRoute(
+        path: '/groups/chat',
+        builder: (_, state) => GroupChatScreen(groupEvent: state.extra as NostrEvent),
+      ),
+      GoRoute(
+        path: '/communities/detail',
+        builder: (_, state) => CommunityDetailScreen(community: state.extra as NostrEvent),
+      ),
+      GoRoute(
+        path: '/articles/reader',
+        builder: (_, state) => ArticleReaderScreen(event: state.extra as NostrEvent),
+      ),
+      GoRoute(
+        path: '/lists/detail',
+        builder: (_, state) => ListDetailScreen(list: state.extra as NostrList),
+      ),
 
       // Wallet detail screens
       GoRoute(path: '/wallet/nwc', builder: (_, _) => const NwcScreen()),
@@ -157,6 +188,27 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// Dismisses the software keyboard whenever the route changes.
+///
+/// Without this, a keyboard opened in one screen (upload sheet, search,
+/// compose) stays visible after navigating away — covering the bottom nav
+/// and making the app look "stuck".
+class _KeyboardDismissObserver extends NavigatorObserver {
+  @override
+  void didPush(Route route, Route? previousRoute) => _unfocus();
+  @override
+  void didPop(Route route, Route? previousRoute) => _unfocus();
+  @override
+  void didReplace({Route? newRoute, Route? oldRoute}) => _unfocus();
+
+  void _unfocus() {
+    // Post-frame so the new route's own autofocus (if any) wins.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    });
+  }
+}
 
 /// Loads a Nostr event by ID and shows it in a thread view.
 class _EventLoader extends ConsumerStatefulWidget {

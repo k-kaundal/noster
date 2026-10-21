@@ -99,6 +99,24 @@ void main() {
       expect(se.zapSats, 21);
     });
 
+    test('zapSats falls back to bolt11 amount prefix', () {
+      // lnbc210n = 210 nano-BTC = 21 sats (no description tag).
+      final zap = _event(
+        id: 'z2',
+        kind: 9735,
+        tags: [
+          ['bolt11', 'lnbc210n1pjxxxxx'],
+        ],
+      );
+      final se = SocialEvent(event: zap, arrivedAt: 100);
+      expect(se.zapSats, 21);
+    });
+
+    test('zapSats is 0 for non-zap kinds', () {
+      final like = _event(id: 'l1', kind: 7);
+      expect(SocialEvent(event: like, arrivedAt: 1).zapSats, 0);
+    });
+
     test('actionText covers all engagement kinds', () {
       expect(NotificationCenter.actionText(_event(id: 'a', kind: 7)),
           'liked your post');

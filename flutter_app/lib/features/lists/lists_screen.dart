@@ -1,180 +1,263 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
-import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
+import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
-import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/features/lists/models/nostr_list.dart';
+import 'package:nostrfeed_mobile/features/lists/providers/list_providers.dart';
 
+/// Lists home: the user's NIP-51 follow sets with create + manage.
 class ListsScreen extends ConsumerWidget {
   const ListsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Reuse bookmarks provider as placeholder; lists are kind 30000+ sets
-    final lists = ref.watch(bookmarksProvider);
+    final listsAsync = ref.watch(followSetsProvider);
+    final auth = ref.watch(authStateProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Lists'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {},
-            tooltip: 'Search lists',
-          ),
-        ],
-      ),
-      body: lists.when(
-        loading: () => const SkeletonList(),
-        error: (err, _) => ErrorView(
-          message: 'Failed to load lists',
-          onRetry: () => ref.invalidate(bookmarksProvider),
+    return DetailScaffold(
+      title: 'Lists',
+      body: AsyncFeedList<NostrList>(
+        value: listsAsync,
+        onRefresh: () => ref.refresh(followSetsProvider.future),
+        emptyState: EmptyState(
+          icon: Icons.list_alt_rounded,
+          title: 'No lists yet',
+          subtitle:
+              'Create curated lists of Nostr users — follow sets you can browse as feeds.',
+          action: auth.isLoggedIn
+              ? FilledButton.icon(
+                  onPressed: () => _showCreateSheet(context, ref),
+                  icon: const Icon(Icons.playlist_add),
+                  label: const Text('Create your first list'),
+                )
+              : null,
         ),
-        data: (events) {
-          if (events.isEmpty) {
-            return const EmptyState(
-              icon: Icons.list_alt,
-              title: 'No lists yet',
-              subtitle:
-                  'Create follow sets and curated lists of Nostr users.',
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(12),
-            itemCount: events.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, i) => _ListCard(event: events[i]),
-          );
-        },
+        padding: const EdgeInsets.all(12),
+        separator: const SizedBox(height: 8),
+        itemBuilder: (context, list) => _ListCard(list: list),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showCreateListSheet(context),
-        icon: const Icon(Icons.playlist_add),
-        label: const Text('New List'),
-      ),
+      floatingActionButton: auth.isLoggedIn
+          ? FloatingActionButton.extended(
+              onPressed: () => _showCreateSheet(context, ref),
+              icon: const Icon(Icons.playlist_add),
+              label: const Text('New List'),
+            )
+          : null,
     );
   }
 
-  void _showCreateListSheet(BuildContext context) {
+  void _showCreateSheet(BuildContext context, WidgetRef ref) {
+    final nameCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) {
-        final nameCtrl = TextEditingController();
-        final descCtrl = TextEditingController();
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 8,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Create List',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'List name',
-                  hintText: 'e.g. Bitcoin Devs',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: descCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Description (optional)',
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.check),
-                  label: const Text('Create'),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _ListCard extends StatelessWidget {
-  final NostrEvent event;
-  const _ListCard({required this.event});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final name = event.getTag('d') ?? event.getTag('title') ?? 'Untitled List';
-    final members = event.getTags('p');
-
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: scheme.primaryContainer,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(Icons.list, color: scheme.onPrimaryContainer),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 8,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
         ),
-        title: Text(
-          name,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Column(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 4),
-            Text('${members.length} members',
-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-            const SizedBox(height: 6),
-            if (members.isNotEmpty)
-              SizedBox(
-                height: 24,
-                child: Stack(
-                  children: List.generate(
-                    members.length > 5 ? 5 : members.length,
-                    (i) => Positioned(
-                      left: i * 18.0,
-                      child: CircleAvatar(
-                        radius: 12,
-                        backgroundColor: scheme.secondaryContainer,
-                        child: Icon(Icons.person,
-                            size: 12, color: scheme.onSecondaryContainer),
-                      ),
-                    ),
-                  ),
-                ),
+            Text(
+              'Create List',
+              style: Theme.of(ctx)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'List name',
+                hintText: 'e.g. Bitcoin Devs',
               ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Description (optional)',
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () async {
+                  final title = nameCtrl.text.trim();
+                  if (title.isEmpty) {
+                    AppToast.warning(ctx, 'Enter a list name');
+                    return;
+                  }
+                  Navigator.pop(ctx);
+                  try {
+                    await ref.read(listControllerProvider).createList(
+                          title: title,
+                          description: descCtrl.text.trim(),
+                        );
+                    if (context.mounted) {
+                      AppToast.success(context, 'List "$title" created');
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      AppToast.error(context, 'Create failed: $e');
+                    }
+                  }
+                },
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('Create'),
+              ),
+            ),
           ],
         ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () {},
       ),
     );
   }
 }
 
+class _ListCard extends ConsumerWidget {
+  final NostrList list;
+  const _ListCard({required this.list});
 
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final memberPreview = list.members.take(4).toList();
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: InkWell(
+        onTap: () => context.push('/lists/detail', extra: list),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              // Member avatar stack / list icon
+              SizedBox(
+                width: 56,
+                height: 56,
+                child: memberPreview.isEmpty
+                    ? Container(
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.list_rounded,
+                          color: scheme.onPrimaryContainer,
+                        ),
+                      )
+                    : _MemberStack(pubkeys: memberPreview),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      list.title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${list.members.length} member${list.members.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (list.description.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        list.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: scheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MemberStack extends ConsumerWidget {
+  final List<String> pubkeys;
+  const _MemberStack({required this.pubkeys});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Stack(
+      children: [
+        for (var i = 0; i < pubkeys.length && i < 3; i++)
+          Positioned(
+            left: i * 14.0,
+            child: _MemberAvatar(pubkey: pubkeys[i], index: i),
+          ),
+      ],
+    );
+  }
+}
+
+class _MemberAvatar extends ConsumerWidget {
+  final String pubkey;
+  final int index;
+  const _MemberAvatar({required this.pubkey, required this.index});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(profileProvider(pubkey)).valueOrNull;
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Theme.of(context).colorScheme.surface,
+          width: 2,
+        ),
+      ),
+      child: SafeAvatar(
+        imageUrl: profile?.picture,
+        radius: 16,
+        fallback: Text(
+          (profile?.displayNameOrName ?? pubkey).isNotEmpty
+              ? (profile?.displayNameOrName ?? pubkey)[0].toUpperCase()
+              : '?',
+          style: const TextStyle(fontSize: 11),
+        ),
+      ),
+    );
+  }
+}

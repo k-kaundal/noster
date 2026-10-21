@@ -382,6 +382,274 @@ class SocialRepository {
     );
   }
 
+  // ── NIP-51 follow sets (kind 30000) ───────────────────────────────
+
+  /// Publish (create or replace) a follow set. The `d` tag is the identity —
+  /// publishing with the same `d` replaces the old version.
+  NostrEvent createFollowSet({
+    required String dTag,
+    required String title,
+    String description = '',
+    String? image,
+    List<String> members = const [],
+  }) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 30000,
+      content: '',
+      tags: [
+        ['d', dTag],
+        ['title', title],
+        if (description.isNotEmpty) ['description', description],
+        if (image != null && image.isNotEmpty) ['image', image],
+        for (final pk in members) ['p', pk],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Fetch the current user's follow sets (kind 30000).
+  Future<List<NostrEvent>> fetchFollowSets(String pubkey) async {
+    final events = await relayPool.query([
+      NostrFilter(kinds: [30000], authors: [pubkey], limit: 100),
+    ], timeout: const Duration(seconds: 8));
+    // One set per d tag (newest version wins).
+    final byD = <String, NostrEvent>{};
+    for (final e in events) {
+      final d = e.getTag('d') ?? '';
+      final existing = byD[d];
+      if (existing == null || e.createdAt > existing.createdAt) byD[d] = e;
+    }
+    final lists = byD.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return lists;
+  }
+
+  /// Delete a follow set (NIP-09 deletion request).
+  NostrEvent deleteFollowSet(String eventId) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 5,
+      content: 'list deleted',
+      tags: [
+        ['e', eventId],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  // ── NIP-99 classified listings + NIP-69 P2P orders ────────────────
+
+  /// Create a NIP-99 classified listing (kind 30402, addressable).
+  NostrEvent createListing({
+    required String dTag,
+    required String title,
+    required String description,
+    String? summary,
+    String? image,
+    String? location,
+    String? priceAmount,
+    String? priceCurrency,
+    String? priceFrequency,
+    List<String> hashtags = const [],
+  }) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 30402,
+      content: description,
+      tags: [
+        ['d', dTag],
+        ['title', title],
+        if (summary != null && summary.isNotEmpty) ['summary', summary],
+        [
+          'published_at',
+          '${DateTime.now().millisecondsSinceEpoch ~/ 1000}',
+        ],
+        if (image != null && image.isNotEmpty) ['image', image],
+        if (location != null && location.isNotEmpty) ['location', location],
+        if (priceAmount != null && priceCurrency != null)
+          [
+            'price',
+            priceAmount,
+            priceCurrency,
+            ?priceFrequency,
+          ],
+        ['status', 'active'],
+        for (final t in hashtags) ['t', t.toLowerCase()],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Create a NIP-69 P2P trade order (kind 38383, addressable).
+  NostrEvent createP2POrder({
+    required String type, // 'buy' | 'sell'
+    required String currency,
+    String? amountSats,
+    String? fiatAmount,
+    List<String> paymentMethods = const [],
+    String? premium,
+    String? makerName,
+  }) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 38383,
+      content: '',
+      tags: [
+        ['d', 'order-${DateTime.now().millisecondsSinceEpoch}'],
+        ['k', type],
+        ['f', currency.toLowerCase()],
+        ['s', 'pending'],
+        ['amt', amountSats ?? '0'],
+        if (fiatAmount != null && fiatAmount.isNotEmpty) ['fa', fiatAmount],
+        for (final pm in paymentMethods) ['pm', pm],
+        if (premium != null && premium.isNotEmpty) ['premium', premium],
+        ['network', 'mainnet'],
+        ['layer', 'lightning'],
+        if (makerName != null && makerName.isNotEmpty) ['name', makerName],
+        ['y', 'nostrfeed'],
+        ['z', 'order'],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  // ── NIP-29 relay groups ───────────────────────────────────────────
+
+  /// Join a group (kind 9021 join request with optional invite code).
+  NostrEvent createGroupJoinRequest(String groupId, {String? inviteCode}) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 9021,
+      content: '',
+      tags: [
+        ['h', groupId],
+        if (inviteCode != null && inviteCode.isNotEmpty) ['code', inviteCode],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Leave a group (kind 9022 leave request).
+  NostrEvent createGroupLeaveRequest(String groupId) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 9022,
+      content: '',
+      tags: [
+        ['h', groupId],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Check if a pubkey is a member of a group (from kind 39002 member list).
+  Future<bool> isGroupMember(String groupId, String pubkey) async {
+    final members = await fetchGroupMembers(groupId);
+    return members.contains(pubkey);
+  }
+
+  /// Fetch group members (kind 39002 p tags).
+  Future<List<String>> fetchGroupMembers(String groupId) async {
+    final events = await relayPool.query([
+      NostrFilter(
+        kinds: [39002],
+        tagFilters: {
+          'd': [groupId],
+        },
+        limit: 1,
+      ),
+    ], timeout: const Duration(seconds: 5));
+    if (events.isEmpty) return [];
+    // Newest version of the member list.
+    events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return events.first.getTags('p');
+  }
+
+  /// Fetch group admins with roles (kind 39001 p tags with role markers).
+  Future<Map<String, List<String>>> fetchGroupAdmins(String groupId) async {
+    final events = await relayPool.query([
+      NostrFilter(
+        kinds: [39001],
+        tagFilters: {
+          'd': [groupId],
+        },
+        limit: 1,
+      ),
+    ], timeout: const Duration(seconds: 5));
+    if (events.isEmpty) return {};
+    events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final result = <String, List<String>>{};
+    for (final tag in events.first.tags) {
+      if (tag.isNotEmpty && tag[0] == 'p' && tag.length > 1) {
+        result[tag[1]] = tag.length > 2 ? tag.sublist(2) : [];
+      }
+    }
+    return result;
+  }
+
+  // ── NIP-29 moderation (admin actions, kinds 9000-9020) ────────────
+
+  /// Add/update a user in the group (kind 9000 put-user, admin only).
+  NostrEvent createGroupPutUser(
+    String groupId,
+    String targetPubkey, {
+    List<String> roles = const [],
+    String reason = '',
+  }) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 9000,
+      content: reason,
+      tags: [
+        ['h', groupId],
+        ['p', targetPubkey, ...roles],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Remove a user from the group (kind 9001 remove-user, admin only).
+  NostrEvent createGroupRemoveUser(
+    String groupId,
+    String targetPubkey, {
+    String reason = '',
+  }) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 9001,
+      content: reason,
+      tags: [
+        ['h', groupId],
+        ['p', targetPubkey],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Delete a message in the group (kind 9005 delete-event, admin only).
+  NostrEvent createGroupDeleteEvent(String groupId, String eventId) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 9005,
+      content: '',
+      tags: [
+        ['h', groupId],
+        ['e', eventId],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
   /// Toggle bookmark for an event (add or remove from kind 10003 list).
   Future<void> toggleBookmark(
     String eventId,

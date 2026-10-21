@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:nostrfeed_mobile/core/config/env.dart';
@@ -138,26 +139,38 @@ class LnbitsAuthNotifier extends Notifier<LnbitsAuthState> {
     if (!auth.isLoggedIn || auth.pubkey == null) return;
 
     try {
-      // SECURITY: Read from secure storage first
-      var token = await _secureStorage.read(
-        key: '$_kWalletTokensKey:${auth.pubkey}',
-      );
+      // SECURITY: Read from secure storage first. A local storage failure
+      // (plugin error, corrupted store) must NEVER block the wallet — we
+      // just treat it as "no token" and let the user sign in fresh.
+      String? token;
+      try {
+        token = await _secureStorage.read(
+          key: '$_kWalletTokensKey:${auth.pubkey}',
+        );
+      } catch (e) {
+        debugPrint('Secure storage read failed: $e');
+      }
 
       // Migration: check legacy SharedPreferences and migrate to secure storage
       if (token == null) {
-        final prefs = await SharedPreferences.getInstance();
-        final legacyToken = prefs.getString(
-          '$_kWalletTokensKey:${auth.pubkey}',
-        );
-        if (legacyToken != null) {
-          // Migrate to secure storage
-          await _secureStorage.write(
-            key: '$_kWalletTokensKey:${auth.pubkey}',
-            value: legacyToken,
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final legacyToken = prefs.getString(
+            '$_kWalletTokensKey:${auth.pubkey}',
           );
-          // Remove from insecure storage
-          await prefs.remove('$_kWalletTokensKey:${auth.pubkey}');
-          token = legacyToken;
+          if (legacyToken != null) {
+            // Migrate to secure storage
+            try {
+              await _secureStorage.write(
+                key: '$_kWalletTokensKey:${auth.pubkey}',
+                value: legacyToken,
+              );
+              await prefs.remove('$_kWalletTokensKey:${auth.pubkey}');
+            } catch (_) {}
+            token = legacyToken;
+          }
+        } catch (e) {
+          debugPrint('SharedPreferences migration failed: $e');
         }
       }
 
@@ -180,7 +193,15 @@ class LnbitsAuthNotifier extends Notifier<LnbitsAuthState> {
       } else {
         // Network error or server error — keep the token (it might work next
         // time) but show the error so the user knows something is wrong.
-        state = LnbitsAuthState(error: e.toString());
+        // Strip noisy "Exception:"/"PlatformException" prefixes for display.
+        final msg = e
+            .toString()
+            .replaceFirst(
+              RegExp(r'^(PlatformException|Exception|LnbitsException)\(?'),
+              '',
+            )
+            .replaceFirst(RegExp(r'\)$'), '');
+        state = LnbitsAuthState(error: msg);
       }
     }
   }

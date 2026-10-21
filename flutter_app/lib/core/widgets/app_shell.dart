@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
@@ -11,22 +12,22 @@ import 'package:nostrfeed_mobile/features/notifications/providers/notification_c
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 
 /// Navigation Architecture:
-/// 
+///
 /// PRIMARY NAVIGATION (Bottom Nav - 5 tabs):
 /// 1. Feed - Home timeline with tabs (For You / Following)
 /// 2. Search - Discover content and users
 /// 3. Notifications - Activity and mentions
 /// 4. Chat - Direct messages
 /// 5. Profile - User's own profile
-/// 
+///
 /// SECONDARY NAVIGATION (Drawer):
 /// - Accessed via hamburger menu in Feed AppBar
 /// - Contains all other features organized by category
-/// 
+///
 /// TERTIARY NAVIGATION (Stack):
 /// - Detail screens push on top (thread, profile, compose, etc.)
 /// - Back button returns to previous screen
-/// 
+///
 /// FAB PLACEMENT:
 /// - Only on Feed screen for composing new posts
 /// - Positioned bottom-right, above bottom nav
@@ -39,26 +40,28 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderStateMixin {
-  /// Primary bottom-nav routes: Feed, Reels, Chat, Wallet.
-  /// Search and Profile live in the drawer instead of the bottom bar.
-  static const _mainRoutes = ['/feed', '/reels', '/chat', '/wallet'];
-  static const _mainIcons = [
+class _AppShellState extends ConsumerState<AppShell>
+    with SingleTickerProviderStateMixin {
+  /// Primary bottom-nav: Home · Reels · Create · Chat · Wallet.
+  ///
+  /// Instagram pattern: 5 slots with a center CREATE button (the main action
+  /// a social app pushes). Reels is back as a tab (full-screen player, but
+  /// the tab lives here for reachability). Chat carries the unread badge.
+  static const _icons = [
     Icons.home_outlined,
     Icons.play_circle_outline_rounded,
     Icons.chat_bubble_outline_rounded,
     Icons.account_balance_wallet_outlined,
   ];
-  static const _mainSelectedIcons = [
+  static const _selectedIcons = [
     Icons.home_rounded,
     Icons.play_circle_rounded,
     Icons.chat_bubble_rounded,
     Icons.account_balance_wallet_rounded,
   ];
-  static const _mainLabels = ['Home', 'Reels', 'Chat', 'Wallet'];
+  static const _labels = ['Home', 'Reels', 'Chat', 'Wallet'];
 
   late AnimationController _animationController;
-  int _previousIndex = 0;
 
   @override
   void initState() {
@@ -85,42 +88,38 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     return '';
   }
 
-  int _currentIndex(String location) {
-    if (location.startsWith('/profile/')) {
-      final auth = ref.read(authStateProvider);
-      if (auth.isLoggedIn && location.contains(auth.pubkey ?? '')) {
-        return 4;
-      }
-    }
-    for (var i = 0; i < _mainRoutes.length; i++) {
-      if (location.startsWith(_mainRoutes[i])) return i;
-    }
+  /// Map a location to a bottom-nav slot: 0=Home, 1=Reels, 2=Create, 3=Chat,
+  /// 4=Wallet. Create (2) is not a route — it opens the create sheet.
+  int _slotFor(String location) {
+    if (location.startsWith('/feed')) return 0;
+    if (location.startsWith('/reels')) return 1;
+    if (location.startsWith('/chat')) return 3;
+    if (location.startsWith('/wallet')) return 4;
     return 0;
   }
 
-  void _onDestinationSelected(int index) {
-    if (index != _previousIndex) {
-      HapticFeedback.mediumImpact();
-      _animationController.forward(from: 0.8);
-      _previousIndex = index;
+  void _onDestinationSelected(int slot) {
+    HapticFeedback.mediumImpact();
+    _animationController.forward(from: 0.8);
+    if (slot == 2) {
+      // Center CREATE button → the create sheet (post/article/reel/live/group).
+      _showCreateSheet(context);
+      return;
     }
-
-    if (index == 4) {
-      final auth = ref.read(authStateProvider);
-      if (auth.isLoggedIn && auth.pubkey != null) {
-        context.go('/profile/${auth.pubkey}');
-      } else {
-        context.go('/login');
-      }
-    } else {
-      context.go(_mainRoutes[index]);
-    }
+    final route = switch (slot) {
+      0 => '/feed',
+      1 => '/reels',
+      3 => '/chat',
+      4 => '/wallet',
+      _ => '/feed',
+    };
+    context.go(route);
   }
 
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
-    final index = _currentIndex(location);
+    final slot = _slotFor(location);
     final dmsAsync = ref.watch(dmsProvider);
     // Rebuild badge when decryption/outbox/read-state changes.
     ref.watch(dmStoreVersionProvider);
@@ -132,17 +131,11 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
     // Bell badge = unread social notifications (live engagement center).
     final notifUnread = ref.watch(unreadNotificationsProvider);
 
-    // AppShell owns the AppBar. This is what makes the drawer button work:
-    // the AppBar's auto-generated leading (hamburger on tab screens, back
-    // button on pushed screens) gets a BuildContext *below THIS Scaffold*
-    // (the one that owns the drawer). A menu button built inside a child
-    // screen's own Scaffold resolves `Scaffold.of` to that inner, drawer-less
-    // Scaffold and does nothing — that was the "menu doesn't open" bug.
-    //
-    // Exception: chat THREADS (/chat/<pubkey>) are immersive — the thread
-    // renders its own header with the peer's identity (avatar/name/encryption
-    // status), so the generic shell AppBar would just duplicate it.
-    final hideAppBar = location.startsWith('/chat/');
+    // Immersive routes: hide shell AppBar + bottom nav (own headers).
+    final isChatThread = location.startsWith('/chat/');
+    final isReels = location.startsWith('/reels');
+    final hideAppBar = isChatThread || isReels;
+    final hideBottomNav = isChatThread || isReels;
 
     return Scaffold(
       appBar: hideAppBar
@@ -187,56 +180,145 @@ class _AppShellState extends ConsumerState<AppShell> with SingleTickerProviderSt
             ),
       body: widget.child,
       extendBody: true,
-      bottomNavigationBar: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.2),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: colorScheme.shadow.withValues(alpha: 0.1),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-              spreadRadius: 0,
-            ),
-            BoxShadow(
-              color: colorScheme.shadow.withValues(alpha: 0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-              spreadRadius: 0,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(28),
-          child: Container(
-            height: 72,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(
-                _mainRoutes.length,
-                (i) => _ModernNavItem(
-                  icon: _mainIcons[i],
-                  selectedIcon: _mainSelectedIcons[i],
-                  label: _mainLabels[i],
-                  isSelected: i == index,
-                  // Badge only on the CHAT tab (index 2). Index 3 is Wallet
-                  // — showing the DM count there was a bug.
-                  badgeCount: i == 2 ? dmCount : 0,
-                  onTap: () => _onDestinationSelected(i),
+      bottomNavigationBar: hideBottomNav
+          ? null
+          : Container(
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.shadow.withValues(alpha: 0.1),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                    spreadRadius: 0,
+                  ),
+                  BoxShadow(
+                    color: colorScheme.shadow.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                    spreadRadius: 0,
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: Container(
+                  height: 72,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _NavItem(
+                        icon: _icons[0],
+                        selectedIcon: _selectedIcons[0],
+                        label: _labels[0],
+                        isSelected: slot == 0,
+                        onTap: () => _onDestinationSelected(0),
+                      ),
+                      _NavItem(
+                        icon: _icons[1],
+                        selectedIcon: _selectedIcons[1],
+                        label: _labels[1],
+                        isSelected: slot == 1,
+                        onTap: () => _onDestinationSelected(1),
+                      ),
+                      // Center CREATE button (Instagram-style raised action).
+                      _CreateNavButton(onTap: () => _onDestinationSelected(2)),
+                      _NavItem(
+                        icon: _icons[2],
+                        selectedIcon: _selectedIcons[2],
+                        label: _labels[2],
+                        isSelected: slot == 3,
+                        badgeCount: dmCount,
+                        onTap: () => _onDestinationSelected(3),
+                      ),
+                      _NavItem(
+                        icon: _icons[3],
+                        selectedIcon: _selectedIcons[3],
+                        label: _labels[3],
+                        isSelected: slot == 4,
+                        onTap: () => _onDestinationSelected(4),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
+      drawer: const ModernDrawer(),
+    );
+  }
+
+  /// The create sheet: quick actions for everything the user can publish.
+  void _showCreateSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _CreateAction(
+                icon: Icons.edit_rounded,
+                label: 'Post',
+                subtitle: 'Share a note',
+                onTap: () => _go(ctx, '/compose'),
+              ),
+              _CreateAction(
+                icon: Icons.article_outlined,
+                label: 'Article',
+                subtitle: 'Long-form writing',
+                onTap: () => _go(ctx, '/articles'),
+              ),
+              _CreateAction(
+                icon: Icons.video_call_rounded,
+                label: 'Reel',
+                subtitle: 'Short video',
+                onTap: () => _go(ctx, '/reels'),
+              ),
+              _CreateAction(
+                icon: Icons.sensors_rounded,
+                label: 'Go Live',
+                subtitle: 'Start streaming',
+                onTap: () => _go(ctx, '/live'),
+              ),
+              _CreateAction(
+                icon: Icons.group_add_outlined,
+                label: 'Group',
+                subtitle: 'Create a group',
+                onTap: () => _go(ctx, '/groups'),
+              ),
+            ],
           ),
         ),
       ),
-      drawer: const ModernDrawer(),
     );
+  }
+
+  void _go(BuildContext ctx, String route) {
+    Navigator.pop(ctx);
+    ctx.push(route);
   }
 }
 
@@ -325,9 +407,9 @@ class _ShellOverflowMenu extends ConsumerWidget {
   }
 }
 
-// ─── Modern Navigation Item ─────────────────────────────────────────
+// ─── Bottom-nav item (icon + label + optional badge) ────────────────
 
-class _ModernNavItem extends StatefulWidget {
+class _NavItem extends StatelessWidget {
   final IconData icon;
   final IconData selectedIcon;
   final String label;
@@ -335,149 +417,149 @@ class _ModernNavItem extends StatefulWidget {
   final int badgeCount;
   final VoidCallback onTap;
 
-  const _ModernNavItem({
+  const _NavItem({
     required this.icon,
     required this.selectedIcon,
     required this.label,
     required this.isSelected,
-    required this.badgeCount,
+    this.badgeCount = 0,
     required this.onTap,
   });
 
   @override
-  State<_ModernNavItem> createState() => _ModernNavItemState();
-}
-
-class _ModernNavItemState extends State<_ModernNavItem>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _slideAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
-
-    _slideAnimation = Tween<double>(begin: 0.0, end: -4.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
-
-    if (widget.isSelected) {
-      _controller.forward();
-    }
-  }
-
-  @override
-  void didUpdateWidget(_ModernNavItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isSelected != oldWidget.isSelected) {
-      if (widget.isSelected) {
-        _controller.forward();
-      } else {
-        _controller.reverse();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final color = isSelected
+        ? colorScheme.primary
+        : colorScheme.onSurfaceVariant;
 
     return Expanded(
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return Transform.translate(
-              offset: Offset(0, _slideAnimation.value),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                decoration: BoxDecoration(
-                  gradient: widget.isSelected
-                      ? LinearGradient(
-                          colors: [
-                            colorScheme.primaryContainer.withValues(alpha: 0.8),
-                            colorScheme.primaryContainer.withValues(alpha: 0.4),
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        )
-                      : null,
-                  borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Badge(
+                isLabelVisible: badgeCount > 0,
+                label: Text(
+                  badgeCount > 99 ? '99+' : '$badgeCount',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Transform.scale(
-                      scale: _scaleAnimation.value,
-                      child: _buildIconWithBadge(colorScheme),
-                    ),
-                    const SizedBox(height: 2),
-                    AnimatedDefaultTextStyle(
-                      duration: const Duration(milliseconds: 200),
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: widget.isSelected ? FontWeight.w700 : FontWeight.w500,
-                        color: widget.isSelected
-                            ? colorScheme.primary
-                            : colorScheme.onSurfaceVariant,
-                        letterSpacing: 0.2,
-                      ),
-                      child: Text(widget.label),
-                    ),
-                  ],
+                backgroundColor: colorScheme.error,
+                textColor: colorScheme.onError,
+                child: Icon(
+                  isSelected ? selectedIcon : icon,
+                  size: 25,
+                  color: color,
                 ),
               ),
-            );
-          },
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: color,
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildIconWithBadge(ColorScheme colorScheme) {
-    Widget iconWidget = Icon(
-      widget.isSelected ? widget.selectedIcon : widget.icon,
-      size: 26,
-      color: widget.isSelected
-          ? colorScheme.primary
-          : colorScheme.onSurfaceVariant,
-    );
+// ─── Center CREATE button (Instagram-style raised action) ───────────
 
-    if (widget.badgeCount > 0) {
-      return Badge(
-        label: Text(
-          widget.badgeCount > 99 ? '99+' : '${widget.badgeCount}',
-          style: const TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.bold,
-            height: 1.2,
-          ),
+class _CreateNavButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CreateNavButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [colorScheme.primary, colorScheme.tertiary],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.primary.withValues(alpha: 0.35),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.add_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+          ],
         ),
-        backgroundColor: colorScheme.error,
-        textColor: colorScheme.onError,
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-        child: iconWidget,
-      );
-    }
+      ),
+    );
+  }
+}
 
-    return iconWidget;
+// ─── Create-sheet action row ────────────────────────────────────────
+
+class _CreateAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _CreateAction({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: colorScheme.primaryContainer.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: colorScheme.primary, size: 22),
+      ),
+      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      trailing: Icon(
+        Icons.arrow_forward_ios_rounded,
+        size: 14,
+        color: colorScheme.onSurfaceVariant,
+      ),
+      onTap: onTap,
+    );
   }
 }
 
@@ -496,10 +578,7 @@ class ModernDrawer extends ConsumerWidget {
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              colorScheme.surface,
-              colorScheme.surfaceContainerLowest,
-            ],
+            colors: [colorScheme.surface, colorScheme.surfaceContainerLowest],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -510,7 +589,8 @@ class ModernDrawer extends ConsumerWidget {
               // Header with profile
               _DrawerHeader(auth: auth),
 
-              // Navigation items
+              // Navigation items — organized by what users DO (research:
+              // 26 flat items overwhelm; grouped by intent is scannable).
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -522,15 +602,7 @@ class ModernDrawer extends ConsumerWidget {
                         subtitle: 'Connect your account',
                         onTap: () => _navigate(context, '/login'),
                       ),
-                    if (auth.isLoggedIn) ...[
-                      _DrawerItem(
-                        icon: Icons.edit_note_rounded,
-                        title: 'Write Article',
-                        subtitle: 'Create long-form content',
-                        onTap: () => _navigate(context, '/compose'),
-                      ),
-                    ],
-                    const _DrawerDivider(),
+
                     _DrawerSection(title: 'Discover'),
                     _DrawerItem(
                       icon: Icons.explore_rounded,
@@ -543,12 +615,6 @@ class ModernDrawer extends ConsumerWidget {
                       title: 'Trending',
                       subtitle: 'Popular posts',
                       onTap: () => _navigate(context, '/trending'),
-                    ),
-                    _DrawerItem(
-                      icon: Icons.video_library_rounded,
-                      title: 'Reels',
-                      subtitle: 'Short videos',
-                      onTap: () => _navigate(context, '/reels'),
                     ),
                     _DrawerItem(
                       icon: Icons.article_rounded,
@@ -568,6 +634,9 @@ class ModernDrawer extends ConsumerWidget {
                       subtitle: 'Events & schedules',
                       onTap: () => _navigate(context, '/calendar'),
                     ),
+
+                    const _DrawerDivider(),
+                    _DrawerSection(title: 'People'),
                     _DrawerItem(
                       icon: Icons.groups_rounded,
                       title: 'Communities',
@@ -586,8 +655,9 @@ class ModernDrawer extends ConsumerWidget {
                       subtitle: 'Live streams',
                       onTap: () => _navigate(context, '/live'),
                     ),
+
                     const _DrawerDivider(),
-                    _DrawerSection(title: 'Sats & Economy'),
+                    _DrawerSection(title: 'Money'),
                     _DrawerItem(
                       icon: Icons.account_balance_wallet_rounded,
                       title: 'Wallet',
@@ -612,39 +682,20 @@ class ModernDrawer extends ConsumerWidget {
                       subtitle: 'Upgrade your account',
                       onTap: () => _navigate(context, '/premium'),
                     ),
-                    _DrawerItem(
-                      icon: Icons.water_drop_rounded,
-                      title: 'Sats Drops',
-                      subtitle: 'Earn rewards',
-                      onTap: () => _navigate(context, '/sats-drops'),
-                    ),
-                    _DrawerItem(
-                      icon: Icons.card_membership_rounded,
-                      title: 'Memberships',
-                      subtitle: 'Your subscriptions',
-                      onTap: () => _navigate(context, '/memberships'),
-                    ),
+
                     const _DrawerDivider(),
-                    _DrawerSection(title: 'Creator Tools'),
-                    _DrawerItem(
-                      icon: Icons.dashboard_rounded,
-                      title: 'Studio',
-                      subtitle: 'Creator dashboard',
-                      onTap: () => _navigate(context, '/studio'),
-                    ),
-                    _DrawerItem(
-                      icon: Icons.emoji_events_rounded,
-                      title: 'Bounties',
-                      subtitle: 'Complete tasks',
-                      onTap: () => _navigate(context, '/bounties'),
-                    ),
-                    const _DrawerDivider(),
-                    _DrawerSection(title: 'Manage'),
+                    _DrawerSection(title: 'You'),
                     _DrawerItem(
                       icon: Icons.bookmark_rounded,
                       title: 'Bookmarks',
                       subtitle: 'Saved posts',
                       onTap: () => _navigate(context, '/bookmarks'),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.dashboard_rounded,
+                      title: 'Studio',
+                      subtitle: 'Creator dashboard',
+                      onTap: () => _navigate(context, '/studio'),
                     ),
                     _DrawerItem(
                       icon: Icons.key_rounded,
@@ -707,17 +758,13 @@ class ModernDrawer extends ConsumerWidget {
       builder: (ctx) {
         final scheme = Theme.of(ctx).colorScheme;
         return AlertDialog(
-          icon: Icon(
-            Icons.logout_rounded,
-            color: scheme.error,
-            size: 32,
-          ),
+          icon: Icon(Icons.logout_rounded, color: scheme.error, size: 32),
           title: const Text('Sign out?'),
           content: Text(
             isReadOnly
                 ? 'You are browsing read-only. Signing out removes the public key from this device.'
                 : 'Your secret key will be removed from this device.\n\n'
-                    'If you have not backed up your nsec, you will permanently lose access to this account.',
+                      'If you have not backed up your nsec, you will permanently lose access to this account.',
           ),
           actions: [
             TextButton(
@@ -764,14 +811,15 @@ class _DrawerHeader extends ConsumerWidget {
     final cachedProfile = auth.pubkey != null
         ? ref.read(nostrServiceProvider).profileCache[auth.pubkey!]?.profile
         : null;
-    final profile =
-        cachedProfile ?? profileAsync?.valueOrNull ?? auth.profile;
+    final profile = cachedProfile ?? profileAsync?.valueOrNull ?? auth.profile;
     final bannerUrl = profile?.banner;
 
     String npubShort = '';
     if (auth.pubkey != null) {
-      final npub =
-          ref.read(nostrServiceProvider).authService.encodeNpub(auth.pubkey!);
+      final npub = ref
+          .read(nostrServiceProvider)
+          .authService
+          .encodeNpub(auth.pubkey!);
       npubShort = npub.length > 20
           ? '${npub.substring(0, 12)}…${npub.substring(npub.length - 4)}'
           : npub;
@@ -782,10 +830,7 @@ class _DrawerHeader extends ConsumerWidget {
       // Banner as background image when the user has one, gradient fallback
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            colorScheme.primary,
-            colorScheme.tertiary,
-          ],
+          colors: [colorScheme.primary, colorScheme.tertiary],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -805,9 +850,7 @@ class _DrawerHeader extends ConsumerWidget {
                     errorWidget: (_, _, _) => const SizedBox.shrink(),
                   ),
                   // Dark overlay ONLY on the image — not on the content above it
-                  Container(
-                    color: Colors.black.withValues(alpha: 0.4),
-                  ),
+                  Container(color: Colors.black.withValues(alpha: 0.4)),
                 ],
               ),
             ),
@@ -848,7 +891,11 @@ class _DrawerHeader extends ConsumerWidget {
                               ),
                             ),
                           )
-                        : Icon(Icons.bolt_rounded, size: 40, color: colorScheme.primary),
+                        : Icon(
+                            Icons.bolt_rounded,
+                            size: 40,
+                            color: colorScheme.primary,
+                          ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -871,8 +918,8 @@ class _DrawerHeader extends ConsumerWidget {
                 Text(
                   auth.isLoggedIn
                       ? (auth.isReadOnly
-                          ? 'Read-only mode'
-                          : '@${profile?.name ?? "anon"}')
+                            ? 'Read-only mode'
+                            : '@${profile?.name ?? "anon"}')
                       : 'Nostr Operating System',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.95),
@@ -899,14 +946,9 @@ class _DrawerHeader extends ConsumerWidget {
                                 .read(nostrServiceProvider)
                                 .authService
                                 .encodeNpub(auth.pubkey!);
-                            await Clipboard.setData(
-                              ClipboardData(text: npub),
-                            );
+                            await Clipboard.setData(ClipboardData(text: npub));
                             if (context.mounted) {
-                              AppToast.success(
-                                context,
-                                'Public key copied',
-                              );
+                              AppToast.success(context, 'Public key copied');
                             }
                           },
                           child: _HeaderChip(
@@ -1034,9 +1076,7 @@ class _DrawerItem extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
             child: Row(
               children: [
                 Container(
@@ -1144,7 +1184,11 @@ class _DrawerFooter extends StatelessWidget {
               ),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+            child: const Icon(
+              Icons.bolt_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1167,6 +1211,25 @@ class _DrawerFooter extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          // Community links
+          IconButton(
+            icon: const Icon(Icons.discord_rounded, size: 20),
+            tooltip: 'Discord community',
+            color: const Color(0xFF5865F2),
+            onPressed: () => launchUrl(
+              Uri.parse('https://discord.gg/CDe6sRwDsd'),
+              mode: LaunchMode.externalApplication,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.telegram_rounded, size: 20),
+            tooltip: 'Telegram channel',
+            color: const Color(0xFF229ED9),
+            onPressed: () => launchUrl(
+              Uri.parse('https://t.me/nostrfeed'),
+              mode: LaunchMode.externalApplication,
             ),
           ),
         ],

@@ -133,9 +133,16 @@ class NwcNotifier extends Notifier<NwcState> {
 
   Future<void> _loadStoredConnections() async {
     try {
-      // SECURITY: Read from secure storage first
-      final secureJson = await _nwcSecureStorage.read(key: _storageKey);
-      final prefs = await SharedPreferences.getInstance();
+      // SECURITY: Read from secure storage first. A local storage failure
+      // (plugin error) must not kill the whole flow — treat as empty.
+      String? secureJson;
+      try {
+        secureJson = await _nwcSecureStorage.read(key: _storageKey);
+      } catch (_) {}
+      SharedPreferences? prefs;
+      try {
+        prefs = await SharedPreferences.getInstance();
+      } catch (_) {}
 
       List<NwcConnection> connections = [];
 
@@ -145,7 +152,7 @@ class NwcNotifier extends Notifier<NwcState> {
         connections = list
             .map((s) => NwcConnection.fromJson(_decode(s)))
             .toList();
-      } else {
+      } else if (prefs != null) {
         // Migration: load from legacy SharedPreferences
         final listJson = prefs.getStringList(_storageKey) ?? [];
         if (listJson.isNotEmpty) {
@@ -155,15 +162,17 @@ class NwcNotifier extends Notifier<NwcState> {
                       {}))
               .toList();
           // Migrate to secure storage
-          await _nwcSecureStorage.write(
-              key: _storageKey, value: jsonEncode(listJson));
-          // Remove from insecure storage
-          await prefs.remove(_storageKey);
+          try {
+            await _nwcSecureStorage.write(
+                key: _storageKey, value: jsonEncode(listJson));
+            // Remove from insecure storage
+            await prefs.remove(_storageKey);
+          } catch (_) {}
         }
       }
 
       // Active ID is not sensitive — keep in SharedPreferences
-      final activeId = prefs.getString(_activeStorageKey);
+      final activeId = prefs?.getString(_activeStorageKey);
       state = state.copyWith(connections: connections, activeId: activeId);
 
       // Auto-restore the active connection if one exists
@@ -193,12 +202,14 @@ class NwcNotifier extends Notifier<NwcState> {
           key: _storageKey, value: jsonEncode(list));
 
       // Active ID is not sensitive — keep in SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      if (state.activeId != null) {
-        await prefs.setString(_activeStorageKey, state.activeId!);
-      } else {
-        await prefs.remove(_activeStorageKey);
-      }
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (state.activeId != null) {
+          await prefs.setString(_activeStorageKey, state.activeId!);
+        } else {
+          await prefs.remove(_activeStorageKey);
+        }
+      } catch (_) {}
     } catch (_) {}
   }
 

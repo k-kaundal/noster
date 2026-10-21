@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/utils/text_sanitize.dart';
 
 /// The free address someone gets without paying — derived from their pubkey.
 /// Stable, unique, and nothing leaked. Same algorithm as the web's
@@ -57,8 +58,9 @@ class PayLink {
   factory PayLink.fromJson(Map<String, dynamic> json) => PayLink(
         id: json['id'] as String,
         wallet: json['wallet'] as String? ?? '',
-        description: json['description'] as String? ?? '',
-        username: json['username'] as String?,
+        // Free text (defaults to the display name) — rendered in address lists.
+        description: sanitizeText(json['description'] as String? ?? ''),
+        username: sanitizeTextOrNull(json['username'] as String?),
         domain: json['domain'] as String?,
         zaps: json['zaps'] as bool? ?? false,
         disposable: json['disposable'] as bool? ?? false,
@@ -137,6 +139,29 @@ List<Nip5Domain> parseNip5Domains() {
 /// Every domain this deployment sells names under, best first.
 final nip5Domains = parseNip5Domains();
 
+/// Every domain a lightning address can be claimed under, best first.
+///
+/// The singular `Env.lightningAddressDomain` names the primary, so it stays
+/// the default; `Env.lightningAddressDomains` adds the rest as bare hostnames
+/// separated by commas or whitespace (pay links address a domain by its
+/// hostname, no extension id needed).
+List<String> parseLightningAddressDomains() {
+  final domains = <String>[];
+  void add(String raw) {
+    final d = raw.trim().toLowerCase();
+    if (d.isEmpty || !d.contains('.')) return;
+    if (!domains.contains(d)) domains.add(d);
+  }
+
+  add(Env.lightningAddressDomain);
+  for (final entry in Env.lightningAddressDomains.split(RegExp(r'[\s,]+'))) {
+    add(entry);
+  }
+  return domains;
+}
+
+final lightningAddressDomains = parseLightningAddressDomains();
+
 /// The configured domain with this id, when it is one of ours.
 Nip5Domain? nip5DomainById(String? id) {
   if (id == null) return null;
@@ -153,13 +178,23 @@ String nip5Host(String? domainId) {
 }
 
 /// A NIP-05 address as returned by the nostrnip5 extension.
+///
+/// `active: false` means the invoice has not settled — the name is RESERVED
+/// but never went live. That is NOT the same as expired (a paid name that
+/// lapsed): an unpaid name has no renew button, it has a "pay for it" one.
+/// Mirrors the web's `nip5State`.
 class Nip5Address {
   final String id;
   final String domainId;
   final String localPart;
   final String pubkey;
   final bool active;
+  final bool isFree;
   final int? years;
+
+  /// ISO 8601 — written when the record is CREATED (so an unpaid reservation
+  /// carries a date a year out), only meaningful once `active`.
+  final String? expiresAt;
   final Map<String, dynamic>? extra;
 
   const Nip5Address({
@@ -168,22 +203,93 @@ class Nip5Address {
     required this.localPart,
     required this.pubkey,
     this.active = false,
+    this.isFree = false,
     this.years,
+    this.expiresAt,
     this.extra,
   });
 
-  factory Nip5Address.fromJson(Map<String, dynamic> json) => Nip5Address(
-        id: json['id'] as String,
-        domainId: json['domain_id'] as String? ?? '',
-        localPart: json['local_part'] as String? ?? '',
-        pubkey: json['pubkey'] as String? ?? '',
-        active: json['active'] as bool? ?? false,
-        years: (json['years'] as num?)?.toInt(),
-        extra: json['extra'] as Map<String, dynamic>?,
-      );
+  factory Nip5Address.fromJson(Map<String, dynamic> json) {
+    final extra = json['extra'] as Map<String, dynamic>?;
+    return Nip5Address(
+      id: json['id'] as String,
+      domainId: json['domain_id'] as String? ?? '',
+      // API-sourced — sanitize before it reaches a Text widget (the
+      // identifier renders in monospace in several places).
+      localPart: sanitizeText(json['local_part'] as String? ?? ''),
+      pubkey: json['pubkey'] as String? ?? '',
+      active: json['active'] as bool? ?? false,
+      isFree: json['is_free'] as bool? ?? false,
+      // `years` can live on the record or inside extra, depending on route.
+      years: (json['years'] as num?)?.toInt() ??
+          (extra?['years'] as num?)?.toInt(),
+      expiresAt: json['expires_at'] as String?,
+      extra: extra,
+    );
+  }
 
   /// The full NIP-05 identifier, using the address's own domain.
   String get identifier => '$localPart@${nip5Host(domainId)}';
+
+  /// Whether this name is reserved-but-unpaid (never went live).
+  bool get isUnpaid => !active;
+
+  /// Expiry as epoch ms, or null when the name does not expire. Only real
+  /// once active — the date exists on an unpaid reservation too, but says
+  /// nothing (see web's `RentedUntil`, which renders nothing when unpaid).
+  int? get expiresAtMs {
+    final raw = expiresAt;
+    if (raw == null) return null;
+    return DateTime.tryParse(raw)?.millisecondsSinceEpoch;
+  }
+
+  /// Whole days left, negative once lapsed. Null when it never expires.
+  int? get daysUntilExpiry {
+    final expiry = expiresAtMs;
+    if (expiry == null) return null;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return ((expiry - now) / 86400000).ceil();
+  }
+
+  /// Payment hash for an unpaid reservation, when the server recorded one.
+  /// (The extension only writes `extra.payment_hash` at activation, so this
+  /// is usually empty while unpaid — the app's own stored hash covers that
+  /// window, see `nip5_providers` pending-invoice store.)
+  String? get outstandingPaymentHash {
+    if (active) return null;
+    final hash = extra?['payment_hash'];
+    return hash is String && hash.isNotEmpty ? hash : null;
+  }
+
+  /// The price the invoice asked for, in sats, when recorded.
+  int? get priceSats {
+    final v = extra?['price_in_sats'] ?? extra?['price'];
+    return (v as num?)?.toInt();
+  }
+
+  /// The promo code the reservation was made with, so paying later re-prices
+  /// it the same rather than at full rate.
+  String? get promoCode {
+    final v = extra?['promo_code'];
+    return v is String && v.isNotEmpty ? v : null;
+  }
+}
+
+/// How long before expiry the renewal warning starts (web RENEWAL_WINDOW_DAYS).
+const nip5RenewalWindowDays = 30;
+
+/// The state worth telling someone about (web `nip5State`).
+enum Nip5Status { inactive, expired, expiring, active }
+
+/// `active: false` comes first because the extension uses it for a name whose
+/// invoice has not settled — that one is not expired, it was never live.
+Nip5Status nip5Status(Nip5Address a) {
+  if (!a.active) return Nip5Status.inactive;
+  final days = a.daysUntilExpiry;
+  if (days == null) return Nip5Status.active;
+  if (days <= 0) return Nip5Status.expired;
+  if (days <= nip5RenewalWindowDays) return Nip5Status.expiring;
+  return Nip5Status.active;
 }
 
 /// A NIP-05 search result (availability + price).
@@ -217,12 +323,13 @@ class Nip5SearchResult {
   factory Nip5SearchResult.fromJson(Map<String, dynamic> json) =>
       Nip5SearchResult(
         available: json['available'] as bool? ?? false,
-        reason: json['reason'] as String?,
+        // API-sourced free text rendered in the UI — sanitize.
+        reason: sanitizeText(json['reason'] as String?),
         price: (json['price'] as num?)?.toDouble(),
         priceSats: (json['price_in_sats'] as num?)?.toInt() ??
             (json['price_sats'] as num?)?.toInt(),
         currency: json['currency'] as String?,
-        priceReason: json['price_reason'] as String?,
+        priceReason: sanitizeText(json['price_reason'] as String?),
         priceUsdCents: (json['price_usd_cents'] as num?)?.toInt(),
       );
 
@@ -280,8 +387,10 @@ class Nip5SearchResult {
 class AddressException implements Exception {
   final String message;
   const AddressException(this.message);
+  /// Server `detail` text is rendered via toString in dialogs/toasts —
+  /// sanitize there so a malformed server message can't crash the text engine.
   @override
-  String toString() => message;
+  String toString() => sanitizeText(message);
 }
 
 /// Lightning address and NIP-05 service, backed by LNbits extensions.
@@ -368,6 +477,26 @@ class AddressService {
         'zaps': true,
       },
       parser: (json) => PayLink.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  /// Delete a pay link (lightning address). `DELETE /lnurlp/api/v1/links/{id}`.
+  ///
+  /// The web app deliberately never deletes lightning addresses (docs: the
+  /// next claimant would start receiving money aimed at the previous owner).
+  /// Offered here for symmetry with the NIP-05 release — the CALLER decides,
+  /// with a confirm, whether freeing an address is worth that risk.
+  Future<void> deletePayLink({
+    required String apiKey,
+    String? token,
+    required String linkId,
+  }) async {
+    await _request<dynamic>(
+      '/lnurlp/api/v1/links/$linkId',
+      method: 'DELETE',
+      apiKey: apiKey,
+      token: token,
+      parser: (json) => json,
     );
   }
 
@@ -502,6 +631,83 @@ class AddressService {
         'min': ?minSats,
         'max': ?maxSats,
       },
+      parser: (json) => json,
+    );
+  }
+
+  /// Delete one of the user's own NIP-05 addresses (user-scoped route).
+  ///
+  /// For an UNPAID (reserved, never-live) name this RELEASES it back to the
+  /// pool immediately — the whole point of the anti-squatting guard. For a
+  /// PAID/active name it also deletes; the caller confirms separately because
+  /// that throws away money.
+  ///
+  /// `DELETE /nostrnip5/api/v1/user/domain/{did}/address/{addressId}`
+  Future<void> deleteNip5Address({
+    required String addressId,
+    String? domainId,
+    String? token,
+  }) async {
+    final did = domainId ?? Env.nip5DomainId;
+    await _request<dynamic>(
+      '/nostrnip5/api/v1/user/domain/$did/address/$addressId',
+      method: 'DELETE',
+      token: token,
+      parser: (json) => json,
+    );
+  }
+
+  /// Get a transfer code for an address the user owns (starts a transfer to
+  /// another user). `GET .../address/{addressId}/transfer` → `{ transfer_code }`.
+  Future<String> getNip5TransferCode({
+    required String addressId,
+    String? domainId,
+    String? token,
+  }) async {
+    final did = domainId ?? Env.nip5DomainId;
+    final json = await _request<dynamic>(
+      '/nostrnip5/api/v1/domain/$did/address/$addressId/transfer',
+      token: token,
+      parser: (json) => json,
+    );
+    final code = (json as Map<String, dynamic>)['transfer_code'];
+    return code is String ? code : '';
+  }
+
+  /// Lock an identifier for transfer (only the returned lock code can unlock
+  /// or complete it). `PUT .../address/lock` → `{ lock_code }`.
+  Future<String> lockNip5Address({
+    required String transferCode,
+    String? domainId,
+    String? token,
+  }) async {
+    final did = domainId ?? Env.nip5DomainId;
+    final json = await _request<dynamic>(
+      '/nostrnip5/api/v1/domain/$did/address/lock',
+      method: 'PUT',
+      token: token,
+      body: {'transfer_code': transferCode},
+      parser: (json) => json,
+    );
+    final code = (json as Map<String, dynamic>)['lock_code'];
+    return code is String ? code : '';
+  }
+
+  /// Rotate the pubkey an address verifies (re-point the name at a different
+  /// Nostr key). `PUT .../address/{addressId}/rotate`.
+  Future<void> rotateNip5Address({
+    required String addressId,
+    required String secret,
+    required String pubkey,
+    String? domainId,
+    String? token,
+  }) async {
+    final did = domainId ?? Env.nip5DomainId;
+    await _request<dynamic>(
+      '/nostrnip5/api/v1/domain/$did/address/$addressId/rotate',
+      method: 'PUT',
+      token: token,
+      body: {'secret': secret, 'pubkey': pubkey},
       parser: (json) => json,
     );
   }

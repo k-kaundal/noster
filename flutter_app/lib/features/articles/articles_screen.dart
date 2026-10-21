@@ -13,9 +13,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/utils/markdown.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/features/articles/article_editor_screen.dart';
 import 'package:nostrfeed_mobile/features/zap/zap_sheet.dart';
 
 class ArticlesScreen extends ConsumerWidget {
@@ -49,10 +51,23 @@ class ArticlesScreen extends ConsumerWidget {
         itemBuilder: (context, event) => _ArticleCard(event: event),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
+        onPressed: () => _openEditor(context, ref),
         icon: const Icon(Icons.edit_note),
         label: const Text('Write'),
       ),
+    );
+  }
+
+  /// Open the NIP-23 article editor (login-gated).
+  void _openEditor(BuildContext context, WidgetRef ref) {
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      AppToast.warning(context, 'Log in to write articles');
+      context.push('/login');
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ArticleEditorScreen()),
     );
   }
 }
@@ -74,12 +89,10 @@ class _ArticleCard extends ConsumerWidget {
     // Use markdownToText for a clean summary without formatting artifacts
     final summary =
         event.getTag('summary') ??
-        markdownToText(event.content).substring(
-          0,
-          markdownToText(event.content).length > 180
-              ? 180
-              : markdownToText(event.content).length,
-        );
+        () {
+          final plain = sanitizeMarkdownText(markdownToText(event.content));
+          return plain.length > 180 ? plain.substring(0, 180) : plain;
+        }();
     final image = event.getTag('image');
     final readTime = _estimateReadTime(event.content);
     final profileAsync = ref.watch(profileProvider(event.pubkey));
@@ -256,9 +269,7 @@ class _ArticleCard extends ConsumerWidget {
   }
 
   void _openArticle(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ArticleReaderScreen(event: event)),
-    );
+    context.push('/articles/reader', extra: event);
   }
 }
 

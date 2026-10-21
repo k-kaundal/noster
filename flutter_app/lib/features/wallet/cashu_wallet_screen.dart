@@ -10,6 +10,20 @@ import 'package:nostrfeed_mobile/features/wallet/services/cashu_service.dart';
 /// Cashu ecash wallet screen. Supports minting (Lightning → ecash),
 /// sending (create token), receiving (redeem token), and melting
 /// (ecash → Lightning).
+/// Shorten a proof secret for display without splitting UTF-16 surrogates.
+String _shortSecret(String secret) {
+  if (secret.length <= 12) return secret;
+  // Walk back from 12 so we never cut a surrogate pair in half.
+  var end = 12;
+  final codes = secret.codeUnits;
+  if (end < codes.length &&
+      codes[end - 1] >= 0xD800 &&
+      codes[end - 1] <= 0xDBFF) {
+    end--;
+  }
+  return '${secret.substring(0, end)}…';
+}
+
 class CashuWalletScreen extends ConsumerStatefulWidget {
   const CashuWalletScreen({super.key});
 
@@ -219,7 +233,7 @@ class _CashuWalletScreenState extends ConsumerState<CashuWalletScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     subtitle: Text(
-                      '${proof.secret.substring(0, 12)}…',
+                      _shortSecret(proof.secret),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   );

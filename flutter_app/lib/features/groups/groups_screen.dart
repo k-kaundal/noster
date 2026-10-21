@@ -1,163 +1,223 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
-import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
-import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
-import 'package:nostrfeed_mobile/features/groups/group_chat_screen.dart';
+import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/features/groups/create_group_sheet.dart';
+import 'package:nostrfeed_mobile/features/groups/models/group_models.dart';
+import 'package:nostrfeed_mobile/features/groups/providers/group_providers.dart';
 
+/// Groups home: browse NIP-29 relay groups + "My Groups" + join/leave.
 class GroupsScreen extends ConsumerWidget {
   const GroupsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Reuse communities provider; NIP-29 groups are kind 39000 metadata events
-    final groups = ref.watch(communitiesProvider);
+    final groupsAsync = ref.watch(groupsProvider);
+    final myGroupsAsync = ref.watch(myGroupsProvider);
+    final auth = ref.watch(authStateProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Groups'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {},
-            tooltip: 'Search groups',
+    return DetailScaffold(
+      title: 'Groups',
+      body: groupsAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Failed to load groups'),
+              TextButton(
+                onPressed: () => ref.invalidate(groupsProvider),
+                child: const Text('Retry'),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: AsyncFeedList<NostrEvent>(
-        value: groups,
-        onRefresh: () async => ref.invalidate(communitiesProvider),
-        emptyState: const EmptyState(
-          icon: Icons.group_outlined,
-          title: 'No groups found',
-          subtitle: 'Relay-hosted groups will appear here.',
         ),
-        separator: const SizedBox(height: 8),
-        padding: const EdgeInsets.all(12),
-        itemBuilder: (context, event) => _GroupCard(event: event),
+        data: (groups) {
+          final myGroups = myGroupsAsync.valueOrNull ?? [];
+          final myIds = myGroups.map((g) => g.groupId).toSet();
+          final discover = groups
+              .where((g) => !myIds.contains(g.groupId))
+              .toList();
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(groupsProvider);
+              ref.invalidate(myGroupsProvider);
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(12),
+              children: [
+                // ── My Groups ──
+                if (myGroups.isNotEmpty) ...[
+                  _SectionHeader(title: 'My Groups (${myGroups.length})'),
+                  for (final g in myGroups)
+                    _GroupCard(group: g, isMember: true),
+                  const SizedBox(height: 16),
+                ],
+
+                // ── Discover ──
+                _SectionHeader(title: myGroups.isEmpty ? 'Groups' : 'Discover'),
+                if (groups.isEmpty)
+                  const EmptyState(
+                    icon: Icons.group_outlined,
+                    title: 'No groups found',
+                    subtitle: 'Relay-hosted groups will appear here.',
+                  )
+                else if (discover.isEmpty && myGroups.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: Text('You joined all available groups 🎉'),
+                    ),
+                  )
+                else
+                  for (final g in discover)
+                    _GroupCard(group: g, isMember: false),
+              ],
+            ),
+          );
+        },
+      ),
+      floatingActionButton: auth.isLoggedIn
+          ? FloatingActionButton.extended(
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                showDragHandle: true,
+                builder: (_) => const CreateGroupSheet(),
+              ),
+              icon: const Icon(Icons.group_add_rounded),
+              label: const Text('Create Group'),
+            )
+          : null,
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.4,
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
 }
 
-class _GroupCard extends ConsumerStatefulWidget {
-  final NostrEvent event;
-  const _GroupCard({required this.event});
+class _GroupCard extends ConsumerWidget {
+  final GroupInfo group;
+  final bool isMember;
+  const _GroupCard({required this.group, required this.isMember});
 
   @override
-  ConsumerState<_GroupCard> createState() => _GroupCardState();
-}
-
-class _GroupCardState extends ConsumerState<_GroupCard> {
-  bool _joined = false;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final event = widget.event;
-    final name = event.getTag('name') ?? 'Unnamed Group';
-    final about = event.getTag('about') ?? '';
-    final picture = event.getTag('picture');
-    final lastActivity = DateTime.fromMillisecondsSinceEpoch(
-        event.createdAt * 1000);
+    final membersAsync = ref.watch(groupMembersProvider(group.groupId));
+    final memberCount = membersAsync.valueOrNull?.length;
+    final auth = ref.watch(authStateProvider);
 
     return Card(
+      margin: const EdgeInsets.only(bottom: 10),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
-        onTap: () => _openGroupChat(context),
+        onTap: () => context.push('/groups/chat', extra: _toEvent(group)),
         child: Padding(
           padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  SafeAvatar(
-                    imageUrl: picture,
-                    radius: 26,
-                    backgroundColor: scheme.primaryContainer,
-                    fallback: Icon(Icons.group,
-                        color: scheme.onPrimaryContainer),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              SafeAvatar(
+                imageUrl: group.picture,
+                radius: 26,
+                backgroundColor: scheme.primaryContainer,
+                fallback: Icon(
+                  Icons.group_rounded,
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Text(
-                          name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 15),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        Flexible(
+                          child: Text(
+                            group.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Active ${timeago.format(lastActivity)}',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: scheme.onSurfaceVariant),
-                        ),
+                        if (!group.isPublic) ...[
+                          const SizedBox(width: 5),
+                          Icon(
+                            Icons.lock_outline,
+                            size: 13,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ],
+                        if (!group.isOpen) ...[
+                          const SizedBox(width: 5),
+                          Icon(
+                            Icons.vpn_key_outlined,
+                            size: 13,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ],
                       ],
                     ),
-                  ),
-                  FilledButton.tonal(
-                    onPressed: () => setState(() => _joined = !_joined),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(0, 32),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                    ),
-                    child: Text(
-                      _joined ? 'Leave' : 'Join',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-              if (about.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Text(
-                  about,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant,
-                      height: 1.4),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              const SizedBox(height: 10),
-              // Chat preview
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.chat_bubble_outline,
-                        size: 14, color: scheme.onSurfaceVariant),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Tap to open group chat',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                            fontStyle: FontStyle.italic),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if (memberCount != null)
+                          '$memberCount member${memberCount == 1 ? '' : 's'}',
+                        'active ${timeago.format(DateTime.fromMillisecondsSinceEpoch(group.createdAt * 1000))}',
+                      ].join(' · '),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
-                    Icon(Icons.chevron_right,
-                        size: 16, color: scheme.onSurfaceVariant),
+                    if (group.about.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        group.about,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              if (auth.isLoggedIn && !auth.isReadOnly)
+                _JoinButton(group: group, isMember: isMember),
             ],
           ),
         ),
@@ -165,13 +225,74 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
     );
   }
 
-  void _openGroupChat(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => GroupChatScreen(groupEvent: widget.event),
+  // GroupInfo → minimal NostrEvent for the chat screen (which reads tags).
+  NostrEvent _toEvent(GroupInfo g) => NostrEvent(
+    id: g.id,
+    pubkey: g.relayPubkey,
+    createdAt: g.createdAt,
+    kind: 39000,
+    content: '',
+    tags: [
+      ['d', g.groupId],
+      ['name', g.name],
+      if (g.about.isNotEmpty) ['about', g.about],
+      if (g.picture != null) ['picture', g.picture!],
+    ],
+    sig: '',
+  );
+}
+
+class _JoinButton extends ConsumerStatefulWidget {
+  final GroupInfo group;
+  final bool isMember;
+  const _JoinButton({required this.group, required this.isMember});
+
+  @override
+  ConsumerState<_JoinButton> createState() => _JoinButtonState();
+}
+
+class _JoinButtonState extends ConsumerState<_JoinButton> {
+  bool _busy = false;
+
+  Future<void> _toggle() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final controller = ref.read(groupControllerProvider);
+      if (widget.isMember) {
+        await controller.leave(widget.group.groupId);
+        if (mounted) AppToast.info(context, 'Left group');
+      } else {
+        await controller.join(widget.group.groupId);
+        if (mounted) AppToast.success(context, 'Join request sent');
+      }
+    } catch (e) {
+      if (mounted) AppToast.error(context, 'Failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonal(
+      onPressed: _busy ? null : _toggle,
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, 34),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
       ),
+      child: _busy
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Text(
+              widget.isMember
+                  ? 'Leave'
+                  : (widget.group.isOpen ? 'Join' : 'Request'),
+              style: const TextStyle(fontSize: 13),
+            ),
     );
   }
 }
-
-

@@ -10,6 +10,8 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
 import 'package:nostrfeed_mobile/features/feed/providers/post_actions.dart';
@@ -254,6 +256,8 @@ class _PostCardState extends ConsumerState<PostCard> {
                       pubkey: displayEvent.pubkey,
                       isFollowing: isFollowing,
                     ),
+                  // Post options (report, etc.) — required for Play review.
+                  _PostOptionsMenu(event: displayEvent),
                 ],
               ),
               const SizedBox(height: 10),
@@ -463,6 +467,70 @@ class _PostCardState extends ConsumerState<PostCard> {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
     return '$n';
+  }
+}
+
+// ─── Post Options Menu ──────────────────────────────────────────────
+
+/// 3-dot menu on every post: Report (NIP-56, required by Google Play's
+/// child-safety review), plus Copy link / Copy text.
+class _PostOptionsMenu extends StatelessWidget {
+  final NostrEvent event;
+  const _PostOptionsMenu({required this.event});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      icon: Icon(
+        Icons.more_vert_rounded,
+        size: 18,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      tooltip: 'Post options',
+      padding: EdgeInsets.zero,
+      onSelected: (value) {
+        switch (value) {
+          case 'report':
+            showReportDialog(
+              context,
+              eventId: event.id,
+              pubkey: event.pubkey,
+            );
+          case 'copy_text':
+            Clipboard.setData(ClipboardData(text: event.content));
+            AppToast.success(context, 'Text copied');
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'report',
+          child: Row(
+            children: [
+              Icon(
+                Icons.flag_outlined,
+                size: 18,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Report post',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'copy_text',
+          child: Row(
+            children: [
+              Icon(Icons.copy_outlined, size: 18),
+              SizedBox(width: 10),
+              Text('Copy text'),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 

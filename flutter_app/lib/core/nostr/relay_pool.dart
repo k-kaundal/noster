@@ -7,6 +7,14 @@ import 'package:nostrfeed_mobile/core/config/env.dart';
 
 enum RelayState { disconnected, connecting, connected, authRequired, error }
 
+/// A live subscription that must be re-issued when the socket reconnects.
+class _PersistentSub {
+  final String id;
+  final List<NostrFilter> filters;
+  final StreamController<NostrEvent> controller;
+  _PersistentSub(this.id, this.filters, this.controller);
+}
+
 /// A single relay WebSocket connection with NIP-42 auth support.
 class RelayConnection {
   final String url;
@@ -14,6 +22,11 @@ class RelayConnection {
   RelayState state = RelayState.disconnected;
   String? lastError;
   final Map<String, StreamController<NostrEvent>> _subs = {};
+
+  /// Live subscriptions keyed by id, kept so they can be RE-ISSUED after a
+  /// reconnect (sockets die on idle/background; without resubscription the
+  /// app goes silent until restarted).
+  final Map<String, _PersistentSub> _persistentSubs = {};
   final _uuid = const Uuid();
 
   /// NIP-42 auth challenge
@@ -54,6 +67,8 @@ class RelayConnection {
         onError: _handleError,
         onDone: _handleDone,
       );
+      // Re-issue any subscriptions that were live before the socket dropped.
+      _resubscribeAll();
     } catch (e) {
       lastError = e.toString();
       _setState(RelayState.error);
@@ -95,6 +110,13 @@ class RelayConnection {
     );
     _reconnectAttempts++;
     _reconnectTimer = Timer(delay, () => connect());
+  }
+
+  /// Reset the exponential backoff (used on app-resume so reconnects fire
+  /// immediately instead of waiting out a long idle-built backoff).
+  void resetBackoff() {
+    _reconnectAttempts = 0;
+    _reconnectTimer?.cancel();
   }
 
   void _handleMessage(dynamic raw) {
@@ -166,6 +188,10 @@ class RelayConnection {
     _subs[id] = controller;
     _eoseCompleters[id] = eoseCompleter;
 
+    // Track for re-issue on reconnect (streaming subs only — one-shot
+    // queries complete via EOSE and don't need persistence).
+    _persistentSubs[id] = _PersistentSub(id, filters, controller);
+
     if (state == RelayState.connected) {
       final msg = jsonEncode(['REQ', id, ...filters.map((f) => f.toJson())]);
       _channel?.sink.add(msg);
@@ -187,8 +213,23 @@ class RelayConnection {
     try {
       _channel?.sink.add(jsonEncode(['CLOSE', subId]));
     } catch (_) {}
+    _persistentSubs.remove(subId);
     _subs.remove(subId)?.close();
     _eoseCompleters.remove(subId);
+  }
+
+  /// Re-issue all live subscriptions after a reconnect. Called when the
+  /// socket comes back up — Android kills idle sockets, so without this the
+  /// app receives nothing until restarted.
+  void _resubscribeAll() {
+    for (final sub in _persistentSubs.values) {
+      try {
+        final msg = jsonEncode(
+          ['REQ', sub.id, ...sub.filters.map((f) => f.toJson())],
+        );
+        _channel?.sink.add(msg);
+      } catch (_) {}
+    }
   }
 
   /// Fire-and-forget publish (legacy). Prefer [publishWithAck] for anything
@@ -262,6 +303,23 @@ class RelayPool {
 
   int get connectedCount =>
       _relays.values.where((r) => r.isConnected).length;
+
+  /// Reconnect any dead sockets. Called when the app returns to the
+  /// foreground — Android suspends idle sockets (20min–1hr), so on resume
+  /// we kick every disconnected relay back to life (each reconnect then
+  /// re-issues its live subscriptions via `_resubscribeAll`).
+  Future<void> reconnectDead() async {
+    for (final conn in _relays.values) {
+      if (!conn.isConnected &&
+          conn.state != RelayState.connecting &&
+          conn.state != RelayState.authRequired) {
+        // Reset the backoff so resume reconnects immediately, not after the
+        // capped 30s backoff that built up while the phone was idle.
+        conn.resetBackoff();
+        await conn.connect();
+      }
+    }
+  }
 
   Future<void> connectAll() async {
     final futures = relayUrls.map((url) {

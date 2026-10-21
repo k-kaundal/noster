@@ -9,6 +9,7 @@ import 'package:nostrfeed_mobile/features/wallet/widgets/buy_name_section.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/current_address_section.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/existing_wallet_sign_in_dialog.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/receive_dialog.dart';
+import 'package:nostrfeed_mobile/features/wallet/widgets/send_dialog.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/free_address_section.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/payments_list.dart';
 import 'package:nostrfeed_mobile/features/wallet/widgets/wallet_login_prompt.dart';
@@ -511,7 +512,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
           Expanded(
             child: FilledButton.tonalIcon(
               onPressed:
-                  balance > 0 ? () => _showSendDialog(context) : null,
+                  balance > 0 ? () => _showSendDialog(context, balance) : null,
               icon: const Icon(Icons.arrow_upward),
               label: const Text('Send'),
               style: FilledButton.styleFrom(
@@ -759,97 +760,10 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
 
   // ── Dialogs ──────────────────────────────────────────────────────────
 
-  void _showSendDialog(BuildContext context) {
-    final invoiceController = TextEditingController();
-    bool isSending = false;
-    String? errorMsg;
-
+  void _showSendDialog(BuildContext context, int balanceSats) {
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Send Payment'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: invoiceController,
-                decoration: const InputDecoration(
-                  labelText: 'BOLT11 Invoice',
-                  hintText: 'lnbc…',
-                  prefixIcon: Icon(Icons.bolt),
-                ),
-                maxLines: 3,
-                minLines: 1,
-              ),
-              if (errorMsg != null) ...[
-                const SizedBox(height: 12),
-                Text(errorMsg!,
-                    style: TextStyle(
-                        color: Theme.of(ctx).colorScheme.error,
-                        fontSize: 12),
-                    textAlign: TextAlign.center),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isSending ? null : () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              onPressed: isSending
-                  ? null
-                  : () async {
-                      final invoice = invoiceController.text.trim();
-                      if (invoice.isEmpty) return;
-                      setState(() {
-                        isSending = true;
-                        errorMsg = null;
-                      });
-                      try {
-                        final wallet = ref
-                            .read(lnbitsAuthProvider)
-                            .account
-                            ?.wallets
-                            .first;
-                        if (wallet?.adminkey == null) {
-                          throw const LnbitsException(
-                              'Admin key required to send', 0);
-                        }
-                        final service = LnbitsService();
-                        await service.payInvoice(
-                          apiKey: wallet!.adminkey!,
-                          bolt11: invoice,
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Payment sent')),
-                          );
-                        }
-                        // Refresh balance
-                        ref.read(lnbitsAuthProvider.notifier).refresh();
-                      } catch (e) {
-                        setState(() {
-                          isSending = false;
-                          errorMsg = e.toString();
-                        });
-                      }
-                    },
-              icon: isSending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-              label: const Text('Send'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => SendDialog(balanceSats: balanceSats),
     );
   }
 
