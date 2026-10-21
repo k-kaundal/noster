@@ -10,6 +10,8 @@ import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/features/premium/providers/premium_providers.dart';
 import 'package:nostrfeed_mobile/features/premium/services/admission_service.dart';
+import 'package:nostrfeed_mobile/features/premium/widgets/bunker_card.dart';
+import 'package:nostrfeed_mobile/features/premium/widgets/nwc_provider_card.dart';
 
 /// Premium: verified names (NIP-05) + paid relay + lightning addresses.
 class PremiumScreen extends ConsumerStatefulWidget {
@@ -275,6 +277,14 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 14),
+
+          // ── Feature 4 (premium): Nostr Bunker — remote signer ──
+          const BunkerCard(),
+          const SizedBox(height: 14),
+
+          // ── Feature 5 (premium): Wallet Connect (NWC) ──
+          const NwcProviderCard(),
           const SizedBox(height: 20),
 
           // ── What else is included ──

@@ -1,10 +1,11 @@
 # NostrFeed protocol notes
 
-This app publishes standard Nostr events. It defines no custom kinds.
-
-It does add fields to two existing schemas, documented here so another client
-reading NostrFeed's events knows what they are — and so a future version of
-this app does not quietly change their meaning.
+This app publishes standard Nostr events. It defines no custom kinds of its
+own — but it adds fields to existing schemas, and it publishes two kinds from
+outside the ratified set (one an unmerged draft, one a ratified NIP this file
+clarifies). Everything is documented here so another client reading
+NostrFeed's events knows what they are — and so a future version of this app
+does not quietly change their meaning.
 
 ## Avatar ring on profile metadata (kind 0)
 
@@ -158,3 +159,54 @@ so rather than implying otherwise. A browser tab that is closed pays nothing,
 and NIP-47 has no scheduling primitive — a wallet budget is a spending cap, not
 a standing order. Each payment buys one period; renewal is a person deciding
 again.
+
+## Zap goals (kind 9041, NIP-75)
+
+Unlike tiers, zap goals follow a ratified NIP. NostrFeed publishes and reads
+them as NIP-75 specifies, with the details below pinned down because they are
+the two every implementation gets wrong.
+
+```jsonc
+{
+  "kind": 9041,
+  "content": "Help fund the conference trip",
+  "tags": [
+    ["relays", "wss://a.example", "wss://b.example"],
+    ["amount", "2100000"],
+    ["summary", "Conference travel"],
+    ["closed_at", "1735689600"]
+  ]
+}
+```
+
+- **The `amount` tag is millisatoshis.** The editors take sats and multiply by
+  1,000; the cards divide for display. A target of `210000` is 210 sats.
+- **The `relays` tag is treated as the MUST the spec makes it.** Goals are
+  published with the client's connected relays, and `buildGoalTags` throws
+  rather than emit a bare `["relays"]` — that publishes cleanly but can never
+  be funded. Progress is tallied from the reader's relays *and* the goal's,
+  because a sender whose client ignored the MUST still produced a real
+  payment; the receipt is on the relays the zap request named.
+
+### Tallying
+
+Progress is the sum of **validated** zap receipts (kind 9735) whose zap request
+`e`-tags the goal — the same `explainZapReceipt` checks as every other figure
+in the app, because a kind 9735 naming any event and any amount is not proof
+of anything until the recipient's lightning server signed it.
+
+Receipts are windowed at both ends: not after `closed_at`, and **not before
+the goal's own `created_at`**, each with a 5-minute clock-skew tolerance.
+Without the lower bound, a goal announced by an older note instantly credits
+itself with every zap that note had ever collected. Valid zaps excluded by
+the window are reported (`excludedCount`/`excludedMsat`) rather than dropped.
+
+### Announcement
+
+A kind 9041 appears in no feed, so a goal on its own is close to invisible.
+NostrFeed announces goals in kind-1 notes carrying
+`["goal", "<goal-id>", "<relay hint>"]` — and counts zaps on the note toward
+the goal, because that is what a client that has never heard of NIP-75 zaps.
+Addressable events link to a goal with the same tag, read back via
+`linkedGoal`. A goal stays fundable after its target is met; only a passed
+`closed_at` stops the count.

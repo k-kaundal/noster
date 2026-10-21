@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart'
+    as lnbits;
 
 /// Storage key for the user's chosen LNbits instance URL.
 const _kLnbitsUrlKey = 'settings:lnbits_url';
@@ -23,12 +25,16 @@ class LnbitsUrlNotifier extends Notifier<String> {
     return Env.lnbitsUrl;
   }
 
+  /// Keep the no-arg `LnbitsService()` pointed at the same instance.
+  void _apply(String url) => lnbits.setActiveLnbitsUrl(url);
+
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final stored = prefs.getString(_kLnbitsUrlKey);
       if (stored != null && stored.isNotEmpty) {
         state = stored;
+        _apply(stored);
       }
     } catch (_) {}
   }
@@ -37,6 +43,7 @@ class LnbitsUrlNotifier extends Notifier<String> {
     final trimmed = url.trim().replaceAll(RegExp(r'/+$'), '');
     if (trimmed.isEmpty) return;
     state = trimmed;
+    _apply(trimmed);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kLnbitsUrlKey, trimmed);
@@ -45,6 +52,7 @@ class LnbitsUrlNotifier extends Notifier<String> {
 
   Future<void> reset() async {
     state = Env.lnbitsUrl;
+    _apply(Env.lnbitsUrl);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_kLnbitsUrlKey);

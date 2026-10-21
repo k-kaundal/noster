@@ -207,9 +207,10 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                   onScanned: (value) {
                     _uriController.text = value;
                     setState(() => _showScanner = false);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('URI scanned')),
-                    );
+                    // Connect straight away — the scan IS the intent. Filling
+                    // the field and stopping made the flow look broken: the QR
+                    // scanned and then nothing happened.
+                    _connect(context);
                   },
                 ),
               ),
@@ -487,15 +488,14 @@ class _QrScannerViewState extends State<_QrScannerView> {
 
   @override
   Widget build(BuildContext context) {
-    final scanWindow = Rect.fromCenter(
-      center: MediaQuery.of(context).size.center(Offset.zero),
-      width: 220,
-      height: 220,
-    );
-
+    // NO scanWindow. The old one was built from the SCREEN's centre
+    // (MediaQuery.size.center), but this scanner lives in a 280px card part
+    // way down a ListView — so the detection rect sat offset from the camera
+    // view and any QR outside that offset never scanned. Scanning the full
+    // frame and letting the overlay just *look* like a window is both simpler
+    // and correct; the overlay is cosmetic, the detection is not.
     return MobileScanner(
       controller: _controller,
-      scanWindow: scanWindow,
       onDetect: (capture) {
         if (_scanned) return;
         final barcode = capture.barcodes.firstOrNull;

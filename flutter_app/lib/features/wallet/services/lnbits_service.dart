@@ -12,13 +12,23 @@ import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
 String get defaultLnbitsUrl =>
     Env.lnbitsUrl.replaceAll(RegExp(r'/+$'), '');
 
-/// Base URL of the LNbits instance this app talks to.
+/// The ACTIVE LNbits base URL.
 ///
-/// Kept for backwards compatibility. New code should use the configurable
-/// `lnbitsUrlProvider` from `settings_providers.dart` instead, so a user
-/// whose instance has a different `nostr_absolute_request_urls` can point
-/// the app at the right one without a rebuild.
-String get lnbitsUrl => defaultLnbitsUrl;
+/// `LnbitsService()` (no args) talks to this. It starts as the compile-time
+/// default and is updated by `LnbitsUrlNotifier` (`settings_providers.dart`)
+/// the moment the user changes the instance in Settings — so a no-arg
+/// service honours the override without every call site threading it through.
+/// (This mirrors the web's module-level `LNBITS_URL`, but mutable.)
+String _activeLnbitsUrl = defaultLnbitsUrl;
+
+String get lnbitsUrl => _activeLnbitsUrl;
+
+/// Point every no-arg `LnbitsService()` at a different instance. Called by
+/// `LnbitsUrlNotifier` on load + on change; never call it from a widget.
+void setActiveLnbitsUrl(String url) {
+  final trimmed = url.trim().replaceAll(RegExp(r'/+$'), '');
+  if (trimmed.isNotEmpty) _activeLnbitsUrl = trimmed;
+}
 
 /// House wallet: a receive-only shared wallet the app can issue invoices on.
 /// The invoice key ships in the bundle; it can only read balance + create
@@ -194,7 +204,7 @@ class LnbitsException implements Exception {
 /// default otherwise. Every instance of this class talks to exactly one
 /// LNbits deployment; the global `lnbitsUrl` is only the fallback.
 class LnbitsService {
-  LnbitsService({String? baseUrl}) : baseUrl = baseUrl ?? defaultLnbitsUrl;
+  LnbitsService({String? baseUrl}) : baseUrl = baseUrl ?? _activeLnbitsUrl;
 
   final String baseUrl;
 

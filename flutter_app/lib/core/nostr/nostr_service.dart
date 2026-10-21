@@ -275,6 +275,22 @@ class NostrService {
     );
   }
 
+  /// Sign an arbitrary kind — for event types without a dedicated factory
+  /// (subscription tiers, zap goals, zap requests, deletion requests…).
+  NostrEvent createEvent({
+    required int kind,
+    required String content,
+    List<List<String>> tags = const [],
+  }) {
+    _requireSigning();
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: kind,
+      content: content,
+      tags: tags,
+    );
+  }
+
   NostrEvent createReply(
     String content,
     String replyToId,
@@ -815,10 +831,36 @@ class NostrService {
       social.createGroupDeleteEvent(groupId, eventId);
 
   /// Toggle bookmark for an event (add or remove from kind 10003 list).
+  /// Awaited — the caller's toast only fires once the write is actually out.
   Future<void> toggleBookmark(
     String eventId,
     bool isCurrentlyBookmarked,
   ) => social.toggleBookmark(eventId, isCurrentlyBookmarked);
+
+  /// The current bookmarked event ids — merged across every relay revision
+  /// (kind 10003 is replaceable; a single-revision read is often stale) plus
+  /// the optimistic cache covering the propagation window after our own write.
+  Future<Set<String>> fetchBookmarkedIds(String pubkey) =>
+      social.fetchBookmarkedIds(pubkey);
+
+  // ── Studio: tiers + goals ───────────────────────────────────────────
+
+  /// Publish (or replace) a subscription tier (kind 37001).
+  NostrEvent createTier(List<List<String>> tags, {String content = ''}) =>
+      social.createTier(tags, content: content);
+
+  /// Publish a zap goal (NIP-75, kind 9041).
+  NostrEvent createGoal(List<List<String>> tags, {String content = ''}) =>
+      social.createGoal(tags, content: content);
+
+  /// Announce a goal as a kind-1 note with a `goal` tag — makes it fundable
+  /// by clients that have never heard of NIP-75.
+  NostrEvent announceGoal({
+    required String goalId,
+    String? relayHint,
+    required String content,
+  }) =>
+      social.announceGoal(goalId: goalId, relayHint: relayHint, content: content);
 
   /// NIP-04 encrypted DM (kind 4).
   NostrEvent createEncryptedDm(String peerPubkey, String plaintext) =>

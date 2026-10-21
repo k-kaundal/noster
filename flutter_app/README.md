@@ -31,6 +31,14 @@ for the full structure diagram and conventions.
 - **Shared UI kit**: `ErrorView`, `EmptyState`, `SkeletonList`,
   `AsyncFeedList`, `AppSheet`, `AppDialog` under `lib/core/widgets/`
 
+## Documentation
+
+- User guides ship **in the app** (Docs screen, `lib/features/docs/docs_data.dart`).
+- Protocol notes (event kinds, tag shapes, draft kinds): [`../NIP.md`](../NIP.md)
+- Creator monetization (Studio, memberships, zap goals — web + mobile):
+  [`../docs/studio-monetization.md`](../docs/studio-monetization.md)
+- Web-app guides (zaps, verified names, LNbits…): [`../docs/`](../docs/)
+
 ## Regenerating icons / splash
 
 ```bash

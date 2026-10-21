@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/lnbits_providers.dart';
+import 'package:nostrfeed_mobile/features/wallet/providers/wallet_tools_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/services/lnurl_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/utils/payment_input.dart';
@@ -133,6 +134,14 @@ class _SendDialogState extends ConsumerState<SendDialog> {
     final scheme = Theme.of(context).colorScheme;
     final target = _target;
     final invoiceSats = _invoiceSats;
+    // "≈ $X" for the amount about to be sent (and the balance), so a number
+    // in sats reads as money. null when the server has no rate — hidden then.
+    final fiat = _sats > 0
+        ? ref.watch(satsAsFiatProvider((_sats, 'USD'))).valueOrNull
+        : null;
+    final balanceFiat = ref
+        .watch(satsAsFiatProvider((widget.balanceSats, 'USD')))
+        .valueOrNull;
 
     return AlertDialog(
       title: Row(
@@ -228,8 +237,8 @@ class _SendDialogState extends ConsumerState<SendDialog> {
                     Expanded(
                       child: Text(
                         _overBalance
-                            ? 'Not enough balance (${_formatSats(widget.balanceSats)} sats)'
-                            : '${_formatSats(widget.balanceSats)} sats available',
+                            ? 'Not enough balance (${_formatSats(widget.balanceSats)} sats${balanceFiat != null ? ' $balanceFiat' : ''})'
+                            : '${_formatSats(widget.balanceSats)} sats available${balanceFiat != null ? ' $balanceFiat' : ''}',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -240,13 +249,26 @@ class _SendDialogState extends ConsumerState<SendDialog> {
                       ),
                     ),
                     if (_sats > 0 && !_overBalance)
-                      Text(
-                        '− ${_formatSats(_sats)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: scheme.error,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '− ${_formatSats(_sats)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: scheme.error,
+                            ),
+                          ),
+                          if (fiat != null)
+                            Text(
+                              fiat,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: scheme.error.withValues(alpha: 0.8),
+                              ),
+                            ),
+                        ],
                       ),
                   ],
                 ),

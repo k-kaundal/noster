@@ -19,6 +19,13 @@ class SocialRepository {
   profileCache;
   final Map<String, ({List<String> follows, int createdAt})> followsCache;
 
+  /// Optimistic bookmark-list cache, keyed by owner pubkey. Same problem as
+  /// follows: relays take a moment to propagate a new kind-10003, and a
+  /// re-read in that window would flip the bookmark icon back. Stores the
+  /// full id/address sets + the list's created_at.
+  final Map<String, ({Set<String> ids, Set<String> addresses, int createdAt})>
+  bookmarkCache = {};
+
   SocialRepository(
     this.relayPool,
     this.ctx,
@@ -650,27 +657,143 @@ class SocialRepository {
     );
   }
 
+  /// Pick the NEWEST revision of a replaceable kind-10003 list across every
+  /// relay. The whole bug this guards against: kind 10003 is replaceable, so
+  /// each relay can hold a different revision, and `limit: 1` picks one at
+  /// random — often a stale one — and writing from it resurrects
+  /// long-deleted bookmarks and drops newer ones.
+  ///
+  /// Pure, so the invariant is unit-testable without a relay pool.
+  static NostrEvent? newestBookmarkRevision(List<NostrEvent> events) {
+    if (events.isEmpty) return null;
+    var newest = events.first;
+    for (final e in events) {
+      if (e.createdAt > newest.createdAt) newest = e;
+    }
+    return newest;
+  }
+
+  /// Read the user's bookmark list as it actually stands: the union of every
+  /// revision relays hold, resolved to the NEWEST. The optimistic cache
+  /// covers the propagation window after our own write (same pattern as
+  /// fetchFollows).
+  Future<({Set<String> ids, Set<String> addresses})> _readBookmarks(
+      String pubkey) async {
+    // Optimistic fast path: our own recent write outranks any relay revision.
+    final cached = bookmarkCache[pubkey];
+
+    final events = await relayPool.query([
+      NostrFilter(kinds: [10003], authors: [pubkey]),
+    ], timeout: const Duration(seconds: 8));
+
+    final newest = newestBookmarkRevision(events);
+    if (newest != null) {
+      // Accept the relay revision only when it's at least as new as our own
+      // optimistic write; otherwise ours is fresher — keep it.
+      if (cached == null || newest.createdAt >= cached.createdAt) {
+        final ids = newest.eventRefs.toSet();
+        final addresses = newest.getTags('a').toSet();
+        bookmarkCache[pubkey] = (
+          ids: ids,
+          addresses: addresses,
+          createdAt: newest.createdAt,
+        );
+        return (ids: ids, addresses: addresses);
+      }
+      return (ids: cached.ids, addresses: cached.addresses);
+    }
+
+    // Relays have nothing — our optimistic list (if any) is all there is.
+    return cached == null
+        ? (ids: <String>{}, addresses: <String>{})
+        : (ids: cached.ids, addresses: cached.addresses);
+  }
+
   /// Toggle bookmark for an event (add or remove from kind 10003 list).
+  ///
+  /// Awaited so the caller's "removed/saved" toast only fires once the write
+  /// is actually out — and so a failed publish surfaces rather than lying.
   Future<void> toggleBookmark(
     String eventId,
     bool isCurrentlyBookmarked,
   ) async {
     ctx.requireSigning();
-    final lists = await relayPool.query([
-      NostrFilter(kinds: [10003], authors: [ctx.auth.pubkey!], limit: 1),
-    ], timeout: const Duration(seconds: 8));
-    final allIds = <String>{};
-    final addresses = <String>{};
-    for (final list in lists) {
-      allIds.addAll(list.eventRefs);
-      addresses.addAll(list.getTags('a'));
-    }
+    final pubkey = ctx.auth.pubkey!;
+    final current = await _readBookmarks(pubkey);
+    final allIds = current.ids;
+    final addresses = current.addresses;
     if (isCurrentlyBookmarked) {
       allIds.remove(eventId);
     } else {
       allIds.add(eventId);
     }
     final event = createBookmark(allIds.toList(), addresses.toList());
-    relayPool.publish(event);
+    // publishWithAck — confirms at least one relay accepted before the
+    // caller's toast fires, and throws if none did (so a failed save isn't
+    // reported as saved).
+    await relayPool.publishWithAck(event);
+    // Optimistically cache the new list so an immediate re-read doesn't flip
+    // the icon back while relays propagate.
+    bookmarkCache[pubkey] = (
+      ids: allIds,
+      addresses: addresses,
+      createdAt: event.createdAt,
+    );
+  }
+
+  /// The current bookmarked event ids (for the icon's filled/outline state).
+  Future<Set<String>> fetchBookmarkedIds(String pubkey) async {
+    return (await _readBookmarks(pubkey)).ids;
+  }
+
+  // ── Studio: subscription tiers (kind 37001) + zap goals (kind 9041) ──
+
+  /// Publish (or replace) a subscription tier. The `d` tag is the identity —
+  /// publishing with the same slug replaces the old version.
+  NostrEvent createTier(List<List<String>> tags, {String content = ''}) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 37001,
+      content: content,
+      tags: [
+        ...tags,
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Publish a zap goal (NIP-75, kind 9041).
+  NostrEvent createGoal(List<List<String>> tags, {String content = ''}) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 9041,
+      content: content,
+      tags: [
+        ...tags,
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Announce a goal as an ordinary kind-1 note carrying a `goal` tag — the
+  /// thing that makes it fundable by clients that have never heard of NIP-75.
+  /// Zaps on the note count toward the goal.
+  NostrEvent announceGoal({
+    required String goalId,
+    String? relayHint,
+    required String content,
+  }) {
+    ctx.requireSigning();
+    return ctx.authService.signEvent(
+      privateKey: ctx.auth.privateKey!,
+      kind: 1,
+      content: content,
+      tags: [
+        ['goal', goalId, ?relayHint],
+        ['client', 'nostrfeed'],
+      ],
+    );
   }
 }

@@ -677,6 +677,12 @@ class ModernDrawer extends ConsumerWidget {
                       onTap: () => _navigate(context, '/p2p'),
                     ),
                     _DrawerItem(
+                      icon: Icons.card_membership_rounded,
+                      title: 'Memberships',
+                      subtitle: 'Subscriptions & tiers',
+                      onTap: () => _navigate(context, '/memberships'),
+                    ),
+                    _DrawerItem(
                       icon: Icons.workspace_premium_rounded,
                       title: 'Premium',
                       subtitle: 'Upgrade your account',

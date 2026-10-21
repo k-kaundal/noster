@@ -8,6 +8,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
 import 'package:nostrfeed_mobile/features/settings/relay_settings_screen.dart';
+import 'package:nostrfeed_mobile/features/settings/widgets/wallet_settings_section.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
 
 /// App settings screen: profile, account keys, appearance, relays,
@@ -141,6 +142,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               title: const Text('Log in'),
               onTap: () => context.push('/login'),
             ),
+          const Divider(),
+
+          // -------------------------------------------------------------------
+          // Wallet
+          // -------------------------------------------------------------------
+          _sectionHeader('Wallet'),
+          const WalletSettingsSection(),
           const Divider(),
 
           // -------------------------------------------------------------------

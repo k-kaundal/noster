@@ -232,6 +232,14 @@ over ~100 lines.
   Shared pay-an-invoice UI is `core/widgets/pay_invoice_sheet.dart` (Pay
   button via `core/services/wallet_payment.dart`'s `payWithAnyWallet`:
   LNbits → NWC → Cashu, QR fallback) — used by NIP-05 purchase + paid relay.
+  **Core wallet tools** (`features/wallet/services/wallet_tools_service.dart`):
+  `decodePayment` (POST `/api/v1/payments/decode` — show amount+destination
+  before paying), `payLnurl` (server-side LNURL/zap pay), `recheckPending`
+  (`?recheck_pending=true` — stuck-invoice fix), `fiatRate`/`describeSatsAsFiat`
+  (`/api/v1/rate/{currency}` → "≈ $X" next to amounts, shown in Send sheet),
+  and `isExtensionInstalled(extId)` (`/api/v1/extension/all`) — the availability
+  probe every optional extension gates on (never offer a feature that 404s).
+  Providers in `wallet_tools_providers.dart`.
 - **Premium**: three pillars — NIP-05 verified names (`nostrnip5` extension,
   `you@ln.nostrfeed.com` / `you@getzap.me`), paid relay (`wss://paid.nostrfeed.com`
   via NIP-42 kind-22242 auth — already wired in `relay_pool.authHandler`),
@@ -251,6 +259,19 @@ over ~100 lines.
   mirrors web `src/lib/paidRelay.ts`). Admitted profiles get a shield
   `PaidRelayMark`/`PaidRelayBadge` (`features/premium/widgets/paid_badge.dart`)
   next to the verified ✓ — only on `admitted`, never on unknown.
+  **Premium-only features** (each a card on the Premium screen, gated on
+  `isPremiumProvider` + the extension being installed — three honest states:
+  not-installed / not-premium / ready):
+  - **Nostr Bunker** (`features/premium/` `services/bunker_service.dart` +
+    `providers/bunker_providers.dart` + `widgets/bunker_card.dart`, ext id
+    `nostr_bunker`): remote signer as a service — store an nsec server-side,
+    mint NIP-46 `bunker://` links (permissions + confirm-sign, revocable) so
+    the key never lives on-device.
+  - **NWC Provider** (`services/nwc_provider_service.dart` +
+    `providers/nwc_provider_providers.dart` + `widgets/nwc_provider_card.dart`,
+    ext id `nwcprovider`): mint `nostr+walletconnect://` URIs for the user's
+    own wallet with permissions + budgets (Alby-Hub-style self-custody
+    sharing). The pairing URI is shown ONCE — not recoverable after.
   **Custom names are PAID**: `LightningAddressNotifier.claim` only accepts the
   user's own free generated name (or an already-owned re-claim) — custom names
   must go through the buy-name flow (invoice first). Claiming a custom name
@@ -314,6 +335,52 @@ over ~100 lines.
 - **Async safety**: guard `setState`/context use after async gaps with
   `mounted`; wrap fire-and-forget futures in `unawaited()`.
 - **Secrets**: never hardcode — use `--dart-define` with `Env` class.
+
+## In-app documentation
+
+- **Docs** (`features/docs/`): user-facing guides, not developer docs.
+  `docs_data.dart` holds the catalogue (`AppDoc` entries with headed
+  `DocSection`s); `docs_screen.dart` renders search + category chips + cards,
+  and a `_DocReaderScreen` that prints the sections. A guide with a `route`
+  gets an "Open it" button deep-linking to its feature screen — write the
+  guide AND set the route; the card always opens the reader first.
+  Developer/protocol documentation lives in the repo `docs/` folder and
+  `NIP.md`, not here.
+
+## Studio, memberships & zap goals (premium-only seller side)
+
+- **Studio** (`features/studio/`): the creator dashboard, gated on
+  `canUseStudioProvider` (= `isPremiumProvider` — a paid, ACTIVE,
+  non-generated NIP-05 name or lightning address). Real earnings from
+  `studioEarningsProvider` — validated NIP-57 zap receipts naming the user,
+  split per-day, never hardcoded numbers. Non-premium users see the
+  `_StudioGate` upsell, signed-out users a sign-in prompt.
+- **Memberships** (`features/memberships/`): user-to-user subscriptions.
+  Selling (creating tiers) is premium-gated (`canSellMembershipsProvider`);
+  subscribing is open to anyone. **A subscription IS a zap to a tier** — the
+  receipt is the proof, nothing renews on its own. Tiers are kind 37001
+  (addressable, `d`-tag slug is identity — same slug replaces = edit).
+  Subscribe = NIP-57 zap whose request `a`-tags the tier
+  (`MembershipService.buildSubscriptionInvoice` → `showPayInvoiceSheet`);
+  confirmation is the receipt appearing on relays naming the tier + payer
+  (`_receiptSeen`), never a local record. Standing is computed from
+  validated receipts (`tierStanding`/`standingFrom` in
+  `features/studio/models/subscription.dart`, port of web
+  `lib/subscription.ts`); a period is bought by ONE payment covering the
+  price — underpayment is a tip, surfaced as `shortfallSats`.
+- **Zap goals** (NIP-75, kind 9041): model in
+  `features/studio/models/zap_goal.dart` (port of web `lib/nip75.ts`).
+  `relays` + `amount` (msat) tags are REQUIRED. Progress = validated 9735
+  receipts `e`-tagging the goal, tallied from the reader's relays; a goal is
+  funded by zapping it, or by announcing it in a kind-1 note carrying a
+  `goal` tag (`announceGoalProvider`) so zaps on the note count too. Create
+  via `ZapGoalEditorSheet`, card `ZapGoalCard` (announce/retire for own).
+- **Event creation**: `NostrService.createEvent(kind, content, tags)` signs
+  any kind (tiers 37001, goals 9041, zap requests 9734, deletions kind 5).
+- Providers: `studio/providers/studio_providers.dart` (earnings, goals,
+  publish/retire/announce) and `memberships/providers/membership_providers.dart`
+  (tiers, standings, subscribe invoice). All `.autoDispose` FutureProviders;
+  mutations invalidate the relevant providers after publishing.
 
 ## Testing
 

@@ -397,14 +397,9 @@ final bookmarksProvider = FutureProvider.autoDispose<List<NostrEvent>>((ref) asy
   final nostr = await _initNostr(ref);
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return [];
-  // Get the bookmark list (kind 10003)
-  final lists = await nostr.fetchBookmarks(auth.pubkey!);
-  if (lists.isEmpty) return [];
-  // Collect event IDs from all bookmark lists
-  final ids = <String>{};
-  for (final list in lists) {
-    ids.addAll(list.eventRefs);
-  }
+  // The merged id set (every relay revision + optimistic write), NOT
+  // fetchBookmarks' single stale revision.
+  final ids = await nostr.fetchBookmarkedIds(auth.pubkey!);
   if (ids.isEmpty) return [];
   // Fetch the bookmarked events
   final events = await nostr.relayPool.query([
@@ -419,12 +414,7 @@ final bookmarkedIdsProvider = FutureProvider.autoDispose<Set<String>>((ref) asyn
   final nostr = await _initNostr(ref);
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return {};
-  final lists = await nostr.fetchBookmarks(auth.pubkey!);
-  final ids = <String>{};
-  for (final list in lists) {
-    ids.addAll(list.eventRefs);
-  }
-  return ids;
+  return nostr.fetchBookmarkedIds(auth.pubkey!);
 });
 
 /// DMs
