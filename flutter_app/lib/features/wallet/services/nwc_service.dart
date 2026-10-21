@@ -6,6 +6,7 @@ import 'package:hex/hex.dart';
 import 'package:pointycastle/export.dart' as pc;
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/utils/text_sanitize.dart';
 import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart';
 
@@ -36,6 +37,11 @@ class NwcService {
   String? _clientPubkey;
   NwcInfo? _info;
   DateTime? _connectedAt;
+
+  /// Encryption scheme for requests: 'nip44' (modern wallets) or 'nip04'
+  /// (legacy). Auto-detected from the wallet's `get_info` advertisement, or
+  /// negotiated by trying NIP-44 first and falling back on failure.
+  String _encryption = 'nip44_v2';
 
   String? get connectionString => _connectionString;
   String? get walletPubkey => _walletPubkey;
@@ -89,24 +95,37 @@ class NwcService {
       return null;
     }
 
-    final params = Uri.splitQueryString(queryPart);
-    final secret = params['secret'];
-    if (secret == null || secret.length != 64) return null;
-
+    // Parse query params manually — NIP-47 allows MULTIPLE relay params,
+    // which Uri.splitQueryString collapses to the last one.
+    String? secret;
+    String? lud16;
     final relays = <String>[];
-    params.forEach((key, value) {
-      if (key == 'relay' && value.startsWith('wss://')) {
-        relays.add(value);
+    for (final pair in queryPart.split('&')) {
+      if (pair.isEmpty) continue;
+      final eq = pair.indexOf('=');
+      if (eq < 0) continue;
+      final key = Uri.decodeQueryComponent(pair.substring(0, eq));
+      final value = Uri.decodeQueryComponent(pair.substring(eq + 1));
+      switch (key) {
+        case 'secret':
+          secret = value;
+        case 'relay':
+          if (value.startsWith('wss://') || value.startsWith('ws://')) {
+            relays.add(value);
+          }
+        case 'lud16':
+          lud16 = value;
       }
-    });
+    }
 
+    if (secret == null || secret.length != 64) return null;
     if (relays.isEmpty) return null;
 
     return NwcUri(
       walletPubkey: pubkeyPart.toLowerCase(),
       relays: relays,
       secret: secret.toLowerCase(),
-      lud16: params['lud16'],
+      lud16: lud16,
     );
   }
 
@@ -142,7 +161,9 @@ class NwcService {
 
     final result = (response.result as Map?)?.cast<String, dynamic>() ?? {};
     _info = NwcInfo(
-      alias: result['alias'] as String?,
+      // Decrypted Nostr data — rendered as the wallet's display name; a lone
+      // surrogate here crashes the text engine.
+      alias: sanitizeTextOrNull(result['alias'] as String?),
       color: result['color'] as String?,
       pubkey: result['pubkey'] as String?,
       network: result['network'] as String?,
@@ -153,6 +174,12 @@ class NwcService {
           (result['notifications'] as List?)?.cast<String>() ?? const [],
       lud16: parsed.lud16,
     );
+    // Honor the wallet's advertised encryption (NWC spec: 'nip44_v2' or
+    // 'nip04'). Default to what we sent the probe with.
+    final advertised = result['encryption'] as String?;
+    if (advertised != null && advertised.isNotEmpty) {
+      _encryption = advertised;
+    }
     _connectedAt = DateTime.now();
     return _info!;
   }
@@ -287,6 +314,48 @@ class NwcService {
 
   // ── NIP-47 transport ───────────────────────────────────────────────
 
+  /// Encrypt a payload to the wallet with the negotiated scheme.
+  Future<String> _encryptToWallet(String plaintext) async {
+    if (_encryption.startsWith('nip44')) {
+      try {
+        return _auth.nip44Encrypt(
+          privateKey: _clientSecret!,
+          peerPubkey: _walletPubkey!,
+          plaintext: plaintext,
+        );
+      } catch (_) {
+        // Wallet can't do NIP-44 — downgrade for the rest of the session.
+        _encryption = 'nip04';
+      }
+    }
+    return _auth.nip04Encrypt(
+      privateKey: _clientSecret!,
+      peerPubkey: _walletPubkey!,
+      plaintext: plaintext,
+    );
+  }
+
+  /// Decrypt a response from the wallet, trying the negotiated scheme first
+  /// and falling back to the other (wallets sometimes mis-advertise).
+  Future<String> _decryptFromWallet(String ciphertext) async {
+    if (_encryption.startsWith('nip44')) {
+      try {
+        return _auth.nip44Decrypt(
+          privateKey: _clientSecret!,
+          peerPubkey: _walletPubkey!,
+          payload: ciphertext,
+        );
+      } catch (_) {
+        // Fall through to NIP-04.
+      }
+    }
+    return _auth.nip04Decrypt(
+      privateKey: _clientSecret!,
+      peerPubkey: _walletPubkey!,
+      ciphertext: ciphertext,
+    );
+  }
+
   /// Send a NIP-47 request and wait for the response.
   ///
   /// The request is a kind 23194 NIP-04-encrypted event published to the
@@ -305,12 +374,9 @@ class NwcService {
       'params': params,
     });
 
-    // Encrypt to wallet pubkey using NIP-04
-    final encrypted = await _auth.nip04Encrypt(
-      privateKey: _clientSecret!,
-      peerPubkey: _walletPubkey!,
-      plaintext: payload,
-    );
+    // Encrypt to wallet pubkey with the negotiated scheme (NIP-44 preferred,
+    // NIP-04 legacy) — modern wallets (Alby Hub, current NWC) require NIP-44.
+    final encrypted = await _encryptToWallet(payload);
 
     // Sign with the *client* secret (not the user's main key) so the wallet
     // knows which connection this is.
@@ -347,11 +413,7 @@ class NwcService {
       if (eTag != requestEvent.id) return;
 
       try {
-        final decrypted = await _auth.nip04Decrypt(
-          privateKey: _clientSecret!,
-          peerPubkey: _walletPubkey!,
-          ciphertext: event.content,
-        );
+        final decrypted = await _decryptFromWallet(event.content);
         final json = jsonDecode(decrypted) as Map<String, dynamic>;
         if (!responseCompleter.isCompleted) {
           responseCompleter.complete(NwcResponse.fromJson(json));
@@ -548,7 +610,8 @@ class NwcTransaction {
   factory NwcTransaction.fromJson(Map<String, dynamic> json) => NwcTransaction(
         type: json['type'] as String? ?? 'incoming',
         invoice: json['invoice'] as String?,
-        description: json['description'] as String?,
+        // Free text — rendered in the transaction list.
+        description: sanitizeTextOrNull(json['description'] as String?),
         descriptionHash: json['description_hash'] as String?,
         preimage: json['preimage'] as String?,
         paymentHash: json['payment_hash'] as String?,

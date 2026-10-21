@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/features/identity/providers/address_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/services/address_service.dart';
@@ -24,7 +23,6 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
 
   bool _isSearching = false;
   bool _isClaiming = false;
-  bool _isCheckingPayment = false;
   Nip5SearchResult? _searchResult;
   Nip5ClaimResult? _claimResult;
   String? _errorMsg;
@@ -108,11 +106,40 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                 ? null
                 : _promoController.text.trim(),
           );
-      if (mounted) {
+      if (!mounted) return;
+      setState(() => _isClaiming = false);
+
+      // Free (promo) claim — no invoice at all.
+      if (result.bolt11.isEmpty) {
+        setState(() => _claimResult = result);
+        return;
+      }
+
+      // PAID claim: open the pay sheet (in-app wallet Pay button + QR
+      // fallback). The name only activates once the invoice settles.
+      final outcome = await showPayInvoiceSheet(
+        context,
+        title: 'Pay to activate your name',
+        bolt11: result.bolt11,
+        amountSats: _searchResult?.priceSats,
+        memo: result.address?.identifier,
+        checkPaid: _checkPaid,
+      );
+      if (!mounted) return;
+      if (outcome == InvoicePayResult.paid) {
+        // bolt11 empty marks the claim as settled in the payment view.
         setState(() {
-          _isClaiming = false;
-          _claimResult = result;
+          _claimResult = Nip5ClaimResult(
+            address: result.address,
+            bolt11: '',
+            paymentHash: result.paymentHash,
+            domainId: result.domainId,
+          );
         });
+      } else {
+        // Reserved but unpaid — the payment view stays reachable so the
+        // invoice can still be paid later (sheet re-opens from there).
+        setState(() => _claimResult = result);
       }
     } catch (e) {
       if (mounted) {
@@ -124,41 +151,42 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
     }
   }
 
-  Future<void> _checkPayment() async {
-    if (_claimResult?.paymentHash == null) return;
-
-    setState(() => _isCheckingPayment = true);
+  /// Asks the extension whether this claim's invoice has settled.
+  Future<bool> _checkPaid() async {
+    final claim = _claimResult;
+    final hash = claim?.paymentHash;
+    if (hash == null) return false;
     try {
-      final paid = await ref
+      return await ref
           .read(nip5Provider.notifier)
-          .checkPayment(
-            paymentHash: _claimResult!.paymentHash!,
-            domainId: _claimResult!.domainId,
-          );
-      if (mounted) {
-        if (paid) {
-          setState(() {
-            _claimResult = Nip5ClaimResult(
-              address: _claimResult!.address,
-              bolt11: '',
-              paymentHash: _claimResult!.paymentHash,
-              domainId: _claimResult!.domainId,
-            );
-          });
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Payment not confirmed yet')),
-          );
-        }
-      }
+          .checkPayment(paymentHash: hash, domainId: claim!.domainId);
     } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not check payment status')),
+      return false;
+    }
+  }
+
+  /// The reserved-but-unpaid view's own "pay now" — re-opens the same sheet.
+  Future<void> _payReserved() async {
+    final claim = _claimResult;
+    if (claim == null || claim.bolt11.isEmpty) return;
+    final outcome = await showPayInvoiceSheet(
+      context,
+      title: 'Pay to activate your name',
+      bolt11: claim.bolt11,
+      amountSats: _searchResult?.priceSats,
+      memo: claim.address?.identifier,
+      checkPaid: _checkPaid,
+    );
+    if (!mounted) return;
+    if (outcome == InvoicePayResult.paid) {
+      setState(() {
+        _claimResult = Nip5ClaimResult(
+          address: claim.address,
+          bolt11: '',
+          paymentHash: claim.paymentHash,
+          domainId: claim.domainId,
         );
-      }
-    } finally {
-      if (mounted) setState(() => _isCheckingPayment = false);
+      });
     }
   }
 
@@ -548,74 +576,82 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         if (!isPaid) ...[
-          // ── Invoice payment ────────────────────────────────────
+          // ── Reserved, awaiting payment ─────────────────────────
           Card(
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Pay to complete purchase',
-                    style: Theme.of(context).textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: Colors.orange.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.schedule_rounded,
+                            color: Colors.orange.shade700, size: 22),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Reserved — payment pending',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange.shade800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                address?.identifier ?? 'Your name',
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
                   Text(
-                    '${address?.identifier ?? 'Your name'} • $_years year${_years > 1 ? 's' : ''}',
-                    style: Theme.of(context).textTheme.bodyMedium
+                    'The name is held for you, but only activates once the invoice is paid. Pay now to finish.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
                         ?.copyWith(color: colorScheme.onSurfaceVariant),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: _payReserved,
+                    icon: const Icon(Icons.bolt_rounded, size: 18),
+                    label: Text(
+                      _searchResult?.priceSats != null
+                          ? 'Pay ${_formatSats(_searchResult!.priceSats!)} sats now'
+                          : 'Pay now',
                     ),
-                    child: QrImageView(
-                      data: result.bolt11.toUpperCase(),
-                      size: 220,
-                      backgroundColor: Colors.white,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  SelectableText(
-                    result.bolt11,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    maxLines: 3,
+                  const SizedBox(height: 8),
+                  Text(
+                    'In-app wallet, or scan the QR with any wallet on the next step.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: colorScheme.onSurfaceVariant),
                     textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: result.bolt11));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Invoice copied')),
-                          );
-                        },
-                        icon: const Icon(Icons.copy, size: 18),
-                        label: const Text('Copy'),
-                      ),
-                      const SizedBox(width: 12),
-                      FilledButton.icon(
-                        onPressed: _isCheckingPayment ? null : _checkPayment,
-                        icon: _isCheckingPayment
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.refresh, size: 18),
-                        label: const Text('I Paid'),
-                      ),
-                    ],
                   ),
                 ],
               ),

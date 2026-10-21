@@ -10,6 +10,7 @@ import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
+import 'package:nostrfeed_mobile/features/reels/reel_uploader.dart';
 import 'package:nostrfeed_mobile/features/zap/zap_sheet.dart';
 
 class ReelsScreen extends ConsumerStatefulWidget {
@@ -19,14 +20,32 @@ class ReelsScreen extends ConsumerStatefulWidget {
   ConsumerState<ReelsScreen> createState() => _ReelsScreenState();
 }
 
-class _ReelsScreenState extends ConsumerState<ReelsScreen> {
+class _ReelsScreenState extends ConsumerState<ReelsScreen>
+    with WidgetsBindingObserver {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
+  }
+
+  /// When the app lifecycle resumes (user navigates back to reels), force
+  /// the keyboard down — a stale keyboard from the upload sheet would
+  /// otherwise stay up over the feed and cover the bottom nav.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
   }
 
   @override
@@ -34,8 +53,45 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
     final videosAsync = ref.watch(videosProvider);
 
     // AppBar is owned by AppShell (hamburger → drawer).
+    final auth = ref.watch(authStateProvider);
+    final canPost = auth.isLoggedIn && !auth.isReadOnly;
+
     return Scaffold(
       backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      // Immersive full-screen reels (Instagram-style) — a floating back
+      // button top-left since this is now a pushed detail page, not a tab.
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+          tooltip: 'Back',
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              context.go('/feed');
+            }
+          },
+        ),
+        title: const Text(
+          'Reels',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
+      // Upload reel — top-right, clear of the right action column.
+      floatingActionButton: canPost
+          ? FloatingActionButton.small(
+              heroTag: 'reel_upload_fab',
+              backgroundColor: Colors.white24,
+              onPressed: () => ReelUploader.show(context),
+              tooltip: 'Upload reel',
+              child: const Icon(Icons.add_rounded, color: Colors.white),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
       body: videosAsync.when(
         loading: () => const Center(
           child: CircularProgressIndicator(color: Colors.white54),
@@ -49,11 +105,18 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
               .where((e) => _ReelVideoSource.of(e) != null)
               .toList();
           if (playable.isEmpty) {
-            return const EmptyState(
+            return EmptyState(
               icon: Icons.video_library_outlined,
               title: 'No reels yet',
               subtitle: 'Short videos from Nostr will appear here.',
               iconColor: Colors.white54,
+              action: canPost
+                  ? FilledButton.icon(
+                      onPressed: () => ReelUploader.show(context),
+                      icon: const Icon(Icons.video_call_rounded),
+                      label: const Text('Upload the first reel'),
+                    )
+                  : null,
             );
           }
           return PageView.builder(
@@ -142,6 +205,7 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
   bool _initialized = false;
   bool _showPlayIcon = false;
   bool _muted = false;
+  bool _captionExpanded = false;
 
   /// Tracks whether the current pointer sequence is a tap (vs a scroll).
   /// Set on pointer down, cleared when the pointer moves more than a few
@@ -381,7 +445,8 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
           ),
         ),
 
-        // Bottom author + caption
+        // Bottom author + caption — author row taps through to the user's
+        // profile (Instagram-style); caption expands on tap.
         Positioned(
           left: 16,
           right: 80,
@@ -389,42 +454,71 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  profileAsync.when(
-                    data: (profile) => SafeAvatar(
-                      imageUrl: profile?.picture,
-                      radius: 18,
-                      fallback: const Icon(Icons.person, size: 18),
-                    ),
-                    loading: () => const CircleAvatar(radius: 18),
-                    error: (_, _) => const CircleAvatar(
-                      radius: 18,
-                      child: Icon(Icons.person, size: 18),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      profileAsync.value?.displayNameOrName ??
-                          '${widget.event.pubkey.substring(0, 8)}…',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  context.push('/profile/${widget.event.pubkey}');
+                },
+                child: Row(
+                  children: [
+                    profileAsync.when(
+                      data: (profile) => SafeAvatar(
+                        imageUrl: profile?.picture,
+                        radius: 18,
+                        fallback: const Icon(Icons.person, size: 18),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      loading: () => const CircleAvatar(radius: 18),
+                      error: (_, _) => const CircleAvatar(
+                        radius: 18,
+                        child: Icon(Icons.person, size: 18),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        profileAsync.value?.displayNameOrName ??
+                            '${widget.event.pubkey.substring(0, 8)}…',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: Colors.white70,
+                      size: 18,
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 10),
-              Text(
-                widget.event.content,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+              // Caption — tap to expand (full details like Instagram).
+              GestureDetector(
+                onTap: () =>
+                    setState(() => _captionExpanded = !_captionExpanded),
+                child: Text(
+                  widget.event.content,
+                  maxLines: _captionExpanded ? 20 : 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
               ),
+              if (widget.event.content.length > 120 && !_captionExpanded)
+                const Text(
+                  'more',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
             ],
           ),
         ),

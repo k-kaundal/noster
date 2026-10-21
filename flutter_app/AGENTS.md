@@ -62,6 +62,13 @@ over ~100 lines.
 
 ## Conventions (follow these)
 
+- **Reconnection resilience**: relay sockets die when Android idles
+  (~20min–1hr). The pool tracks persistent subscriptions and re-issues them
+  on reconnect (`_resubscribeAll`); on app resume, `reconnectDead()` resets
+  backoff and reconnects dead relays. Never assume a socket stays alive —
+  always go through the pool's reconnect path, and never block resume on a
+  single dead relay.
+
 - **Imports**: always `package:nostrfeed_mobile/...` (never relative).
 - **State**: Riverpod. All `FutureProvider`s use `.autoDispose`. All state
   notifiers use `Notifier`/`AsyncNotifier` (legacy `StateNotifier` is fully
@@ -78,6 +85,9 @@ over ~100 lines.
     Vimeo/etc. → branded external link).
   - Articles (kind 30023) ALWAYS render as `ArticleCard` preview → tap opens
     `ArticleReaderScreen`. Never render full markdown inline in feeds.
+  - Article creation goes through `ArticleEditorScreen` (`features/articles/`)
+    — NIP-23: markdown content, `d` tag identity, title/summary/image/
+    published_at/t tags. The articles screen Write FAB opens it (login-gated).
   - Polls (kind 1068, NIP-88) render via `PollCard` with voting + tallied
     results (`PollResults.tally` follows NIP-88 counting rules).
   - A lone plain link in a short post gets a `LinkPreviewCard`.
@@ -93,7 +103,38 @@ over ~100 lines.
   `createNip17GroupMessage` (one wrap per member + self).
 - **NIP-29 group chat**: `GroupChatScreen` (`features/groups/`) — kind 9/11/1
   messages tagged with the group's `h` id. Fetch via `fetchGroupChat`, live
-  via `subscribeGroupChat`, send via `createGroupChatMessage`.
+  via `subscribeGroupChat`, send via `createGroupChatMessage`. Groups are
+  created via `CreateGroupSheet` → `createGroup` (kind 39000 with open/closed
+  + public/private flags); join via kind 9021, leave via 9022, admin actions
+  via kinds 9000/9001/9005. Admin deletes are long-press on bubbles.
+- **Reels (NIP-71)**: kind 22 = short-form portrait, kind 21 = landscape.
+  Playable source + poster live in `imeta` tags. Fetch via `fetchVideos`
+  (kind 22/21 + kind-1 video-URL fallback), play via `_ReelVideoSource`
+  (imeta first, body URL fallback), upload via `ReelUploader` → Blossom +
+  `createVideoEvent` (b.nostr.build gives a free `?poster` frame).
+- **Lists (NIP-51)**: follow sets are kind 30000 (addressable, `d` tag
+  identity — same `d` replaces). Model: `features/lists/models/nostr_list.dart`.
+  Mutations via `listControllerProvider` (create/update/addMember/removeMember/
+  deleteList → `_invalidate(followSetsProvider)`). Feed via `listFeedProvider`
+  (posts by member pubkeys). Delete via `deleteFollowSet` (NIP-09 kind 5).
+- **Calendar (NIP-52)**: events are kind 31922 (date-based) / 31923
+  (time-based, addressable with `d` tag + `D` day-index tag). RSVPs are kind
+  31925 with `a` (coordinate), `e` (event id), `status` (accepted/tentative/
+  declined), `p` (organizer). Providers in `features/calendar/providers/`;
+  latest RSVP per pubkey wins for counts/status.
+- **Communities (NIP-72)**: definitions are kind 34550 (addressable), posts
+  carry the community `a` tag, approvals are kind 4550 (full post JSON in
+  content). Join/leave via kind 10004. Feed = approvals + a-tagged posts
+  (deduped). Posts note "pending moderator approval".
+- **Live streaming (NIP-53)**: activities are kind 30311 (addressable, `d`
+  tag). Users go live via `GoLiveSheet` (kind 30311 with streaming URL, title,
+  summary, cover, status=live, host p tag). Live chat is kind 1311 bound to
+  the activity coordinate via `createLiveChatMessage`. Stale live events (no
+  update for 1hr) render as ended. **Text sanitization**: relay data can carry malformed UTF-16 (lone
+  surrogates) that crashes the text engine — `NostrEvent.fromJson` and
+  `NostrProfile.fromJson` sanitize at the source, and `_extractContent` in
+  `note_content.dart` sanitizes before parsing. Never render raw event
+  strings without going through these paths.
   Delivery status is tracked via `MessageStatus` (pending → sent after
   `publishWithAck`, failed → tap to retry / long-press to delete). Unread
   counts use per-peer last-read watermarks (`markThreadRead`) — the chat tab
@@ -101,7 +142,11 @@ over ~100 lines.
   for incoming DMs. Incoming DMs arrive via the real-time subscription
   (`dmLiveEventsProvider` → `dmLiveListenerProvider` → `DmStore.ingest`) —
   NIP-17 backdates created_at up to 2 days, so unread/banner decisions use
-  ARRIVAL time (`arrivalTsOf`), never the event's created_at.
+  ARRIVAL time (`arrivalTsOf`), never the event's created_at. When a thread
+  is marked read, `markThreadRead` CLAMPS known live events to the watermark
+  (`_clampReadEvents`) — without it the live subscription re-delivers them
+  and re-fires unread counts + banners (the "opening chat re-notifies" bug).
+  The DM banner only alerts on genuinely unread messages (`isUnreadFrom`).
 - **Auth race guard**: `AuthNotifier._init` restores the session async; it
   MUST NOT overwrite state if `state != _initial` when the read resolves
   (an explicit login/logout/test-write beat it). Keep this guard. The user's
@@ -131,17 +176,23 @@ over ~100 lines.
 - **Toasts**: always `AppToast.success/error/info/warning` — never raw
   `SnackBar(content: Text(...))`. Toasts auto-replace (no stacking) and
   strip `Exception: ` prefixes.
-- **AppBar architecture**: `AppShell` owns THE AppBar for the 4 tab routes
-  (hamburger ↔ drawer works because the leading's context is below the
-  drawer Scaffold; Flutter auto-generates the back button on pushed
-  routes). Tab screens render **body-only** Scaffolds — never give a tab
-  screen its own AppBar, and never hand-roll a drawer button inside a
-  screen (it resolves to the screen's inner, drawer-less Scaffold).
-  Global actions (search, notifications, 3-dot overflow with profile/
-  bookmarks/settings/theme/docs) live in the shell AppBar. The shell AppBar
-  is **hidden on chat threads** (`/chat/<pubkey>`) — threads are immersive
-  and render their own header (back button + peer identity + encryption
-  status).
+- **Navigation architecture**: bottom nav = **Home · Reels · Create (center) ·
+  Chat (badge) · Wallet**. The center CREATE button opens a create sheet
+  (post/article/reel/live/group) — Instagram pattern. The shell AppBar +
+  bottom nav are **hidden on immersive routes** (chat threads, reels player)
+  which render their own headers. Drawer is grouped by intent (Discover /
+  People / Money / You) — never a flat 20+ item list. Detail routes use
+  `DetailScaffold` (back button + title). Never hand-roll a drawer button
+  inside a screen (it resolves to the inner drawer-less Scaffold).
+  **Detail routes** (everything outside the 4 tabs: lists, calendar,
+  communities, profiles, settings, etc.) are OUTSIDE the shell — they get
+  NO AppShell, so they MUST use `DetailScaffold` (`core/widgets/
+  detail_scaffold.dart`) which provides a working back button + title +
+  actions. Never leave a detail screen without an AppBar.
+- **Profile tabs**: Likes = posts the USER liked via `userLikedPostsProvider`
+  (their kind-7 targets — never filter their own feed for kind 7, that's
+  always empty). Followers/Following stats are tappable → `UserListScreen`.
+  Communities tab shows joined (kind 10004) + created (kind 34550).
 - **Nostr access**: go through `nostrServiceProvider` (facade). Repositories
   are also exposed as `nostr.feed`, `nostr.engagement`, `nostr.social`,
   `nostr.dms` — prefer those for new code.
@@ -154,11 +205,182 @@ over ~100 lines.
   - Bottom sheets → `AppSheet.show`; confirms/alerts → `AppDialog.confirm/info`
 - **Design tokens**: spacing → `AppSpacing`; timeouts → `AppDurations`;
   status colors → `AppStatusColors`; brand gradient → `AppTheme.brandGradient`.
+- **Reporting (Play compliance)**: every post has a 3-dot menu with "Report
+  post"; every profile has one with "Report profile". Both open
+  `showReportDialog` (`core/widgets/report_dialog.dart`) which publishes a
+  NIP-56 kind-1984 report (`NostrService.createReport`). Child safety is the
+  FIRST option and maps to the `illegal` type — Google Play tests this
+  during review; never remove or bury it.
 - **HTTP APIs** (LNbits, Cashu, LNURL…): use `ApiHttpClient` — no raw
   `http.get + jsonDecode + statusCode` blocks.
+- **Wallets**: three options — built-in LNbits (custodial, one-tap), external
+  via NWC (NIP-47, `nostr+walletconnect://` URI: Alby/Zeus/WoS/Mutiny/Phoenix/
+  Breez/Alby Hub), and Cashu ecash. NWC encryption auto-negotiates NIP-44 →
+  NIP-04 fallback (modern wallets need NIP-44). NWC URI parsing supports
+  multiple `relay` params (never use `Uri.splitQueryString` — it collapses
+  duplicates).
+  **Send/Receive** (`features/wallet/widgets/send_dialog.dart` /
+  `receive_dialog.dart`): Send takes ANY target in one box — bolt11 invoice /
+  lightning address / LNURL — parsed by `parsePaymentTarget` +
+  `readInvoiceSats` (`features/wallet/utils/payment_input.dart`, port of web
+  `paymentInput.ts`; bolt11 amount = BTC × unit suffix m/u/n/p, amountless =
+  null). An invoice that names its amount HIDES the amount field; address/
+  LNURL resolve → fetch invoice → pay, with a balance check. Receive shows the
+  reusable lightning address FIRST (any amount, no invoice) and POLLS a minted
+  invoice (~2 min) so "Waiting for X sats…" flips to "Received ✓" live and
+  refreshes the balance — a silent QR was the "invoice not showing" bug.
+  Shared pay-an-invoice UI is `core/widgets/pay_invoice_sheet.dart` (Pay
+  button via `core/services/wallet_payment.dart`'s `payWithAnyWallet`:
+  LNbits → NWC → Cashu, QR fallback) — used by NIP-05 purchase + paid relay.
+  **Core wallet tools** (`features/wallet/services/wallet_tools_service.dart`):
+  `decodePayment` (POST `/api/v1/payments/decode` — show amount+destination
+  before paying), `payLnurl` (server-side LNURL/zap pay), `recheckPending`
+  (`?recheck_pending=true` — stuck-invoice fix), `fiatRate`/`describeSatsAsFiat`
+  (`/api/v1/rate/{currency}` → "≈ $X" next to amounts, shown in Send sheet),
+  and `isExtensionInstalled(extId)` (`/api/v1/extension/all`) — the availability
+  probe every optional extension gates on (never offer a feature that 404s).
+  Providers in `wallet_tools_providers.dart`.
+- **Premium**: three pillars — NIP-05 verified names (`nostrnip5` extension,
+  `you@ln.nostrfeed.com` / `you@getzap.me`), paid relay (`wss://paid.nostrfeed.com`
+  via NIP-42 kind-22242 auth — already wired in `relay_pool.authHandler`),
+  and lightning addresses (`lnurlp` extension, `you@ln.nostrfeed.com`).
+  Free generated names are `u` + first 12 hex (`FreeAddress.isGenerated`);
+  paid names are anything else. Entitlement = has a paid (non-generated) name
+  or lightning address (`premium_providers.dart`).
+  **Paid relay = PAYMENT FIRST, connect after** (`connectPaidRelayProvider`):
+  check `{PAID_RELAY_ADMISSION|https://paid.nostrfeed.com}/admissions/check/{pubkey}`
+  → if unpaid, `POST /invoices` mints a bolt11 → pay with the first wallet
+  that can (LNbits → NWC → Cashu, QR sheet fallback via `InvoiceQrView`) →
+  poll invoice `status_url` + admission check together (either yes wins,
+  ~1 min bounded) → only THEN `relayPool.addRelay`. Admission state is
+  THREE-VALUED (`AdmissionState.admitted/unpaid/unknown`) — a failed check is
+  never a refusal (that double-charges people). Parsers live in
+  `AdmissionService` (`features/premium/services/admission_service.dart`,
+  mirrors web `src/lib/paidRelay.ts`). Admitted profiles get a shield
+  `PaidRelayMark`/`PaidRelayBadge` (`features/premium/widgets/paid_badge.dart`)
+  next to the verified ✓ — only on `admitted`, never on unknown.
+  **Premium-only features** (each a card on the Premium screen, gated on
+  `isPremiumProvider` + the extension being installed — three honest states:
+  not-installed / not-premium / ready):
+  - **Nostr Bunker** (`features/premium/` `services/bunker_service.dart` +
+    `providers/bunker_providers.dart` + `widgets/bunker_card.dart`, ext id
+    `nostr_bunker`): remote signer as a service — store an nsec server-side,
+    mint NIP-46 `bunker://` links (permissions + confirm-sign, revocable) so
+    the key never lives on-device.
+  - **NWC Provider** (`services/nwc_provider_service.dart` +
+    `providers/nwc_provider_providers.dart` + `widgets/nwc_provider_card.dart`,
+    ext id `nwcprovider`): mint `nostr+walletconnect://` URIs for the user's
+    own wallet with permissions + budgets (Alby-Hub-style self-custody
+    sharing). The pairing URI is shown ONCE — not recoverable after.
+  **Custom names are PAID**: `LightningAddressNotifier.claim` only accepts the
+  user's own free generated name (or an already-owned re-claim) — custom names
+  must go through the buy-name flow (invoice first). Claiming a custom name
+  via the free lnurlp claim bypasses payment.
+  **Multiple domains + names**: a user can hold names/addresses on EVERY
+  configured domain — `nip5Domains` (NIP-05, `id:hostname` pairs) and
+  `lightningAddressDomains` (lnurlp, bare hostnames) are lists, first is the
+  default. Owned NIP-05 names are LISTED (identity screen + wallet
+  `BuyNameSection`, both via the shared `OwnedNip5Tile` in
+  `features/identity/widgets/`) each with its own domain
+  (`Nip5Address.identifier` uses its own `domainId`) and its own "Use this
+  one for my ✓" publish action — only ONE can be the profile's `nip05`.
+  "Buy another name" stays reachable after the first purchase (web
+  `OwnedNames` pattern). Lightning claims are keyed per (username, domain):
+  the same name on a different domain is a different address. Taken-checks
+  use the domain's NIP-05 `/.well-known/nostr.json?name=…` (NOT the lnurlp
+  well-known — that answers a different question).
+  **NIP-05 name states** (`nip5Status` in `address_service.dart`, mirrors web
+  `nip5State`): `active:false` = INACTIVE = RESERVED-BUT-UNPAID (invoice not
+  settled — never live, NOT expired; it gets a "Pay for it" button, NOT a
+  renew or publish one). Active + expiry → `expiring`(≤30d)/`expired`/`active`.
+  `expires_at` is written at record CREATION so an unpaid name shows a date a
+  year out — never render "rented until" for an unpaid name. **Entitlement:
+  only ACTIVE non-generated names count** — an unpaid custom name granting
+  premium was the bug (`isPremiumProvider`/`premiumEntitlementsProvider`
+  skip `!active`). **Unpaid recovery**: the extension only writes
+  `extra.payment_hash` at activation, so the claim response's hash is stored
+  in `_PendingInvoiceStore` (SharedPreferences `nip5_pending_invoices`,
+  mirrors web `rememberNip5Invoice`) — `Nip5Notifier.payForAddress`
+  re-claims the SAME reservation (same years + promo_code, returns the
+  outstanding invoice, nothing bought twice) and `OwnedNip5Tile`'s
+  `PayForNameButton` opens `showPayInvoiceSheet` with it.
+  **Anti-squatting**: a reservation is a name HELD OUT OF THE POOL, paid or
+  not — so claims are capped at `kMaxUnpaidReservationsPerDomain` (3) UNPAID
+  reservations per domain in `Nip5Notifier.claim`. Active/paid names don't
+  count, and re-claiming a held reservation to PAY for it (`payForAddress`)
+  always passes the cap. **Release IS possible**: the extension HAS a
+  user-scoped delete route `DELETE /nostrnip5/api/v1/user/domain/{did}/address/{id}`
+  (`AddressService.deleteNip5Address`) — `Nip5Notifier.releaseUnpaidAddress`
+  frees an unpaid reservation back to the pool IMMEDIATELY (the
+  `OwnedNip5Tile` overflow menu → "Release reservation"). Active names delete
+  via `releaseActiveAddress` (confirmed hard — throws away money). Also
+  available and unused-by-the-web-app: **transfer** (`getTransferCode` +
+  lock/unlock/transfer routes — `OwnedNip5Tile` → "Transfer to another user")
+  and **rotate** (`rotateNip5Address` — re-point a name at a different key).
+  Lightning pay links delete via `DELETE /lnurlp/api/v1/links/{id}`
+  (`deletePayLink`) — but the web deliberately never deletes lightning
+  addresses (the next claimant would inherit the previous owner's incoming
+  money), so that one is offered only with explicit caller intent.
+  The UI surfaces unpaid count (`_ReservationNotice`) + expiring-soon
+  (`_ExpiringNotice`, `expiringNamesProvider`) so names are renewed, not lost.
+  **UTF-16 at the source**: every API/Nostr-sourced string that reaches a
+  Text widget MUST be sanitized in its `fromJson` (lone surrogates crash the
+  text engine). Covered: `NostrEvent`/`NostrProfile` (all fields incl.
+  nip05/lud16/picture/banner), `LnbitsUser.username/email`,
+  `LnbitsWallet.name`, `LnbitsPayment.memo`, `NwcInfo.alias`,
+  `NwcTransaction.description`, `PayLink.description/username`,
+  `Nip5Address.localPart`, `Nip5SearchResult.reason/priceReason`. Exceptions
+  (`AddressException`, `LnbitsException`) sanitize in `toString()`. Use
+  `sanitizeText` (or `sanitizeTextOrNull` when null-vs-empty matters).
 - **Async safety**: guard `setState`/context use after async gaps with
   `mounted`; wrap fire-and-forget futures in `unawaited()`.
 - **Secrets**: never hardcode — use `--dart-define` with `Env` class.
+
+## In-app documentation
+
+- **Docs** (`features/docs/`): user-facing guides, not developer docs.
+  `docs_data.dart` holds the catalogue (`AppDoc` entries with headed
+  `DocSection`s); `docs_screen.dart` renders search + category chips + cards,
+  and a `_DocReaderScreen` that prints the sections. A guide with a `route`
+  gets an "Open it" button deep-linking to its feature screen — write the
+  guide AND set the route; the card always opens the reader first.
+  Developer/protocol documentation lives in the repo `docs/` folder and
+  `NIP.md`, not here.
+
+## Studio, memberships & zap goals (premium-only seller side)
+
+- **Studio** (`features/studio/`): the creator dashboard, gated on
+  `canUseStudioProvider` (= `isPremiumProvider` — a paid, ACTIVE,
+  non-generated NIP-05 name or lightning address). Real earnings from
+  `studioEarningsProvider` — validated NIP-57 zap receipts naming the user,
+  split per-day, never hardcoded numbers. Non-premium users see the
+  `_StudioGate` upsell, signed-out users a sign-in prompt.
+- **Memberships** (`features/memberships/`): user-to-user subscriptions.
+  Selling (creating tiers) is premium-gated (`canSellMembershipsProvider`);
+  subscribing is open to anyone. **A subscription IS a zap to a tier** — the
+  receipt is the proof, nothing renews on its own. Tiers are kind 37001
+  (addressable, `d`-tag slug is identity — same slug replaces = edit).
+  Subscribe = NIP-57 zap whose request `a`-tags the tier
+  (`MembershipService.buildSubscriptionInvoice` → `showPayInvoiceSheet`);
+  confirmation is the receipt appearing on relays naming the tier + payer
+  (`_receiptSeen`), never a local record. Standing is computed from
+  validated receipts (`tierStanding`/`standingFrom` in
+  `features/studio/models/subscription.dart`, port of web
+  `lib/subscription.ts`); a period is bought by ONE payment covering the
+  price — underpayment is a tip, surfaced as `shortfallSats`.
+- **Zap goals** (NIP-75, kind 9041): model in
+  `features/studio/models/zap_goal.dart` (port of web `lib/nip75.ts`).
+  `relays` + `amount` (msat) tags are REQUIRED. Progress = validated 9735
+  receipts `e`-tagging the goal, tallied from the reader's relays; a goal is
+  funded by zapping it, or by announcing it in a kind-1 note carrying a
+  `goal` tag (`announceGoalProvider`) so zaps on the note count too. Create
+  via `ZapGoalEditorSheet`, card `ZapGoalCard` (announce/retire for own).
+- **Event creation**: `NostrService.createEvent(kind, content, tags)` signs
+  any kind (tiers 37001, goals 9041, zap requests 9734, deletions kind 5).
+- Providers: `studio/providers/studio_providers.dart` (earnings, goals,
+  publish/retire/announce) and `memberships/providers/membership_providers.dart`
+  (tiers, standings, subscribe invoice). All `.autoDispose` FutureProviders;
+  mutations invalidate the relevant providers after publishing.
 
 ## Testing
 

@@ -56,7 +56,14 @@ class LocalNotificationService {
     await _plugin.initialize(
       const InitializationSettings(android: androidInit, iOS: darwinInit),
       onDidReceiveNotificationResponse: (response) => handleTap(response.payload),
-      onDidReceiveBackgroundNotificationResponse: onBackgroundNotificationTap,
+      // iOS: the plugin validates the background callback as a Flutter entry
+      // point and crashes if it can't resolve it. iOS forwards notification
+      // taps through onDidReceiveNotificationResponse on app reopen anyway,
+      // so we only register the background entry point on Android.
+      onDidReceiveBackgroundNotificationResponse:
+          defaultTargetPlatform == TargetPlatform.android
+              ? onBackgroundNotificationTap
+              : null,
     );
 
     // Create Android channels (one per type).

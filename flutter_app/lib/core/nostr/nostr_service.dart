@@ -171,7 +171,68 @@ class NostrService {
   Future<bool> publishWithAck(NostrEvent event) =>
       relayPool.publishWithAck(event);
 
+  /// NIP-71 video event (kind 22 = short-form portrait / reel, kind 21 =
+  /// landscape). The playable URL + poster + metadata live in the `imeta`
+  /// tag (NIP-92); [caption] is the content.
+  NostrEvent createVideoEvent({
+    required String url,
+    required String mimeType,
+    String caption = '',
+    String? posterUrl,
+    double? durationSec,
+    List<String>? hashtags,
+    bool isShortForm = true,
+  }) {
+    _requireSigning();
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: isShortForm ? 22 : 21,
+      content: caption,
+      tags: [
+        ['title', caption.isEmpty ? 'Video' : caption],
+        ['published_at', '${DateTime.now().millisecondsSinceEpoch ~/ 1000}'],
+        [
+          'imeta',
+          'url $url',
+          'm $mimeType',
+          if (posterUrl != null) 'image $posterUrl',
+          if (durationSec != null)
+            'duration ${durationSec.toStringAsFixed(2)}',
+        ],
+        ...?hashtags?.map((t) => ['t', t.toLowerCase()]),
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
   /// NIP-29 group chat message (kind 9) tagged with the group's `h` id.
+  /// NIP-53 live chat message (kind 1311) bound to a live activity.
+  NostrEvent createLiveChatMessage(
+    String coordinate,
+    String content, {
+    String? replyToId,
+  }) {
+    _requireSigning();
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: 1311,
+      content: content,
+      tags: [
+        ['a', coordinate, '', 'root'],
+        if (replyToId != null) ['e', replyToId, '', 'reply'],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Fetch live chat messages for an activity coordinate.
+  Future<List<NostrEvent>> fetchLiveChat(String coordinate, {int limit = 100}) =>
+      feed.fetchLiveChat(coordinate, limit: limit);
+
+  /// Live subscription for new live chat messages.
+  Stream<NostrEvent> subscribeLiveChat(String coordinate) =>
+      feed.subscribeLiveChat(coordinate);
+
   NostrEvent createGroupChatMessage(
     String groupId,
     String content, {
@@ -211,6 +272,22 @@ class NostrService {
       kind: 1,
       content: content,
       tags: allTags,
+    );
+  }
+
+  /// Sign an arbitrary kind — for event types without a dedicated factory
+  /// (subscription tiers, zap goals, zap requests, deletion requests…).
+  NostrEvent createEvent({
+    required int kind,
+    required String content,
+    List<List<String>> tags = const [],
+  }) {
+    _requireSigning();
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: kind,
+      content: content,
+      tags: tags,
     );
   }
 
@@ -330,6 +407,30 @@ class NostrService {
 
   /// NIP-09 deletion request (kind 5) — asks relays to delete an event.
   /// Used for unlike/unrepost by deleting the user's own reaction/repost.
+  /// NIP-56 report (kind 1984) on an event, a profile, or both.
+  ///
+  /// Google Play's child-safety review requires a working in-app report
+  /// flow — this publishes the report so relays and other clients see it.
+  /// [reportType] is a NIP-56 type string (see `report_types.dart`).
+  NostrEvent createReport({
+    String? eventId,
+    String? pubkey,
+    required String reportType,
+    String reason = '',
+  }) {
+    _requireSigning();
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: 1984,
+      content: reason,
+      tags: [
+        if (eventId != null) ['e', eventId, '', reportType],
+        if (pubkey != null) ['p', pubkey, reportType],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
   NostrEvent createDeletion(String eventId, {String? reason}) {
     _requireSigning();
     return authService.signEvent(
@@ -347,14 +448,18 @@ class NostrService {
   NostrEvent createCalendarEvent({
     required String title,
     required int start,
+    int? end,
     String? location,
     String description = '',
     String? identifier,
+    List<String>? hashtags,
   }) {
     _requireSigning();
     final d =
         identifier ??
         'event-${DateTime.now().millisecondsSinceEpoch}-${_auth.pubkey!.substring(0, 8)}';
+    // NIP-52: D tags index the event by day (unix ts at day granularity).
+    final dayTs = (start ~/ 86400) * 86400;
     return authService.signEvent(
       privateKey: _auth.privateKey!,
       kind: 31923,
@@ -363,7 +468,38 @@ class NostrService {
         ['d', d],
         ['title', title],
         ['start', '$start'],
+        if (end != null) ['end', '$end'],
+        ['D', '$dayTs'],
         if (location != null && location.isNotEmpty) ['location', location],
+        ...?hashtags?.map((t) => ['t', t.toLowerCase()]),
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// NIP-52 RSVP (kind 31925, addressable): respond to a calendar event.
+  /// [status] is 'accepted', 'tentative', or 'declined'.
+  NostrEvent createCalendarRsvp({
+    required NostrEvent calendarEvent,
+    required String status,
+    String note = '',
+  }) {
+    _requireSigning();
+    final d = calendarEvent.getTag('d') ?? '';
+    final coordinate = '${calendarEvent.kind}:${calendarEvent.pubkey}:$d';
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: 31925,
+      content: note,
+      tags: [
+        ['a', coordinate],
+        ['e', calendarEvent.id],
+        [
+          'd',
+          'rsvp-${DateTime.now().millisecondsSinceEpoch}-${_auth.pubkey!.substring(0, 8)}',
+        ],
+        ['status', status],
+        ['p', calendarEvent.pubkey],
         ['client', 'nostrfeed'],
       ],
     );
@@ -555,11 +691,176 @@ class NostrService {
   NostrEvent createBookmark(List<String> eventIds, List<String> addresses) =>
       social.createBookmark(eventIds, addresses);
 
+  // ── NIP-51 follow sets ─────────────────────────────────────────────
+
+  NostrEvent createFollowSet({
+    required String dTag,
+    required String title,
+    String description = '',
+    String? image,
+    List<String> members = const [],
+  }) =>
+      social.createFollowSet(
+        dTag: dTag,
+        title: title,
+        description: description,
+        image: image,
+        members: members,
+      );
+
+  Future<List<NostrEvent>> fetchFollowSets(String pubkey) =>
+      social.fetchFollowSets(pubkey);
+
+  NostrEvent deleteFollowSet(String eventId) => social.deleteFollowSet(eventId);
+
+  /// Create a NIP-29 group (kind 39000 metadata). Note: on most relays the
+  /// relay master key owns group metadata — client-created groups work on
+  /// relays that accept user-published kind 39000 (open/group relays).
+  NostrEvent createGroup({
+    required String groupId,
+    required String name,
+    String about = '',
+    String? picture,
+    bool isOpen = true,
+    bool isPublic = true,
+  }) {
+    _requireSigning();
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: 39000,
+      content: '',
+      tags: [
+        ['d', groupId],
+        ['name', name],
+        if (about.isNotEmpty) ['about', about],
+        if (picture != null && picture.isNotEmpty) ['picture', picture],
+        if (isOpen) ['open', ''] else ['closed', ''],
+        if (isPublic) ['public', ''] else ['private', ''],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  // ── NIP-99 listings + NIP-69 P2P orders ───────────────────────────
+
+  NostrEvent createListing({
+    required String dTag,
+    required String title,
+    required String description,
+    String? summary,
+    String? image,
+    String? location,
+    String? priceAmount,
+    String? priceCurrency,
+    String? priceFrequency,
+    List<String> hashtags = const [],
+  }) =>
+      social.createListing(
+        dTag: dTag,
+        title: title,
+        description: description,
+        summary: summary,
+        image: image,
+        location: location,
+        priceAmount: priceAmount,
+        priceCurrency: priceCurrency,
+        priceFrequency: priceFrequency,
+        hashtags: hashtags,
+      );
+
+  NostrEvent createP2POrder({
+    required String type,
+    required String currency,
+    String? amountSats,
+    String? fiatAmount,
+    List<String> paymentMethods = const [],
+    String? premium,
+    String? makerName,
+  }) =>
+      social.createP2POrder(
+        type: type,
+        currency: currency,
+        amountSats: amountSats,
+        fiatAmount: fiatAmount,
+        paymentMethods: paymentMethods,
+        premium: premium,
+        makerName: makerName,
+      );
+
+  Future<List<NostrEvent>> fetchP2POrders({int limit = 50}) =>
+      feed.fetchP2POrders(limit: limit);
+
+  // ── NIP-29 relay groups ───────────────────────────────────────────
+
+  NostrEvent createGroupJoinRequest(String groupId, {String? inviteCode}) =>
+      social.createGroupJoinRequest(groupId, inviteCode: inviteCode);
+
+  NostrEvent createGroupLeaveRequest(String groupId) =>
+      social.createGroupLeaveRequest(groupId);
+
+  Future<bool> isGroupMember(String groupId, String pubkey) =>
+      social.isGroupMember(groupId, pubkey);
+
+  Future<List<String>> fetchGroupMembers(String groupId) =>
+      social.fetchGroupMembers(groupId);
+
+  Future<Map<String, List<String>>> fetchGroupAdmins(String groupId) =>
+      social.fetchGroupAdmins(groupId);
+
+  NostrEvent createGroupPutUser(
+    String groupId,
+    String targetPubkey, {
+    List<String> roles = const [],
+    String reason = '',
+  }) =>
+      social.createGroupPutUser(
+        groupId,
+        targetPubkey,
+        roles: roles,
+        reason: reason,
+      );
+
+  NostrEvent createGroupRemoveUser(
+    String groupId,
+    String targetPubkey, {
+    String reason = '',
+  }) =>
+      social.createGroupRemoveUser(groupId, targetPubkey, reason: reason);
+
+  NostrEvent createGroupDeleteEvent(String groupId, String eventId) =>
+      social.createGroupDeleteEvent(groupId, eventId);
+
   /// Toggle bookmark for an event (add or remove from kind 10003 list).
+  /// Awaited — the caller's toast only fires once the write is actually out.
   Future<void> toggleBookmark(
     String eventId,
     bool isCurrentlyBookmarked,
   ) => social.toggleBookmark(eventId, isCurrentlyBookmarked);
+
+  /// The current bookmarked event ids — merged across every relay revision
+  /// (kind 10003 is replaceable; a single-revision read is often stale) plus
+  /// the optimistic cache covering the propagation window after our own write.
+  Future<Set<String>> fetchBookmarkedIds(String pubkey) =>
+      social.fetchBookmarkedIds(pubkey);
+
+  // ── Studio: tiers + goals ───────────────────────────────────────────
+
+  /// Publish (or replace) a subscription tier (kind 37001).
+  NostrEvent createTier(List<List<String>> tags, {String content = ''}) =>
+      social.createTier(tags, content: content);
+
+  /// Publish a zap goal (NIP-75, kind 9041).
+  NostrEvent createGoal(List<List<String>> tags, {String content = ''}) =>
+      social.createGoal(tags, content: content);
+
+  /// Announce a goal as a kind-1 note with a `goal` tag — makes it fundable
+  /// by clients that have never heard of NIP-75.
+  NostrEvent announceGoal({
+    required String goalId,
+    String? relayHint,
+    required String content,
+  }) =>
+      social.announceGoal(goalId: goalId, relayHint: relayHint, content: content);
 
   /// NIP-04 encrypted DM (kind 4).
   NostrEvent createEncryptedDm(String peerPubkey, String plaintext) =>

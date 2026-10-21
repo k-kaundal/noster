@@ -10,8 +10,10 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/utils/media.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
+import 'package:nostrfeed_mobile/core/utils/text_sanitize.dart';
 import 'package:nostrfeed_mobile/features/feed/widgets/link_preview_card.dart';
 import 'package:nostrfeed_mobile/features/feed/widgets/video_card.dart';
 
@@ -48,7 +50,8 @@ class NoteContent extends ConsumerWidget {
     final content = _extractContent(event.content);
     if (content.isEmpty) return const SizedBox.shrink();
 
-    final defaultStyle = textStyle ??
+    final defaultStyle =
+        textStyle ??
         Theme.of(context).textTheme.bodyMedium!.copyWith(height: 1.45);
 
     // Parse + split: text stays inline, media renders as rich tiles below.
@@ -73,7 +76,8 @@ class NoteContent extends ConsumerWidget {
           VideoCard(url: videoUrl, imeta: imeta[videoUrl]),
         // A lone plain link (the post is basically just a shared URL) gets a
         // rich preview card — inline in the text too, plus the card below.
-        if (_shouldShowLinkCard(render)) LinkPreviewCard(url: render.links.first),
+        if (_shouldShowLinkCard(render))
+          LinkPreviewCard(url: render.links.first),
       ],
     );
   }
@@ -81,8 +85,14 @@ class NoteContent extends ConsumerWidget {
   /// Show a link preview card only when the post is dominated by a single
   /// plain link (no images/videos, and the link IS most of the text).
   bool _shouldShowLinkCard(
-      ({List<_Segment> textSegments, List<String> images, List<String> videos, List<String> links})
-          render) {
+    ({
+      List<_Segment> textSegments,
+      List<String> images,
+      List<String> videos,
+      List<String> links,
+    })
+    render,
+  ) {
     if (render.links.length != 1) return false;
     if (render.images.isNotEmpty || render.videos.isNotEmpty) return false;
     final textOnly = render.textSegments
@@ -91,6 +101,26 @@ class NoteContent extends ConsumerWidget {
         .join()
         .trim();
     return textOnly.length < 80;
+  }
+}
+
+/// Inline mention label that resolves a pubkey to the user's display name
+/// via the shared profile cache (same one every avatar uses).
+class _MentionLabel extends ConsumerWidget {
+  final String pubkey;
+  final TextStyle style;
+  const _MentionLabel({required this.pubkey, required this.style});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profileAsync = ref.watch(profileProvider(pubkey));
+    final name =
+        profileAsync.valueOrNull?.displayNameOrName ??
+        '${pubkey.substring(0, 8)}…';
+    return GestureDetector(
+      onTap: () => context.push('/profile/$pubkey'),
+      child: Text('@$name', style: style),
+    );
   }
 }
 
@@ -106,6 +136,11 @@ class _ContentParser {
     r'nostr:(npub1[a-z0-9]+|nprofile1[a-z0-9]+|note1[a-z0-9]+|nevent1[a-z0-9]+|naddr1[a-z0-9]+)',
     caseSensitive: false,
   );
+  // Bare bech32 keys (npub/nsec/nprofile) without the nostr: prefix.
+  static final _bareKeyRegex = RegExp(
+    r'\b(npub1[a-z0-9]{20,}|nsec1[a-z0-9]{20,}|nprofile1[a-z0-9]{20,})\b',
+    caseSensitive: false,
+  );
   static final _imageRegex = RegExp(
     r'\.(jpg|jpeg|png|gif|webp|svg|avif|heic|bmp)(\?[^\s]*)?$',
     caseSensitive: false,
@@ -119,8 +154,14 @@ class _ContentParser {
   static final _italicRegex = RegExp(r'\*([^*]+)\*');
   static final _strikethroughRegex = RegExp(r'~~([^~]+)~~');
   static final _headerRegex = RegExp(r'^(#{1,6})\s+(.+)$', multiLine: true);
-  static final _unorderedListRegex = RegExp(r'^\s*[-*+]\s+(.+)$', multiLine: true);
-  static final _orderedListRegex = RegExp(r'^\s*\d+\.\s+(.+)$', multiLine: true);
+  static final _unorderedListRegex = RegExp(
+    r'^\s*[-*+]\s+(.+)$',
+    multiLine: true,
+  );
+  static final _orderedListRegex = RegExp(
+    r'^\s*\d+\.\s+(.+)$',
+    multiLine: true,
+  );
   static final _blockquoteRegex = RegExp(r'^>\s+(.+)$', multiLine: true);
 
   static List<_Segment> parse(String content) {
@@ -160,11 +201,25 @@ class _ContentParser {
       matches.add((start: m.start, end: m.end, type: _SegmentType.nostrRef));
     }
 
+    // Bare bech32 keys (npub/nsec/nprofile) — same treatment, skip overlaps.
+    for (final m in _bareKeyRegex.allMatches(processedContent)) {
+      final overlaps = matches.any(
+        (x) =>
+            (m.start >= x.start && m.start < x.end) ||
+            (m.end > x.start && m.end <= x.end),
+      );
+      if (!overlaps) {
+        matches.add((start: m.start, end: m.end, type: _SegmentType.nostrRef));
+      }
+    }
+
     // URLs
     for (final m in _urlRegex.allMatches(processedContent)) {
-      final overlaps = matches.any((x) =>
-          (m.start >= x.start && m.start < x.end) ||
-          (m.end > x.start && m.end <= x.end));
+      final overlaps = matches.any(
+        (x) =>
+            (m.start >= x.start && m.start < x.end) ||
+            (m.end > x.start && m.end <= x.end),
+      );
       if (!overlaps) {
         matches.add((start: m.start, end: m.end, type: _SegmentType.url));
       }
@@ -172,9 +227,11 @@ class _ContentParser {
 
     // Hashtags
     for (final m in _hashtagRegex.allMatches(processedContent)) {
-      final overlaps = matches.any((x) =>
-          (m.start >= x.start && m.start < x.end) ||
-          (m.end > x.start && m.end <= x.end));
+      final overlaps = matches.any(
+        (x) =>
+            (m.start >= x.start && m.start < x.end) ||
+            (m.end > x.start && m.end <= x.end),
+      );
       if (!overlaps) {
         matches.add((start: m.start, end: m.end, type: _SegmentType.hashtag));
       }
@@ -187,7 +244,11 @@ class _ContentParser {
     var cursor = 0;
     for (final m in matches) {
       if (m.start > cursor) {
-        _addTextSegments(segments, processedContent.substring(cursor, m.start), codeBlocks);
+        _addTextSegments(
+          segments,
+          processedContent.substring(cursor, m.start),
+          codeBlocks,
+        );
       }
 
       final text = processedContent.substring(m.start, m.end);
@@ -206,7 +267,11 @@ class _ContentParser {
     }
 
     if (cursor < processedContent.length) {
-      _addTextSegments(segments, processedContent.substring(cursor), codeBlocks);
+      _addTextSegments(
+        segments,
+        processedContent.substring(cursor),
+        codeBlocks,
+      );
     }
 
     return segments;
@@ -219,7 +284,8 @@ class _ContentParser {
     List<String> images,
     List<String> videos,
     List<String> links,
-  }) splitForRender(List<_Segment> segments, NostrEvent event) {
+  })
+  splitForRender(List<_Segment> segments, NostrEvent event) {
     final images = <String>[];
     final videos = <String>[];
     final links = <String>[];
@@ -290,7 +356,8 @@ class _ContentParser {
   static void _addFormattedTextSegments(List<_Segment> segments, String text) {
     if (text.isEmpty) return;
 
-    final hasBlockFormatting = _headerRegex.hasMatch(text) ||
+    final hasBlockFormatting =
+        _headerRegex.hasMatch(text) ||
         _blockquoteRegex.hasMatch(text) ||
         _unorderedListRegex.hasMatch(text) ||
         _orderedListRegex.hasMatch(text);
@@ -322,10 +389,9 @@ class _ContentParser {
       final headerMatch = _headerRegex.firstMatch(line);
       if (headerMatch != null) {
         closeList();
-        segments.add(_HeaderSegment(
-          headerMatch.group(2)!,
-          headerMatch.group(1)!.length,
-        ));
+        segments.add(
+          _HeaderSegment(headerMatch.group(2)!, headerMatch.group(1)!.length),
+        );
         continue;
       }
 
@@ -481,77 +547,81 @@ class _ContentRenderer extends StatelessWidget {
     for (final segment in segments) {
       switch (segment) {
         case _TextSegment():
-          currentSpans.add(TextSpan(text: segment.text));
+          // Re-sanitize: parser substring splits can cut surrogate pairs.
+          currentSpans.add(TextSpan(text: sanitizeText(segment.text)));
           break;
 
         case _FormattedTextSegment():
-          currentSpans.add(_buildFormattedText(context, segment.text));
+          currentSpans.add(
+            _buildFormattedText(context, sanitizeText(segment.text)),
+          );
           break;
 
         case _UrlSegment():
           if (segment.isImage) {
             // Hide image URLs, they're rendered below
-            currentSpans.add(TextSpan(
-              text: segment.url,
-              style: TextStyle(fontSize: 0.1, color: Colors.transparent),
-            ));
-          } else {
-            currentSpans.add(TextSpan(
-              text: segment.url,
-              style: defaultStyle.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                decoration: TextDecoration.underline,
+            currentSpans.add(
+              TextSpan(
+                text: segment.url,
+                style: TextStyle(fontSize: 0.1, color: Colors.transparent),
               ),
-              recognizer: TapGestureRecognizer()
-                ..onTap = () => _openUrl(segment.url),
-            ));
+            );
+          } else {
+            currentSpans.add(
+              TextSpan(
+                text: sanitizeText(segment.url),
+                style: defaultStyle.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  decoration: TextDecoration.underline,
+                ),
+                recognizer: TapGestureRecognizer()
+                  ..onTap = () => _openUrl(segment.url),
+              ),
+            );
           }
           break;
 
         case _HashtagSegment():
-          currentSpans.add(TextSpan(
-            text: segment.hashtag,
-            style: defaultStyle.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w600,
+          currentSpans.add(
+            TextSpan(
+              text: sanitizeText(segment.hashtag),
+              style: defaultStyle.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+              recognizer: TapGestureRecognizer()
+                ..onTap = () => context.push(
+                  '/hashtag/${Uri.encodeComponent(segment.hashtag.substring(1))}',
+                ),
             ),
-            recognizer: TapGestureRecognizer()
-              ..onTap = () => context.push(
-                  '/hashtag/${Uri.encodeComponent(segment.hashtag.substring(1))}'),
-          ));
+          );
           break;
 
         case _NostrRefSegment():
-          currentSpans.add(TextSpan(
-            text: _labelForNostrRef(segment.ref),
-            style: defaultStyle.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
-            recognizer: TapGestureRecognizer()
-              ..onTap = () => _openNostrRef(context, segment.ref),
-          ));
+          // Mentions resolve to the user's NAME (not just a truncated key) —
+          // WidgetSpan with a live profile lookup. Other refs (note/event/
+          // address/key) get typed icons + tap-through.
+          currentSpans.add(_nostrRefSpan(context, segment.ref));
           break;
 
         case _CodeBlockSegment():
           flushSpans();
-          widgets.add(_CodeBlock(
-            code: segment.code,
-            language: segment.language,
-          ));
+          widgets.add(
+            _CodeBlock(
+              code: sanitizeText(segment.code),
+              language: segment.language,
+            ),
+          );
           break;
 
         case _HeaderSegment():
           flushSpans();
-          widgets.add(_Header(
-            text: segment.text,
-            level: segment.level,
-          ));
+          widgets.add(_Header(text: sanitizeText(segment.text), level: segment.level));
           break;
 
         case _BlockquoteSegment():
           flushSpans();
-          widgets.add(_Blockquote(text: segment.text));
+          widgets.add(_Blockquote(text: sanitizeText(segment.text)));
           break;
 
         case _ListStartSegment():
@@ -560,11 +630,13 @@ class _ContentRenderer extends StatelessWidget {
           break;
 
         case _ListItemSegment():
-          widgets.add(_ListItem(
-            text: segment.text,
-            isOrdered: listStack.isNotEmpty ? listStack.last : false,
-            index: widgets.whereType<_ListItem>().length + 1,
-          ));
+          widgets.add(
+            _ListItem(
+              text: sanitizeText(segment.text),
+              isOrdered: listStack.isNotEmpty ? listStack.last : false,
+              index: widgets.whereType<_ListItem>().length + 1,
+            ),
+          );
           break;
 
         case _ListEndSegment():
@@ -628,19 +700,46 @@ class _ContentRenderer extends StatelessWidget {
     return TextSpan(children: spans);
   }
 
-  String _labelForNostrRef(String ref) {
-    final id = ref.substring(6);
-    if (id.startsWith('npub1') || id.startsWith('nprofile1')) {
-      return '@${id.substring(0, 12)}…';
+  /// Inline span for a Nostr reference: mentions get a tappable label that
+  /// resolves to a real name via _MentionLabel, other refs get typed icons.
+  InlineSpan _nostrRefSpan(BuildContext context, String ref) {
+    final id = ref.startsWith('nostr:') ? ref.substring(6) : ref;
+    final decoded = decodeNip19(id);
+    final scheme = Theme.of(context).colorScheme;
+    final style = defaultStyle.copyWith(
+      color: scheme.primary,
+      fontWeight: FontWeight.w600,
+    );
+
+    // Mentions (npub/nprofile): a widget span resolving to the display name.
+    if (decoded is Nip19Pubkey || decoded is Nip19Profile) {
+      final pk = decoded is Nip19Pubkey
+          ? decoded.pubkey
+          : (decoded as Nip19Profile).pubkey;
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: _MentionLabel(pubkey: pk, style: style),
+      );
     }
-    if (id.startsWith('note1') || id.startsWith('nevent1')) {
-      return '🔗 ${id.substring(0, 12)}…';
-    }
-    return '${id.substring(0, 14)}…';
+
+    // Other references: typed icon + tap-through.
+    final (icon, label) = switch (decoded) {
+      Nip19Note() || Nip19Event() => ('🔗', 'note'),
+      Nip19Address() => ('📄', 'article'),
+      _ => id.startsWith('nsec1') ? ('🔑', 'key') : ('', 'link'),
+    };
+    return TextSpan(
+      text: '$icon ${label.isNotEmpty ? '$label ' : ''}${_shortId(id)}',
+      style: style,
+      recognizer: TapGestureRecognizer()
+        ..onTap = () => _openNostrRef(context, id),
+    );
   }
 
-  void _openNostrRef(BuildContext context, String ref) {
-    final id = ref.substring(6);
+  String _shortId(String id) => id.length > 12 ? '${id.substring(0, 10)}…' : id;
+
+  void _openNostrRef(BuildContext context, String id) {
     final decoded = decodeNip19(id);
     switch (decoded) {
       case Nip19Pubkey(pubkey: final pk):
@@ -657,7 +756,7 @@ class _ContentRenderer extends StatelessWidget {
         context.push('/$id');
         break;
       default:
-        _openUrl(ref);
+        _openUrl(id.startsWith('nostr:') ? id : 'nostr:$id');
     }
   }
 
@@ -836,10 +935,7 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.only(top: 12, bottom: 6),
       child: Text(
         text,
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.bold,
-        ),
+        style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -858,12 +954,7 @@ class _Blockquote extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 8),
       padding: const EdgeInsets.only(left: 12),
       decoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(
-            color: colorScheme.primary,
-            width: 3,
-          ),
-        ),
+        border: Border(left: BorderSide(color: colorScheme.primary, width: 3)),
       ),
       child: Text(
         text,
@@ -1043,10 +1134,7 @@ class _NetworkImageTile extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Image unavailable',
-            style: TextStyle(
-              fontSize: 12,
-              color: colorScheme.onSurfaceVariant,
-            ),
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
           ),
         ],
       ),
@@ -1110,7 +1198,7 @@ class _NetworkImageTile extends StatelessWidget {
 /// which renders as raw JSON. This unwraps the actual text when it detects
 /// that pattern, or returns the raw content for plain text notes.
 String _extractContent(String raw) {
-  final trimmed = raw.trim();
+  final trimmed = sanitizeText(raw.trim());
   if (trimmed.isEmpty) return '';
   if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return trimmed;
 
@@ -1119,7 +1207,7 @@ String _extractContent(String raw) {
     if (parsed is Map<String, dynamic>) {
       // Common wrapper patterns — extract the text field
       for (final key in ['content', 'text', 'body', 'message']) {
-        if (parsed[key] is String) return parsed[key] as String;
+        if (parsed[key] is String) return sanitizeText(parsed[key] as String);
       }
       // JSON that is NOT a text wrapper (profile data, relay lists, app
       // data, etc.) has no business being rendered as a post. Return empty

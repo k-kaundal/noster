@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
@@ -113,6 +114,16 @@ class LightningAddressNotifier extends Notifier<LightningAddressState> {
   Future<void> refresh() => _load();
 
   /// Claim a new lightning address.
+  ///
+  /// ENTITLEMENT: only two kinds of names can be claimed here —
+  ///  1. The FREE generated name (`u` + first 12 hex of your pubkey) — free.
+  ///  2. A name you already own (re-claiming an existing link is a no-op).
+  ///
+  /// Custom names are PAID and must go through the buy-name flow
+  /// (`buy_name_screen` → NIP-05 purchase with invoice), NOT this free
+  /// lnurlp claim. Claiming a custom name here would bypass payment — that
+  /// was the bug: unpaid custom names showed as owned with "publish to
+  /// profile" available.
   Future<PayLink> claim({
     required String username,
     String? domain,
@@ -129,42 +140,64 @@ class LightningAddressNotifier extends Notifier<LightningAddressState> {
       throw const AddressException('No wallet with admin key available');
     }
 
-    // Check if already claimed
+    final normalized = username.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      throw const AddressException('Enter a username');
+    }
+
+    final targetDomain =
+        (domain == null || domain.isEmpty) ? null : domain.toLowerCase();
+
+    // Already claimed on THIS domain → no-op. The same local part on a
+    // different domain is a different address and must be claimed on its own.
     final existing = state.links.where(
-      (l) => l.username?.toLowerCase() == username.toLowerCase(),
+      (l) =>
+          l.username?.toLowerCase() == normalized &&
+          (l.domain?.toLowerCase() ?? Env.lightningAddressDomain) ==
+              (targetDomain ?? Env.lightningAddressDomain),
     );
     if (existing.isNotEmpty) return existing.first;
 
-    // Check entitlement
+    // ENTITLEMENT: only the FREE generated name or an already-owned name can
+    // be claimed here. Custom names are paid — send users to the buy flow.
     final auth = ref.read(authStateProvider);
     final freeName = auth.pubkey != null
         ? FreeAddress.generate(auth.pubkey!)
         : '';
+    final isFreeName = normalized == freeName.toLowerCase();
+    final isGenerated = FreeAddress.isGenerated(normalized);
 
-    final isFree = username.toLowerCase() == freeName.toLowerCase();
-    final isOwned = state.links.any(
-      (l) => l.username?.toLowerCase() == username.toLowerCase(),
-    );
+    if (!isFreeName && !isGenerated) {
+      throw const AddressException(
+        'That name is a paid name. Get it from the Buy Name screen — it comes with an invoice to pay first.',
+      );
+    }
 
-    if (!isFree && !isOwned) {
-      // Check if name is taken by someone else
-      try {
-        final wellKnown = await _checkWellKnown(username, domain);
-        if (wellKnown) {
-          throw const AddressException(
-              'That name is already taken here. Try a different one.');
-        }
-      } catch (e) {
-        if (e is AddressException) rethrow;
-        // A failed lookup is not treated as taken
+    // Free generated names must belong to THIS user (can't claim someone
+    // else's generated name).
+    if (isGenerated && !isFreeName) {
+      throw AddressException(
+        'That generated name belongs to a different key. Your free name is $freeName@${Env.lightningAddressDomain}.',
+      );
+    }
+
+    // Taken check (someone else already has it on this domain).
+    try {
+      final wellKnown = await _checkWellKnown(normalized, targetDomain);
+      if (wellKnown) {
+        throw const AddressException(
+            'That name is already taken here. Try a different one.');
       }
+    } catch (e) {
+      if (e is AddressException) rethrow;
+      // A failed lookup is not treated as taken
     }
 
     final created = await _service.createPayLink(
       apiKey: wallet!.adminkey!,
       token: lnbits.token,
-      username: username,
-      domain: domain,
+      username: normalized,
+      domain: targetDomain,
       walletId: wallet.id,
       displayName: auth.profile?.displayNameOrName,
     );
@@ -173,17 +206,28 @@ class LightningAddressNotifier extends Notifier<LightningAddressState> {
     return created;
   }
 
-  /// Check if a name is taken via the well-known endpoint.
+  /// Check if a name is taken, via the domain's NIP-05 well-known endpoint —
+  /// the same map Nostr clients read, so a taken name here really is taken
+  /// for the identifier. (The lnurlp well-known answers a different question:
+  /// whether a pay link serves that name, which says nothing about a name
+  /// sold through the shop.)
   Future<bool> _checkWellKnown(String username, String? domain) async {
     try {
       final d = domain ?? Env.lightningAddressDomain;
-      final uri = Uri.parse('https://$d/.well-known/lnurlp/$username');
+      final uri = Uri.parse(
+          'https://$d/.well-known/nostr.json?name=${Uri.encodeQueryComponent(username)}');
       final response = await http.Client()
           .get(uri)
           .timeout(const Duration(seconds: 6));
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
-        return json['status'] != 'ERROR';
+        final names = json['names'];
+        if (names is Map) {
+          for (final key in names.keys) {
+            if (key is String && key.toLowerCase() == username) return true;
+          }
+        }
+        return false;
       }
       return false;
     } catch (_) {
@@ -354,6 +398,16 @@ class Nip5Notifier extends Notifier<Nip5State> {
   }
 
   /// Claim a NIP-05 name.
+  ///
+  /// SQUATTING GUARD: a name is reserved the moment it is claimed, paid or
+  /// not — so an unpaid reservation is a name held out of the pool. To stop
+  /// one account parking dozens of names it never pays for, claims are capped
+  /// at [kMaxUnpaidReservationsPerDomain] UNPAID reservations per domain
+  /// (re-claiming an existing reservation to PAY for it is always allowed —
+  /// see [payForAddress]). Paid/active names are unaffected: they're the
+  /// point. There is no delete endpoint (web docs: names return to the pool
+  /// only by expiring), so capping hoarding at the door is the client-side
+  /// fix; the server is the only thing that can truly release one early.
   Future<Nip5ClaimResult> claim({
     required String localPart,
     required int years,
@@ -366,6 +420,28 @@ class Nip5Notifier extends Notifier<Nip5State> {
       throw const AddressException('Log in first');
     }
 
+    // Enforce the unpaid-reservation cap for the domain being claimed under.
+    // Re-claiming a name you ALREADY hold (to pay for it) is a no-op against
+    // the cap — checked below before counting.
+    final targetDomainId = domainId ?? Env.nip5DomainId;
+    final normalized = localPart.trim().toLowerCase();
+    final alreadyHeld = state.addresses.any(
+      (a) =>
+          a.domainId == targetDomainId &&
+          a.localPart.toLowerCase() == normalized,
+    );
+    if (!alreadyHeld) {
+      final unpaidOnDomain = state.addresses
+          .where((a) => a.domainId == targetDomainId && a.isUnpaid)
+          .length;
+      if (unpaidOnDomain >= kMaxUnpaidReservationsPerDomain) {
+        throw AddressException(
+          'You already have $unpaidOnDomain unpaid name${unpaidOnDomain == 1 ? '' : 's'} reserved on this domain. '
+          'Pay for one (or let it lapse) before reserving another — a reserved name is held out of the pool for everyone.',
+        );
+      }
+    }
+
     final result = await _service.claimNip5(
       localPart: localPart,
       years: years,
@@ -375,8 +451,91 @@ class Nip5Notifier extends Notifier<Nip5State> {
       token: lnbits.token,
     );
 
+    // Remember the invoice locally — the extension only writes
+    // `extra.payment_hash` at ACTIVATION, so while the invoice is outstanding
+    // the only copy lives in this response. A reload would otherwise lose the
+    // ability to tell "not paid" from "paid, not switched on" (web
+    // `rememberNip5Invoice`).
+    final addressId = result.address?.id;
+    final hash = result.paymentHash;
+    if (addressId != null && hash != null && hash.isNotEmpty) {
+      await _pendingInvoices.remember(addressId, hash);
+    }
+
     await _load();
     return result;
+  }
+
+  /// Recover an unpaid (reserved, never-live) name's invoice so it can be
+  /// paid — the web's `UnpaidName` "Pay for it" path.
+  ///
+  /// Re-claiming a name already reserved to THIS key returns the same record
+  /// and its outstanding invoice — nothing is bought twice, nothing new is
+  /// reserved. The reservation keeps its original years + promo code so it is
+  /// not silently re-priced at full rate.
+  Future<Nip5ClaimResult> payForAddress(Nip5Address address) async {
+    return claim(
+      localPart: address.localPart,
+      years: address.years ?? 1,
+      domainId: address.domainId,
+      promoCode: address.promoCode,
+    );
+  }
+
+  /// The payment hash to watch for an unpaid reservation — the address's own
+  /// record when present, otherwise the one this app stored at claim time.
+  Future<String?> outstandingHashFor(Nip5Address address) async {
+    final own = address.outstandingPaymentHash;
+    if (own != null) return own;
+    return _pendingInvoices.recall(address.id);
+  }
+
+  /// Forget the stored invoice once a name is live (nothing owed anymore).
+  Future<void> forgetInvoice(String addressId) =>
+      _pendingInvoices.forget(addressId);
+
+  /// RELEASE an unpaid (reserved, never-live) name back to the pool — the
+  /// server DOES have a delete route (`DELETE .../user/domain/{did}/address/{id}`),
+  /// so this truly frees the name for others right away, not just "let it
+  /// lapse". Also clears our pending-invoice record. Refused for active names
+  /// (a paid name is money — release-that-throws-away-money needs a separate,
+  /// explicit confirm; see `releaseActiveAddress`).
+  Future<void> releaseUnpaidAddress(Nip5Address address) async {
+    if (!address.isUnpaid) {
+      throw const AddressException(
+          'Only an unpaid (reserved) name can be released this way.');
+    }
+    final lnbits = ref.read(lnbitsAuthProvider);
+    await _service.deleteNip5Address(
+      addressId: address.id,
+      domainId: address.domainId,
+      token: lnbits.token,
+    );
+    await _pendingInvoices.forget(address.id);
+    await _load();
+  }
+
+  /// Release (delete) a PAID/active name. Separate because it throws away
+  /// money — the UI confirms hard before calling this.
+  Future<void> releaseActiveAddress(Nip5Address address) async {
+    final lnbits = ref.read(lnbitsAuthProvider);
+    await _service.deleteNip5Address(
+      addressId: address.id,
+      domainId: address.domainId,
+      token: lnbits.token,
+    );
+    await _pendingInvoices.forget(address.id);
+    await _load();
+  }
+
+  /// Get a transfer code for an owned name (starts a transfer to another user).
+  Future<String> getTransferCode(Nip5Address address) async {
+    final lnbits = ref.read(lnbitsAuthProvider);
+    return _service.getNip5TransferCode(
+      addressId: address.id,
+      domainId: address.domainId,
+      token: lnbits.token,
+    );
   }
 
   /// Check payment status for a NIP-05 claim.
@@ -434,6 +593,73 @@ class Nip5Notifier extends Notifier<Nip5State> {
 
 // ── Providers ─────────────────────────────────────────────────────────
 
+/// How many UNPAID NIP-05 reservations one account may hold per domain.
+///
+/// A reservation is a name held out of the pool, paid or not — so this caps
+/// squatting without touching legitimate buyers: paid/active names don't
+/// count, and paying for an existing reservation (a re-claim) is always
+/// allowed. There is no delete endpoint, so names return to the pool only by
+/// expiring — this is the client-side anti-hoarding guard.
+const kMaxUnpaidReservationsPerDomain = 3;
+
+/// Keeps the invoice raised for a NIP-05 name, because nothing else does.
+///
+/// `extra.payment_hash` looks like the durable record of a purchase and is
+/// not one: the extension's `activate_address` is the only thing that ever
+/// writes it, so it is populated exactly when it has stopped being needed and
+/// empty for the whole window it was being read in. A reservation left unpaid
+/// therefore had no hash anywhere except the claim response — so a reload
+/// lost the ability to tell "not paid" from "paid, not switched on", and the
+/// app asked for the money again either way. Mirrors the web's
+/// `nip5-pending-invoices` localStorage store.
+class _PendingInvoiceStore {
+  static const _key = 'nip5_pending_invoices';
+
+  Future<Map<String, String>> _read() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key);
+      if (raw == null) return {};
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry('$k', '$v'));
+      }
+      return {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> remember(String addressId, String paymentHash) async {
+    if (addressId.isEmpty || paymentHash.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final map = await _read();
+      map[addressId] = paymentHash;
+      await prefs.setString(_key, jsonEncode(map));
+    } catch (_) {
+      // A full/refused store costs the recovery path, not the purchase.
+    }
+  }
+
+  Future<String?> recall(String addressId) async {
+    final map = await _read();
+    final hash = map[addressId];
+    return hash != null && hash.isNotEmpty ? hash : null;
+  }
+
+  Future<void> forget(String addressId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final map = await _read();
+      map.remove(addressId);
+      await prefs.setString(_key, jsonEncode(map));
+    } catch (_) {}
+  }
+}
+
+final _pendingInvoices = _PendingInvoiceStore();
+
 final addressServiceProvider = Provider<AddressService>((ref) {
   return AddressService();
 });
@@ -469,4 +695,35 @@ final hasNip5Provider = Provider<bool>((ref) {
   final nip5 = ref.watch(nip5Provider);
   return auth.profile?.nip05 != null &&
       nip5.addresses.any((a) => a.identifier == auth.profile!.nip05);
+});
+
+/// Unpaid (reserved-but-never-live) names, per domain id.
+///
+/// Drives the "X of N reserved" note and the claim-time cap: these are the
+/// names being held out of the pool without payment.
+final unpaidReservationsProvider = Provider<Map<String, List<Nip5Address>>>((ref) {
+  final nip5 = ref.watch(nip5Provider);
+  final byDomain = <String, List<Nip5Address>>{};
+  for (final a in nip5.addresses) {
+    if (!a.isUnpaid) continue;
+    (byDomain[a.domainId] ??= []).add(a);
+  }
+  return byDomain;
+});
+
+/// Total unpaid reservations across all domains (for a headline count).
+final unpaidReservationCountProvider = Provider<int>((ref) {
+  return ref
+      .watch(unpaidReservationsProvider)
+      .values
+      .fold(0, (sum, list) => sum + list.length);
+});
+
+/// Names expiring within the renewal window (active but lapsing) — the app
+/// surfaces these so a paid name is renewed rather than lost back to the pool.
+final expiringNamesProvider = Provider<List<Nip5Address>>((ref) {
+  final nip5 = ref.watch(nip5Provider);
+  return nip5.addresses
+      .where((a) => nip5Status(a) == Nip5Status.expiring)
+      .toList();
 });

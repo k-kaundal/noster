@@ -8,11 +8,17 @@ import 'package:shimmer/shimmer.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
 import 'package:nostrfeed_mobile/features/compose/providers/upload_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
+import 'package:nostrfeed_mobile/features/communities/community_detail_screen.dart';
+import 'package:nostrfeed_mobile/features/profile/providers/profile_providers.dart';
+import 'package:nostrfeed_mobile/features/profile/user_list_screen.dart';
 import 'package:nostrfeed_mobile/features/feed/widgets/post_card.dart';
 import 'package:nostrfeed_mobile/core/widgets/profile_avatar.dart';
+import 'package:nostrfeed_mobile/features/premium/widgets/paid_badge.dart';
 import 'package:nostrfeed_mobile/features/zap/zap_sheet.dart';
 import 'package:nostrfeed_mobile/features/profile/edit_profile_screen.dart';
 
@@ -35,7 +41,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -238,10 +244,53 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     color: Colors.black.withValues(alpha: 0.4),
                     shape: BoxShape.circle,
                   ),
-                  child: IconButton(
+                  child: PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert_rounded,
                         color: Colors.white),
-                    onPressed: () => HapticFeedback.lightImpact(),
+                    tooltip: 'Profile options',
+                    onSelected: (value) {
+                      if (value == 'report') {
+                        showReportDialog(context, pubkey: widget.pubkey);
+                      } else if (value == 'copy_npub') {
+                        final npub = ref
+                            .read(nostrServiceProvider)
+                            .authService
+                            .encodeNpub(widget.pubkey!);
+                        Clipboard.setData(ClipboardData(text: npub));
+                        AppToast.success(context, 'Public key copied');
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'report',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.flag_outlined,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Report profile',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'copy_npub',
+                        child: Row(
+                          children: [
+                            Icon(Icons.key_rounded, size: 18),
+                            SizedBox(width: 10),
+                            Text('Copy public key'),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
@@ -535,6 +584,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               color: scheme.primary,
                             ),
                           ],
+                          // Paid relay member mark (web RelayMark) — only
+                          // renders when the relay confirms admission.
+                          PaidRelayMark(pubkey: pubkey, size: 18),
                         ],
                       ),
 
@@ -549,6 +601,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             ),
                           ),
                         ),
+
+                      // Paid member chip (renders nothing unless the relay
+                      // confirms this key paid admission).
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: PaidRelayBadge(pubkey: pubkey),
+                      ),
 
                       // Bio
                       if (profile?.about != null && profile!.about!.isNotEmpty)
@@ -569,7 +628,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
                       const SizedBox(height: 12),
 
-                      // Stats — X style: bold count + label, horizontal
+                      // Stats — X style: bold count + label, horizontal.
+                      // Following/Followers are TAPPABLE → user list screens.
                       Row(
                         children: [
                           _XStat(
@@ -577,14 +637,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             label: 'Posts',
                           ),
                           const SizedBox(width: 16),
-                          _XStat(
-                            count: followsAsync.value?.length ?? 0,
-                            label: 'Following',
+                          GestureDetector(
+                            onTap: () => _openUserList(
+                              context,
+                              ref,
+                              title: 'Following',
+                              provider: followingListProvider(pubkey),
+                            ),
+                            child: _XStat(
+                              count: followsAsync.value?.length ?? 0,
+                              label: 'Following',
+                            ),
                           ),
                           const SizedBox(width: 16),
-                          _XStat(
-                            count: followersCount,
-                            label: 'Followers',
+                          GestureDetector(
+                            onTap: () => _openUserList(
+                              context,
+                              ref,
+                              title: 'Followers',
+                              provider: followersListProvider(pubkey),
+                            ),
+                            child: _XStat(
+                              count: followersCount,
+                              label: 'Followers',
+                            ),
                           ),
                         ],
                       ),
@@ -622,6 +698,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   Tab(text: 'Articles'),
                   Tab(text: 'Media'),
                   Tab(text: 'Likes'),
+                  Tab(text: 'Communities'),
                 ],
               ),
               color: scheme.surface,
@@ -638,8 +715,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           _PostsTab(pubkey: pubkey, filter: (e) => e.kind == 30023),
           _PostsTab(
               pubkey: pubkey, filter: (e) => e.kind == 1 && _hasMedia(e)),
-          _PostsTab(pubkey: pubkey, filter: (e) => e.kind == 7),
+          // Likes = posts the USER liked (their kind-7 targets), not kind-7
+          // in their own feed (which is always empty).
+          _LikedPostsTab(pubkey: pubkey),
+          _CommunitiesTab(pubkey: pubkey),
         ],
+      ),
+    );
+  }
+
+  /// Open a user-list screen (followers / following) with a resolved list.
+  void _openUserList(
+    BuildContext context,
+    WidgetRef ref, {
+    required String title,
+    required AutoDisposeFutureProvider<List<String>> provider,
+  }) async {
+    // Resolve the pubkeys, then push the list screen with the data.
+    final pubkeys = await ref.read(provider.future);
+    if (!context.mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserListScreen(title: title, pubkeys: pubkeys),
       ),
     );
   }
@@ -1024,6 +1121,135 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_TabBarDelegate oldDelegate) =>
       tabBar != oldDelegate.tabBar || color != oldDelegate.color;
+}
+
+/// Communities tab: communities the user JOINED + communities they CREATED.
+class _CommunitiesTab extends ConsumerWidget {
+  final String pubkey;
+  const _CommunitiesTab({required this.pubkey});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final joinedAsync = ref.watch(joinedCommunitiesProvider(pubkey));
+    final createdAsync = ref.watch(myCommunitiesProvider(pubkey));
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        if (createdAsync.valueOrNull?.isNotEmpty == true) ...[
+          _SectionHeader(title: 'Created'),
+          for (final c in createdAsync.value!) _CommunityTile(event: c),
+          const SizedBox(height: 16),
+        ],
+        _SectionHeader(title: 'Joined'),
+        joinedAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (_, _) => const Text('Failed to load'),
+          data: (communities) => communities.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(
+                    child: Text('No communities joined yet'),
+                  ),
+                )
+              : Column(
+                  children: [
+                    for (final c in communities) _CommunityTile(event: c),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.4,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+    );
+  }
+}
+
+class _CommunityTile extends StatelessWidget {
+  final NostrEvent event;
+  const _CommunityTile({required this.event});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = event.getTag('name') ?? 'Unnamed';
+    final desc = event.getTag('description') ?? '';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: Icon(
+            Icons.groups_rounded,
+            color: Theme.of(context).colorScheme.onPrimaryContainer,
+          ),
+        ),
+        title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: desc.isNotEmpty
+            ? Text(desc, maxLines: 1, overflow: TextOverflow.ellipsis)
+            : null,
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CommunityDetailScreen(community: event),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Likes tab: posts the USER liked (their kind-7 reaction targets).
+class _LikedPostsTab extends ConsumerWidget {
+  final String pubkey;
+  const _LikedPostsTab({required this.pubkey});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final likedAsync = ref.watch(userLikedPostsProvider(pubkey));
+
+    return likedAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (_, _) => const Center(child: Text('Failed to load likes')),
+      data: (posts) {
+        if (posts.isEmpty) {
+          return const EmptyState(
+            icon: Icons.favorite_outline_rounded,
+            title: 'No likes yet',
+            subtitle: 'Posts you like will appear here',
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.only(top: 8, bottom: 180),
+          itemCount: posts.length,
+          itemBuilder: (context, index) =>
+              _PostListItem(event: posts[index]),
+        );
+      },
+    );
+  }
 }
 
 class _PostsTab extends ConsumerWidget {

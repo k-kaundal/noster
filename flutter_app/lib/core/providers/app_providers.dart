@@ -156,7 +156,46 @@ final relayStatusProvider = StateProvider<Map<String, RelayState>>((ref) => {});
 /// Feed events (global)
 final feedProvider = FutureProvider.autoDispose<List<NostrEvent>>((ref) async {
   final nostr = await _initNostr(ref);
-  return nostr.fetchFeed(limit: 100);
+  final auth = ref.watch(authStateProvider);
+
+  // Main feed: global posts.
+  final posts = await nostr.fetchFeed(limit: 100);
+
+  // Merge in posts from communities the user JOINED (NIP-72) — so their
+  // community content shows up in the home feed too.
+  if (auth.isLoggedIn && auth.pubkey != null) {
+    try {
+      final joinedEvents = await nostr.relayPool.query([
+        NostrFilter(kinds: [10004], authors: [auth.pubkey!], limit: 3),
+      ], timeout: const Duration(seconds: 4));
+      final coordinates = <String>{};
+      for (final e in joinedEvents) {
+        for (final tag in e.tags) {
+          if (tag.isNotEmpty && tag[0] == 'a' && tag.length > 1) {
+            coordinates.add(tag[1]);
+          }
+        }
+      }
+      if (coordinates.isNotEmpty) {
+        final communityPosts = await nostr.relayPool.query([
+          NostrFilter(
+            kinds: [1, 1111],
+            tagFilters: {'a': coordinates.toList()},
+            limit: 40,
+          ),
+        ], timeout: const Duration(seconds: 5));
+        final seen = posts.map((e) => e.id).toSet();
+        for (final cp in communityPosts) {
+          if (seen.add(cp.id)) posts.add(cp);
+        }
+        posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      }
+    } catch (_) {
+      // Community merge is best-effort — the main feed already loaded.
+    }
+  }
+
+  return posts;
 });
 
 /// Feed events (following)
@@ -358,14 +397,9 @@ final bookmarksProvider = FutureProvider.autoDispose<List<NostrEvent>>((ref) asy
   final nostr = await _initNostr(ref);
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return [];
-  // Get the bookmark list (kind 10003)
-  final lists = await nostr.fetchBookmarks(auth.pubkey!);
-  if (lists.isEmpty) return [];
-  // Collect event IDs from all bookmark lists
-  final ids = <String>{};
-  for (final list in lists) {
-    ids.addAll(list.eventRefs);
-  }
+  // The merged id set (every relay revision + optimistic write), NOT
+  // fetchBookmarks' single stale revision.
+  final ids = await nostr.fetchBookmarkedIds(auth.pubkey!);
   if (ids.isEmpty) return [];
   // Fetch the bookmarked events
   final events = await nostr.relayPool.query([
@@ -380,12 +414,7 @@ final bookmarkedIdsProvider = FutureProvider.autoDispose<Set<String>>((ref) asyn
   final nostr = await _initNostr(ref);
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return {};
-  final lists = await nostr.fetchBookmarks(auth.pubkey!);
-  final ids = <String>{};
-  for (final list in lists) {
-    ids.addAll(list.eventRefs);
-  }
-  return ids;
+  return nostr.fetchBookmarkedIds(auth.pubkey!);
 });
 
 /// DMs
@@ -408,12 +437,6 @@ final listsProvider = FutureProvider.autoDispose<List<NostrEvent>>((ref) async {
 final calendarProvider = FutureProvider.autoDispose<List<NostrEvent>>((ref) async {
   final nostr = await _initNostr(ref);
   return nostr.fetchCalendarEvents();
-});
-
-/// Groups
-final groupsProvider = FutureProvider.autoDispose<List<NostrEvent>>((ref) async {
-  final nostr = await _initNostr(ref);
-  return nostr.fetchGroups();
 });
 
 /// Market listings

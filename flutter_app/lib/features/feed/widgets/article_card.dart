@@ -1,9 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/features/articles/articles_screen.dart'
-    show ArticleReaderScreen;
 
 /// Compact preview card for a long-form article (kind 30023, NIP-23) when
 /// it appears in a feed. Shows cover image, title, and summary — tapping
@@ -34,11 +33,7 @@ class ArticleCard extends StatelessWidget {
       child: InkWell(
         // Open the full article reader (NIP-23: markdown body renders there,
         // never inline in a feed).
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => ArticleReaderScreen(event: event),
-          ),
-        ),
+        onTap: () => context.push('/articles/reader', extra: event),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

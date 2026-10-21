@@ -1042,13 +1042,24 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                TextButton.icon(
+                OutlinedButton.icon(
                   onPressed: () => context.push('/wallet/nwc'),
                   icon: const Icon(Icons.link, size: 18),
-                  label: const Text('Or connect a wallet you already have'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: colorScheme.onSurfaceVariant,
+                  label: const Text('Connect an external wallet'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 14,
+                    ),
                   ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Alby · Zeus · Wallet of Satoshi · Mutiny · Phoenix · Breez',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),

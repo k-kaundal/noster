@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/identity/providers/address_providers.dart';
+import 'package:nostrfeed_mobile/features/identity/widgets/owned_nip5_tile.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/providers/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/services/address_service.dart';
@@ -492,75 +494,115 @@ class _LightningAddressCard extends ConsumerWidget {
     bool isClaiming = false;
     String? errorMsg;
 
+    // Domain selection: every configured lightning domain is on offer, first
+    // is the default. A custom name on ANY domain is paid — this dialog only
+    // claims the free generated name; custom names route to the buy flow.
+    final domains = lightningAddressDomains;
+    String selectedDomain = domains.first;
+    final auth = ref.read(authStateProvider);
+    final freeName =
+        auth.pubkey != null ? FreeAddress.generate(auth.pubkey!) : null;
+    if (freeName != null && controller.text.isEmpty) {
+      controller.text = freeName;
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Claim Lightning Address'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                decoration: InputDecoration(
-                  labelText: 'Username',
-                  hintText: 'alice',
-                  prefixIcon: const Icon(Icons.alternate_email),
-                  suffixText: '@${Env.lightningAddressDomain}',
+        builder: (ctx, setState) {
+          final typed = controller.text.trim().toLowerCase();
+          final isFreeName = freeName != null && typed == freeName;
+          return AlertDialog(
+            title: const Text('Claim Lightning Address'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  decoration: InputDecoration(
+                    labelText: 'Username',
+                    hintText: freeName ?? 'u…',
+                    prefixIcon: const Icon(Icons.alternate_email),
+                    suffixText: '@$selectedDomain',
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'This creates a lightning address that people can zap from any Nostr client.',
-                style: Theme.of(ctx).textTheme.bodySmall,
-              ),
-              if (errorMsg != null) ...[
-                const SizedBox(height: 12),
-                Text(errorMsg!,
-                    style: TextStyle(
-                        color: Theme.of(ctx).colorScheme.error,
-                        fontSize: 12)),
+                // Domain picker — only shown when there's a choice to make.
+                if (domains.length > 1) ...[
+                  const SizedBox(height: 16),
+                  Text('Domain', style: Theme.of(ctx).textTheme.labelLarge),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final d in domains)
+                        ChoiceChip(
+                          label: Text(d),
+                          selected: selectedDomain == d,
+                          onSelected: (_) => setState(() => selectedDomain = d),
+                        ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 10),
+                Text(
+                  isFreeName
+                      ? 'Your free address — derived from your pubkey, free forever.'
+                      : 'Custom names are paid. Get them from the Verified Name section above — it comes with an invoice to pay first.',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: isFreeName
+                            ? Colors.green.shade700
+                            : Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                if (errorMsg != null) ...[
+                  const SizedBox(height: 12),
+                  Text(errorMsg!,
+                      style: TextStyle(
+                          color: Theme.of(ctx).colorScheme.error,
+                          fontSize: 12)),
+                ],
               ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isClaiming ? null : () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
             ),
-            FilledButton(
-              onPressed: isClaiming
-                  ? null
-                  : () async {
-                      final username = controller.text.trim().toLowerCase();
-                      if (username.isEmpty) return;
-                      setState(() {
-                        isClaiming = true;
-                        errorMsg = null;
-                      });
-                      try {
-                        await ref
-                            .read(lightningAddressProvider.notifier)
-                            .claim(username: username);
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text(
-                                    '$username@${Env.lightningAddressDomain} is yours!')),
-                          );
-                        }
-                      } catch (e) {
+            actions: [
+              TextButton(
+                onPressed: isClaiming ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: isClaiming || !isFreeName
+                    ? null
+                    : () async {
                         setState(() {
-                          isClaiming = false;
-                          errorMsg = e.toString();
+                          isClaiming = true;
+                          errorMsg = null;
                         });
-                      }
-                    },
-              child: const Text('Claim'),
-            ),
-          ],
-        ),
+                        try {
+                          await ref
+                              .read(lightningAddressProvider.notifier)
+                              .claim(username: typed, domain: selectedDomain);
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text(
+                                      '$typed@$selectedDomain is yours!')),
+                            );
+                          }
+                        } catch (e) {
+                          setState(() {
+                            isClaiming = false;
+                            errorMsg = e.toString();
+                          });
+                        }
+                      },
+                child: const Text('Claim free address'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -577,7 +619,9 @@ class _Nip5Card extends ConsumerWidget {
     final nip5 = ref.watch(nip5Provider);
     final auth = ref.watch(authStateProvider);
     final lnbits = ref.watch(lnbitsAuthProvider);
-    final hasNip5 = ref.watch(hasNip5Provider);
+    final unpaidByDomain = ref.watch(unpaidReservationsProvider);
+    final unpaidCount = ref.watch(unpaidReservationCountProvider);
+    final expiring = ref.watch(expiringNamesProvider);
 
     if (!lnbits.isConnected) {
       return Card(
@@ -628,72 +672,40 @@ class _Nip5Card extends ConsumerWidget {
       );
     }
 
-    final identifier = nip5.identifier;
+    final addresses = nip5.addresses;
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
-          if (identifier != null) ...[
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: scheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.verified, color: scheme.onPrimaryContainer),
+          // Every name the account holds — names are not interchangeable:
+          // each has its own domain + expiry, and only ONE can be the nip05
+          // on the profile, so they're listed with their own publish action
+          // rather than summarised behind the primary. Mirrors the web's
+          // `OwnedNames`.
+          if (addresses.isNotEmpty) ...[
+            // Anti-squatting note: unpaid reservations are names held out of
+            // the pool. Surface the count + cap so it reads as a limit, and
+            // the expiring-soon warning so a paid name is renewed, not lost.
+            if (unpaidCount > 0)
+              _ReservationNotice(
+                unpaidByDomain: unpaidByDomain,
+                unpaidCount: unpaidCount,
               ),
-              title: Text(
-                identifier,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'monospace',
-                    fontSize: 14),
-              ),
-              subtitle: Text(
-                hasNip5
-                    ? 'Published on your profile — shows the ✓ badge'
-                    : 'Not on your profile yet — publish it to show the ✓',
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.copy, size: 18),
-                tooltip: 'Copy identifier',
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: identifier));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Identifier copied')),
-                  );
-                },
-              ),
-            ),
-            if (!hasNip5 && auth.isLoggedIn && !auth.isReadOnly)
+            if (expiring.isNotEmpty) _ExpiringNotice(names: expiring),
+            for (var i = 0; i < addresses.length; i++) ...[
+              if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
+              OwnedNip5Tile(address: addresses[i]),
+            ],
+            if (auth.isLoggedIn && !auth.isReadOnly)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: SizedBox(
                   width: double.infinity,
-                  child: FilledButton.tonalIcon(
-                    onPressed: () async {
-                      try {
-                        await ref
-                            .read(nip5Provider.notifier)
-                            .publishToProfile();
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Profile updated — you\'re verified!')),
-                          );
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed: $e')),
-                          );
-                        }
-                      }
-                    },
-                    icon: const Icon(Icons.publish, size: 18),
-                    label: const Text('Publish to Profile'),
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showNip5ClaimDialog(context, ref),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Buy another name'),
                   ),
                 ),
               ),
@@ -923,23 +935,53 @@ class _Nip5Card extends ConsumerWidget {
                                 years: 1,
                                 domainId: selectedDomain!.id,
                               );
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          if (context.mounted) {
-                            final fullName =
-                                '$name@${selectedDomain!.domain}';
-                            if (result.bolt11.isNotEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(
-                                        'Invoice created — pay to activate $fullName')),
-                              );
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(
-                                        '$fullName is reserved for you!')),
-                              );
+                          final fullName = '$name@${selectedDomain!.domain}';
+
+                          // Free (promo) claim — no invoice, done.
+                          if (result.bolt11.isEmpty) {
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (context.mounted) {
+                              AppToast.success(
+                                  context, '$fullName is yours!');
                             }
+                            return;
+                          }
+
+                          // PAID claim: close the search dialog and open the
+                          // pay sheet (in-app Pay button + QR fallback). The
+                          // name only activates once the invoice settles.
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (!context.mounted) return;
+                          final outcome = await showPayInvoiceSheet(
+                            context,
+                            title: 'Pay to activate your name',
+                            bolt11: result.bolt11,
+                            amountSats: searchResult?.priceSats,
+                            memo: result.address?.identifier ?? fullName,
+                            checkPaid: () async {
+                              final hash = result.paymentHash;
+                              if (hash == null) return false;
+                              try {
+                                return await ref
+                                    .read(nip5Provider.notifier)
+                                    .checkPayment(
+                                      paymentHash: hash,
+                                      domainId: result.domainId,
+                                    );
+                              } catch (_) {
+                                return false;
+                              }
+                            },
+                          );
+                          if (!context.mounted) return;
+                          if (outcome == InvoicePayResult.paid) {
+                            AppToast.success(
+                                context, '$fullName activated — publish it to show your ✓');
+                          } else {
+                            AppToast.info(
+                              context,
+                              '$fullName is reserved — finish paying from the Wallet → Verified Name section to activate it.',
+                            );
                           }
                         } catch (e) {
                           setState(() {
@@ -955,8 +997,8 @@ class _Nip5Card extends ConsumerWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : Text(searchResult != null
-                        ? 'Reserve — ${searchResult!.describePrice()}'
-                        : 'Reserve'),
+                        ? 'Buy — ${searchResult!.describePrice()}'
+                        : 'Buy'),
               ),
             ],
           );
@@ -1076,6 +1118,94 @@ class _FreeAddressCard extends ConsumerWidget {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Anti-squatting note: unpaid reservations are names held out of the pool
+/// for everyone. Shows the running count against the per-domain cap so it
+/// reads as a limit, and nudges paying for (or letting lapse) the oldest.
+class _ReservationNotice extends StatelessWidget {
+  final Map<String, List<Nip5Address>> unpaidByDomain;
+  final int unpaidCount;
+  const _ReservationNotice({
+    required this.unpaidByDomain,
+    required this.unpaidCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final atCap = unpaidByDomain.values
+        .any((list) => list.length >= kMaxUnpaidReservationsPerDomain);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.hourglass_top_rounded,
+              size: 18, color: Colors.orange.shade700),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              atCap
+                  ? 'You\'ve reserved the most unpaid names allowed on a domain. Pay for one or let it lapse before reserving another — a reserved name is held out of the pool for everyone.'
+                  : '$unpaidCount name${unpaidCount == 1 ? ' is' : 's are'} reserved but unpaid. They\'re held for you, but only up to $kMaxUnpaidReservationsPerDomain per domain — pay for them to keep them.',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: Colors.orange.shade800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A paid name that is about to lapse — it returns to the pool unless renewed.
+class _ExpiringNotice extends StatelessWidget {
+  final List<Nip5Address> names;
+  const _ExpiringNotice({required this.names});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final first = names.first;
+    final days = first.daysUntilExpiry ?? 0;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: scheme.error.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.event_busy_rounded, size: 18, color: scheme.error),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              names.length == 1
+                  ? '${first.identifier} lapses in $days day${days == 1 ? '' : 's'} and returns to the pool. Renew it to keep your ✓.'
+                  : '${names.length} names lapse soon and return to the pool. Renew them to keep your ✓.',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: scheme.onErrorContainer,
+              ),
+            ),
+          ),
         ],
       ),
     );

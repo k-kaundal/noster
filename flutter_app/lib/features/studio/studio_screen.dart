@@ -1,127 +1,68 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:timeago/timeago.dart' as timeago;
+import 'package:go_router/go_router.dart';
+
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
-import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+import 'package:nostrfeed_mobile/features/memberships/providers/membership_providers.dart';
+import 'package:nostrfeed_mobile/features/memberships/widgets/tier_editor_sheet.dart';
+import 'package:nostrfeed_mobile/features/studio/models/subscription.dart';
+import 'package:nostrfeed_mobile/features/studio/providers/studio_providers.dart';
+import 'package:nostrfeed_mobile/features/studio/widgets/zap_goal_card.dart';
+import 'package:nostrfeed_mobile/features/studio/widgets/zap_goal_editor.dart';
 
+/// Creator Studio — what you earned, and the tools to earn it.
+///
+/// **Premium-only**: the seller side (tiers, goals, the earnings dashboard)
+/// unlocks with a paid NIP-05/lightning identity. Earnings figures are built
+/// only from zap receipts that survive NIP-57 validation.
 class StudioScreen extends ConsumerWidget {
   const StudioScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authStateProvider);
-    final feed = ref.watch(feedProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Creator Studio'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.analytics_outlined),
-            onPressed: () {},
-            tooltip: 'Analytics',
-          ),
-        ],
-      ),
+    if (!auth.isLoggedIn) {
+      return const DetailScaffold(
+        title: 'Studio',
+        body: EmptyState(
+          icon: Icons.dashboard_rounded,
+          title: 'Sign in to open your Studio',
+          subtitle: 'Your earnings, goals and memberships live here.',
+        ),
+      );
+    }
+
+    final canUse = ref.watch(canUseStudioProvider).value ?? false;
+
+    if (!canUse) {
+      return const DetailScaffold(
+        title: 'Studio',
+        body: _StudioGate(),
+      );
+    }
+
+    return DetailScaffold(
+      title: 'Studio',
       body: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(feedProvider),
+        onRefresh: () async {
+          ref.invalidate(studioEarningsProvider);
+          ref.invalidate(myGoalsProvider);
+          ref.invalidate(myMembershipsProvider);
+        },
         child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // Stats grid — responsive aspect ratio so cards fit on any
-            // screen width and text-scale-factor.
-            Builder(builder: (context) {
-              final screenWidth = MediaQuery.sizeOf(context).width;
-              final cellWidth = (screenWidth - 44) / 2;
-              final minCellHeight = 68.0 * MediaQuery.textScalerOf(context).scale(1.0);
-              final aspect = (cellWidth / minCellHeight).clamp(1.0, 3.0);
-              return GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: aspect,
-                children: const [
-                  _StatCard(
-                    icon: Icons.article_outlined,
-                    label: 'Posts',
-                    value: '128',
-                    delta: '+12 this week',
-                  ),
-                  _StatCard(
-                    icon: Icons.bolt,
-                    label: 'Zaps received',
-                    value: '4.2k sats',
-                    delta: '+340 today',
-                    iconColor: Colors.amber,
-                  ),
-                  _StatCard(
-                    icon: Icons.people_outline,
-                    label: 'Followers',
-                    value: '1,248',
-                    delta: '+23 this week',
-                  ),
-                  _StatCard(
-                    icon: Icons.favorite_outline,
-                    label: 'Engagement',
-                    value: '8.4%',
-                    delta: '+1.2% this week',
-                  ),
-                ],
-              );
-            }),
-            const SizedBox(height: 24),
-
-            // Earnings chart placeholder
-            Text(
-              'Earnings (30 days)',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            _EarningsChart(),
-            const SizedBox(height: 24),
-
-            // Recent activity
-            Text(
-              'Recent Activity',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            feed.when(
-              loading: () => const _ActivitySkeleton(),
-              error: (_, _) => const ErrorView(
-                message: 'Failed to load activity.',
-              ),
-              data: (events) {
-                if (events.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.article_outlined,
-                    title: 'No recent activity yet.',
-                  );
-                }
-                final myPosts = auth.pubkey != null
-                    ? events
-                        .where((e) => e.pubkey == auth.pubkey)
-                        .take(5)
-                        .toList()
-                    : events.take(5).toList();
-                return Column(
-                  children: myPosts
-                      .map((e) => _ActivityTile(event: e))
-                      .toList(),
-                );
-              },
-            ),
+          padding: AppSpacing.paddingMd,
+          children: const [
+            _EarningsSection(),
+            AppSpacing.gapLg,
+            _GoalsSection(),
+            AppSpacing.gapLg,
+            _MembershipsSection(),
           ],
         ),
       ),
@@ -129,224 +70,462 @@ class StudioScreen extends ConsumerWidget {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final String delta;
-  final Color? iconColor;
-
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.delta,
-    this.iconColor,
-  });
+/// The premium gate — Studio is where a creator sells, and selling needs a
+/// paid, verified identity.
+class _StudioGate extends StatelessWidget {
+  const _StudioGate();
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    return Center(
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon,
-                  size: 20,
-                  color: iconColor ?? scheme.onPrimaryContainer),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                  ),
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant),
-                    ),
-                  ),
-                  Flexible(
-                    child: Text(
-                      delta,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.green.shade600),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EarningsChart extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    // Placeholder bar chart using containers
-    final values = [0.3, 0.5, 0.4, 0.7, 0.55, 0.8, 0.65, 0.9, 0.75, 0.6, 0.85, 1.0, 0.7, 0.5];
-
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: AppSpacing.paddingXl,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '12,480 sats',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      'Total this month',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
+            Icon(Icons.dashboard_rounded, size: 64, color: scheme.primary),
+            AppSpacing.gapMd,
+            Text(
+              'Studio is a Premium feature',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            AppSpacing.gapSm,
+            Text(
+              'Creators sell subscriptions and run zap goals under a verified, '
+              'paid name — that is what supporters are paying to reach. Get a '
+              'NIP-05 name to open your Studio.',
+              style: TextStyle(color: scheme.onSurfaceVariant, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+            AppSpacing.gapLg,
+            FilledButton.icon(
+              onPressed: () => context.push('/premium'),
+              icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+              label: const Text('Get Premium'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Earnings ────────────────────────────────────────────────────────────
+
+class _EarningsSection extends ConsumerStatefulWidget {
+  const _EarningsSection();
+
+  @override
+  ConsumerState<_EarningsSection> createState() => _EarningsSectionState();
+}
+
+class _EarningsSectionState extends ConsumerState<_EarningsSection> {
+  int _days = 30;
+  static const _windows = [7, 30, 90];
+
+  @override
+  Widget build(BuildContext context) {
+    final earnings = ref.watch(studioEarningsProvider(_days));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Earnings',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            SegmentedButton<int>(
+              segments: _windows
+                  .map((d) => ButtonSegment(value: d, label: Text('${d}d')))
+                  .toList(),
+              selected: {_days},
+              showSelectedIcon: false,
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onSelectionChanged: (s) => setState(() => _days = s.first),
+            ),
+          ],
+        ),
+        AppSpacing.gapSm,
+        earnings.when(
+          loading: () => const SkeletonBox(height: 180),
+          error: (error, _) => ErrorView.fromError(error),
+          data: (data) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  _Stat(
+                    label: 'sats',
+                    value: _format(data.sats),
+                    delta: data.changePercent == null
+                        ? null
+                        : '${data.changePercent! >= 0 ? '+' : ''}'
+                            '${data.changePercent}% vs prev',
                   ),
-                  child: Text(
-                    '+18%',
-                    style: TextStyle(
-                        color: Colors.green.shade700,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13),
+                  AppSpacing.gapSm,
+                  _Stat(label: 'payments', value: '${data.payments}'),
+                  AppSpacing.gapSm,
+                  _Stat(
+                    label: 'zappers',
+                    value: '${data.zappers}',
+                    delta: '${data.repeatZappers} repeat',
+                  ),
+                ],
+              ),
+              AppSpacing.gapSm,
+              _TrendCard(daily: data.daily, days: _days),
+              if (data.refused > 0) ...[
+                AppSpacing.gapXs,
+                Text(
+                  '${data.refused} receipt${data.refused == 1 ? '' : 's'} named you and '
+                  'failed a NIP-57 check, so not counted.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  final String label;
+  final String value;
+  final String? delta;
+  const _Stat({required this.label, required this.value, this.delta});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: Container(
+        padding: AppSpacing.paddingSm,
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 80,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: values
-                    .map(
-                      (v) => Expanded(
+            Text(
+              label,
+              style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+            ),
+            if (delta != null)
+              Text(
+                delta!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10, color: scheme.primary),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TrendCard extends StatelessWidget {
+  final List<DailyEarning> daily;
+  final int days;
+  const _TrendCard({required this.daily, required this.days});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final max = daily.fold<int>(0, (m, d) => d.sats > m ? d.sats : m);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: AppSpacing.paddingMd,
+        child: SizedBox(
+          height: 72,
+          child: max == 0
+              ? Center(
+                  child: Text(
+                    'No zaps in this period.',
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant),
+                  ),
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (final day in daily)
+                      Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 2),
-                          child: Container(
-                            height: 80 * v,
-                            decoration: BoxDecoration(
-                              color: scheme.primary.withValues(alpha: 0.7),
-                              borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(4)),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 0.5),
+                          child: Tooltip(
+                            message:
+                                '${day.day.month}/${day.day.day}: ${day.sats} sats',
+                            child: Container(
+                              height: (72 * (day.sats / max)).clamp(2.0, 72.0),
+                              decoration: BoxDecoration(
+                                color: day.sats > 0
+                                    ? scheme.primary
+                                        .withValues(alpha: 0.75)
+                                    : scheme.surfaceContainerHigh,
+                                borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(2)),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    )
-                    .toList(),
-              ),
-            ),
-          ],
+                  ],
+                ),
         ),
       ),
     );
   }
 }
 
-class _ActivityTile extends StatelessWidget {
-  final NostrEvent event;
-  const _ActivityTile({required this.event});
+// ── Goals ───────────────────────────────────────────────────────────────
+
+class _GoalsSection extends ConsumerWidget {
+  const _GoalsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final goals = ref.watch(myGoalsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Zap goals',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => ZapGoalEditorSheet.show(context),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New goal'),
+            ),
+          ],
+        ),
+        AppSpacing.gapSm,
+        goals.when(
+          loading: () => const SkeletonBox(height: 96),
+          error: (error, _) => ErrorView.fromError(error),
+          data: (items) {
+            if (items.isEmpty) {
+              return const _HintCard(
+                'No goals yet. Set a target and people can zap toward it.',
+              );
+            }
+            return Column(
+              children: [
+                for (final item in items) ...[
+                  ZapGoalCard(
+                    goal: item.goal,
+                    progress: item.progress,
+                    isOwn: true,
+                  ),
+                  AppSpacing.gapSm,
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+// ── Memberships ─────────────────────────────────────────────────────────
+
+class _MembershipsSection extends ConsumerWidget {
+  const _MembershipsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final memberships = ref.watch(myMembershipsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Memberships',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => TierEditorSheet.show(context),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New tier'),
+            ),
+            TextButton(
+              onPressed: () => context.push('/memberships'),
+              child: const Text('Open'),
+            ),
+          ],
+        ),
+        AppSpacing.gapSm,
+        memberships.when(
+          loading: () => const SkeletonBox(height: 96),
+          error: (error, _) => ErrorView.fromError(error),
+          data: (data) {
+            if (data.standings.isEmpty) {
+              return const _HintCard(
+                'No tiers yet. A tier is what a subscriber pays for, one '
+                'period at a time.',
+              );
+            }
+            final summary = data.summary;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    _Stat(
+                      label: 'supporters',
+                      value: '${summary.activeMembers}',
+                      delta: summary.renewingSoon > 0
+                          ? '${summary.renewingSoon} ending soon'
+                          : null,
+                    ),
+                    AppSpacing.gapSm,
+                    _Stat(
+                      label: 'per month',
+                      value: _format(summary.runRateSats),
+                    ),
+                    AppSpacing.gapSm,
+                    _Stat(
+                      label: 'lifetime',
+                      value: _format(summary.lifetimeSats),
+                    ),
+                  ],
+                ),
+                AppSpacing.gapSm,
+                for (final standing in data.standings)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _StudioTierRow(standing: standing),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _StudioTierRow extends StatelessWidget {
+  final TierStanding standing;
+  const _StudioTierRow({required this.standing});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final timestamp =
-        DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(
-        radius: 16,
-        backgroundColor: scheme.primaryContainer,
-        child: Icon(Icons.article, size: 16, color: scheme.onPrimaryContainer),
+    final tier = standing.tier;
+    return Container(
+      padding: AppSpacing.paddingSm,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
       ),
-      title: Text(
-        event.content,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 13),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tier.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  '${_format(tier.amount)} sats/${describeCadence(tier.cadence)}'
+                  ' · ${standing.active.length} active',
+                  style: TextStyle(
+                      fontSize: 12, color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '${_format(standing.lifetimeSats)} sats',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        ],
       ),
-      subtitle: Text(timeago.format(timestamp),
-          style: const TextStyle(fontSize: 11)),
-      trailing: Icon(Icons.chevron_right,
-          size: 18, color: scheme.onSurfaceVariant),
-      onTap: () {},
     );
   }
 }
 
-class _ActivitySkeleton extends StatelessWidget {
-  const _ActivitySkeleton();
+class _HintCard extends StatelessWidget {
+  final String text;
+  const _HintCard(this.text);
 
   @override
   Widget build(BuildContext context) {
-    return SkeletonTheme(
-      child: Column(
-        children: List.generate(
-          4,
-          (_) => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              children: [
-                SkeletonCircle(radius: 16),
-                SizedBox(width: 16),
-                Expanded(child: SkeletonLine(height: 12)),
-              ],
-            ),
-          ),
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: AppSpacing.paddingMd,
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
         ),
       ),
     );
   }
+}
+
+String _format(int sats) {
+  final s = sats.toString();
+  final buf = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    final idx = s.length - i;
+    buf.write(s[i]);
+    if (idx > 1 && idx % 3 == 1) buf.write(',');
+  }
+  return buf.toString();
 }

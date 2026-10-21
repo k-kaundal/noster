@@ -1,23 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
-import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/providers/address_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/services/address_service.dart';
+import 'package:nostrfeed_mobile/features/identity/widgets/owned_nip5_tile.dart';
 
 // ── Buy Name Section ──────────────────────────────────────────────────
 
+/// The wallet's Verified Name section. Lists every owned name (each with its
+/// own state-driven action — publish for active, "pay for it" for unpaid)
+/// via the shared [OwnedNip5Tile], and always offers "buy another".
 class BuyNameSection extends ConsumerWidget {
   const BuyNameSection({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final nip5 = ref.watch(nip5Provider);
-    final hasNip5 = ref.watch(hasNip5Provider);
-    final auth = ref.watch(authStateProvider);
     final colorScheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
 
@@ -25,8 +25,6 @@ class BuyNameSection extends ConsumerWidget {
     if (!nip5.isAvailable && !nip5.isLoading) {
       return const SizedBox.shrink();
     }
-
-    final published = auth.profile?.nip05;
 
     return Card(
       child: Padding(
@@ -68,78 +66,21 @@ class BuyNameSection extends ConsumerWidget {
                   ),
                 ),
               )
-            else if (nip5.identifier != null) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      nip5.identifier!,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.copy, size: 18),
-                    tooltip: 'Copy name',
-                    onPressed: () {
-                      Clipboard.setData(
-                          ClipboardData(text: nip5.identifier!));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Name copied')),
-                      );
-                    },
-                  ),
-                ],
-              ),
-              if (published != null && published == nip5.identifier) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.check_circle,
-                        size: 16, color: Colors.green.shade600),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Published on your Nostr profile',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.green.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ] else if (!hasNip5) ...[
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: () async {
-                    try {
-                      await ref
-                          .read(nip5Provider.notifier)
-                          .publishToProfile();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Published to your profile')),
-                        );
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('$e')),
-                        );
-                      }
-                    }
-                  },
-                  icon: const Icon(Icons.publish, size: 16),
-                  label: const Text('Publish to profile'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: colorScheme.primary,
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 36),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
+            else if (nip5.addresses.isNotEmpty) ...[
+              // Every owned name, on any domain — the shared tile drives the
+              // right action per state (publish / pay-for-it / on-profile).
+              for (final addr in nip5.addresses) ...[
+                OwnedNip5Tile(address: addr),
+                const Divider(height: 8),
               ],
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => context.push('/wallet/buy-name'),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Buy another name'),
+                ),
+              ),
             ] else ...[
               SizedBox(
                 width: double.infinity,
