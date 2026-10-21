@@ -283,6 +283,40 @@ class FeedRepository {
     ], timeout: const Duration(seconds: 8));
   }
 
+  /// NIP-29 group chat messages: kind 9 chat messages (and kind 11 threads)
+  /// tagged with the group's `h` id.
+  Future<List<NostrEvent>> fetchGroupChat(
+    String groupId, {
+    int limit = 100,
+    int? until,
+  }) async {
+    final events = await relayPool.query([
+      NostrFilter(
+        kinds: [9, 11, 1],
+        tagFilters: {
+          'h': [groupId],
+        },
+        limit: limit,
+        until: until,
+      ),
+    ], timeout: const Duration(seconds: 8));
+    events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return events;
+  }
+
+  /// Live subscription for new NIP-29 group chat messages.
+  Stream<NostrEvent> subscribeGroupChat(String groupId, {int? since}) {
+    return relayPool.subscribe([
+      NostrFilter(
+        kinds: [9, 11, 1],
+        tagFilters: {
+          'h': [groupId],
+        },
+        since: since ?? DateTime.now().millisecondsSinceEpoch ~/ 1000 - 60,
+      ),
+    ]);
+  }
+
   Future<List<NostrEvent>> fetchMarketListings({int limit = 50}) async {
     return relayPool.query([
       NostrFilter(kinds: [30402], limit: limit),

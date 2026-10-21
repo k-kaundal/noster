@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
+import 'package:nostrfeed_mobile/features/groups/group_chat_screen.dart';
 
 class GroupsScreen extends ConsumerWidget {
   const GroupsScreen({super.key});
@@ -60,7 +61,6 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
     final name = event.getTag('name') ?? 'Unnamed Group';
     final about = event.getTag('about') ?? '';
     final picture = event.getTag('picture');
-    final memberCount = 5 + (event.id.hashCode % 300).abs();
     final lastActivity = DateTime.fromMillisecondsSinceEpoch(
         event.createdAt * 1000);
 
@@ -97,7 +97,7 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '$memberCount members · active ${timeago.format(lastActivity)}',
+                          'Active ${timeago.format(lastActivity)}',
                           style: TextStyle(
                               fontSize: 12,
                               color: scheme.onSurfaceVariant),
@@ -166,13 +166,9 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
   }
 
   void _openGroupChat(BuildContext context) {
-    final name = widget.event.getTag('name') ?? 'Group';
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: Text(name)),
-          body: const Center(child: Text('Group chat coming soon')),
-        ),
+        builder: (_) => GroupChatScreen(groupEvent: widget.event),
       ),
     );
   }

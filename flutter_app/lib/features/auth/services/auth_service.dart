@@ -597,18 +597,29 @@ class AuthService {
     required String senderPubkey,
     required String recipientPubkey,
     required String plaintext,
+    int kind = 14,
+    String? replyToId,
+    String? subject,
+    List<List<String>> extraTags = const [],
+    int? expiration,
   }) {
-    // 1. Build the rumor (unsigned kind 14, sender's real pubkey).
+    // 1. Build the rumor (unsigned, sender's real pubkey).
     //    Rumors are NOT signed — they get their authenticity from the seal.
+    //    NIP-17: kind 14 chat, kind 15 file, kind 7 reaction are all valid
+    //    rumor kinds. Replies use an 'e' tag to the parent rumor.
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     // Randomize timestamp ±2 days for privacy
     final randomTs = now - Random.secure().nextInt(172800);
     final rumor = {
       'pubkey': senderPubkey,
       'created_at': randomTs,
-      'kind': 14,
+      'kind': kind,
       'tags': [
         ['p', recipientPubkey],
+        if (replyToId != null) ['e', replyToId],
+        if (subject != null && subject.isNotEmpty) ['subject', subject],
+        ...extraTags,
+        if (expiration != null) ['expiration', '$expiration'],
       ],
       'content': plaintext,
     };
@@ -659,6 +670,7 @@ class AuthService {
       final giftTs = now - Random.secure().nextInt(172800);
       final giftTags = [
         ['p', targetPubkey],
+        if (expiration != null) ['expiration', '$expiration'],
       ];
       final giftId = NostrEvent.computeId(
         ephemeral.pub,
@@ -712,8 +724,10 @@ class AuthService {
       payload: seal.content,
     );
     final rumorMap = jsonDecode(rumorJson) as Map<String, dynamic>;
-    if (rumorMap['kind'] != 14) {
-      throw const FormatException('Inner rumor is not kind 14');
+    // NIP-17: valid rumor kinds are 14 (chat), 15 (file), 7 (reaction).
+    final rumorKind = rumorMap['kind'] as int;
+    if (rumorKind != 14 && rumorKind != 15 && rumorKind != 7) {
+      throw FormatException('Inner rumor is not a chat rumor (kind $rumorKind)');
     }
     // Verify the rumor pubkey matches the seal pubkey (authenticity check)
     if (rumorMap['pubkey'] != seal.pubkey) {

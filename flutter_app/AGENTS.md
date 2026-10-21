@@ -86,6 +86,14 @@ over ~100 lines.
   gift wraps can NOT be decrypted by their sender and have randomized
   timestamps — so sent messages must be shown from the store's local outbox,
   never by re-fetching from relays. `MessageBubble` is presentational only.
+- **NIP-17 chat kinds**: rumor kinds are 14 (chat), 15 (file), 7 (reaction) —
+  `unwrapGiftWrap` accepts all three. Replies use an `e` tag to the parent
+  rumor (`createNip17Dm(replyToId:)`), room names use the `subject` tag,
+  disappearing messages use the `expiration` tag (NIP-40). Group DMs via
+  `createNip17GroupMessage` (one wrap per member + self).
+- **NIP-29 group chat**: `GroupChatScreen` (`features/groups/`) — kind 9/11/1
+  messages tagged with the group's `h` id. Fetch via `fetchGroupChat`, live
+  via `subscribeGroupChat`, send via `createGroupChatMessage`.
   Delivery status is tracked via `MessageStatus` (pending → sent after
   `publishWithAck`, failed → tap to retry / long-press to delete). Unread
   counts use per-peer last-read watermarks (`markThreadRead`) — the chat tab

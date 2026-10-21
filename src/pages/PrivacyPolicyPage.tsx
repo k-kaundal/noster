@@ -186,7 +186,76 @@ export default function PrivacyPolicyPage() {
           </p>
         </Section>
 
-        <Section title="7. Children's privacy">
+        <Section title="7. Delete your account and data">
+          <p>
+            You can delete your account and associated data at any time.
+            Because {APP_NAME} has no central account system — your identity
+            is your Nostr key — deletion has two parts:
+          </p>
+
+          <h3 className="text-sm font-semibold text-foreground">
+            7.1 Delete from the app (on-device data)
+          </h3>
+          <ol className="list-decimal space-y-1.5 pl-5">
+            <li>Open the app and go to <strong>Settings</strong></li>
+            <li>Tap <strong>Sign out</strong> — this removes your keys, sessions, and cached content from the device</li>
+            <li>Optionally, uninstall the app or clear its storage in your device settings to remove any remaining local files</li>
+          </ol>
+          <p>
+            This deletes everything stored on your device: your private key
+            (nsec), login sessions, drafts, cached feed data, wallet tokens,
+            and app preferences.
+          </p>
+
+          <h3 className="mt-4 text-sm font-semibold text-foreground">
+            7.2 Delete content published to Nostr relays
+          </h3>
+          <p>
+            To remove content you have already published (notes, profile,
+            reactions, etc.):
+          </p>
+          <ol className="list-decimal space-y-1.5 pl-5">
+            <li>In the app, go to your profile or the specific post</li>
+            <li>Use the <strong>Delete</strong> option on individual posts — this publishes a NIP-09 deletion request to relays</li>
+            <li>To remove your entire profile, update it with empty fields or publish a deletion request for your metadata event</li>
+          </ol>
+
+          <h3 className="mt-4 text-sm font-semibold text-foreground">
+            7.3 Request deletion by email
+          </h3>
+          <p>
+            If you cannot access the app, email{' '}
+            <a
+              href={`mailto:${CONTACT_EMAIL}?subject=Account%20deletion%20request`}
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              {CONTACT_EMAIL}
+            </a>{' '}
+            with the subject <strong>"Account deletion request"</strong> from
+            any address, including:
+          </p>
+          <ul className="list-disc space-y-1.5 pl-5">
+            <li>Your Nostr public key (npub) so we can identify your content</li>
+            <li>A signed Nostr event (kind 5 deletion request) if possible, proving you control the key</li>
+          </ul>
+          <p>
+            We will publish deletion requests to the relays we operate within
+            7 days. Note that third-party relays are independent — we cannot
+            force them to delete copies, and content others have quoted,
+            reposted, or screenshotted cannot be recalled.
+          </p>
+
+          <h3 className="mt-4 text-sm font-semibold text-foreground">
+            7.4 What is deleted and what is retained
+          </h3>
+          <ul className="list-disc space-y-1.5 pl-5">
+            <li><strong>Deleted:</strong> on-device keys, sessions, cache, drafts, and wallet tokens (immediately on sign-out)</li>
+            <li><strong>Deletion requested:</strong> your published events on relays that honor NIP-09</li>
+            <li><strong>May persist:</strong> copies on independent third-party relays, content other users have reposted or quoted, and encrypted DMs already delivered to recipients' devices</li>
+          </ul>
+        </Section>
+
+        <Section title="8. Children's privacy">
           <p>
             The Service is not directed at children under 13, and we do not
             knowingly collect personal information from children. Because the
@@ -195,7 +264,7 @@ export default function PrivacyPolicyPage() {
           </p>
         </Section>
 
-        <Section title="8. Security">
+        <Section title="9. Security">
           <p>
             Your private key is stored in your platform's secure storage
             (Android Keystore / iOS Keychain / browser storage) and is never
@@ -205,7 +274,7 @@ export default function PrivacyPolicyPage() {
           </p>
         </Section>
 
-        <Section title="9. International users">
+        <Section title="10. International users">
           <p>
             The Service is accessible worldwide. Nostr relays are operated
             globally by independent parties, so content you publish may be
@@ -213,7 +282,7 @@ export default function PrivacyPolicyPage() {
           </p>
         </Section>
 
-        <Section title="10. Changes to this policy">
+        <Section title="11. Changes to this policy">
           <p>
             We may update this Privacy Policy from time to time. The
             "Effective date" at the top will be revised when we do, and
@@ -222,7 +291,7 @@ export default function PrivacyPolicyPage() {
           </p>
         </Section>
 
-        <Section title="11. Contact">
+        <Section title="12. Contact">
           <p>
             Questions about this policy or your data? Email{' '}
             <a

@@ -171,6 +171,35 @@ class NostrService {
   Future<bool> publishWithAck(NostrEvent event) =>
       relayPool.publishWithAck(event);
 
+  /// NIP-29 group chat message (kind 9) tagged with the group's `h` id.
+  NostrEvent createGroupChatMessage(
+    String groupId,
+    String content, {
+    String? replyToId,
+    String? replyToPubkey,
+  }) {
+    _requireSigning();
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: 9,
+      content: content,
+      tags: [
+        ['h', groupId],
+        if (replyToId != null) ['e', replyToId, '', 'reply'],
+        if (replyToPubkey != null) ['p', replyToPubkey],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// Fetch NIP-29 group chat history.
+  Future<List<NostrEvent>> fetchGroupChat(String groupId, {int limit = 100}) =>
+      feed.fetchGroupChat(groupId, limit: limit);
+
+  /// Live subscription for new NIP-29 group chat messages.
+  Stream<NostrEvent> subscribeGroupChat(String groupId) =>
+      feed.subscribeGroupChat(groupId);
+
   NostrEvent createPost(String content, {List<List<String>>? tags}) {
     _requireSigning();
     final allTags = <List<String>>[
@@ -538,8 +567,56 @@ class NostrService {
 
   /// NIP-17 gift-wrapped DM (kind 1059) — modern, metadata-private.
   /// Most current clients (Amethyst, 0xchat, Damus) send DMs this way.
-  List<NostrEvent> createNip17Dm(String peerPubkey, String plaintext) =>
-      dms.createNip17Dm(peerPubkey, plaintext);
+  List<NostrEvent> createNip17Dm(
+    String peerPubkey,
+    String plaintext, {
+    String? replyToId,
+    String? subject,
+  }) =>
+      dms.createNip17Dm(
+        peerPubkey,
+        plaintext,
+        replyToId: replyToId,
+        subject: subject,
+      );
+
+  /// NIP-17 reaction on a chat message (emoji inside encrypted chats).
+  List<NostrEvent> createNip17Reaction(
+    String peerPubkey, {
+    required String messageId,
+    String emoji = '+',
+  }) =>
+      dms.createNip17Reaction(peerPubkey, messageId: messageId, emoji: emoji);
+
+  /// NIP-17 file message (share a file/image in an encrypted chat).
+  List<NostrEvent> createNip17FileMessage(
+    String peerPubkey, {
+    required String url,
+    String? mimeType,
+    String? alt,
+    String? blurhash,
+  }) =>
+      dms.createNip17FileMessage(
+        peerPubkey,
+        url: url,
+        mimeType: mimeType,
+        alt: alt,
+        blurhash: blurhash,
+      );
+
+  /// NIP-17 group chat room message (one wrap per member + self copy).
+  List<NostrEvent> createNip17GroupMessage(
+    List<String> memberPubkeys,
+    String plaintext, {
+    String? subject,
+    String? replyToId,
+  }) =>
+      dms.createNip17GroupMessage(
+        memberPubkeys,
+        plaintext,
+        subject: subject,
+        replyToId: replyToId,
+      );
 
   /// Decrypt a DM event from the current user's perspective.
   ///
