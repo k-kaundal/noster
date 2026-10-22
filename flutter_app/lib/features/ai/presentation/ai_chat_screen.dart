@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_chat_notifier.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_gateway.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_models.dart';
+import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_generated_media.dart';
 import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_model_picker.dart';
 import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_top_up_sheet.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// The AI assistant chat screen — streaming, markdown answers, per-model
 /// sats pricing (upstream cost × operator margin).
@@ -44,7 +48,9 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       if (next.messages.isNotEmpty) _privacyNoticeShown = true;
     });
 
-    // Surface send errors (insufficient credits → top-up sheet).
+    // Surface send errors (insufficient credits → top-up sheet) and, on a
+    // failed send, restore the text into the composer so a retry is one
+    // tap instead of a retype.
     ref.listen(aiChatNotifierProvider.select((s) => s.error), (_, error) {
       if (error == 'insufficient_credits') {
         notifier.clearError();
@@ -54,6 +60,14 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
           SnackBar(content: Text(error)),
         );
         notifier.clearError();
+      }
+    });
+    ref.listen(aiChatNotifierProvider.select((s) => s.failedText),
+        (_, failedText) {
+      if (failedText != null && failedText.isNotEmpty) {
+        _inputController.text = failedText;
+        _inputController.selection =
+            TextSelection.collapsed(offset: failedText.length);
       }
     });
 
@@ -96,15 +110,42 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                       _ModelSelectorButton(model: selectedModel),
                     Expanded(
                       child: chatState.messages.isEmpty
-                          ? const _WelcomeView()
+                          ? _WelcomeView(
+                              onPrompt: (prompt) {
+                                if (selectedModel != null) {
+                                  notifier.send(prompt, model: selectedModel);
+                                }
+                              },
+                              onFill: (text) {
+                                // Suggestions that need user input (a note
+                                // link) prefill the composer instead of
+                                // sending an instruction as the message.
+                                _inputController.text = text;
+                                _inputController.selection =
+                                    TextSelection.collapsed(
+                                  offset: text.length,
+                                );
+                              },
+                            )
                           : ListView.builder(
                               controller: _scrollController,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                                 vertical: 8,
                               ),
-                              itemCount: chatState.messages.length,
+                              // +1 for the context-clipped note when older
+                              // messages fell out of the request window.
+                              itemCount: chatState.messages.length +
+                                  (chatState.contextDropped > 0 ? 1 : 0),
                               itemBuilder: (context, index) {
+                                if (chatState.contextDropped > 0) {
+                                  if (index == 0) {
+                                    return _ContextNote(
+                                      dropped: chatState.contextDropped,
+                                    );
+                                  }
+                                  index -= 1;
+                                }
                                 final message = chatState.messages[index];
                                 if (message.role == AiRole.system) {
                                   return const SizedBox.shrink();
@@ -147,6 +188,36 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   }
 }
 
+/// The "older messages are out of context" note — shown at the top of the
+/// conversation when the request window dropped history. A silent trim
+/// would read as the model "forgetting" things it was never told.
+class _ContextNote extends StatelessWidget {
+  final int dropped;
+
+  const _ContextNote({required this.dropped});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          '$dropped older ${dropped == 1 ? 'message' : 'messages'} out of '
+          'context — clear chat to reset',
+          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+}
+
 class _PrivacyBanner extends StatelessWidget {
   const _PrivacyBanner();
 
@@ -178,15 +249,46 @@ class _PrivacyBanner extends StatelessWidget {
   }
 }
 
+/// The empty chat state — teaches with tappable first prompts instead of
+/// sitting blank (an empty state that onboards beats one that churns).
 class _WelcomeView extends StatelessWidget {
-  const _WelcomeView();
+  final ValueChanged<String> onPrompt;
+
+  /// Prefills the composer (suggestions needing user input, like a note
+  /// link, edit before sending).
+  final ValueChanged<String> onFill;
+
+  const _WelcomeView({required this.onPrompt, required this.onFill});
+
+  /// (icon, label, prompt, prefillOnly) — prefill-only suggestions carry
+  /// a placeholder the user replaces (a note link to summarize).
+  static const _suggestions = <(IconData, String, String, bool)>[
+    (
+      Icons.summarize_outlined,
+      'Summarize #hashtag',
+      'Summarize the top posts on #bitcoin today in 5 bullet points',
+      false,
+    ),
+    (
+      Icons.link_rounded,
+      'Summarize a thread',
+      'Summarize this thread: ',
+      true,
+    ),
+    (
+      Icons.edit_outlined,
+      'Draft a post',
+      'Draft a short Nostr post about why decentralization matters',
+      false,
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -200,11 +302,88 @@ class _WelcomeView extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Summarize a thread, translate a post, draft a reply, '
-              'or just chat. Paid in sats — only for what you use.',
+              'Summarize threads, hashtags and people straight from your '
+              'relays, translate, draft, generate images and video, '
+              'or just chat. Paid in tokens — only for what you use.',
               textAlign: TextAlign.center,
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
+            const SizedBox(height: 24),
+            for (final (icon, label, prompt, prefillOnly) in _suggestions) ...[
+              _SuggestionChip(
+                icon: icon,
+                label: label,
+                prompt: prefillOnly
+                    ? 'Paste a note1… / nevent1… link — I\'ll fetch the '
+                        'thread from your relays'
+                    : prompt,
+                onTap: () =>
+                    prefillOnly ? onFill(prompt) : onPrompt(prompt),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String prompt;
+  final VoidCallback onTap;
+
+  const _SuggestionChip({
+    required this.icon,
+    required this.label,
+    required this.prompt,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: scheme.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    prompt,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.north_west_rounded,
+                size: 14, color: scheme.onSurfaceVariant),
           ],
         ),
       ),
@@ -251,7 +430,7 @@ class _ModelSelectorButton extends ConsumerWidget {
               ),
               Icon(Icons.bolt_rounded, size: 13, color: scheme.primary),
               Text(
-                '~$price⚡/msg',
+                '~$price tokens/msg',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -325,7 +504,13 @@ class _MessageBubble extends StatelessWidget {
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
+      child: GestureDetector(
+        // Long-press: copy / share the answer — the two things a user
+        // expects to do with a good AI reply and couldn't.
+        onLongPress: message.content.isEmpty
+            ? null
+            : () => _showActions(context, message),
+        child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         constraints: BoxConstraints(
@@ -352,31 +537,14 @@ class _MessageBubble extends StatelessWidget {
               if (message.images.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 320),
-                      child: Image.network(
-                        message.images.first,
-                        fit: BoxFit.contain,
-                        loadingBuilder: (context, child, progress) =>
-                            progress == null
-                                ? child
-                                : const SizedBox(
-                                    height: 120,
-                                    child: Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                  ),
-                        errorBuilder: (_, _, _) => const SizedBox(
-                          height: 60,
-                          child: Center(
-                            child: Text('Image could not be loaded'),
-                          ),
-                        ),
-                      ),
-                    ),
+                  child: AiGeneratedImage(
+                    urlOrDataUrl: message.images.first,
                   ),
+                ),
+              if (message.videos.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: AiGeneratedVideo(url: message.videos.first),
                 ),
               MarkdownBody(
                 data: message.content.isEmpty && isStreaming
@@ -399,10 +567,48 @@ class _MessageBubble extends StatelessWidget {
             if (!isUser && !isStreaming && message.model != null) ...[
               const SizedBox(height: 4),
               Text(
-                '${message.model} · ${message.costSats == 0 ? "trial" : "${message.costSats}⚡"}',
+                '${message.model} · ${message.costTokens == 0 ? "trial" : "${message.costTokens} tokens"}',
                 style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
               ),
             ],
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+
+  /// Long-press actions: copy the answer to the clipboard or share it out —
+  /// the two things a user expects to do with a good AI reply.
+  void _showActions(BuildContext context, AiMessage message) {
+    final scheme = Theme.of(context).colorScheme;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.copy_rounded, color: scheme.primary),
+              title: const Text('Copy text'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                Clipboard.setData(ClipboardData(text: message.content));
+                AppToast.success(context, 'Copied');
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.share_rounded, color: scheme.primary),
+              title: const Text('Share…'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                SharePlus.instance.share(
+                  ShareParams(text: message.content),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -453,7 +659,7 @@ class _InputBar extends ConsumerWidget {
                     decoration: InputDecoration(
                       hintText: canSend
                           ? 'Message…'
-                          : 'Out of credits — tap ⚡ to top up',
+                          : 'Out of tokens — tap the balance to top up',
                       filled: true,
                       fillColor: scheme.surfaceContainerHighest,
                       border: OutlineInputBorder(
@@ -485,8 +691,8 @@ class _InputBar extends ConsumerWidget {
             const SizedBox(height: 4),
             Text(
               showTrial
-                  ? '$trialLeft free messages left today · then ~$price⚡/msg'
-                  : '≈ $price⚡ per message on ${model.label}',
+                  ? '$trialLeft free messages left today · then ~$price tokens/msg'
+                  : '≈ $price tokens per message on ${model.label}',
               style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
           ],

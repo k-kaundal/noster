@@ -3,8 +3,9 @@
 /// One [AiProviderConfig] describes an OpenAI-compatible chat-completions
 /// backend (OpenRouter today, any compatible endpoint tomorrow). One
 /// [AiModelEntry] describes a model the user can pick, with its upstream
-/// USD pricing; the app shows per-model sats prices = upstream cost ×
-/// sats-per-USD × the operator profit margin.
+/// USD pricing; the app shows per-model TOKEN prices =
+/// upstream USD cost × (1 + platform fee) × margin × [tokensPerUsd] —
+/// dollar-pegged, so a price never moves with BTC.
 ///
 /// The whole catalog is driven by the operator's Nostr config note
 /// (kind 30078, d-tag `nostrfeed-ai-config`, signed by the operator
@@ -13,6 +14,7 @@
 library;
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/features/ai/domain/ai_credits.dart';
 
 /// An OpenAI-compatible chat-completions provider.
 class AiProviderConfig {
@@ -87,6 +89,10 @@ enum AiModality {
 
   /// Video understanding.
   video,
+
+  /// Video generation: text in, video out (async job API, not chat
+  /// completions — handled by `AiGatewayService.generateVideo`).
+  videoGen,
 }
 
 /// One user-pickable model.
@@ -149,8 +155,10 @@ class AiModelEntry {
     }
     if (outputs.contains('image')) {
       mods.add(AiModality.imageGen);
+    } else if (outputs.contains('video')) {
+      // Video-GEN models don't chat — everything else does.
+      mods.add(AiModality.videoGen);
     } else {
-      // Image-GEN models reply with image+text; everything else chats.
       mods.add(AiModality.text);
     }
     if (mods.isEmpty) mods.add(AiModality.text);
@@ -223,23 +231,41 @@ class AiGatewayConfig {
   final int freeTrialPerDay;
 
   /// Operator profit multiplier applied to upstream USD cost.
-  /// 1.5 = 50% margin. Price shown to the user = cost × satsPerUsd × margin.
+  /// 1.5 = 50% margin. Price shown to the user =
+  /// cost × (1 + platformFee) × satsPerUsd × margin.
   final double profitMargin;
 
-  /// Every paid message costs at least this many sats (even free models —
-  /// the trial covers N/day, after that Basic costs its floor price).
-  final int minSatsPerMessage;
+  /// The provider's platform fee on credit purchases, as a fraction
+  /// (OpenRouter Standard pay-as-you-go = 5.5%). The REAL cost of a request
+  /// is its `usage.cost × (1 + platformFee)` — pricing off the raw number
+  /// alone sells every message at a 5% discount out of the operator's pocket.
+  final double platformFee;
 
-  /// Assumed split for estimate pricing (typical chat message).
+  /// Volatility buffer on the sats conversion, as a fraction (0.03 = 3%).
+  /// Sats are bought with USD at fill time but priced from a rate fetched
+  /// minutes earlier; BTC moving against the operator between quote and
+  /// settlement would eat the margin. The user-facing sats price uses
+  /// `satsPerUsd × (1 + volatilityBuffer)` so a pump never sells sats cheap.
+  final double volatilityBuffer;
+
+  /// Every paid message costs at least this many TOKENS (even free models —
+  /// the trial covers N/day, after that Basic costs its floor price).
+  final int minTokensPerMessage;
+
+  /// Assumed split for estimate pricing (typical chat message). The prompt
+  /// side is deliberately generous — the estimate is RESERVED up front and
+  /// under-charging is forgiven at settle, so a low estimate realizes less
+  /// than the configured margin. Over-estimating and refunding is the only
+  /// direction that never sells at a loss.
   final int assumedPromptTokens;
   final int assumedCompletionTokens;
 
-  /// Extra sats added to the estimate for capability-heavy models —
+  /// Extra TOKENS added to the estimate for capability-heavy models —
   /// vision, image generation, audio, video cost the operator more than
   /// plain chat (media tokens price far above text), so their chip price
   /// carries a modality uplift ON TOP of cost × margin. Overridable live
-  /// via the config note (`modality_uplift_sats`).
-  final Map<AiModality, int> modalityUpliftSats;
+  /// via the config note (`modality_uplift_tokens`).
+  final Map<AiModality, int> modalityUpliftTokens;
 
   final List<AiProviderConfig> providers;
   final List<AiModelEntry> models;
@@ -251,10 +277,12 @@ class AiGatewayConfig {
     this.enabled = true,
     this.freeTrialPerDay = 5,
     this.profitMargin = 1.5,
-    this.minSatsPerMessage = 1,
-    this.assumedPromptTokens = 800,
-    this.assumedCompletionTokens = 400,
-    this.modalityUpliftSats = defaultModalityUpliftSats,
+    this.platformFee = 0.055,
+    this.volatilityBuffer = 0.03,
+    this.minTokensPerMessage = 1,
+    this.assumedPromptTokens = 1500,
+    this.assumedCompletionTokens = 800,
+    this.modalityUpliftTokens = defaultModalityUpliftTokens,
     required this.providers,
     required this.models,
     this.fallbackModelIds = const [],
@@ -289,7 +317,13 @@ class AiGatewayConfig {
     return list;
   }
 
-  // ── Pricing ─────────────────────────────────────────────────────────
+  // ── Pricing (in TOKENS — dollar-pegged, BTC-independent) ────────────
+
+  /// The operator's REAL USD cost for a request — OpenRouter's `usage.cost`
+  /// is the upstream token cost; the platform fee on credit purchases is on
+  /// top of that and comes out of the operator's pocket if it's not priced in.
+  double realCostUsd(double upstreamCostUsd) =>
+      upstreamCostUsd * (1 + platformFee);
 
   /// Upstream USD estimate for one typical message on [model].
   double estimateCostUsd(AiModelEntry model) {
@@ -303,25 +337,50 @@ class AiGatewayConfig {
   int modalityUpliftFor(AiModelEntry model) {
     var uplift = 0;
     for (final modality in model.modalities) {
-      final u = modalityUpliftSats[modality] ?? 0;
+      final u = modalityUpliftTokens[modality] ?? 0;
       if (u > uplift) uplift = u;
     }
     return uplift;
   }
 
-  /// Sats estimate shown on the model chip: cost × margin + modality
-  /// uplift (includes the profit margin on the cost part).
-  int estimatePriceSats(AiModelEntry model, {required double satsPerUsd}) {
-    final costUsd = estimateCostUsd(model);
-    final raw =
-        (costUsd * satsPerUsd * profitMargin).ceil() + modalityUpliftFor(model);
-    return raw < minSatsPerMessage ? minSatsPerMessage : raw;
+  /// USD → tokens at the peg ([tokensPerUsd] tokens = $1), with the margin.
+  /// No exchange rate in sight — a token price is the same today and next
+  /// month, whatever BTC does.
+  int _usdToTokens(double usd) => (usd * tokensPerUsd).ceil();
+
+  /// TOKEN estimate shown on the model chip and RESERVED up front:
+  /// real cost × margin + modality uplift. Free-upstream models price at the
+  /// floor — no uplift on a zero cost (the trial pool must stay free; the
+  /// uplift exists to cover media-token cost that free models don't have).
+  int estimatePriceTokens(AiModelEntry model) {
+    if (model.isFreeUpstream) return minTokensPerMessage;
+    final costUsd = realCostUsd(estimateCostUsd(model));
+    final raw = _usdToTokens(costUsd * profitMargin) + modalityUpliftFor(model);
+    return raw < minTokensPerMessage ? minTokensPerMessage : raw;
   }
 
-  /// Exact sats to charge for a completed request (includes the margin).
-  int settlePriceSats(double costUsd, {required double satsPerUsd}) {
-    final raw = (costUsd * satsPerUsd * profitMargin).ceil();
-    return raw < minSatsPerMessage ? minSatsPerMessage : raw;
+  /// Exact TOKENS to charge for a completed request — real cost × margin.
+  /// [costUsd] is the provider's `usage.cost` (upstream).
+  int settlePriceTokens(double costUsd) {
+    final raw = _usdToTokens(realCostUsd(costUsd) * profitMargin);
+    return raw < minTokensPerMessage ? minTokensPerMessage : raw;
+  }
+
+  /// The most a completed request may charge ABOVE the up-front reserve.
+  /// Settlement is exact, but a fully uncapped top-up lets a runaway
+  /// request (a reasoning model burning 10× the assumed tokens) drain a
+  /// balance the user never agreed to spend — and, when the balance can't
+  /// cover it, the operator eats the difference. Capping the top-up bounds
+  /// BOTH: the user never owes more than reserve × (1 + maxSettleOverage),
+  /// and the operator's worst-case forgiveness is the overage beyond it.
+  static const maxSettleOverage = 1.0; // ≤ reserve × 2 total
+
+  /// The settle charge given an up-front [reserved] amount: the exact price,
+  /// capped at reserve + the allowed overage.
+  int cappedSettleTokens(int exactTokens, int reservedTokens) {
+    final cap = (reservedTokens * (1 + maxSettleOverage)).ceil();
+    final capped = exactTokens > cap ? cap : exactTokens;
+    return capped < minTokensPerMessage ? minTokensPerMessage : capped;
   }
 
   // ── Serialization ───────────────────────────────────────────────────
@@ -330,9 +389,11 @@ class AiGatewayConfig {
     'enabled': enabled,
     'free_trial_per_day': freeTrialPerDay,
     'profit_margin': profitMargin,
-    'min_sats_per_message': minSatsPerMessage,
-    'modality_uplift_sats': {
-      for (final e in modalityUpliftSats.entries) e.key.name: e.value,
+    'platform_fee': platformFee,
+    'volatility_buffer': volatilityBuffer,
+    'min_tokens_per_message': minTokensPerMessage,
+    'modality_uplift_tokens': {
+      for (final e in modalityUpliftTokens.entries) e.key.name: e.value,
     },
     'providers': [for (final p in providers) p.toJson()],
     'models': [for (final m in models) m.toJson()],
@@ -362,8 +423,12 @@ class AiGatewayConfig {
         }
       }
     }
-    final uplifts = Map<AiModality, int>.from(defaultModalityUpliftSats);
-    final rawUplifts = json['modality_uplift_sats'];
+    final uplifts = Map<AiModality, int>.from(defaultModalityUpliftTokens);
+    // Accept BOTH keys: an older config note written in sats still parses
+    // (its values are treated as tokens — the numbers are close enough at
+    // the current rate that nothing meaningful shifts).
+    final rawUplifts =
+        json['modality_uplift_tokens'] ?? json['modality_uplift_sats'];
     if (rawUplifts is Map) {
       for (final m in AiModality.values) {
         final v = rawUplifts[m.name];
@@ -374,8 +439,12 @@ class AiGatewayConfig {
       enabled: json['enabled'] as bool? ?? true,
       freeTrialPerDay: (json['free_trial_per_day'] as num?)?.toInt() ?? 5,
       profitMargin: (json['profit_margin'] as num?)?.toDouble() ?? 1.5,
-      minSatsPerMessage: (json['min_sats_per_message'] as num?)?.toInt() ?? 1,
-      modalityUpliftSats: uplifts,
+      platformFee: (json['platform_fee'] as num?)?.toDouble() ?? 0.055,
+      volatilityBuffer:
+          (json['volatility_buffer'] as num?)?.toDouble() ?? 0.03,
+      minTokensPerMessage:
+          (json['min_tokens_per_message'] as num?)?.toInt() ?? 1,
+      modalityUpliftTokens: uplifts,
       providers: providers,
       models: models,
       fallbackModelIds: [
@@ -385,21 +454,26 @@ class AiGatewayConfig {
   }
 }
 
-/// Default modality uplifts (sats per message estimate) — media models
+/// Default modality uplifts (TOKENS per message estimate) — media models
 /// cost the operator far more than text (a generated image ≈ 1,200+ output
 /// tokens at premium rates; audio/video tokens are 5–20× text prices).
 /// Text chat stays at zero uplift — its cost estimate already covers it.
-const defaultModalityUpliftSats = <AiModality, int>{
+const defaultModalityUpliftTokens = <AiModality, int>{
   AiModality.text: 0,
-  AiModality.vision: 5,
-  AiModality.imageGen: 40,
-  AiModality.audio: 15,
-  AiModality.video: 10,
+  AiModality.vision: 4,
+  AiModality.imageGen: 33,
+  AiModality.audio: 12,
+  AiModality.video: 8,
+  // Video generation is priced per second of output (baked into the
+  // model's token-equivalent USD price below) — no extra uplift.
+  AiModality.videoGen: 0,
 };
 
-/// The built-in default gateway: OpenRouter direct, free router + the four
-/// locked price tiers (docs/AI_PLAN.md §3.1). Model USD prices are catalog
-/// list prices (Oct 2026) — the config note can correct them live.
+/// The built-in default gateway: OpenRouter direct, free router + locked
+/// price tiers (docs/AI_PLAN.md §3.1). Model USD prices are VERIFIED against
+/// the live catalog (`GET /api/v1/models`, no key needed) on 2026-10-22 —
+/// the config note can correct them live, and `AiGatewayService.fetchCatalog`
+/// refreshes them from the same endpoint.
 AiGatewayConfig defaultAiGateway() => const AiGatewayConfig(
   providers: [
     AiProviderConfig(
@@ -412,23 +486,25 @@ AiGatewayConfig defaultAiGateway() => const AiGatewayConfig(
   ],
   fallbackModelIds: [
     'openrouter/free',
-    'minimax/minimax-m3.1-flash:free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
     'cohere/north-mini-code:free',
     'poolside/laguna-s-2.1:free',
+    'poolside/laguna-xs-2.1:free',
   ],
   models: [
-    // ── Chat (text) ────────────────────────────────────────────────
+    // ── Free chat (trial pool) — all verified live 2026-10-22 ──────
     AiModelEntry(
       id: 'openrouter/free',
       providerId: 'openrouter',
       label: 'Basic',
       tier: 1,
       trialEligible: true,
+      modalities: {AiModality.text, AiModality.vision},
     ),
     AiModelEntry(
-      id: 'minimax/minimax-m3.1-flash:free',
+      id: 'nvidia/nemotron-3-super-120b-a12b:free',
       providerId: 'openrouter',
-      label: 'MiniMax Flash',
+      label: 'Nemotron Super 120B',
       tier: 1,
       trialEligible: true,
     ),
@@ -438,6 +514,53 @@ AiGatewayConfig defaultAiGateway() => const AiGatewayConfig(
       label: 'Cohere North Mini',
       tier: 1,
       trialEligible: true,
+    ),
+    AiModelEntry(
+      id: 'poolside/laguna-s-2.1:free',
+      providerId: 'openrouter',
+      label: 'Poolside Laguna S',
+      tier: 1,
+      trialEligible: true,
+    ),
+    AiModelEntry(
+      id: 'google/gemma-4-31b-it:free',
+      providerId: 'openrouter',
+      label: 'Gemma 4 31B',
+      tier: 1,
+      trialEligible: true,
+      modalities: {AiModality.text, AiModality.vision, AiModality.video},
+    ),
+    // ── Budget paid (tier 2) — the cheap-but-reliable workhorses ────
+    AiModelEntry(
+      id: 'openai/gpt-5-nano',
+      providerId: 'openrouter',
+      label: 'GPT-5 Nano',
+      tier: 2,
+      promptUsdPerM: 0.05,
+      completionUsdPerM: 0.40,
+      modalities: {AiModality.text, AiModality.vision},
+    ),
+    AiModelEntry(
+      id: 'google/gemini-2.5-flash-lite',
+      providerId: 'openrouter',
+      label: 'Gemini 2.5 Flash Lite',
+      tier: 2,
+      promptUsdPerM: 0.10,
+      completionUsdPerM: 0.40,
+      modalities: {
+        AiModality.text,
+        AiModality.vision,
+        AiModality.video,
+        AiModality.audio,
+      },
+    ),
+    AiModelEntry(
+      id: 'deepseek/deepseek-v3.2',
+      providerId: 'openrouter',
+      label: 'DeepSeek V3.2',
+      tier: 2,
+      promptUsdPerM: 0.28,
+      completionUsdPerM: 0.42,
     ),
     AiModelEntry(
       id: 'google/gemini-2.5-flash',
@@ -454,13 +577,14 @@ AiGatewayConfig defaultAiGateway() => const AiGatewayConfig(
       },
     ),
     AiModelEntry(
-      id: 'deepseek/deepseek-chat',
+      id: 'z-ai/glm-4.7',
       providerId: 'openrouter',
-      label: 'DeepSeek V3',
+      label: 'GLM 4.7',
       tier: 2,
-      promptUsdPerM: 0.28,
-      completionUsdPerM: 0.42,
+      promptUsdPerM: 0.54,
+      completionUsdPerM: 1.98,
     ),
+    // ── Mid (tier 3) ────────────────────────────────────────────────
     AiModelEntry(
       id: 'openai/gpt-5-mini',
       providerId: 'openrouter',
@@ -471,6 +595,28 @@ AiGatewayConfig defaultAiGateway() => const AiGatewayConfig(
       modalities: {AiModality.text, AiModality.vision},
     ),
     AiModelEntry(
+      id: 'moonshotai/kimi-k2-0905',
+      providerId: 'openrouter',
+      label: 'Kimi K2',
+      tier: 3,
+      promptUsdPerM: 0.60,
+      completionUsdPerM: 2.50,
+    ),
+    // A reasoning model — completion USD is the POSTED output rate, but the
+    // hidden reasoning tokens settle in `usage.cost` (which can run 5–10× a
+    // plain answer). The estimate deliberately assumes a heavy reasoning burn
+    // so the up-front reserve is honest; settlement is exact and the
+    // under-charge cap (see AiChatNotifier) keeps a runaway request from
+    // ever realizing below cost.
+    AiModelEntry(
+      id: 'deepseek/deepseek-r1-0528',
+      providerId: 'openrouter',
+      label: 'DeepSeek R1 (reasoning)',
+      tier: 3,
+      promptUsdPerM: 0.50,
+      completionUsdPerM: 8.60,
+    ),
+    AiModelEntry(
       id: 'anthropic/claude-haiku-4.5',
       providerId: 'openrouter',
       label: 'Claude Haiku 4.5',
@@ -479,6 +625,7 @@ AiGatewayConfig defaultAiGateway() => const AiGatewayConfig(
       completionUsdPerM: 5.00,
       modalities: {AiModality.text, AiModality.vision},
     ),
+    // ── Frontier (tier 4) ───────────────────────────────────────────
     AiModelEntry(
       id: 'anthropic/claude-sonnet-4.5',
       providerId: 'openrouter',
@@ -497,7 +644,16 @@ AiGatewayConfig defaultAiGateway() => const AiGatewayConfig(
       completionUsdPerM: 10.00,
       modalities: {AiModality.text, AiModality.vision},
     ),
-    // ── Image generation (verified in the live catalog Oct 2026) ────
+    AiModelEntry(
+      id: 'anthropic/claude-opus-4.6',
+      providerId: 'openrouter',
+      label: 'Claude Opus 4.6',
+      tier: 4,
+      promptUsdPerM: 5.00,
+      completionUsdPerM: 25.00,
+      modalities: {AiModality.text, AiModality.vision},
+    ),
+    // ── Image generation (verified in the live catalog 2026-10-22) ──
     AiModelEntry(
       id: 'google/gemini-3.1-flash-image',
       providerId: 'openrouter',
@@ -523,8 +679,21 @@ AiGatewayConfig defaultAiGateway() => const AiGatewayConfig(
       label: 'GPT Audio Mini',
       tier: 3,
       promptUsdPerM: 0.60,
-      completionUsdPerM: 3.00,
+      completionUsdPerM: 2.40,
       modalities: {AiModality.audio},
+    ),
+    // ── Video generation (async job API, not chat completions) ───────
+    // Priced per second of output: Veo 3.1 ≈ $0.50/s (OpenRouter video
+    // catalog) → a 4s clip ≈ $2.00. The estimate expresses that as
+    // token-equivalent USD (1500 assumed prompt tokens × $1333/1M ≈ $2.00);
+    // settlement uses the job's exact `usage.cost`.
+    AiModelEntry(
+      id: 'google/veo-3.1',
+      providerId: 'openrouter',
+      label: 'Veo 3.1 Video',
+      tier: 4,
+      promptUsdPerM: 1333,
+      modalities: {AiModality.videoGen},
     ),
   ],
 );

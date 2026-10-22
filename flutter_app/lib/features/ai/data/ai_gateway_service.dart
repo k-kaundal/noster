@@ -95,6 +95,25 @@ class AiGatewayException implements Exception {
   String toString() => message;
 }
 
+/// One finished video generation: the download URLs + cost.
+class AiVideoResult {
+  /// Signed or key-less download URLs (mp4). Prefer these for playback —
+  /// `unsignedUrls` need the API key as a bearer header.
+  final List<String> urls;
+
+  /// Content-endpoint URLs that need the provider key as Authorization.
+  final List<String> unsignedUrls;
+
+  /// USD cost reported by the job's `usage`.
+  final double costUsd;
+
+  const AiVideoResult({
+    required this.urls,
+    required this.unsignedUrls,
+    required this.costUsd,
+  });
+}
+
 /// Provider-agnostic chat gateway: speaks OpenAI-compatible streaming chat
 /// completions to ANY configured provider (OpenRouter today, others by
 /// config). Keys are resolved by env NAME from the provider config — a
@@ -265,6 +284,101 @@ class AiGatewayService {
     return out;
   }
 
+  /// Generates a video on OpenRouter's async video API
+  /// (`POST /videos` → poll `polling_url` until completed → download URLs).
+  ///
+  /// Video jobs take 30s–several minutes; this polls every 5s up to
+  /// [maxWait]. Throws [AiGatewayException] on failure/timeout.
+  Future<AiVideoResult> generateVideo({
+    required AiProviderConfig provider,
+    required String modelId,
+    required String prompt,
+    int durationSeconds = 4,
+    String resolution = '720p',
+    String aspectRatio = '16:9',
+    Duration maxWait = const Duration(minutes: 6),
+  }) async {
+    final key = _resolveKey(provider.apiKeyEnvName);
+    if (key.isEmpty) {
+      throw const AiGatewayException(
+        statusCode: 0,
+        message: 'AI provider is not configured in this build.',
+      );
+    }
+    final headers = {
+      ..._headers(provider),
+      'Content-Type': 'application/json',
+    };
+
+    // 1. Submit the job (202 Accepted).
+    final submit = await http
+        .post(
+          Uri.parse('${provider.baseUrl}/videos'),
+          headers: headers,
+          body: jsonEncode({
+            'model': modelId,
+            'prompt': prompt,
+            'duration': durationSeconds,
+            'resolution': resolution,
+            'aspect_ratio': aspectRatio,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (submit.statusCode < 200 || submit.statusCode >= 300) {
+      throw _parseError(submit.statusCode, submit.body);
+    }
+    final job = jsonDecode(submit.body);
+    if (job is! Map || job['polling_url'] is! String) {
+      throw const AiGatewayException(
+        statusCode: 0,
+        message: 'The video provider returned an unexpected response.',
+      );
+    }
+    var pollingUrl = job['polling_url'] as String;
+    if (pollingUrl.startsWith('/')) pollingUrl = '${provider.baseUrl}$pollingUrl';
+
+    // 2. Poll until completed / failed / timeout.
+    final deadline = DateTime.now().add(maxWait);
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(seconds: 5));
+      final poll = await http
+          .get(Uri.parse(pollingUrl), headers: headers)
+          .timeout(const Duration(seconds: 30));
+      if (poll.statusCode < 200 || poll.statusCode >= 300) continue;
+      final status = jsonDecode(poll.body);
+      if (status is! Map) continue;
+      switch (status['status']) {
+        case 'completed':
+          final usage = status['usage'];
+          final cost = usage is Map
+              ? (usage['cost'] as num?)?.toDouble() ?? 0
+              : 0.0;
+          return AiVideoResult(
+            urls: [for (final u in (status['urls'] as List? ?? const [])) '$u'],
+            unsignedUrls: [
+              for (final u in (status['unsigned_urls'] as List? ?? const []))
+                '$u',
+            ],
+            costUsd: cost,
+          );
+        case 'failed' || 'cancelled' || 'expired':
+          final err = status['error'];
+          throw AiGatewayException(
+            statusCode: 0,
+            message: err is Map
+                ? '${err['message'] ?? 'Video generation ${status['status']}'}'
+                : 'Video generation ${status['status']}',
+          );
+        default:
+          continue; // pending / in_progress
+      }
+    }
+    throw const AiGatewayException(
+      statusCode: 0,
+      message: 'The video is taking too long — try again later.',
+    );
+  }
+
   /// Live free-pool quota (OpenRouter only — returns null on providers
   /// without an equivalent endpoint).
   Future<AiFreeQuota?> fetchFreeQuota(AiProviderConfig provider) async {
@@ -309,15 +423,21 @@ class AiGatewayService {
         final arch = raw['architecture'];
         var modalities = const {AiModality.text};
         if (arch is Map) {
+          final outputs = [
+            for (final m in (arch['output_modalities'] as List? ?? const []))
+              '$m',
+          ];
+          // Skip non-chat models entirely (the free pool carries embedding /
+          // rerank / decision / speech models the chat UI can never call —
+          // their output isn't a chat reply).
+          const nonChat = {'embeddings', 'rerank', 'decisions', 'speech'};
+          if (outputs.any(nonChat.contains)) continue;
           modalities = AiModelEntry.modalitiesFrom(
             inputs: [
               for (final m in (arch['input_modalities'] as List? ?? const []))
                 '$m',
             ],
-            outputs: [
-              for (final m in (arch['output_modalities'] as List? ?? const []))
-                '$m',
-            ],
+            outputs: outputs,
           );
         }
         out.add(AiModelEntry(

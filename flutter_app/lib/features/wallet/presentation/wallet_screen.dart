@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
+import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_top_up_sheet.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/cashu_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
@@ -299,7 +301,98 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
           color: Colors.indigo,
           onTap: () => context.push('/wallet/lndhub'),
         ),
+
+        // AI credits — money too, shown with the wallets (not a wallet:
+        // balance is the on-device AI credit ledger, tap → top up).
+        if (ref.watch(aiAvailableProvider)) ...[
+          const SizedBox(height: 8),
+          _aiCreditsCard(context, ref, colorScheme),
+        ],
       ],
+    );
+  }
+
+  Widget _aiCreditsCard(
+    BuildContext context,
+    WidgetRef ref,
+    ColorScheme colorScheme,
+  ) {
+    final formatter = NumberFormat('#,###');
+    final balance = ref.watch(aiCreditsProvider).value?.balance ?? 0;
+    final trialLeft = ref.watch(aiTrialRemainingProvider);
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => showAiTopUpSheet(context),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.auto_awesome_rounded,
+                    color: Colors.amber.shade700, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'AI Credits',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    Text(
+                      trialLeft > 0
+                          ? '$trialLeft free messages left today · tap to top up'
+                          : 'Pays for AI messages · tap to top up',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    formatter.format(balance),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  Text(
+                    'credits',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.add_circle_outline_rounded,
+                color: colorScheme.onSurfaceVariant,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

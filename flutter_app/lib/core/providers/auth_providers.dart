@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/nostr_service_providers.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
+import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
 
 /// Auth state
 final authStateProvider = NotifierProvider<AuthNotifier, AuthState>(
@@ -16,6 +17,10 @@ class AuthNotifier extends Notifier<AuthState> {
   /// by the time the async storage read resolves, an explicit auth action
   /// happened and the restore must not overwrite it (race guard).
   static const _initial = AuthState();
+
+  /// Whether we've published our kind-10050 DM-inbox relay list this
+  /// session — once per login, never on every profile refresh.
+  bool _publishedDmInbox = false;
 
   @override
   AuthState build() {
@@ -40,6 +45,7 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> _loadProfile() async {
     if (state.pubkey == null) return;
+    _publishDmInboxOnce();
     // Capture what we already have (from secure storage / fresh update) —
     // fetchProfile returns the NEWEST version it can find, but when relays
     // lag it may return the locally-cached fresh one, and when relays are
@@ -50,6 +56,26 @@ class AuthNotifier extends Notifier<AuthState> {
     state = state.copyWith(profile: relayProfile);
     // Persist so the next cold start shows this profile immediately.
     await _nostr.authService.saveStoredProfile(relayProfile);
+  }
+
+  /// Publishes our kind-10050 DM-inbox relay list (NIP-17) so OTHER clients
+  /// know which relays to send our DMs to. Without it every sender falls
+  /// back to well-known relays — slower and leakier. 1–3 relays per spec.
+  void _publishDmInboxOnce() {
+    if (_publishedDmInbox) return;
+    if (!state.isLoggedIn || state.privateKey == null) return;
+    _publishedDmInbox = true;
+    () async {
+      try {
+        final inboxRelays = _nostr.relayPool.relayUrls.take(3).toList();
+        if (inboxRelays.isEmpty) return;
+        final event = _nostr.dms.createDmInboxRelayList(inboxRelays);
+        await _nostr.relayPool.publishWithAck(event);
+      } catch (_) {
+        // Best-effort: a failed 10050 publish just means senders fall back.
+        _publishedDmInbox = false; // retry next session
+      }
+    }();
   }
 
   Future<void> loginWithNsec(String nsec) async {
@@ -78,6 +104,11 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> logout() async {
     await _nostr.authService.logout();
+    // Wipe per-account DM state (decrypted cache, watermarks, outbox) so the
+    // next account on this device never inherits them (cross-account leak).
+    try {
+      ref.read(dmStoreProvider).clearAll();
+    } catch (_) {}
     await _nostr.setAuth(const AuthState());
     state = const AuthState();
   }

@@ -247,17 +247,84 @@ final contentFilterProvider = Provider<ContentFilter>((ref) {
   );
 });
 
+/// A version that changes whenever the filter CONFIG (toggles, blocklists)
+/// changes — verdicts are cached per (event id, version), so an engagement
+/// or zap provider landing (the common rebuild as the feed pages in) reuses
+/// the verdict instead of re-running normalize + the term lists. A config
+/// change (block a word, toggle NSFW, block an author) yields a new key and
+/// re-filters.
+final filterConfigVersionProvider = Provider<int>((ref) {
+  final nsfwOn = ref.watch(nsfwFilterProvider);
+  final spamOn = ref.watch(spamFilterProvider);
+  final words = ref.watch(blockedWordsProvider);
+  final authors = ref.watch(blockedAuthorsProvider);
+  return Object.hash(nsfwOn, spamOn, words, authors);
+});
+
 /// Central verdict for an event, honoring the toggles. Everything that
 /// renders a post calls this rather than ContentFilter directly.
 ///
 /// Works from widgets (WidgetRef) and providers (Ref) — both expose the
 /// `.watch` this needs, and Riverpod 2.6 has no shared interface for them.
+///
+/// The verdict is memoized per (event id, filter-config version, whether the
+/// author profile was loaded) — the expensive part (normalize + the term
+/// lists) must NOT re-run every time an engagement/zap provider rebuilds a
+/// feed card, which is what janks the scroll on a long feed.
 FilterVerdict filteredEventVerdict(
   WidgetRef ref,
   NostrEvent event, {
   NostrProfile? authorProfile,
 }) {
-  return ref
-      .watch(contentFilterProvider)
-      .verdictForEvent(event, authorProfile: authorProfile);
+  final filter = ref.watch(contentFilterProvider);
+  final version = ref.watch(filterConfigVersionProvider);
+  final hasProfile = authorProfile != null;
+  return _VerdictCache.of(
+    event,
+    version,
+    hasProfile,
+    () => filter.verdictForEvent(event, authorProfile: authorProfile),
+  );
+}
+
+/// Bounded LRU for filter verdicts. Keyed on event id; the config version +
+/// profile-loaded flag are part of the value, so a stale verdict (filter
+/// toggled, author profile landed after the first judge) recomputes once.
+class _VerdictCache {
+  _VerdictCache._();
+
+  static const int _maxEntries = 600;
+  static final Map<String, _Entry> _map = {};
+
+  static FilterVerdict of(
+    NostrEvent event,
+    int version,
+    bool hasProfile,
+    FilterVerdict Function() compute,
+  ) {
+    final key = event.id;
+    final cached = _map[key];
+    if (cached != null &&
+        cached.version == version &&
+        cached.hasProfile == hasProfile &&
+        cached.contentLength == event.content.length) {
+      _map.remove(key);
+      _map[key] = cached; // LRU touch
+      return cached.verdict;
+    }
+    final entry = _Entry(compute(), version, hasProfile, event.content.length);
+    _map[key] = entry;
+    if (_map.length > _maxEntries) {
+      _map.remove(_map.keys.first);
+    }
+    return entry.verdict;
+  }
+}
+
+class _Entry {
+  final FilterVerdict verdict;
+  final int version;
+  final bool hasProfile;
+  final int contentLength;
+  const _Entry(this.verdict, this.version, this.hasProfile, this.contentLength);
 }

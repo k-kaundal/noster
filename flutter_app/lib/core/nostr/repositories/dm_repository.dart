@@ -11,12 +11,38 @@ class DecryptedDm {
   final String? recipientPubkey;
 
   final int createdAt;
+
+  /// The inner rumor kind: 14 = chat text, 15 = file message, 7 = reaction.
+  /// Kind 4 (legacy NIP-04) maps to 14 for display purposes.
+  final int rumorKind;
+
+  /// The rumor's tags — a kind-15 file message carries `m` (MIME type),
+  /// `alt`, `blurhash` here; the plaintext is the file URL.
+  final List<List<String>> tags;
+
   const DecryptedDm({
     required this.plaintext,
     required this.senderPubkey,
     this.recipientPubkey,
     required this.createdAt,
+    this.rumorKind = 14,
+    this.tags = const [],
   });
+
+  /// True when this is a kind-15 file message (image/file in chat).
+  bool get isFile => rumorKind == 15;
+
+  /// The file's MIME type for kind-15 messages (e.g. `image/jpeg`).
+  String? get mimeType {
+    for (final t in tags) {
+      if (t.length > 1 && t[0] == 'm') return t[1];
+    }
+    return null;
+  }
+
+  /// True when this kind-15 file is an image (renders inline).
+  bool get isImage =>
+      isFile && (mimeType?.startsWith('image/') ?? true);
 }
 
 class DmRepository {
@@ -187,6 +213,11 @@ class DmRepository {
           senderPubkey: rumorPubkey,
           recipientPubkey: recipient,
           createdAt: rumorTs,
+          rumorKind: rumor['kind'] as int? ?? 14,
+          tags: [
+            for (final t in (rumorTags ?? const []))
+              if (t is List) [for (final v in t) '$v'],
+          ],
         );
       } catch (_) {
         return null;

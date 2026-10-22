@@ -9,6 +9,7 @@ import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 
 class ExploreScreen extends ConsumerWidget {
@@ -38,6 +39,11 @@ class ExploreScreen extends ConsumerWidget {
         },
         child: CustomScrollView(
           slivers: [
+            // Ask NostrFeed AI — discovery intent lives here, so the AI
+            // entry does too. Hidden when no provider key is configured.
+            if (ref.watch(aiAvailableProvider))
+              const SliverToBoxAdapter(child: _AskAiCard()),
+
             // Trending hashtags — NSFW tags filtered out before display.
             SliverToBoxAdapter(
               child: Padding(
@@ -186,6 +192,71 @@ NostrEvent _tagAsEvent(String tag) => NostrEvent(
       content: '#$tag',
       sig: '',
     );
+
+/// The AI discovery card on top of Explore: search-shaped (users arrive
+/// with intent), opens the AI chat. Shows the remaining free-trial count
+/// as an honest hook — no fake scarcity.
+class _AskAiCard extends ConsumerWidget {
+  const _AskAiCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final trialLeft = ref.watch(aiTrialRemainingProvider);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => context.push('/ai'),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                scheme.primaryContainer.withValues(alpha: 0.55),
+                scheme.tertiaryContainer.withValues(alpha: 0.35),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded,
+                  size: 20, color: scheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Ask NostrFeed AI',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      trialLeft > 0
+                          ? 'Summarize, translate, create · $trialLeft free today'
+                          : 'Summarize, translate, create · from 1⚡/msg',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded,
+                  size: 14, color: scheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _PeopleToFollowHeader extends StatelessWidget {
   const _PeopleToFollowHeader();

@@ -5,8 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
-import 'package:nostrfeed_mobile/features/wallet/application/nwc_providers.dart';
+import 'package:nostrfeed_mobile/core/services/wallet_payment.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/lnurl_service.dart';
+import 'package:nostrfeed_mobile/features/zap/application/quick_zap.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 /// Shows a zap dialog for a Nostr event or profile.
@@ -184,30 +185,21 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
         return;
       }
 
-      // If NWC is connected, try to pay the invoice directly
-      final nwcState = ref.read(nwcNotifierProvider);
-      if (nwcState.isConnected) {
-        try {
-          await ref.read(nwcNotifierProvider.notifier).payInvoice(invoice);
-          if (!mounted) return;
-          // Payment succeeded — show success and close
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Zap of $amount sats sent!')),
-          );
-          Navigator.pop(context);
-          return;
-        } catch (e) {
-          // Payment failed — fall through to manual invoice view
-          if (!mounted) return;
-          setState(() {
-            _invoice = invoice;
-            _loading = false;
-            _error = 'NWC payment failed: $e. Pay manually below.';
-          });
-          return;
-        }
+      // Pay with the FIRST in-app wallet that can — LNbits → NWC → Cashu →
+      // LndHub (the shared cascade). The old code only tried NWC, so LNbits
+      // users (the majority) got a QR instead of one-tap pay. The QR stays
+      // as the fallback for external wallets and failed attempts.
+      final wallet = await payWithAnyWallet(ref.read, invoice);
+      if (!mounted) return;
+      if (wallet != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('⚡ Zap of $amount sats sent!')),
+        );
+        Navigator.pop(context);
+        return;
       }
 
+      // No wallet could pay — show the QR for an external wallet.
       setState(() {
         _invoice = invoice;
         _loading = false;
@@ -343,6 +335,10 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
                   _selectedPreset = amount;
                   _amountController.text = '$amount';
                 });
+                // Small presets become the new one-tap default.
+                if (amount <= quickZapMaxSats) {
+                  ref.read(quickZapAmountProvider.notifier).setAmount(amount);
+                }
               },
             );
           }).toList(),
@@ -374,10 +370,9 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           ),
         ),
 
-        // NWC indicator
+        // Wallet indicator — any paying wallet, not just NWC.
         Builder(builder: (context) {
-          final nwcState = ref.watch(nwcNotifierProvider);
-          if (!nwcState.isConnected) return const SizedBox.shrink();
+          if (!hasPayingWallet(ref.read)) return const SizedBox.shrink();
           return Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Row(
@@ -387,7 +382,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
                     size: 14, color: Colors.green.shade600),
                 const SizedBox(width: 4),
                 Text(
-                  'Will pay via ${nwcState.activeConnection?.alias ?? "NWC"}',
+                  'Will pay from your connected wallet',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.green.shade700,
                       ),
@@ -416,8 +411,9 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
                 )
               : Icon(Icons.bolt, color: Colors.amber.shade700),
           label: Builder(builder: (context) {
-            final nwcState = ref.watch(nwcNotifierProvider);
-            return Text(nwcState.isConnected ? 'Send Zap' : 'Create Invoice');
+            return Text(
+              hasPayingWallet(ref.read) ? 'Send Zap' : 'Create Invoice',
+            );
           }),
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14),

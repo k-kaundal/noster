@@ -11,8 +11,8 @@ class AiMessage {
   final String content;
   final DateTime createdAt;
 
-  /// Sats actually charged for this message (assistant messages only).
-  final int? costSats;
+  /// TOKENS actually charged for this message (assistant messages only).
+  final int? costTokens;
 
   /// USD cost reported by the provider's `usage` (assistant messages only).
   final double? costUsd;
@@ -23,33 +23,39 @@ class AiMessage {
   /// Generated image URLs (image-gen models — data URLs or hosted URLs).
   final List<String> images;
 
+  /// Generated video URLs (video-gen models — hosted mp4 URLs).
+  final List<String> videos;
+
   const AiMessage({
     required this.id,
     required this.role,
     required this.content,
     required this.createdAt,
-    this.costSats,
+    this.costTokens,
     this.costUsd,
     this.model,
     this.images = const [],
+    this.videos = const [],
   });
 
   AiMessage copyWith({
     String? content,
-    int? costSats,
+    int? costTokens,
     double? costUsd,
     String? model,
     List<String>? images,
+    List<String>? videos,
   }) {
     return AiMessage(
       id: id,
       role: role,
       content: content ?? this.content,
       createdAt: createdAt,
-      costSats: costSats ?? this.costSats,
+      costTokens: costTokens ?? this.costTokens,
       costUsd: costUsd ?? this.costUsd,
       model: model ?? this.model,
       images: images ?? this.images,
+      videos: videos ?? this.videos,
     );
   }
 
@@ -58,10 +64,11 @@ class AiMessage {
         'role': role.name,
         'content': content,
         'createdAt': createdAt.millisecondsSinceEpoch,
-        if (costSats != null) 'costSats': costSats,
+        if (costTokens != null) 'costTokens': costTokens,
         if (costUsd != null) 'costUsd': costUsd,
         if (model != null) 'model': model,
         if (images.isNotEmpty) 'images': images,
+        if (videos.isNotEmpty) 'videos': videos,
       };
 
   factory AiMessage.fromJson(Map<String, dynamic> json) => AiMessage(
@@ -74,13 +81,83 @@ class AiMessage {
         createdAt: DateTime.fromMillisecondsSinceEpoch(
           json['createdAt'] as int? ?? 0,
         ),
-        costSats: json['costSats'] as int?,
+        // Reads BOTH keys: history written in the sats era still parses (its
+        // numbers were sats; they're shown as tokens — close enough at the
+        // current rate, and a display label is the only thing they drive).
+        costTokens: (json['costTokens'] ?? json['costSats']) as int?,
         costUsd: (json['costUsd'] as num?)?.toDouble(),
         model: json['model'] as String?,
         images: [
           for (final url in (json['images'] as List? ?? const [])) '$url',
         ],
+        videos: [
+          for (final url in (json['videos'] as List? ?? const [])) '$url',
+        ],
       );
 }
 
 enum AiRole { user, assistant, system }
+
+/// The result of trimming a chat history to the request's context budget.
+class ContextWindow {
+  /// The messages that fit, oldest-first (includes the new user message).
+  final List<AiMessage> messages;
+
+  /// How many older messages were left out. The UI surfaces this ("older
+  /// messages are out of context — clear chat to reset") so a silent
+  /// truncation never reads as the model "forgetting".
+  final int dropped;
+
+  const ContextWindow(this.messages, this.dropped);
+}
+
+/// Fits [history] (oldest-first, the new user message LAST) into the
+/// model's request budget.
+///
+/// Budgets are in CHARACTERS (≈ 4 chars/token): every message is capped
+/// individually ([maxPerMessageChars], long pastes stop eating the window),
+/// and the whole window is capped at [maxTotalChars], walking back from the
+/// newest message — the recent exchange matters more than the opening one.
+/// [reservedChars] accounts for the system prompt + a live Nostr context
+/// block, so a big fetched context shrinks the history instead of blowing
+/// the model's context window (which is how "the AI forgot everything" /
+/// provider context-length errors happen).
+ContextWindow trimToContextBudget(
+  List<AiMessage> history, {
+  int maxTotalChars = 22000,
+  int maxPerMessageChars = 4000,
+  int reservedChars = 0,
+}) {
+  final budget = maxTotalChars -
+      (reservedChars > maxTotalChars ~/ 2 ? maxTotalChars ~/ 2 : reservedChars);
+  if (budget <= 0 || history.isEmpty) {
+    return ContextWindow(history, 0);
+  }
+
+  String capped(String content) {
+    if (content.length <= maxPerMessageChars) return content;
+    // Keep the head AND the tail of a long message — a truncated paste
+    // loses the question at its end far more often than its preamble.
+    final half = maxPerMessageChars ~/ 2;
+    return '${content.substring(0, half)}\n[…]\n'
+        '${content.substring(content.length - half)}';
+  }
+
+  final kept = <AiMessage>[];
+  var used = 0;
+  var dropped = 0;
+  for (var i = history.length - 1; i >= 0; i--) {
+    final m = history[i];
+    final content = capped(m.content);
+    final cost = content.length;
+    // The LAST message (the new user message) always fits — sending nothing
+    // but the question beats failing on a full window.
+    if (used + cost > budget && kept.isNotEmpty) {
+      dropped = i + 1;
+      break;
+    }
+    used += cost;
+    kept.insert(0, content == m.content ? m : m.copyWith(content: content));
+  }
+  return ContextWindow(kept, dropped);
+}

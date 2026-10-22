@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart' show DecryptedDm;
 import 'package:nostrfeed_mobile/core/nostr/relay/dm_delivery.dart';
@@ -10,12 +11,15 @@ import 'package:nostrfeed_mobile/core/utils/nip19.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
+import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
+import 'package:nostrfeed_mobile/features/chat/application/dm_thread_provider.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/chat_avatar.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/chat_date_separator.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/new_message_sheet.dart';
+import 'package:nostrfeed_mobile/features/compose/data/upload_service.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 /// Chat / DM screen with end-to-end encryption (NIP-04/NIP-17).
@@ -34,6 +38,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   bool _isSending = false;
+  bool _isUploading = false;
 
   /// The message being replied to (NIP-17 reply via 'e' tag). Set by
   /// swiping a bubble, cleared after send or via the cancel button.
@@ -145,26 +150,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               loading: () => _buildLoadingState(colorScheme),
               error: (err, _) => _buildErrorState(context),
               data: (conversations) {
-                if (conversations.isEmpty) {
-                  return _buildEmptyState(context);
-                }
                 return RefreshIndicator(
                   onRefresh: () async {
                     HapticFeedback.mediumImpact();
                     ref.invalidate(dmsProvider);
                     await ref.read(dmsProvider.future);
                   },
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: conversations.length,
-                    separatorBuilder: (_, _) => Divider(
-                      height: 1,
-                      indent: 84,
-                      color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                    ),
-                    itemBuilder: (context, index) =>
-                        _conversationTile(context, conversations[index]),
-                  ),
+                  child: conversations.isEmpty
+                      ? ListView(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          children: [
+                            // Pinned first: the AI assistant, always first
+                            // in the chat list — even with zero DMs.
+                            const _AiChatTile(),
+                            SizedBox(
+                              height:
+                                  MediaQuery.of(context).size.height * 0.45,
+                              child: _buildEmptyState(context),
+                            ),
+                          ],
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          // Pinned row 0: the AI assistant (Telegram "Saved
+                          // Messages" pattern).
+                          itemCount: conversations.length + 1,
+                          separatorBuilder: (_, index) => Divider(
+                            height: 1,
+                            indent: 84,
+                            color: colorScheme.outlineVariant
+                                .withValues(alpha: 0.3),
+                          ),
+                          itemBuilder: (context, index) {
+                            if (index == 0) return const _AiChatTile();
+                            return _conversationTile(
+                              context,
+                              conversations[index - 1],
+                            );
+                          },
+                        ),
                 );
               },
             ),
@@ -490,7 +514,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             color: colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
           Expanded(
-            child: dmsAsync.when(
+            child: ref.watch(dmThreadProvider(peerPubkey)).when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (err, _) => Center(
                 child: Text(
@@ -498,71 +522,57 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   style: TextStyle(color: colorScheme.error),
                 ),
               ),
-              data: (events) {
-                final store = ref.read(dmStoreProvider);
-                return FutureBuilder<void>(
-                  // Wait for BOTH the persisted outbox AND event decryption —
-                  // a cold start otherwise shows an empty thread because the
-                  // outbox hasn't loaded from disk yet.
-                  future: store.ready.then((_) => store.prime(events)),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final thread = store.threadFor(events, peerPubkey);
-                    if (thread.isEmpty) {
-                      return const EmptyState(
-                        icon: Icons.waving_hand_rounded,
-                        title: 'No messages yet',
-                        subtitle:
-                            'Say hello! Messages are end-to-end encrypted.',
-                      );
-                    }
-                    return ListView.builder(
-                      controller: _scrollController,
-                      reverse: true,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      itemCount: thread.length,
-                      itemBuilder: (context, index) {
-                        final msg = thread[index];
-                        final isSent = msg.senderPubkey == auth.pubkey;
-                        final showDateSeparator =
-                            index == thread.length - 1 ||
-                            !_isSameDay(
-                              thread[index].createdAt,
-                              thread[index + 1].createdAt,
-                            );
-                        return Column(
-                          children: [
-                            if (showDateSeparator)
-                              ChatDateSeparator(timestamp: msg.createdAt),
-                            // Swipe right → reply to this message (NIP-17
-                            // 'e' tag reply). Only for text messages.
-                            GestureDetector(
-                              onHorizontalDragEnd: msg.text.isNotEmpty
-                                  ? (_) {
-                                      HapticFeedback.lightImpact();
-                                      setState(() => _replyingTo = msg);
-                                    }
-                                  : null,
-                              child: MessageBubble(
-                                key: ValueKey(msg.id),
-                                message: msg,
-                                isSent: isSent,
-                                onRetry: msg.status == MessageStatus.failed
-                                    ? () => _retryMessage(peerPubkey, msg)
-                                    : null,
-                                onDelete: msg.status == MessageStatus.failed
-                                    ? () => _deleteFailed(peerPubkey, msg)
-                                    : null,
-                              ),
-                            ),
-                          ],
+              data: (thread) {
+                if (thread.isEmpty) {
+                  return const EmptyState(
+                    icon: Icons.waving_hand_rounded,
+                    title: 'No messages yet',
+                    subtitle: 'Say hello! Messages are end-to-end encrypted.',
+                  );
+                }
+                return ListView.builder(
+                  controller: _scrollController,
+                  reverse: true,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  itemCount: thread.length,
+                  itemBuilder: (context, index) {
+                    final msg = thread[index];
+                    final isSent = msg.senderPubkey == auth.pubkey;
+                    final showDateSeparator =
+                        index == thread.length - 1 ||
+                        !_isSameDay(
+                          thread[index].createdAt,
+                          thread[index + 1].createdAt,
                         );
-                      },
+                    return Column(
+                      children: [
+                        if (showDateSeparator)
+                          ChatDateSeparator(timestamp: msg.createdAt),
+                        // Swipe right → reply to this message (NIP-17
+                        // 'e' tag reply). Only for text messages.
+                        GestureDetector(
+                          onHorizontalDragEnd: msg.text.isNotEmpty
+                              ? (_) {
+                                  HapticFeedback.lightImpact();
+                                  setState(() => _replyingTo = msg);
+                                }
+                              : null,
+                          child: MessageBubble(
+                            key: ValueKey(msg.id),
+                            message: msg,
+                            isSent: isSent,
+                            onRetry: msg.status == MessageStatus.failed
+                                ? () => _retryMessage(peerPubkey, msg)
+                                : null,
+                            onDelete: msg.status == MessageStatus.failed
+                                ? () => _deleteFailed(peerPubkey, msg)
+                                : null,
+                          ),
+                        ),
+                      ],
                     );
                   },
                 );
@@ -656,6 +666,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // Attach (image) — kind-15 file message, WhatsApp-style.
+          IconButton(
+            icon: _isUploading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.add_photo_alternate_outlined),
+            tooltip: 'Send an image',
+            onPressed: _isUploading || !auth.isLoggedIn || auth.isReadOnly
+                ? null
+                : () => _sendImage(auth, peerPubkey),
+          ),
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -761,11 +785,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         );
       }
 
-      // ── Fast delivery ─────────────────────────────────────────────
-      // Publish IMMEDIATELY to connected relays + the well-known DM relays
-      // (relay.primal.net is in both — Primal users read DMs there). The
-      // recipient's kind-10050 inbox lookup happens in the background as a
-      // boost and never delays the tick.
+      // ── Targeted delivery (NIP-17: 1–3 relays, not a spray) ────────
+      // Publish immediately to OUR connected relays (for the self-copy and
+      // our own history) + the small fallback DM set. The recipient's
+      // kind-10050 inbox lookup runs in the background as a targeted boost.
       final selfWrap = giftWraps.length > 1 ? giftWraps[1] : null;
       final immediateTargets = {
         ...nostr.relayPool.connectedUrls,
@@ -792,9 +815,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         );
       }
 
-      // Background boost: find the recipient's DM inbox relays (NIP-17
-      // kind 10050 + NIP-65 read relays) and republish there, so users on
-      // relays outside our defaults still get it.
+      // Targeted boost: publish to the recipient's ACTUAL inbox (their
+      // kind-10050, 1–3 relays) + their NIP-65 read relays — not already-
+      // covered ones, capped at 4. This is how a Primal/Damus/Amethyst user
+      // on different relays still gets the message, without spraying 8.
       Future(() async {
         try {
           final inbox = await nostr.dmDelivery.deliveryRelaysFor(peerPubkey);
@@ -820,6 +844,92 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (mounted) AppToast.error(context, 'Failed to send: $e');
     } finally {
       if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  /// Pick an image → upload to Blossom → send as a kind-15 file message.
+  /// Same targeted delivery as text (recipient inbox + home relay).
+  Future<void> _sendImage(AuthState auth, String peerPubkey) async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 2048,
+      imageQuality: 85,
+    );
+    if (file == null || !mounted) return;
+
+    setState(() => _isUploading = true);
+    final store = ref.read(dmStoreProvider);
+    try {
+      final nostr = ref.read(nostrServiceProvider);
+      // 1. Upload to Blossom (public URL).
+      final url = await UploadService(nostr.authService, nostr)
+          .uploadImage(file);
+      if (!mounted) return;
+
+      // 2. Wrap as a kind-15 file message (plaintext = the URL).
+      final giftWraps = nostr.dms.createNip17FileMessage(
+        peerPubkey,
+        url: url,
+        mimeType: 'image/${file.name.split('.').last.toLowerCase()}',
+        alt: file.name,
+      );
+      final recipientWrap = giftWraps.first;
+      final localId = store.recordSent(
+        peerPubkey: peerPubkey,
+        plaintext: url,
+        eventId: recipientWrap.id,
+      );
+      // Mark the outbox entry as a file so the bubble renders the image.
+      store.markFileMessage(peerPubkey, localId, mimeType: 'image/');
+      store.markThreadRead(peerPubkey);
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+
+      // 3. Same targeted delivery as text.
+      final selfWrap = giftWraps.length > 1 ? giftWraps[1] : null;
+      final immediateTargets = {
+        ...nostr.relayPool.connectedUrls,
+        ...DmDelivery.fallbackDmRelays,
+      }.toList();
+      final delivered = await nostr.relayPool.publishWithAckTo(
+        recipientWrap,
+        immediateTargets,
+      );
+      if (selfWrap != null) nostr.publishWithAck(selfWrap).ignore();
+      if (!mounted) return;
+      store.markStatus(
+        peerPubkey,
+        localId,
+        delivered ? MessageStatus.sent : MessageStatus.failed,
+      );
+
+      // Targeted boost to the recipient's inbox.
+      Future(() async {
+        try {
+          final inbox = await nostr.dmDelivery.deliveryRelaysFor(peerPubkey);
+          final extra = inbox
+              .where((u) => !nostr.relayPool.connectedUrls.contains(u))
+              .take(3)
+              .toList();
+          if (extra.isNotEmpty) {
+            await nostr.relayPool.publishWithAckTo(recipientWrap, extra);
+          }
+        } catch (_) {}
+      }).ignore();
+
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) ref.invalidate(dmsProvider);
+      });
+    } catch (e) {
+      if (mounted) AppToast.error(context, 'Could not send image: $e');
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
@@ -864,6 +974,103 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => const NewMessageSheet(),
+    );
+  }
+}
+
+/// The pinned first row of the conversation list: the AI assistant.
+///
+/// Always first (Telegram "Saved Messages" pattern) and always visible —
+/// even with zero DM conversations. Shows the live credit balance / free
+/// trial as the subtitle so the row carries real state, not just a link.
+class _AiChatTile extends ConsumerWidget {
+  const _AiChatTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final available = ref.watch(aiAvailableProvider);
+    final balance = ref.watch(aiCreditsProvider).value?.balance ?? 0;
+    final trialLeft = ref.watch(aiTrialRemainingProvider);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          context.push('/ai');
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            children: [
+              // Gradient avatar — visually distinct from every DM peer.
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      colorScheme.primary.withValues(alpha: 0.8),
+                      colorScheme.tertiary.withValues(alpha: 0.8),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.smart_toy_rounded,
+                  color: colorScheme.onPrimary,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'NostrFeed AI',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      !available
+                          ? 'Assistant (not configured)'
+                          : trialLeft > 0
+                              ? 'Summarize, translate, create · '
+                                  '$trialLeft free today'
+                              : 'Summarize, translate, create · '
+                                  '$balance credits',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: available
+                            ? colorScheme.onSurfaceVariant
+                            : colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.auto_awesome_rounded,
+                size: 18,
+                color: colorScheme.primary.withValues(alpha: 0.7),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

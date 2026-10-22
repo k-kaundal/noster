@@ -119,6 +119,16 @@ class Env {
         'f1ee81bb843731c983fad98784dfe984efdd0b057bcbb5e8f16ff449787e59f6',
   );
 
+  /// The lightning address paid boosts are zapped to (NIP-57, `e`-tagging
+  /// the promoted note). Its lnurl metadata's `nostrPubkey` is resolved at
+  /// runtime and used to verify boost receipts — a receipt signed by any
+  /// other key is not a boost. Must point at a pay link on the operator's
+  /// LNbits (the house/operator wallet) with zaps enabled.
+  static const platformLightningAddress = String.fromEnvironment(
+    'PLATFORM_LIGHTNING_ADDRESS',
+    defaultValue: 'boost@ln.nostrfeed.com',
+  );
+
   // ── GetZap Identity API ────────────────────────────────────────────
   static const getzapApi = String.fromEnvironment(
     'GETZAP_API',

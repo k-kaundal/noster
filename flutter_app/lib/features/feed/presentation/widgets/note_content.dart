@@ -43,19 +43,19 @@ class NoteContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Extract actual content — some events wrap text in JSON like
-    // {"content": "...", "header": "..."} which should not be shown raw
-    final content = _extractContent(event.content);
-    if (content.isEmpty) return const SizedBox.shrink();
+    // The heavy pure parsing (regex segmentation, media split, imeta) is
+    // memoized per event — a feed card rebuilds whenever ANY provider it
+    // watches updates, and re-running the parser each time is what janks the
+    // scroll as the feed grows. See _NoteParseCache.
+    final parsed = _NoteParseCache.of(event);
+    if (parsed.content.isEmpty) return const SizedBox.shrink();
 
     final defaultStyle =
         textStyle ??
         Theme.of(context).textTheme.bodyMedium!.copyWith(height: 1.45);
 
-    // Parse + split: text stays inline, media renders as rich tiles below.
-    final segments = _ContentParser.parse(content);
-    final render = _ContentParser.splitForRender(segments, event);
-    final imeta = MediaUtils.parseImeta(event);
+    final render = parsed.render;
+    final imeta = parsed.imeta;
 
     // Media-only post: the whole content was image/video URLs, so the text
     // column has nothing but invisible hidden-URL spans — an "empty card"
@@ -139,6 +139,73 @@ class _MentionLabel extends ConsumerWidget {
       onTap: () => context.push('/profile/$pubkey'),
       child: Text('@$name', style: style),
     );
+  }
+}
+
+// ─── Per-event parse cache ───────────────────────────────────────────
+
+/// Memoizes the pure, content-derived parse of an event so a card rebuild
+/// (provider fan-out — engagement/zaps/profiles landing as the feed pages in)
+/// never re-runs the regex segmentation, the media split, or the imeta parse.
+///
+/// Keyed on event id; validity is guarded by content length + tag count (an
+/// edit that changes either re-parses). Bounded LRU so a long session's
+/// scrolled-past posts don't accumulate.
+class _NoteParseCache {
+  _NoteParseCache._();
+
+  static const int _maxEntries = 400;
+  static final Map<String, _ParsedNote> _map = {};
+
+  /// The parsed form of [event]: extracted text, the render split, imeta.
+  static _ParsedNote of(NostrEvent event) {
+    final key = event.id;
+    final cached = _map[key];
+    if (cached != null &&
+        cached.contentLength == event.content.length &&
+        cached.tagCount == event.tags.length) {
+      // LRU touch: move to the end (most-recently-used).
+      _map.remove(key);
+      _map[key] = cached;
+      return cached;
+    }
+    final parsed = _ParsedNote._from(event);
+    _map[key] = parsed;
+    if (_map.length > _maxEntries) {
+      _map.remove(_map.keys.first); // evict least-recently-used
+    }
+    return parsed;
+  }
+}
+
+/// The cached, content-derived parse of one event.
+class _ParsedNote {
+  /// Human-readable text after unwrapping JSON wrappers.
+  final String content;
+
+  /// Text segments + media/links split, ready for rendering.
+  final ({
+    List<_Segment> textSegments,
+    List<String> images,
+    List<String> videos,
+    List<String> links,
+  })
+  render;
+
+  /// NIP-92 imeta tags keyed by URL.
+  final Map<String, ImetaInfo> imeta;
+
+  final int contentLength;
+  final int tagCount;
+
+  _ParsedNote._(this.content, this.render, this.imeta, this.contentLength, this.tagCount);
+
+  factory _ParsedNote._from(NostrEvent event) {
+    final text = _extractContent(event.content);
+    final segments = text.isEmpty ? const <_Segment>[] : _ContentParser.parse(text);
+    final render = _ContentParser.splitForRender(segments, event);
+    final imeta = MediaUtils.parseImeta(event);
+    return _ParsedNote._(text, render, imeta, event.content.length, event.tags.length);
   }
 }
 

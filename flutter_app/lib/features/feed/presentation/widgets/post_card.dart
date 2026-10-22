@@ -14,10 +14,13 @@ import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
+import 'package:nostrfeed_mobile/features/boost/application/boost_providers.dart';
+import 'package:nostrfeed_mobile/features/boost/presentation/boost_sheet.dart';
 import 'package:nostrfeed_mobile/features/feed/application/post_actions.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/article_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/poll_card.dart';
+import 'package:nostrfeed_mobile/features/zap/application/quick_zap.dart';
 import 'package:nostrfeed_mobile/features/zap/presentation/zap_sheet.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -67,7 +70,10 @@ class _PostCardState extends ConsumerState<PostCard> {
     final colorScheme = Theme.of(context).colorScheme;
 
     // ─── Handle reposts (kind 6 / 16) ───────────────────────────────
-    final repostedEvent = extractRepostedEvent(widget.event);
+    // The embedded-event JSON parse is memoized per event id — a feed card
+    // rebuilds on every provider update, and jsonDecode + NostrEvent.fromJson
+    // per rebuild is scroll jank once the feed is long. See _RepostCache.
+    final repostedEvent = _RepostCache.extract(widget.event);
     final displayEvent = repostedEvent ?? widget.event;
     final isRepost = repostedEvent != null;
 
@@ -112,10 +118,7 @@ class _PostCardState extends ConsumerState<PostCard> {
     final authorName =
         profile?.displayNameOrName ?? _truncatedNpub(displayEvent.pubkey);
     final authorPicture = profile?.picture;
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      displayEvent.createdAt * 1000,
-    );
-    final timeAgo = timeago.format(timestamp);
+    final timeAgo = _TimeAgoCache.format(displayEvent.createdAt);
 
     // Counts from engagement provider
     final engagement = engagementAsync.valueOrNull ?? const EventEngagement();
@@ -153,7 +156,12 @@ class _PostCardState extends ConsumerState<PostCard> {
     final bookmarkedIds = bookmarkedIdsAsync.valueOrNull ?? <String>{};
     final isBookmarked = bookmarkedIds.contains(displayEvent.id);
 
-    return Container(
+    // The entrance fade only runs in a thread view (one card, one moment).
+    // In a feed it must NOT run: the fade spawns an AnimationController per
+    // card and replays every time a card re-enters the viewport — with the
+    // keep-alive tabs holding hundreds of cards, that's pure scroll jank for
+    // zero visible benefit (the feed is already on screen).
+    final card = Container(
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
@@ -251,12 +259,24 @@ class _PostCardState extends ConsumerState<PostCard> {
                           ],
                         ),
                         const SizedBox(height: 1),
-                        Text(
-                          '${_truncatedNpub(displayEvent.pubkey)} · $timeAgo',
-                          style: TextStyle(
-                            color: colorScheme.onSurfaceVariant,
-                            fontSize: 13,
-                          ),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '${_truncatedNpub(displayEvent.pubkey)} · $timeAgo',
+                                style: TextStyle(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            // Paid placement is labeled, always — an
+                            // unlabeled ad is how a feed loses its readers.
+                            if (ref.watch(isBoostedProvider(displayEvent.id)))
+                              const _BoostedChip(),
+                          ],
                         ),
                       ],
                     ),
@@ -321,7 +341,10 @@ class _PostCardState extends ConsumerState<PostCard> {
                     count: zapCount,
                     label: zapSats > 0 ? '${_formatSats(zapSats)} sats' : null,
                     color: Colors.amber.shade700,
+                    tooltip: 'Tap: zap options · Hold: quick zap',
                     onTap: () => _handleZap(context, ref, auth, displayEvent),
+                    onLongPress: () =>
+                        _handleQuickZap(context, ref, auth, displayEvent),
                   ),
                   _ActionButton(
                     icon: isBookmarked ? Icons.bookmark : Icons.bookmark_border,
@@ -346,7 +369,10 @@ class _PostCardState extends ConsumerState<PostCard> {
           ),
         ),
       ),
-    ).animate().fadeIn(duration: AppMotion.normal, curve: AppMotion.curve);
+    );
+
+    if (!widget.isThreadView) return card;
+    return card.animate().fadeIn(duration: AppMotion.normal, curve: AppMotion.curve);
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────
@@ -426,6 +452,81 @@ class _PostCardState extends ConsumerState<PostCard> {
     );
     // After the zap sheet closes, refresh zap receipts so the count updates
     ref.read(postActionsProvider).refreshZaps(displayEvent.id);
+  }
+
+  /// Long-press on ⚡: send the user's default amount with NO sheet —
+  /// small gratitude should cost one gesture, not a flow. Falls back to
+  /// the full sheet whenever a decision is genuinely needed (no wallet,
+  /// amount out of bounds, big spends).
+  void _handleQuickZap(
+    BuildContext context,
+    WidgetRef ref,
+    AuthState auth,
+    NostrEvent displayEvent,
+  ) async {
+    final amount = ref.read(quickZapAmountProvider);
+
+    // Big spends always get the sheet — one-tap is for small gratitude.
+    if (amount > quickZapMaxSats) {
+      _handleZap(context, ref, auth, displayEvent);
+      return;
+    }
+
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      _showLoginPrompt(context);
+      return;
+    }
+
+    // Immediate feedback — the zap feels instant while it settles.
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Zapping $amount sats…'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    final result = await sendQuickZap(
+      ref.read,
+      event: displayEvent,
+      amountSats: amount,
+    );
+    if (!context.mounted) return;
+
+    switch (result) {
+      case QuickZapResult.sent:
+        HapticFeedback.heavyImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚡ Zapped $amount sats!'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        ref.read(postActionsProvider).refreshZaps(displayEvent.id);
+      case QuickZapResult.noWallet:
+        // No in-app wallet can pay — the sheet shows the QR fallback.
+        _handleZap(context, ref, auth, displayEvent);
+      case QuickZapResult.noAddress:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This user has no lightning address set'),
+          ),
+        );
+      case QuickZapResult.amountOutOfBounds:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Amount outside this recipient's limits — adjust "
+                'your quick-zap amount in the zap sheet'),
+          ),
+        );
+        _handleZap(context, ref, auth, displayEvent);
+      case QuickZapResult.loginRequired:
+        _showLoginPrompt(context);
+      case QuickZapResult.failed:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Zap failed — try the zap sheet')),
+        );
+        _handleZap(context, ref, auth, displayEvent);
+    }
   }
 
   Future<void> _handleBookmark(
@@ -514,6 +615,13 @@ class _PostOptionsMenu extends ConsumerWidget {
       padding: EdgeInsets.zero,
       onSelected: (value) async {
         switch (value) {
+          case 'boost':
+            final auth = ref.read(authStateProvider);
+            if (!auth.isLoggedIn || auth.isReadOnly) {
+              AppToast.info(context, 'Log in to boost posts');
+              return;
+            }
+            showBoostSheet(context, event);
           case 'report':
             showReportDialog(
               context,
@@ -542,6 +650,18 @@ class _PostOptionsMenu extends ConsumerWidget {
         }
       },
       itemBuilder: (context) => [
+        if (ref.watch(boostAvailableProvider).valueOrNull ?? false)
+          const PopupMenuItem(
+            value: 'boost',
+            child: Row(
+              children: [
+                Icon(Icons.rocket_launch_outlined,
+                    size: 18, color: Colors.amber),
+                SizedBox(width: 10),
+                Text('Boost post'),
+              ],
+            ),
+          ),
         PopupMenuItem(
           value: 'report',
           child: Row(
@@ -585,6 +705,44 @@ class _PostOptionsMenu extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Boosted chip ───────────────────────────────────────────────────
+
+/// The "⚡ Boosted" label on a promoted post. Always shown when the card is
+/// in a paid slot — ads transparency, and Play policy, both require it.
+class _BoostedChip extends StatelessWidget {
+  const _BoostedChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.amber.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.bolt_rounded, size: 11, color: Colors.amber),
+            const SizedBox(width: 2),
+            Text(
+              'Boosted',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -658,6 +816,10 @@ class _ActionButton extends StatefulWidget {
   final int count;
   final String? label;
   final VoidCallback? onTap;
+
+  /// Secondary gesture — used by the zap button for one-tap quick zaps.
+  final VoidCallback? onLongPress;
+  final String? tooltip;
   final Color? color;
 
   const _ActionButton({
@@ -665,6 +827,8 @@ class _ActionButton extends StatefulWidget {
     required this.count,
     this.label,
     this.onTap,
+    this.onLongPress,
+    this.tooltip,
     this.color,
   });
 
@@ -693,12 +857,19 @@ class _ActionButtonState extends State<_ActionButton>
     final colorScheme = Theme.of(context).colorScheme;
     final effectiveColor = widget.color ?? colorScheme.onSurfaceVariant;
 
-    return InkWell(
+    final child = InkWell(
       onTap: widget.onTap != null
           ? () {
               HapticFeedback.lightImpact();
               _pop.forward(from: 0);
               widget.onTap!();
+            }
+          : null,
+      onLongPress: widget.onLongPress != null
+          ? () {
+              HapticFeedback.mediumImpact();
+              _pop.forward(from: 0);
+              widget.onLongPress!();
             }
           : null,
       borderRadius: BorderRadius.circular(20),
@@ -728,6 +899,10 @@ class _ActionButtonState extends State<_ActionButton>
         ),
       ),
     );
+    if (widget.tooltip != null) {
+      return Tooltip(message: widget.tooltip!, child: child);
+    }
+    return child;
   }
 
   String _formatCount(int count) {
@@ -912,5 +1087,66 @@ class _ContentWarningCoverState extends State<_ContentWarningCover> {
         ),
       ),
     );
+  }
+}
+
+/// Memoized `timeago.format` keyed on the event's created_at — the string
+/// for a given timestamp only changes with wall-clock time, but feed cards
+/// rebuild far more often than a "x minutes ago" label meaningfully updates.
+/// A 60-second granularity keeps labels honest while making rebuilds cheap.
+class _TimeAgoCache {
+  _TimeAgoCache._();
+
+  static const int _maxEntries = 400;
+  static final Map<int, String> _map = {};
+
+  static String format(int createdAtSeconds) {
+    // Bucket to the minute: a post's "5m" label doesn't need to flip at the
+    // second level, and bucketing is what makes the cache hit.
+    final bucket = createdAtSeconds ~/ 60;
+    final cached = _map[bucket];
+    if (cached != null) {
+      _map.remove(bucket);
+      _map[bucket] = cached;
+      return cached;
+    }
+    final formatted = timeago.format(
+      DateTime.fromMillisecondsSinceEpoch(createdAtSeconds * 1000),
+    );
+    _map[bucket] = formatted;
+    if (_map.length > _maxEntries) {
+      _map.remove(_map.keys.first);
+    }
+    return formatted;
+  }
+}
+
+/// Memoized wrapper around `extractRepostedEvent` — a kind-6/16 repost's
+/// embedded event costs a full jsonDecode + NostrEvent.fromJson, and a feed
+/// card rebuilds on every provider update. Bounded LRU so scrolled-past
+/// reposts don't accumulate.
+class _RepostCache {
+  _RepostCache._();
+
+  static const int _maxEntries = 400;
+  static final Map<String, NostrEvent?> _map = {};
+
+  static NostrEvent? extract(NostrEvent event) {
+    // Only kinds 6/16 can be reposts — everything else short-circuits free.
+    if (event.kind != 6 && event.kind != 16) return null;
+    final key = event.id;
+    if (_map.containsKey(key)) {
+      final cached = _map[key];
+      // LRU touch.
+      _map.remove(key);
+      _map[key] = cached;
+      return cached;
+    }
+    final extracted = extractRepostedEvent(event);
+    _map[key] = extracted;
+    if (_map.length > _maxEntries) {
+      _map.remove(_map.keys.first);
+    }
+    return extracted;
   }
 }

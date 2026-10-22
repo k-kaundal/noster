@@ -121,6 +121,48 @@ class NotificationCenter {
     return true;
   }
 
+  /// Whether an event is a *notification for me* — the p-tag pointing at me
+  /// must name ME as the recipient, not just appear anywhere in the event.
+  ///
+  /// The bug this fixes: a kind-3 follow event carries the AUTHOR'S ENTIRE
+  /// contact list in p-tags — including `["p", myPubkey]` when the author
+  /// follows me. So when I follow someone, my own kind-3 (which p-tags ME)
+  /// arrives via the `#p = [me]` filter, and without this check I got
+  /// "you started following you". Recipient-awareness:
+  ///   kind 3 → notify me when someone ELSE follows me (author ≠ me)
+  ///   kind 9735 → only when the zap REQUEST p-tags me (receipts echo my
+  ///               own outgoing zap back — a zap FROM me isn't news)
+  ///   others  → author ≠ me is enough (my own like/reply isn't news either)
+  bool isNotificationForMe(NostrEvent event, String myPubkey) {
+    if (event.pubkey == myPubkey) return false; // never notify my own actions
+    switch (event.kind) {
+      case 3:
+        return true; // someone else published a contact list p-tagging me
+      case 9735:
+        final req = _zapRequestJson(event);
+        if (req == null) return true; // can't tell → show it (safer)
+        return _jsonPTags(req).contains(myPubkey);
+      default:
+        return true;
+    }
+  }
+
+  static String? _zapRequestJson(NostrEvent receipt) =>
+      receipt.getTag('description');
+
+  static Set<String> _jsonPTags(String requestJson) {
+    final out = <String>{};
+    try {
+      final req = jsonDecode(requestJson) as Map<String, dynamic>;
+      for (final tag in (req['tags'] as List? ?? [])) {
+        if (tag is List && tag.length > 1 && tag[0] == 'p') {
+          out.add('${tag[1]}');
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
   /// Total unread: live events since last-read + historical (from fetch).
   /// Historical events already seen live are not double-counted.
   int get unreadCount {
@@ -254,9 +296,17 @@ final socialLiveListenerProvider = Provider<void>((ref) {
     next.whenData((event) {
       final center = ref.read(notificationCenterProvider);
       final auth = ref.read(authStateProvider);
+      final myPubkey = auth.pubkey ?? '';
       // Never banner my own actions (liking my own post, self-replies).
-      if (event.pubkey == auth.pubkey) {
+      if (event.pubkey == myPubkey) {
         center.ingest(event);
+        return;
+      }
+      // Never banner events that merely p-tag me without being FOR me —
+      // the "I followed you" bug (own kind-3 self-tag) died here.
+      if (myPubkey.isNotEmpty &&
+          !center.isNotificationForMe(event, myPubkey)) {
+        center.ingest(event); // still tracked for the list, just no banner
         return;
       }
       if (center.ingest(event)) {

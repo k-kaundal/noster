@@ -13,27 +13,48 @@ class AiPaymentRecord {
   final String memo;
   final int? timestamp;
 
+  /// The invoice's bolt11 — the idempotency fallback when LNbits returns a
+  /// settled payment WITHOUT a payment hash (some versions omit it on list
+  /// endpoints). Also unique per invoice.
+  final String? bolt11;
+
   const AiPaymentRecord({
     required this.paymentHash,
     required this.amountSats,
     required this.memo,
     this.timestamp,
+    this.bolt11,
   });
+
+  /// The idempotency key for reconciliation. A settled incoming payment must
+  /// NEVER be skipped for lacking a hash — falling back to bolt11, then to
+  /// amount+time, keeps exactly-once crediting even on LNbits builds whose
+  /// list endpoint drops the hash field.
+  String get idempotencyKey {
+    if (paymentHash.isNotEmpty) return 'hash:$paymentHash';
+    final invoice = bolt11;
+    if (invoice != null && invoice.isNotEmpty) return 'bolt11:$invoice';
+    return 'amount:$amountSats:${timestamp ?? 0}:$memo';
+  }
 }
 
 /// Per-user AI payment tracking — the piece the per-device ledger can't do.
 ///
 /// The house wallet's payment history IS the per-user record: every top-up
-/// memo carries the buyer's pubkey (`ai-credits:{pack} · {pubkey12}` or
-/// `ai-credits:{pubkey}:{pack}`). The invoice key can READ that history
-/// (never spend), so the app can answer "did THIS user pay, and how much,
-/// ever" — across devices, and after a wipe.
+/// memo carries the buyer's pubkey (`NostrFeed AI credits {pack} · {pubkey12}`).
+/// The invoice key can READ that history (never spend), so the app can answer
+/// "did THIS user pay, and how much, ever" — across devices, and after a wipe.
 ///
-/// `GET /api/v1/payments` accepts `memo` + `wallet_id` filters, so this
-/// asks the server for only this user's AI top-ups rather than paging the
-/// whole wallet.
+/// Filtering is CLIENT-SIDE: LNbits's server-side `memo` query param is not
+/// a guaranteed substring match across versions (and silently returns nothing
+/// on some), which was the "paid, reconcile sees nothing, credits stay 0"
+/// bug. We page the wallet's payments and match memos ourselves.
 class AiPaymentTracker {
-  AiPaymentTracker();
+  AiPaymentTracker({http.Client? client}) : _client = client ?? http.Client();
+
+  final http.Client _client;
+
+  static const _timeout = Duration(seconds: 15);
 
   /// Total sats THIS user has ever topped up, from the house wallet's own
   /// history — the authoritative number, not a local record.
@@ -55,23 +76,26 @@ class AiPaymentTracker {
     }
   }
 
-  /// Every AI top-up by this user, newest first. Used by the reconcile
-  /// flow to grant credits for payments made on OTHER devices.
+  /// Every settled AI top-up by this user, newest first. Used by the
+  /// reconcile flow to grant credits for payments made on OTHER devices.
   Future<List<AiPaymentRecord>> fetchAiPayments(String pubkey) async {
-    // The memo carries the buyer. Query the server-side filter rather than
-    // pulling the whole wallet history down.
-    final short = pubkey.length > 12 ? pubkey.substring(0, 12) : pubkey;
-    final uri = Uri.parse('${Env.lnbitsUrl}/api/v1/payments').replace(
+    // The OPERATOR instance, always — the HouseWallet keys only exist
+    // there, and every other operator-bound service (nostrnip5, lnurlp,
+    // bunker, wallet tools) also pins `Env.lnbitsUrl`. The Settings URL
+    // override is for whole-deployment self-hosting; following the
+    // user-level override here would split the AI credits wallet off
+    // from the rest of the stack and invoices/reconcile would drift.
+    final base = Env.lnbitsUrl.replaceAll(RegExp(r'/+$'), '');
+    final uri = Uri.parse('$base/api/v1/payments').replace(
       queryParameters: {
         'limit': '200',
-        'memo': short, // server-side memo contains-filter
         'sortby': 'time',
         'direction': 'desc',
       },
     );
-    final res = await http
+    final res = await _client
         .get(uri, headers: {'X-API-KEY': HouseWallet.invoiceKey})
-        .timeout(const Duration(seconds: 15));
+        .timeout(_timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       return const [];
     }
@@ -81,25 +105,34 @@ class AiPaymentTracker {
     final out = <AiPaymentRecord>[];
     for (final raw in list) {
       if (raw is! Map<String, dynamic>) continue;
-      final memo = sanitizeTextOrNull(raw['memo'] as String?) ?? '';
-      // Only AI-credit top-ups by THIS user, and only settled incoming ones.
-      if (!_isAiCreditMemo(memo, pubkey)) continue;
+      // Only SETTLED incoming payments credit anything. A pending or failed
+      // invoice is not money received (LNbits marks them status 'pending' /
+      // 'failed' and negative amounts are outgoing spends).
+      final status = raw['status'];
+      if (status is String && status != 'success') continue;
+      if (raw['pending'] == true) continue;
       final amount = raw['amount'];
-      final sats = amount is num ? (amount.abs() / 1000).round() : 0;
+      if (amount is! num || amount <= 0) continue;
+      final memo = sanitizeTextOrNull(raw['memo'] as String?) ?? '';
+      // Only AI-credit top-ups by THIS user.
+      if (!isAiCreditMemo(memo, pubkey)) continue;
+      final sats = (amount / 1000).round();
       if (sats <= 0) continue;
       out.add(AiPaymentRecord(
         paymentHash: raw['payment_hash'] as String? ?? '',
         amountSats: sats,
         memo: memo,
         timestamp: _readTime(raw),
+        bolt11: raw['bolt11'] as String?,
       ));
     }
     return out;
   }
 
-  /// Whether a memo is an AI-credit top-up by [pubkey]. Covers both memo
-  /// shapes: `ai-credits:{pack} · {pubkey12}` and `ai-credits:{pubkey}:{pack}`.
-  bool _isAiCreditMemo(String memo, String pubkey) {
+  /// Whether a memo is an AI-credit top-up by [pubkey]. Public + static so
+  /// the top-up flow and the tests pin the exact same matcher — a memo
+  /// that fails this check is a payment reconciliation can never recover.
+  static bool isAiCreditMemo(String memo, String pubkey) {
     if (!memo.toLowerCase().contains('ai credits') &&
         !memo.toLowerCase().contains('ai-credits')) {
       return false;

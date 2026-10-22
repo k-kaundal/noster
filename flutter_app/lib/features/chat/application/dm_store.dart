@@ -35,6 +35,12 @@ class ChatMessage {
   /// Delivery status. Relay-echoed messages are always [MessageStatus.sent].
   final MessageStatus status;
 
+  /// The inner rumor kind: 14 = text, 15 = file message, 7 = reaction.
+  final int rumorKind;
+
+  /// For kind-15 file messages: the file's MIME type (`image/jpeg`).
+  final String? mimeType;
+
   const ChatMessage({
     required this.id,
     required this.text,
@@ -42,7 +48,15 @@ class ChatMessage {
     this.recipientPubkey,
     required this.createdAt,
     this.status = MessageStatus.sent,
+    this.rumorKind = 14,
+    this.mimeType,
   });
+
+  /// True when this is a kind-15 file message.
+  bool get isFile => rumorKind == 15;
+
+  /// True when this file message is an image (renders inline in the bubble).
+  bool get isImage => isFile && (mimeType?.startsWith('image/') ?? true);
 
   /// Back-compat shim for older call sites/tests.
   bool get isPending => status == MessageStatus.pending;
@@ -54,6 +68,8 @@ class ChatMessage {
         recipientPubkey: recipientPubkey,
         createdAt: createdAt,
         status: status ?? this.status,
+        rumorKind: rumorKind,
+        mimeType: mimeType,
       );
 }
 
@@ -179,6 +195,47 @@ class DmStore {
   /// relay-fetched ones). See [_arrivalTs] for why this exists.
   int? arrivalTsOf(String eventId) => _arrivalTs[eventId];
 
+  /// Newest created_at among events we've already seen (live + decrypted) —
+  /// the cursor for gap-fill queries. On resume we ask relays for DMs NEWER
+  /// than this so nothing sent while the app was dead is missed, without
+  /// re-replaying a frozen window. 0 = cold start (use a bounded lookback).
+  int get newestSeenTs {
+    var newest = 0;
+    for (final e in _liveEvents.values) {
+      if (e.createdAt > newest) newest = e.createdAt;
+    }
+    for (final id in _decrypted.keys) {
+      final e = _liveEvents[id];
+      if (e != null && e.createdAt > newest) newest = e.createdAt;
+    }
+    return newest;
+  }
+
+  /// How many DM events the live subscription has delivered this session —
+  /// used to detect "subscription silently died" (0 while relays claim to be
+  /// connected = the gap-fill query becomes the safety net).
+  int get liveEventCount => _liveEvents.length;
+
+  /// Ingest a batch from a one-shot gap-fill query (unlike [ingest], these
+  /// are relay-fetched, so they only get an arrival stamp when genuinely
+  /// recent — the backfill guard in the notifier handles the rest).
+  Future<void> ingestBatch(List<NostrEvent> events) async {
+    var added = 0;
+    for (final e in events) {
+      if (e.kind != 4 && e.kind != 1059) continue;
+      if (_liveEvents.containsKey(e.id)) continue;
+      if (_decrypted.containsKey(e.id) || _undecryptable.contains(e.id)) {
+        continue;
+      }
+      _liveEvents[e.id] = e;
+      added++;
+    }
+    if (added > 0) {
+      await prime(events);
+      _bump();
+    }
+  }
+
   /// The last-read watermark for a peer (0 = nothing read yet).
   int lastReadFor(String peerPubkey) => _lastRead[peerPubkey] ?? 0;
 
@@ -295,6 +352,15 @@ class DmStore {
           continue;
         }
         _decrypted[e.id] = d;
+        // First-seen time for relay-fetched NIP-17 messages: the rumor's
+        // created_at is backdated up to 2 days, so without an arrival stamp
+        // a fresh message sorts as "2d ago" and gets buried in the thread.
+        // Only stamp for messages from OTHERS (mine show from the outbox).
+        if (e.kind == 1059 &&
+            d.senderPubkey != auth.pubkey &&
+            !_arrivalTs.containsKey(e.id)) {
+          _arrivalTs[e.id] = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        }
         // A wrap we CAN decrypt that was sent BY us means the peer echoed our
         // own message back (some relay setups) — clear matching outbox entry.
         _reconcileOutbox(d.senderPubkey, d.plaintext, d.createdAt);
@@ -336,6 +402,8 @@ class DmStore {
             // arrived would show "2d ago" otherwise). Relay history keeps
             // its real (approximate) rumor time.
             createdAt: _arrivalTs[e.id] ?? d.createdAt,
+            rumorKind: d.rumorKind,
+            mimeType: d.mimeType,
           ),
         );
       } else if (e.kind == 4) {
@@ -483,6 +551,30 @@ class DmStore {
     _bump();
   }
 
+  /// Flag an outbox entry as a kind-15 file message so the bubble renders it
+  /// as an image/file chip instead of a raw URL. The outbox stores the file
+  /// URL as its text; this just marks the type.
+  void markFileMessage(String peerPubkey, String messageId,
+      {String? mimeType}) {
+    final list = _outbox[peerPubkey];
+    if (list == null) return;
+    final idx = list.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final m = list[idx];
+    list[idx] = ChatMessage(
+      id: m.id,
+      text: m.text,
+      senderPubkey: m.senderPubkey,
+      recipientPubkey: m.recipientPubkey,
+      createdAt: m.createdAt,
+      status: m.status,
+      rumorKind: 15,
+      mimeType: mimeType,
+    );
+    _persistOutbox();
+    _bump();
+  }
+
   /// Remove a pending message from the outbox (e.g. publish failed and the
   /// user discarded it).
   void removePending(String peerPubkey, String messageId) {
@@ -517,6 +609,8 @@ class DmStore {
                     'recipientPubkey': m.recipientPubkey,
                     'createdAt': m.createdAt,
                     'status': m.status.name,
+                    'rumorKind': m.rumorKind,
+                    if (m.mimeType != null) 'mimeType': m.mimeType,
                   })
               .toList(),
         ),
@@ -556,6 +650,8 @@ class DmStore {
                   // Legacy entries had no status; they never confirmed.
                   _ => MessageStatus.failed,
                 },
+                rumorKind: (m['rumorKind'] as num?)?.toInt() ?? 14,
+                mimeType: m['mimeType'] as String?,
               ),
             )
             .where((m) => m.createdAt > cutoff)
@@ -567,11 +663,21 @@ class DmStore {
     }
   }
 
+  /// Full wipe on logout / account switch — decrypted cache, outbox, live
+  /// events, arrival times, AND per-peer read watermarks. Without this the
+  /// next account on this device inherited the previous one's DM state
+  /// (cross-account leak: Bob saw Alice's cached messages + read cursors).
   void clearAll() {
     _decrypted.clear();
     _undecryptable.clear();
+    _liveEvents.clear();
+    _arrivalTs.clear();
+    _lastRead.clear();
     _outbox.clear();
     _persistOutbox();
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.remove(_lastReadKey))
+        .ignore();
   }
 
   bool _isInOutbox(String peerPubkey, String plaintext) {

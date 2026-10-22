@@ -199,12 +199,23 @@ over ~100 lines.
   strip `Exception: ` prefixes.
 - **Navigation architecture**: bottom nav = **Home · Reels · Create (center) ·
   Chat (badge) · Wallet**. The center CREATE button opens a create sheet
-  (post/article/reel/live/group) — Instagram pattern. The shell AppBar +
-  bottom nav are **hidden on immersive routes** (chat threads, reels player)
-  which render their own headers. Drawer is grouped by intent (Discover /
-  People / Money / You) — never a flat 20+ item list. Detail routes use
-  `DetailScaffold` (back button + title). Never hand-roll a drawer button
-  inside a screen (it resolves to the inner drawer-less Scaffold).
+  (Ask AI / post / article / reel / live / group) — Instagram pattern. The
+  shell AppBar + bottom nav are **hidden on immersive routes** (chat threads,
+  reels player) which render their own headers. Drawer is grouped by intent
+  (Discover / People / Money / You) — never a flat 20+ item list. Detail
+  routes use `DetailScaffold` (back button + title). Never hand-roll a drawer
+  button inside a screen (it resolves to the inner drawer-less Scaffold).
+- **AI Assistant visibility** (the flagship feature — surface it everywhere,
+  gated on `aiAvailableProvider` so keyless builds never tease it): the shell
+  AppBar has a ✨ button next to Search, the create sheet leads with "Ask AI",
+  the Home feed's tab row has a compact ✨ shortcut button next to the avatar,
+  and an `_AiPromoCard` is injected once into the For You feed at position 3
+  (For You only, never Following — the ListView indices shift by one after
+  it). Drawer entry lives under Discover → AI Assistant; the guide is in Docs
+  (route `/ai`). The AI chat itself is a detail route outside the shell.
+  NOTE: never make AI a third home Tab — the TabController's length is fixed
+  at init while AI availability resolves async (recreating it mid-build
+  crashes `SingleTickerProviderStateMixin`).
   **Detail routes** (everything outside the 4 tabs: lists, calendar,
   communities, profiles, settings, etc.) are OUTSIDE the shell — they get
   NO AppShell, so they MUST use `DetailScaffold` (`core/widgets/
@@ -230,9 +241,22 @@ over ~100 lines.
   curves, stagger) — never magic numbers. Cheap approaches first: Hero +
   implicit animations + go_router `appTransitionPage` (0 KB);
   `flutter_animate` for staggered entrances (`StaggeredListItem` for list
-  rows, PostCard has its own one-shot fade); feed images Hero-fly to
-  fullscreen (SVGs excluded). Rive is deferred (≤2 signature moments, NDK
-  pinned) — do NOT add it without an ADR change.
+  rows; `PostCard` fades in ONLY in thread view — never in a feed, see the
+  feed-performance rule below); feed images Hero-fly to fullscreen (SVGs
+  excluded). Rive is deferred (≤2 signature moments, NDK pinned) — do NOT
+  add it without an ADR change.
+- **Feed performance (scroll jank)**: a feed `PostCard` rebuilds on EVERY
+  provider fan-out (engagement, zaps, profiles landing as pages arrive), so
+  anything expensive per-build must be memoized per event or it re-runs
+  constantly as the feed grows. Memoized already: the content regex parse +
+  media split + imeta (`_NoteParseCache` in `note_content.dart`), the repost
+  embedded-event JSON decode (`_RepostCache` in `post_card.dart`), the
+  timeago label (`_TimeAgoCache`), and the content-filter verdict
+  (`_VerdictCache` keyed on `filterConfigVersionProvider` — a config change
+  re-filters, an engagement landing does not). Never put a per-card
+  `AnimationController` or an unmemoized `jsonDecode`/regex/`normalize` in a
+  feed card's `build`. The feed `ListView` also uses stable `ValueKey`s +
+  `scrollCacheExtent` so Flutter reuses elements as the list grows.
 - **Kind numbers (ADR-0002)**: use `NostrKinds.*` from
   `core/nostr/kinds.dart` — never a magic kind literal (`kind: 5`,
   `37001`, `kind == 9735`). New kinds go in the registry first.
@@ -385,6 +409,117 @@ over ~100 lines.
   credits mint invoices server-side (nostrnip5/lnurlp extensions, the relay
   admission server, zap recipients) — the house wallet is only for AI
   credits + web fiat subscriptions.
+
+## AI assistant (chat, context, entry points)
+
+- **Entry points**: pinned FIRST row of the chat conversation list
+  (`_AiChatTile` in `features/chat/presentation/chat_screen.dart` — Telegram
+  "Saved Messages" pattern, visible even with zero DMs), drawer → Discover,
+  Explore card, wallet AI-credits card, shell ✨ button, create sheet "Ask AI".
+- **Relay access**: `AiContextService` (note/thread links, npub/nprofile,
+  64-hex ids, "#hashtag" + summarize intent) fetches live context from the
+  user's relays into a second system message — the model answers FROM it,
+  never invents posts. Bounded (8s total, 6k chars) and never blocks a send.
+- **Context window**: `trimToContextBudget` (domain, pure) fits history into
+  the request budget — per-message head+tail cap (4k chars), total window cap
+  (22k chars), and the system prompt + Nostr context block counted AGAINST
+  the budget (a big relay fetch shrinks history instead of blowing the
+  model's context window). Dropped history is counted into
+  `AiChatState.contextDropped` → `_ContextNote` shows "N older messages out
+  of context — clear chat to reset" (a silent trim reads as "the AI forgot").
+- **Bubble actions**: long-press any bubble → Copy / Share. Failed sends
+  restore their text into the composer (`AiChatState.failedText`) so a retry
+  is one tap. History persisted capped at 300 messages (`AiChatStore`).
+
+## AI credits (buy flow — payment → credits)
+
+- **Units = AI TOKENS, not sats**: 1 token = $0.001 (`tokensPerUsd = 1000` in
+  `ai_credits.dart`). Users BUY tokens with sats at the live exchange rate
+  and SPEND tokens per message at dollar-pegged prices that never move with
+  BTC — spending sats felt like spending money (high-value), spending tokens
+  feels like points, and the prices stay stable. Sats appear ONLY at top-up.
+- **Pricing (never a loss)**: token price =
+  `upstream usage.cost USD × (1 + platformFee 5.5%) × profitMargin 1.5 ×
+  tokensPerUsd` (+ modality uplift tokens). OpenRouter's platform fee is
+  priced IN (pricing off raw `usage.cost` alone sells every message ~5%
+  short); the settle is EXACT (`usage.cost`) with the top-up capped at
+  reserve × 2 (`AiGatewayConfig.cappedSettleTokens`) so a runaway
+  reasoning-model request can't drain a balance — and the operator's
+  worst-case forgiveness is bounded too.
+- **Flow**: `AiTopUpSheet` picks a TOKEN pack → its sats price is computed
+  at the live rate + volatility buffer (`AiCreditPack.priceSats`, rate from
+  `aiSatsPerUsdProvider`) → `AiCreditsService.createTopUpInvoice(pack,
+  priceSats:)` mints a bolt11 on the house wallet (memo ALWAYS `NostrFeed AI
+  credits {pack} · {pubkey12}` + optional note — losing prefix/pubkey makes
+  the payment unrecoverable) → `showPayInvoiceSheet` → `creditPayment()`.
+- **Confirmation = auto-poll, never one-shot**: `pay_invoice_sheet.dart`
+  polls `checkPaid()` every 2s while open — actively after an in-app pay
+  (bounded 2 min), passively for QR payments, and once on app resume. The
+  old single-check told users to press "I've paid"; a closed sheet lost the
+  credit even though sats left the wallet.
+- **Reconcile (safety net)**: `AiCreditsNotifier.build` + `WalletSyncService`
+  (30s/resume) + the top-up sheet's "Restore" all run `reconcile(pubkey,
+  satsPerUsd: live)` — it pages `GET /api/v1/payments` on the OPERATOR
+  `Env.lnbitsUrl` (HouseWallet keys live there; NOT the user-overridable
+  `lnbitsUrl`), matches memos CLIENT-side (`AiPaymentTracker.isAiCreditMemo`;
+  the server-side `memo` param silently returns nothing on some LNbits
+  builds), and credits only SETTLED incoming payments, converting sats →
+  tokens at the live rate (a recovered top-up grants its true current $ value).
+- **Exactly-once**: reconcile keys idempotency on
+  `AiPaymentRecord.idempotencyKey` (`hash:` → `bolt11:` → `amount:time:memo`
+  fallback — a settled payment is NEVER skipped for lacking a hash).
+  `markCredited` writes the same `hash:`-prefixed key. Credit is saved
+  BEFORE the keys are recorded (a lost key re-grants safely; a recorded key
+  with no credit loses paid sats).
+- **Credits follow the key (relay backup)**: the ledger mirrors to a NIP-44
+  self-encrypted kind-30078 event (d-tag `nostrfeed-ai-credits`) via
+  `AiCreditsBackupService` — only the owner's key reads it. The payload is
+  unit-tagged (`{unit:'tokens', ledger:…}`); a legacy sats-era backup
+  converts sats → tokens on restore BEFORE merging (mixing units would
+  inflate a balance ~1,200×). Build merges local + remote with
+  `AiCreditsLedger.mergeWith` (union: max of the monotonic purchased/spent
+  counters, balance RE-DERIVED — never max-balance, which would resurrect
+  spent credits). Every credit/debit publishes a backup fire-and-forget.
+- **Sats→tokens migration**: `AiCreditsService.load` converts a legacy
+  sats-denominated ledger ONCE (flag `ai:credits_migrated_to_tokens_v1`) at
+  `migrationSatsPerUsd`, preserving its dollar value.
+- **Live exchange rate** (`AiExchangeRateService` + `aiSatsPerUsdProvider`,
+  auto-refresh every 10 min): house LNbits `/api/v1/rate/USD` →
+  mempool.space → disk cache → constant `kFallbackSatsPerUsd`. Used ONLY for
+  top-up sats pricing + reconcile conversion — never for per-message prices
+  (those are dollar-pegged tokens).
+- **Ledger**: `AiCreditsLedger` (pure Dart, checksummed, `updatedAt` stamp)
+  in secure storage; read-only logins skip backup/restore silently.
+- **Tests**: `test/features/ai/ai_credits_flow_test.dart` pins the
+  payment→credit + exactly-once + merge contracts; `ai_payment_tracker_test.dart`
+  pins the memo matcher; `ai_credits_test.dart` pins ledger math + merge +
+  token pricing (`estimatePriceTokens`/`settlePriceTokens`/`priceSats`).
+
+## Realtime wallet (LNbits websocket + notifications)
+
+- **Live channel**: `LnbitsLiveService` (`features/wallet/data/`) wraps
+  `wss://{base}/api/v1/ws/{invoiceKey}` — the wallet's **inkey** is the
+  subscription id (wallet *ids* were dropped in LNbits 0.12.8 as public —
+  lnbits#2545). `LnbitsLivePayment.tryParse` accepts BOTH frame shapes:
+  `{"type":"payment","amount":sats,…}` and `{"balance":msat,"payment":{…}}`.
+- **Coordinator**: `lnbitsLiveServiceProvider` (`features/wallet/application/
+  lnbits_live_providers.dart`, watched at app root in `app.dart`) runs TWO
+  sockets — the active user wallet (`lnbitsUrl`, the Settings-following
+  active instance) and the **house wallet** (pinned to `defaultLnbitsUrl` =
+  the operator instance, same pin as `AiCreditsService`/`AiPaymentTracker` —
+  never the user override). Reconnect on `onDone` with 5s→2min backoff,
+  `resync()` on app resume (mirrors the relay-pool resilience rule).
+- **On a user-wallet payment**: debounced (600ms) `lnbitsAuthProvider.refresh()`
+  (a zap burst = ONE `/api/v1/auth` fetch) + incoming settled sats fire
+  `LocalNotificationService.showZap` and set `lnbitsLiveAlertProvider` →
+  `WalletPaymentBanner` (above the router, next to DM/social banners, tap →
+  `/wallet`). On a house payment: `aiCreditsProvider.reconcile(pubkey)` —
+  top-ups land in seconds, no "I've paid" tap.
+- **Fallback**: the 30s `WalletSyncService` poll + receive-dialog 3s poll
+  stay — the socket is primary, polls are the gap cover. Never remove the
+  polls (proxy idle timeouts kill quiet websockets).
+- **Tests**: `test/features/wallet/lnbits_live_test.dart` pins the frame
+  parser for both shapes + garbage frames.
 
 ## Feed architecture (offline-first, FB/Insta-style)
 

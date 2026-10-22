@@ -7,6 +7,7 @@ import 'package:nostrfeed_mobile/core/providers/app_info_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
+import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
 import 'package:nostrfeed_mobile/features/notifications/application/notification_center.dart';
@@ -144,6 +145,20 @@ class _AppShellState extends ConsumerState<AppShell>
           : AppBar(
               title: Text(_titleFor(location)),
               actions: [
+                // AI Assistant — the flagship feature, always one tap away.
+                // Hidden on builds without a provider key (nothing to sell).
+                if (ref.watch(aiAvailableProvider))
+                  IconButton(
+                    icon: Icon(
+                      Icons.auto_awesome_rounded,
+                      color: colorScheme.primary,
+                    ),
+                    tooltip: 'AI Assistant',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      context.push('/ai');
+                    },
+                  ),
                 // Global search
                 IconButton(
                   icon: const Icon(Icons.search_rounded),
@@ -280,6 +295,12 @@ class _AppShellState extends ConsumerState<AppShell>
                 ),
               ),
               const SizedBox(height: 16),
+              _CreateAction(
+                icon: Icons.auto_awesome_rounded,
+                label: 'Ask AI',
+                subtitle: 'Draft, summarize, generate images & video',
+                onTap: () => _go(ctx, '/ai'),
+              ),
               _CreateAction(
                 icon: Icons.edit_rounded,
                 label: 'Post',

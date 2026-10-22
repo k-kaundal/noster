@@ -19,11 +19,12 @@ class DmDelivery {
 
   /// Well-known relays that major Nostr clients watch for DMs. Used as
   /// fallback when the recipient hasn't published a kind-10050 list.
+  /// Trimmed to the 3 highest-coverage ones (Primal + Damus + our own) —
+  /// the old 5-relay union sprayed every DM to 8+ relays, which leaked
+  /// metadata and slowed sends for near-zero delivery gain.
   static const fallbackDmRelays = [
     'wss://relay.primal.net',
     'wss://relay.damus.io',
-    'wss://relay.nostr.band',
-    'wss://nos.lol',
     'wss://relay.nostrfeed.com',
   ];
 
@@ -54,13 +55,19 @@ class DmDelivery {
   }
 
   /// The relays to deliver a DM to [peerPubkey]: their inbox list if they
-  /// have one, otherwise the well-known DM relays (which include Primal).
+  /// have one (1–3 relays per NIP-17), otherwise a SMALL fallback set.
+  ///
+  /// When their inbox IS known, we trust it and add only OUR primary relay
+  /// (so our own client sees the message on its home relay) — not the full
+  /// fallback set. The old union-with-everything sprayed every DM to 8+
+  /// relays; NIP-17 explicitly says keep delivery targeted (1–3 relays).
   Future<List<String>> deliveryRelaysFor(String peerPubkey) async {
     final inbox = await fetchDmInboxRelays(peerPubkey);
     if (inbox.isNotEmpty) {
-      // Union with fallbacks: their inbox relays are authoritative, but a
-      // cheap union guards against stale/incomplete lists.
-      return {...inbox, ...fallbackDmRelays}.toList();
+      return {
+        ...inbox.take(3),
+        'wss://relay.nostrfeed.com', // our home relay, for self history
+      }.toList();
     }
     return List.of(fallbackDmRelays);
   }

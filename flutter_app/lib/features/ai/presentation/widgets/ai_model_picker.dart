@@ -19,6 +19,7 @@ const _modalityMeta = <AiModality?, (String, IconData)>{
   AiModality.imageGen: ('Image gen', Icons.image_outlined),
   AiModality.audio: ('Audio', Icons.graphic_eq_rounded),
   AiModality.video: ('Video', Icons.videocam_outlined),
+  AiModality.videoGen: ('Video gen', Icons.movie_creation_outlined),
 };
 
 class _AiModelPickerSheet extends ConsumerStatefulWidget {
@@ -285,6 +286,7 @@ class _ModelTile extends ConsumerWidget {
                     color: scheme.onSurface,
                   ),
                 ),
+                const SizedBox(width: 2),
               ],
             ),
           ),
@@ -298,6 +300,9 @@ class _ModelTile extends ConsumerWidget {
   }
 
   IconData _leadingIcon(AiModelEntry model) {
+    if (model.modalities.contains(AiModality.videoGen)) {
+      return Icons.movie_creation_outlined;
+    }
     if (model.modalities.contains(AiModality.imageGen)) {
       return Icons.image_outlined;
     }

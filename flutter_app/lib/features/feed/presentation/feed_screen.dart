@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +10,7 @@ import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 
@@ -39,6 +41,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   Widget build(BuildContext context) {
     final auth = ref.watch(authStateProvider);
     final colorScheme = Theme.of(context).colorScheme;
+    final aiAvailable = ref.watch(aiAvailableProvider);
 
     return Scaffold(
       body: Column(
@@ -56,6 +59,25 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                     ],
                   ),
                 ),
+                // Home AI shortcut — a compact ✨ chip right on the tab row,
+                // next to the avatar (the shell AppBar button covers it too,
+                // but this one sits inside the feed itself).
+                if (aiAvailable)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.auto_awesome_rounded,
+                        color: colorScheme.primary,
+                      ),
+                      tooltip: 'AI Assistant',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        context.push('/ai');
+                      },
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: GestureDetector(
@@ -156,6 +178,19 @@ class _FeedTabState extends ConsumerState<_FeedTab>
       ? followingFeedNotifierProvider
       : globalFeedProvider;
 
+  /// The AI promo shows once in the "For You" feed (not Following), only when
+  /// the feature is configured, after the first few posts so it isn't the
+  /// very first thing a scroller sees.
+  bool _showAiPromo(int eventCount) =>
+      !widget.following &&
+      ref.watch(aiAvailableProvider) &&
+      eventCount > _aiPromoPosition;
+
+  static const _aiPromoPosition = 3;
+
+  int _aiPromoIndex(int eventCount) =>
+      eventCount > _aiPromoPosition ? _aiPromoPosition : 0;
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -232,10 +267,20 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                     key: const ValueKey('feed'),
                     controller: _scrollController,
                     padding: const EdgeInsets.only(top: 4, bottom: 180),
+                    // Build a little ahead of the viewport so media/cards are
+                    // ready before they scroll in — smooths fast flings.
+                    scrollCacheExtent: const ScrollCacheExtent.pixels(800),
                     itemCount:
-                        feed.events.length + (feed.isLoadingMore ? 1 : 0),
+                        feed.events.length +
+                        (_showAiPromo(feed.events.length) ? 1 : 0) +
+                        (feed.isLoadingMore ? 1 : 0),
                     itemBuilder: (context, index) {
-                      if (index >= feed.events.length) {
+                      final promoIndex = _aiPromoIndex(feed.events.length);
+                      final showPromo = _showAiPromo(feed.events.length);
+
+                      // The trailing "loading more" spinner is last.
+                      if (index >=
+                          feed.events.length + (showPromo ? 1 : 0)) {
                         return const Padding(
                           padding: EdgeInsets.all(24),
                           child: Center(
@@ -247,7 +292,19 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                           ),
                         );
                       }
-                      return PostCard(event: feed.events[index]);
+                      // The AI promo card sits a few posts down, once.
+                      if (showPromo && index == promoIndex) {
+                        return const _AiPromoCard();
+                      }
+                      final eventIndex =
+                          showPromo && index > promoIndex ? index - 1 : index;
+                      return PostCard(
+                        // A stable key lets Flutter reuse the card's element +
+                        // optimistic-like state as the list grows, instead of
+                        // rebuilding every card from scratch on each page.
+                        key: ValueKey(feed.events[eventIndex].id),
+                        event: feed.events[eventIndex],
+                      );
                     },
                   ),
           ),
@@ -364,6 +421,95 @@ class _NewPostsPill extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// In-feed discovery card for the AI assistant — a branded gradient tile
+/// slipped into the For You feed once, so the flagship feature finds users
+/// who never open the drawer.
+class _AiPromoCard extends ConsumerWidget {
+  const _AiPromoCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final trialLeft = ref.watch(aiTrialRemainingProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Material(
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            context.push('/ai');
+          },
+          child: Ink(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [scheme.primary, scheme.tertiary],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Ask NostrFeed AI',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          trialLeft > 0
+                              ? '$trialLeft free messages today — summarize '
+                                  'threads, draft posts, generate images'
+                              : 'Summarize threads, draft posts, generate '
+                                  'images — pay per message in sats',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -1,13 +1,22 @@
 /// On-device AI credits ledger — pure Dart, fully unit-testable.
 ///
-/// Credits are bought in sats (Lightning) and spent per AI message. The
-/// ledger lives in secure storage; a simple checksum deters casual tampering
-/// (a determined attacker with a patched APK bypasses this anyway — the real
-/// spend cap is the OpenRouter key's credit limit, see docs/AI_PLAN.md §2).
+/// Credits are AI TOKENS: 1 token = $0.001 of AI budget (1,000 tokens = $1),
+/// pegged to the dollar so a message's token price NEVER moves with BTC.
+/// Sats only enter at top-up time, converted at the live exchange rate —
+/// spending sats feels like spending money, spending tokens feels like
+/// spending points (and the numbers stay small: 1–50 tokens a message).
+///
+/// The ledger lives in secure storage; a simple checksum deters casual
+/// tampering (a determined attacker with a patched APK bypasses this
+/// anyway — the real spend cap is the OpenRouter key's credit limit, see
+/// docs/AI_PLAN.md §2).
 library;
 
+/// Tokens per 1 USD — the peg. 1 token = $0.001.
+const tokensPerUsd = 1000;
+
 class AiCreditsLedger {
-  /// Current spendable balance (1 credit = 1 sat of AI budget).
+  /// Current spendable balance (1 credit = 1 TOKEN = $0.001 of AI budget).
   final int balance;
 
   /// Total credits ever purchased (for stats/debug).
@@ -16,11 +25,19 @@ class AiCreditsLedger {
   /// Total credits ever spent.
   final int totalSpent;
 
+  /// Last mutation (seconds since epoch) — the merge key for the relay
+  /// backup: two copies of the ledger (local vs Nostr) are reconciled by
+  /// taking the one that moved last. 0 = never mutated (fresh ledger).
+  final int updatedAt;
+
   const AiCreditsLedger({
     this.balance = 0,
     this.totalPurchased = 0,
     this.totalSpent = 0,
+    this.updatedAt = 0,
   });
+
+  static int _now() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
   AiCreditsLedger credit(int sats) {
     assert(sats > 0);
@@ -28,6 +45,7 @@ class AiCreditsLedger {
       balance: balance + sats,
       totalPurchased: totalPurchased + sats,
       totalSpent: totalSpent,
+      updatedAt: _now(),
     );
   }
 
@@ -40,10 +58,32 @@ class AiCreditsLedger {
       balance: balance - sats,
       totalPurchased: totalPurchased,
       totalSpent: totalSpent + sats,
+      updatedAt: _now(),
     );
   }
 
   bool canAfford(int sats) => balance >= sats;
+
+  /// Merges two copies of the same user's ledger (local + relay backup).
+  ///
+  /// Credits are money — a merge must NEVER lose a purchase or a spend.
+  /// Union semantics: take the max of each counter (purchases and spends are
+  /// monotonic, so the max is the true total), and derive the balance as
+  /// `purchased - spent` rather than max(balance) — max(balance) would
+  /// resurrect credits already spent on the other device.
+  AiCreditsLedger mergeWith(AiCreditsLedger other) {
+    final purchased =
+        totalPurchased > other.totalPurchased ? totalPurchased : other.totalPurchased;
+    final spent = totalSpent > other.totalSpent ? totalSpent : other.totalSpent;
+    final mergedBalance = purchased - spent;
+    final stamp = updatedAt > other.updatedAt ? updatedAt : other.updatedAt;
+    return AiCreditsLedger(
+      balance: mergedBalance < 0 ? 0 : mergedBalance,
+      totalPurchased: purchased,
+      totalSpent: spent,
+      updatedAt: stamp,
+    );
+  }
 
   // ── Serialization (with checksum) ─────────────────────────────────────
 
@@ -51,15 +91,33 @@ class AiCreditsLedger {
         'balance': balance,
         'totalPurchased': totalPurchased,
         'totalSpent': totalSpent,
+        'updatedAt': updatedAt,
         'checksum': checksum,
       };
 
   /// Tamper-evident checksum over the ledger fields. Not cryptographic —
   /// it only needs to catch casual SharedPreferences edits.
-  String get checksum {
+  String get checksum => _checksum(balance, totalPurchased, totalSpent, updatedAt);
+
+  static String _checksum(int balance, int purchased, int spent, int stamp) {
     const salt = 'nf-ai-credits-v1';
-    final raw = '$salt|$balance|$totalPurchased|$totalSpent';
+    final raw = '$salt|$balance|$purchased|$spent|$stamp';
     var hash = 0x811c9dc5; // FNV-1a 32-bit
+    for (final unit in raw.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16);
+  }
+
+  /// The pre-`updatedAt` checksum (4 fields) — ledgers persisted by older
+  /// builds validate against this. Without it the upgrade would read every
+  /// existing ledger as "tampered" and zero it (losing the local balance on
+  /// app update — the exact bug class this whole flow exists to stop).
+  static String _legacyChecksum(int balance, int purchased, int spent) {
+    const salt = 'nf-ai-credits-v1';
+    final raw = '$salt|$balance|$purchased|$spent';
+    var hash = 0x811c9dc5;
     for (final unit in raw.codeUnits) {
       hash ^= unit;
       hash = (hash * 0x01000193) & 0xffffffff;
@@ -70,16 +128,25 @@ class AiCreditsLedger {
   /// Parses a stored ledger. Returns a zeroed ledger when the checksum
   /// doesn't match (tampered or corrupted storage loses credits — honest
   /// users only lose a local record, never sats already paid on-chain).
+  ///
+  /// Accepts both the current (5-field) and legacy (4-field) checksums so
+  /// ledgers written before `updatedAt` existed survive the upgrade.
   static AiCreditsLedger fromJson(Map<String, dynamic> json) {
-    final ledger = AiCreditsLedger(
-      balance: (json['balance'] as num?)?.toInt() ?? 0,
-      totalPurchased: (json['totalPurchased'] as num?)?.toInt() ?? 0,
-      totalSpent: (json['totalSpent'] as num?)?.toInt() ?? 0,
+    final balance = (json['balance'] as num?)?.toInt() ?? 0;
+    final purchased = (json['totalPurchased'] as num?)?.toInt() ?? 0;
+    final spent = (json['totalSpent'] as num?)?.toInt() ?? 0;
+    final stamp = (json['updatedAt'] as num?)?.toInt() ?? 0;
+    final stored = json['checksum'];
+    final ok = stored == _checksum(balance, purchased, spent, stamp) ||
+        // Legacy payloads predate updatedAt — their checksum covers 4 fields.
+        (stamp == 0 && stored == _legacyChecksum(balance, purchased, spent));
+    if (!ok) return const AiCreditsLedger();
+    return AiCreditsLedger(
+      balance: balance,
+      totalPurchased: purchased,
+      totalSpent: spent,
+      updatedAt: stamp,
     );
-    if (json['checksum'] != ledger.checksum) {
-      return const AiCreditsLedger();
-    }
-    return ledger;
   }
 }
 
@@ -93,20 +160,33 @@ class InsufficientAiCredits implements Exception {
       'Insufficient AI credits: have $balance, need $required';
 }
 
-/// Credit pack the user can buy with sats.
+/// Token pack the user can buy, priced in sats at the live exchange rate.
+///
+/// The pack is TOKEN-denominated (what the user gets); the sats price is
+/// computed at purchase time from the live rate plus the volatility buffer,
+/// so the operator always receives the pack's full USD value in sats.
 class AiCreditPack {
-  final int sats;
+  /// Tokens the pack sells (1,000 tokens = $1).
+  final int tokens;
 
-  /// Bonus credits granted on top of the pack price (0 or positive).
-  final int bonusCredits;
+  /// Bonus tokens granted on top (0 or positive).
+  final int bonusTokens;
 
-  const AiCreditPack(this.sats, {this.bonusCredits = 0});
+  const AiCreditPack(this.tokens, {this.bonusTokens = 0});
 
-  int get creditsGranted => sats + bonusCredits;
+  int get creditsGranted => tokens + bonusTokens;
+
+  /// The sats price for [tokens] at [satsPerUsd], plus [volatilityBuffer]
+  /// (a fraction, e.g. 0.03) so BTC moving between quote and settlement
+  /// never shorts the operator.
+  int priceSats({required double satsPerUsd, double volatilityBuffer = 0}) {
+    final usd = tokens / tokensPerUsd;
+    return (usd * satsPerUsd * (1 + volatilityBuffer)).ceil();
+  }
 
   String get label {
-    final s = sats >= 1000 ? '${sats ~/ 1000}k' : '$sats';
-    return '$s sats';
+    final t = tokens >= 1000 ? '${tokens ~/ 1000}k' : '$tokens';
+    return '$t tokens';
   }
 }
 
@@ -114,23 +194,5 @@ class AiCreditPack {
 const aiCreditPacks = <AiCreditPack>[
   AiCreditPack(1000),
   AiCreditPack(5000),
-  AiCreditPack(20000, bonusCredits: 2000),
+  AiCreditPack(20000, bonusTokens: 2000),
 ];
-
-/// Converts a USD cost (OpenRouter `usage.cost`) into sats to charge the
-/// user, applying the operator margin. Never below [minSats] — every paid
-/// message costs at least 1 sat even when the model is nearly free.
-///
-/// [satsPerUsd] comes from the wallet tools fiat rate (sats per $1).
-int satsToCharge({
-  required double costUsd,
-  required double satsPerUsd,
-  double margin = 1.5,
-  int minSats = 1,
-  int? capSats,
-}) {
-  final raw = (costUsd * satsPerUsd * margin).ceil();
-  var sats = raw < minSats ? minSats : raw;
-  if (capSats != null && sats > capSats) sats = capSats;
-  return sats;
-}

@@ -36,6 +36,7 @@ class MessageBubble extends StatelessWidget {
     final displayText =
         message.text.isEmpty ? '🔒 Unable to decrypt' : message.text;
     final failed = message.status == MessageStatus.failed;
+    final isImageMsg = message.isImage && message.text.startsWith('http');
 
     final bubble = Align(
       alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
@@ -66,16 +67,80 @@ class MessageBubble extends StatelessWidget {
               ? CrossAxisAlignment.end
               : CrossAxisAlignment.start,
           children: [
-            Text(
-              displayText,
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.35,
-                color: isSent ? Colors.white : colorScheme.onSurface,
-                fontStyle:
-                    message.text.isEmpty ? FontStyle.italic : FontStyle.normal,
+            // Kind-15 image message: render the image inline, no URL text.
+            if (isImageMsg)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: Image.network(
+                      message.text,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, progress) =>
+                          progress == null
+                              ? child
+                              : Container(
+                                  height: 120,
+                                  width: 200,
+                                  color: colorScheme.surfaceContainer,
+                                  child: const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                ),
+                      errorBuilder: (_, _, _) => Text(
+                        displayText,
+                        style: TextStyle(
+                          fontSize: 15,
+                          color:
+                              isSent ? Colors.white : colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else if (message.isFile)
+              // Non-image file message: a compact file chip, not a raw URL.
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.insert_drive_file_outlined,
+                      size: 18,
+                      color: isSent ? Colors.white : colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        message.mimeType ?? 'File',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isSent ? Colors.white : colorScheme.onSurface,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Text(
+                displayText,
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.35,
+                  color: isSent ? Colors.white : colorScheme.onSurface,
+                  fontStyle: message.text.isEmpty
+                      ? FontStyle.italic
+                      : FontStyle.normal,
+                ),
               ),
-            ),
             const SizedBox(height: 3),
             Row(
               mainAxisSize: MainAxisSize.min,

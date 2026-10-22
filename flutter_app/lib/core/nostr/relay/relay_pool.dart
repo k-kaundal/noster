@@ -15,7 +15,36 @@ class _PersistentSub {
   final String id;
   final List<NostrFilter> filters;
   final StreamController<NostrEvent> controller;
+
+  /// Newest event created_at seen on this subscription — the sliding cursor.
+  /// On resubscribe we advance each filter's `since` to this so the relay
+  /// only replays what arrived AFTER our newest known event, instead of
+  /// re-replaying the whole frozen window (the notification-storm cause).
+  int newestSeen = 0;
+
   _PersistentSub(this.id, this.filters, this.controller);
+
+  /// Filters to send on (re)issue: original, but with `since` advanced to
+  /// the newest event we've already received (when the filter has a since).
+  List<NostrFilter> effectiveFilters() {
+    if (newestSeen == 0) return filters;
+    return [
+      for (final f in filters)
+        if (f.since != null && newestSeen > f.since!)
+          NostrFilter(
+            ids: f.ids,
+            authors: f.authors,
+            kinds: f.kinds,
+            tagFilters: f.tagFilters,
+            since: newestSeen,
+            until: f.until,
+            limit: f.limit,
+            search: f.search,
+          )
+        else
+          f,
+    ];
+  }
 }
 
 /// A single relay WebSocket connection with NIP-42 auth support.
@@ -132,6 +161,12 @@ class RelayConnection {
           final subId = data[1] as String;
           final event = NostrEvent.fromJson(data[2] as Map<String, dynamic>);
           if (!event.isExpired) {
+            // Advance the sliding cursor for resubscribe — this sub's
+            // next re-issue only asks for events NEWER than this one.
+            final persistent = _persistentSubs[subId];
+            if (persistent != null && event.createdAt > persistent.newestSeen) {
+              persistent.newestSeen = event.createdAt;
+            }
             _subs[subId]?.add(event);
           }
           break;
@@ -227,8 +262,11 @@ class RelayConnection {
   void _resubscribeAll() {
     for (final sub in _persistentSubs.values) {
       try {
+        // Sliding-since: only replay events NEWER than our newest seen —
+        // a frozen 6h window re-replayed everything on every reconnect.
+        final filters = sub.effectiveFilters();
         final msg = jsonEncode(
-          ['REQ', sub.id, ...sub.filters.map((f) => f.toJson())],
+          ['REQ', sub.id, ...filters.map((f) => f.toJson())],
         );
         _channel?.sink.add(msg);
       } catch (_) {}

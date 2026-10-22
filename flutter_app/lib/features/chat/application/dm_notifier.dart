@@ -93,6 +93,24 @@ class DmNotifier extends Notifier<DmAlert?> {
       final alreadyAlerted = _alerted[c.peer] ?? 0;
       if (ts <= alreadyAlerted) continue;
 
+      // ── The storm guard ────────────────────────────────────────────────
+      // A message alerts ONLY when it arrived AFTER the peer's watermark by
+      // a margin that can't be a backfill replay. The killer case: on
+      // reconnect, the subscription replays hours of history and each event
+      // gets arrival=now → storm. The rumor's created_at can't help (NIP-17
+      // backdates ≤ 2 days), so the guard is:
+      //   arrival-time freshness AND event-recency.
+      // An event is "genuinely new" when it arrived within the last few
+      // minutes of its own created_at — i.e. NOT a hours-old backfill.
+      final arrival = store.arrivalTsOf(c.lastEvent.id);
+      final isBackfill = arrival != null &&
+          (arrival - created) > 300; // arrived >5min after it was sent
+      if (isBackfill) {
+        // Old message replayed — keep dedupe ahead, stay silent.
+        if ((_alerted[c.peer] ?? 0) < ts) _alerted[c.peer] = ts;
+        continue;
+      }
+
       _alerted[c.peer] = ts;
       state = DmAlert(peerPubkey: c.peer, preview: d.plaintext, latestTs: ts);
       // Phone notification (works backgrounded, like FB/Insta). The sender's

@@ -44,48 +44,149 @@ void main() {
       final restored = AiCreditsLedger.fromJson(json);
       expect(restored.balance, 0);
     });
+
+    test('updatedAt round-trips and stamps mutations', () {
+      final ledger = const AiCreditsLedger().credit(1000);
+      expect(ledger.updatedAt, greaterThan(0));
+      final restored = AiCreditsLedger.fromJson(ledger.toJson());
+      expect(restored.updatedAt, ledger.updatedAt);
+    });
+
+    test('legacy json without updatedAt deserializes (stamp 0)', () {
+      // A payload written before updatedAt existed: the field defaults to 0
+      // and the checksum (computed over updatedAt=0) still validates.
+      final legacy = {
+        'balance': 500,
+        'totalPurchased': 500,
+        'totalSpent': 0,
+        'checksum': const AiCreditsLedger(
+          balance: 500,
+          totalPurchased: 500,
+        ).checksum,
+      };
+      final restored = AiCreditsLedger.fromJson(legacy);
+      expect(restored.balance, 500);
+      expect(restored.updatedAt, 0);
+    });
+
+    test('a pre-updatedAt (4-field checksum) ledger survives the upgrade', () {
+      // Ledgers persisted by an OLD build carry a checksum over only
+      // balance|purchased|spent. Reading it with the new 5-field checksum
+      // would call it "tampered" and zero the balance — the upgrade bug.
+      String legacyChecksum(int b, int p, int s) {
+        const salt = 'nf-ai-credits-v1';
+        final raw = '$salt|$b|$p|$s';
+        var hash = 0x811c9dc5;
+        for (final unit in raw.codeUnits) {
+          hash ^= unit;
+          hash = (hash * 0x01000193) & 0xffffffff;
+        }
+        return hash.toRadixString(16);
+      }
+
+      final oldPayload = {
+        'balance': 700,
+        'totalPurchased': 1000,
+        'totalSpent': 300,
+        'checksum': legacyChecksum(700, 1000, 300),
+      };
+      final restored = AiCreditsLedger.fromJson(oldPayload);
+      expect(restored.balance, 700);
+      expect(restored.totalPurchased, 1000);
+      expect(restored.totalSpent, 300);
+      expect(restored.updatedAt, 0);
+    });
+
+    group('mergeWith (relay backup union)', () {
+      test('a fresh device adopts the remote purchases', () {
+        final local = const AiCreditsLedger();
+        final remote = const AiCreditsLedger().credit(22000).debit(300);
+        final merged = local.mergeWith(remote);
+        expect(merged.totalPurchased, 22000);
+        expect(merged.totalSpent, 300);
+        expect(merged.balance, 21700);
+      });
+
+      test('balance is derived, never max — a remote spend is honored', () {
+        // Two devices both bought 1000; device A spent 400 (balance 600).
+        // Merging must NOT take the higher balance (1000) — the 400 spend
+        // counts on both.
+        final a = const AiCreditsLedger().credit(1000).debit(400);
+        final b = const AiCreditsLedger().credit(1000);
+        final merged = a.mergeWith(b);
+        expect(merged.totalPurchased, 1000);
+        expect(merged.totalSpent, 400);
+        expect(merged.balance, 600);
+      });
+
+      test('merge is symmetric and never loses either side', () {
+        final a = const AiCreditsLedger().credit(5000).debit(100);
+        final b = const AiCreditsLedger().credit(22000).debit(50);
+        final ab = a.mergeWith(b);
+        final ba = b.mergeWith(a);
+        expect(ab.balance, ba.balance);
+        expect(ab.totalPurchased, 22000);
+        expect(ab.totalSpent, 100);
+        expect(ab.balance, 21900);
+      });
+
+      test('a stale local never downgrades the merged ledger', () {
+        final fresh = const AiCreditsLedger().credit(10000).debit(9000);
+        final stale = const AiCreditsLedger().credit(10000);
+        final merged = stale.mergeWith(fresh);
+        expect(merged.balance, 1000);
+        expect(merged.totalSpent, 9000);
+      });
+    });
   });
 
-  group('satsToCharge', () {
-    test('converts usd → sats with margin, ceil', () {
-      // $0.002 at 1111 sats/$ × 1.5 margin = 3.33 → 4 sats
-      final sats = satsToCharge(costUsd: 0.002, satsPerUsd: 1111);
-      expect(sats, 4);
+  group('settle/estimate pricing (tokens, dollar-pegged)', () {
+    test('settle converts usd → tokens with fee + margin, ceil', () {
+      final config = defaultAiGateway();
+      // $0.002 upstream → real cost $0.00211 (×1.055 fee) → ×1.5 margin
+      // = $0.003165 → ×1000 tokens/$ = 3.165 → 4 tokens
+      expect(config.settlePriceTokens(0.002), 4);
     });
 
-    test('never below minSats', () {
-      final sats = satsToCharge(costUsd: 0, satsPerUsd: 1111);
-      expect(sats, 1);
+    test('settle never below the floor', () {
+      final config = defaultAiGateway();
+      expect(config.settlePriceTokens(0), 1);
     });
 
-    test('respects the cap', () {
-      final sats = satsToCharge(
-        costUsd: 10,
-        satsPerUsd: 1111,
-        capSats: 70,
-      );
-      expect(sats, 70);
+    test('cappedSettle bounds the runaway top-up', () {
+      final config = defaultAiGateway();
+      // Exact 500, reserved 100 → cap = 100 × 2 = 200
+      expect(config.cappedSettleTokens(500, 100), 200);
+      // Under the cap, exact wins.
+      expect(config.cappedSettleTokens(150, 100), 150);
     });
   });
 
   group('AiCreditPack', () {
-    test('bonus pack grants bonus credits', () {
-      const pack = AiCreditPack(20000, bonusCredits: 2000);
+    test('bonus pack grants bonus tokens', () {
+      const pack = AiCreditPack(20000, bonusTokens: 2000);
       expect(pack.creditsGranted, 22000);
-      expect(pack.label, '20k sats');
+      expect(pack.label, '20k tokens');
     });
 
     test('plain pack grants face value', () {
       const pack = AiCreditPack(1000);
       expect(pack.creditsGranted, 1000);
     });
+
+    test('priceSats converts tokens → sats at the live rate + buffer', () {
+      const pack = AiCreditPack(1000); // $1
+      // $1 at 1111 sats/$ = 1111 sats; +3% buffer = 1145 (ceil)
+      expect(pack.priceSats(satsPerUsd: 1111), 1111);
+      expect(pack.priceSats(satsPerUsd: 1111, volatilityBuffer: 0.03), 1145);
+    });
   });
 
   group('AiGatewayConfig', () {
-    test('default gateway: openrouter provider + 12 visible models', () {
+    test('default gateway: openrouter provider + 21 visible models', () {
       final config = defaultAiGateway();
       expect(config.provider('openrouter'), isNotNull);
-      expect(config.visibleModels.length, 12);
+      expect(config.visibleModels.length, 21);
       expect(config.enabled, isTrue);
       expect(config.freeTrialPerDay, 5);
       expect(config.profitMargin, 1.5);
@@ -126,48 +227,51 @@ void main() {
       final config = defaultAiGateway();
       final free = config.model('openrouter/free')!;
       final sonnet = config.model('anthropic/claude-sonnet-4.5')!;
-      // 1111 sats/USD ≈ $90k BTC
-      expect(config.estimatePriceSats(free, satsPerUsd: 1111), 1);
-      // sonnet: (800×$3 + 400×$15)/1M = $0.0084 → ×1111×1.5 = 14 sats,
-      // + vision uplift 5 (sonnet is text+vision) = 19 sats
-      expect(config.estimatePriceSats(sonnet, satsPerUsd: 1111), 19);
+      expect(config.estimatePriceTokens(free), 1);
+      // sonnet: (1500×$3 + 800×$15)/1M = $0.0165 → ×1.055 fee = $0.0174
+      // → ×1.5 margin = $0.0261 → ×1000 tokens/$ ≈ 27, + vision uplift 4
+      // = 31 tokens
+      expect(config.estimatePriceTokens(sonnet), 31);
     });
 
     test('modality uplift: max of modalities, added on top of margin', () {
       final config = defaultAiGateway();
-      // Gemini 2.5 Flash: text+vision+video+audio → max uplift = audio 15
+      // Gemini 2.5 Flash: text+vision+video+audio → max uplift = audio 12
       final flash = config.model('google/gemini-2.5-flash')!;
-      expect(config.modalityUpliftFor(flash), 15);
-      // Image-gen model → 40
+      expect(config.modalityUpliftFor(flash), 12);
+      // Image-gen model → 33
       final image = config.model('google/gemini-3.1-flash-image')!;
-      expect(config.modalityUpliftFor(image), 40);
+      expect(config.modalityUpliftFor(image), 33);
       // Plain text → 0
-      final deepseek = config.model('deepseek/deepseek-chat')!;
+      final deepseek = config.model('deepseek/deepseek-v3.2')!;
       expect(config.modalityUpliftFor(deepseek), 0);
-      // Image-gen price = cost×margin + 40: (800×$0.5 + 400×$3)/1M = $0.0016
-      // → ×1111×1.5 ≈ 3 → 3 + 40 = 43 sats
-      expect(config.estimatePriceSats(image, satsPerUsd: 1111), 43);
       // Cheaper on a cheaper vision model than on a frontier one:
       expect(
-        config.estimatePriceSats(deepseek, satsPerUsd: 1111),
-        lessThan(config.estimatePriceSats(image, satsPerUsd: 1111)),
+        config.estimatePriceTokens(deepseek),
+        lessThan(config.estimatePriceTokens(image)),
       );
     });
 
-    test('config note overrides modality uplifts', () {
+    test('config note overrides modality uplifts (both keys parse)', () {
       final json = defaultAiGateway().toJson();
-      json['modality_uplift_sats'] = {'imageGen': 100, 'vision': 8};
+      json['modality_uplift_tokens'] = {'imageGen': 100, 'vision': 8};
       final config = AiGatewayConfig.fromJson(json);
-      expect(config.modalityUpliftSats[AiModality.imageGen], 100);
-      expect(config.modalityUpliftSats[AiModality.vision], 8);
+      expect(config.modalityUpliftTokens[AiModality.imageGen], 100);
+      expect(config.modalityUpliftTokens[AiModality.vision], 8);
       // Untouched modalities keep defaults.
-      expect(config.modalityUpliftSats[AiModality.audio], 15);
+      expect(config.modalityUpliftTokens[AiModality.audio], 12);
+      // Legacy sats key also parses (older notes).
+      final legacy = defaultAiGateway().toJson()
+        ..remove('modality_uplift_tokens')
+        ..['modality_uplift_sats'] = {'imageGen': 77};
+      final legacyConfig = AiGatewayConfig.fromJson(legacy);
+      expect(legacyConfig.modalityUpliftTokens[AiModality.imageGen], 77);
     });
 
-    test('settle price uses exact cost × margin with floor', () {
+    test('settle price uses exact cost × fee × margin with floor', () {
       final config = defaultAiGateway();
-      expect(config.settlePriceSats(0, satsPerUsd: 1111), 1);
-      expect(config.settlePriceSats(0.002, satsPerUsd: 1111), 4);
+      expect(config.settlePriceTokens(0), 1);
+      expect(config.settlePriceTokens(0.002), 4);
     });
 
     test('visible models sort by tier then price', () {
@@ -207,7 +311,7 @@ void main() {
       final config = AiGatewayConfig.fromJson(json);
       expect(config.provider('other')!.name, 'OtherAI');
       expect(config.model('other/model-x')!.providerId, 'other');
-      expect(config.visibleModels.length, 13);
+      expect(config.visibleModels.length, 22);
     });
   });
 
@@ -218,7 +322,7 @@ void main() {
         role: AiRole.assistant,
         content: 'hello',
         createdAt: DateTime.fromMillisecondsSinceEpoch(1234567890),
-        costSats: 3,
+        costTokens: 3,
         costUsd: 0.0002,
         model: 'openrouter/free',
       );
@@ -226,8 +330,19 @@ void main() {
       expect(restored.id, message.id);
       expect(restored.role, AiRole.assistant);
       expect(restored.content, 'hello');
-      expect(restored.costSats, 3);
+      expect(restored.costTokens, 3);
       expect(restored.model, 'openrouter/free');
+    });
+
+    test('legacy costSats json still parses (upgrade path)', () {
+      final restored = AiMessage.fromJson({
+        'id': 'a-1',
+        'role': 'assistant',
+        'content': 'hello',
+        'createdAt': 1234567890,
+        'costSats': 7,
+      });
+      expect(restored.costTokens, 7);
     });
   });
 }
