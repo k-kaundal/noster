@@ -55,14 +55,16 @@ class AiChatState {
   }
 }
 
-final aiChatNotifierProvider =
-    NotifierProvider<AiChatNotifier, AiChatState>(AiChatNotifier.new);
+final aiChatNotifierProvider = NotifierProvider<AiChatNotifier, AiChatState>(
+  AiChatNotifier.new,
+);
 
 /// The assistant persona. Nostr-aware context is fetched live from the
 /// user's relays by `AiContextService` (note/thread links, npub profiles,
 /// "#hashtag" summarize requests) and arrives as a second system message —
 /// this sets tone + hard safety rules.
-const _systemPrompt = 'You are NostrFeed AI, a helpful assistant inside a '
+const _systemPrompt =
+    'You are NostrFeed AI, a helpful assistant inside a '
     'Nostr social app. Be concise and friendly. Use markdown formatting. '
     'When a "Live Nostr context" block is provided, answer from it — '
     'summarize, quote and reference what is actually there; never invent '
@@ -209,8 +211,9 @@ class AiChatNotifier extends Notifier<AiChatState> {
     // Relay access: fetch live Nostr context for this message (note/thread
     // links, npub profiles, "#hashtag" summarize requests). Best-effort —
     // bounded internally, null when nothing fetchable is referenced.
-    final nostrContext =
-        await ref.read(aiContextServiceProvider).buildContext(trimmed);
+    final nostrContext = await ref
+        .read(aiContextServiceProvider)
+        .buildContext(trimmed);
 
     // Fit the window into the request budget: every message capped, oldest
     // dropped first, and the fetched Nostr context counted AGAINST the
@@ -218,8 +221,7 @@ class AiChatNotifier extends Notifier<AiChatState> {
     // model's context window (the "AI forgot everything" bug class).
     final window = trimToContextBudget(
       state.messages.where((m) => m.id != assistantMessage.id).toList(),
-      reservedChars:
-          _systemPrompt.length + (nostrContext?.length ?? 0) + 500,
+      reservedChars: _systemPrompt.length + (nostrContext?.length ?? 0) + 500,
     );
 
     final requestMessages = [
@@ -253,15 +255,16 @@ class AiChatNotifier extends Notifier<AiChatState> {
 
     for (var attempt = 0; attempt < candidates.length; attempt++) {
       streamError = null;
-      await for (final chunk in gateway
-          .streamChat(
-            provider: provider,
-            messages: requestMessages,
-            modelId: candidates[attempt],
-          )
-          .handleError((Object e) {
-        streamError = e is AiGatewayException ? e.message : '$e';
-      })) {
+      await for (final chunk
+          in gateway
+              .streamChat(
+                provider: provider,
+                messages: requestMessages,
+                modelId: candidates[attempt],
+              )
+              .handleError((Object e) {
+                streamError = e is AiGatewayException ? e.message : '$e';
+              })) {
         if (streamError != null) break;
         buffer.write(chunk.delta);
         if (chunk.images.isNotEmpty) {
@@ -271,7 +274,8 @@ class AiChatNotifier extends Notifier<AiChatState> {
         if (chunk.usage != null) finalUsage = chunk.usage;
         _updateLast(buffer.toString());
       }
-      final retryable = streamError != null &&
+      final retryable =
+          streamError != null &&
           streamError!.contains('busy') &&
           attempt < candidates.length - 1 &&
           buffer.isEmpty;
@@ -304,14 +308,12 @@ class AiChatNotifier extends Notifier<AiChatState> {
     var charged = usedTrial ? 0 : reserved;
     if (!usedTrial && finalUsage != null) {
       final exact = config.settlePriceTokens(finalUsage.costUsd);
-      final balance =
-          ref.read(aiCreditsProvider).value?.balance ?? 0;
+      final balance = ref.read(aiCreditsProvider).valueOrNull?.balance ?? 0;
       // Cap the top-up: never more than the allowed overage above reserve,
       // and never more than the user can actually cover. This bounds what a
       // runaway (reasoning-heavy) request can cost both sides.
       final capped = config.cappedSettleTokens(exact, reserved);
-      final settle =
-          capped > reserved + balance ? reserved + balance : capped;
+      final settle = capped > reserved + balance ? reserved + balance : capped;
       final delta = reserved - settle;
       if (delta > 0) {
         await ref.read(aiCreditsProvider.notifier).credit(delta);
@@ -344,8 +346,9 @@ class AiChatNotifier extends Notifier<AiChatState> {
   void _updateLast(String content) {
     final messages = [...state.messages];
     if (messages.isEmpty) return;
-    messages[messages.length - 1] =
-        messages[messages.length - 1].copyWith(content: content);
+    messages[messages.length - 1] = messages[messages.length - 1].copyWith(
+      content: content,
+    );
     state = state.copyWith(messages: messages);
   }
 
@@ -372,8 +375,7 @@ class AiChatNotifier extends Notifier<AiChatState> {
     final assistantMessage = AiMessage(
       id: _nextId('a'),
       role: AiRole.assistant,
-      content:
-          '🎬 Generating your video — this usually takes a minute or two…',
+      content: '🎬 Generating your video — this usually takes a minute or two…',
       createdAt: DateTime.now(),
     );
     state = state.copyWith(
@@ -392,7 +394,7 @@ class AiChatNotifier extends Notifier<AiChatState> {
       // ── Settle to exact cost (usage.cost × margin), refund the rest ──
       var charged = reserved;
       final exact = config.settlePriceTokens(result.costUsd);
-      final balance = ref.read(aiCreditsProvider).value?.balance ?? 0;
+      final balance = ref.read(aiCreditsProvider).valueOrNull?.balance ?? 0;
       final capped = config.cappedSettleTokens(exact, reserved);
       final settle = capped > reserved + balance ? reserved + balance : capped;
       final delta = reserved - settle;
@@ -403,8 +405,7 @@ class AiChatNotifier extends Notifier<AiChatState> {
       }
       charged = settle;
 
-      final urls =
-          result.urls.isNotEmpty ? result.urls : result.unsignedUrls;
+      final urls = result.urls.isNotEmpty ? result.urls : result.unsignedUrls;
       if (urls.isEmpty) {
         // Nothing downloadable was delivered — refund everything.
         await ref.read(aiCreditsProvider.notifier).credit(charged);
@@ -413,7 +414,7 @@ class AiChatNotifier extends Notifier<AiChatState> {
       final settled = assistantMessage.copyWith(
         content: urls.isEmpty
             ? 'The video finished but the provider returned no download '
-                'URLs — your credits were refunded.'
+                  'URLs — your credits were refunded.'
             : 'Here\'s your video:',
         costTokens: charged,
         costUsd: result.costUsd,

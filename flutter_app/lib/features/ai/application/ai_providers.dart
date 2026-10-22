@@ -43,13 +43,9 @@ final aiCreditsBackupServiceProvider = Provider<AiCreditsBackupService>(
   (ref) => AiCreditsBackupService(ref.watch(nostrServiceProvider)),
 );
 
-final aiChatStoreProvider = Provider<AiChatStore>(
-  (ref) => AiChatStore(),
-);
+final aiChatStoreProvider = Provider<AiChatStore>((ref) => AiChatStore());
 
-final aiTrialStoreProvider = Provider<AiTrialStore>(
-  (ref) => AiTrialStore(),
-);
+final aiTrialStoreProvider = Provider<AiTrialStore>((ref) => AiTrialStore());
 
 // ── Gateway config (providers + models + economics) ───────────────────────
 
@@ -72,8 +68,8 @@ final aiAvailableProvider = Provider<bool>((ref) {
 /// `state` (illegal in Riverpod — "uninitialized provider" crash).
 final aiSelectedModelIdProvider =
     NotifierProvider<AiSelectedModelIdNotifier, String?>(
-  AiSelectedModelIdNotifier.new,
-);
+      AiSelectedModelIdNotifier.new,
+    );
 
 class AiSelectedModelIdNotifier extends Notifier<String?> {
   @override
@@ -118,10 +114,7 @@ const kFallbackSatsPerUsd = 1250.0; // ≈ $80k/BTC
 /// track the real exchange rate instead of a hardcoded one.
 final aiSatsPerUsdProvider = FutureProvider<double>((ref) async {
   // Auto-refresh: re-run the fetch chain 10 min after each evaluation.
-  final timer = Timer(
-    const Duration(minutes: 10),
-    () => ref.invalidateSelf(),
-  );
+  final timer = Timer(const Duration(minutes: 10), () => ref.invalidateSelf());
   ref.onDispose(timer.cancel);
 
   final service = ref.watch(aiExchangeRateServiceProvider);
@@ -134,8 +127,7 @@ final aiSatsPerUsdProvider = FutureProvider<double>((ref) async {
 
 /// Price estimate (TOKENS) for a model — shown on its picker chip.
 /// Dollar-pegged: no exchange rate involved, the price is stable.
-final aiModelPriceProvider =
-    Provider.family<int, AiModelEntry>((ref, model) {
+final aiModelPriceProvider = Provider.family<int, AiModelEntry>((ref, model) {
   final config = ref.watch(aiGatewayConfigProvider).value;
   if (config == null) return 1;
   return config.estimatePriceTokens(model);
@@ -143,23 +135,21 @@ final aiModelPriceProvider =
 
 // ── Free-pool quota (OpenRouter only, best effort) ───────────────────────
 
-final aiFreeQuotaProvider = FutureProvider.autoDispose<AiFreeQuota?>(
-  (ref) {
-    final config = ref.watch(aiGatewayConfigProvider).value;
-    if (config == null) return null;
-    final gateway = ref.watch(aiGatewayServiceProvider);
-    final provider = config.provider('openrouter');
-    if (provider == null) return null;
-    return gateway.fetchFreeQuota(provider);
-  },
-);
+final aiFreeQuotaProvider = FutureProvider.autoDispose<AiFreeQuota?>((ref) {
+  final config = ref.watch(aiGatewayConfigProvider).value;
+  if (config == null) return null;
+  final gateway = ref.watch(aiGatewayServiceProvider);
+  final provider = config.provider('openrouter');
+  if (provider == null) return null;
+  return gateway.fetchFreeQuota(provider);
+});
 
 // ── Credits ───────────────────────────────────────────────────────────────
 
 final aiCreditsProvider =
     AsyncNotifierProvider<AiCreditsNotifier, AiCreditsLedger>(
-  AiCreditsNotifier.new,
-);
+      AiCreditsNotifier.new,
+    );
 
 class AiCreditsNotifier extends AsyncNotifier<AiCreditsLedger> {
   @override
@@ -181,8 +171,9 @@ class AiCreditsNotifier extends AsyncNotifier<AiCreditsLedger> {
           .then((_) => _mergedWithBackup())
           .catchError((_) => ref.read(aiCreditsServiceProvider).load());
     }
-    return _mergedWithBackup()
-        .catchError((_) => ref.read(aiCreditsServiceProvider).load());
+    return _mergedWithBackup().catchError(
+      (_) => ref.read(aiCreditsServiceProvider).load(),
+    );
   }
 
   /// Local ledger merged with the relay backup (union semantics — a merge
@@ -279,31 +270,42 @@ class AiCreditsNotifier extends AsyncNotifier<AiCreditsLedger> {
 
 // ── Trial ─────────────────────────────────────────────────────────────────
 
-final aiTrialUsedProvider =
-    AsyncNotifierProvider<AiTrialNotifier, int>(AiTrialNotifier.new);
+final aiTrialUsedProvider = AsyncNotifierProvider<AiTrialNotifier, int>(
+  AiTrialNotifier.new,
+);
 
 class AiTrialNotifier extends AsyncNotifier<int> {
   @override
   Future<int> build() => ref.watch(aiTrialStoreProvider).usedToday();
 
   Future<void> increment() async {
+    // Optimistic: flip the state immediately so the UI decrements the same
+    // frame, then confirm from the store (which also persists to disk). The
+    // old code awaited the store first — a slow/failing SharedPreferences
+    // write (flutter/flutter#194920) left the visible count stale at 5.
+    final optimistic = (state.valueOrNull ?? 0) + 1;
+    state = AsyncData(optimistic);
     state = AsyncData(await ref.read(aiTrialStoreProvider).increment());
   }
 }
 
-/// Free trial messages remaining today.
+/// Free trial messages remaining today. Uses `.valueOrNull` — NEVER `.value`,
+/// which rethrows on AsyncError (a failed SharedPreferences read would crash
+/// every widget that watches this — the AI screen grey-screen bug).
 final aiTrialRemainingProvider = Provider<int>((ref) {
-  final used = ref.watch(aiTrialUsedProvider).value ?? 0;
+  final used = ref.watch(aiTrialUsedProvider).valueOrNull ?? 0;
   final config = ref.watch(aiGatewayConfigProvider).value;
   final perDay = config?.freeTrialPerDay ?? 5;
   final remaining = perDay - used;
   return remaining > 0 ? remaining : 0;
 });
 
-/// Can the user send one more message on [model] right now?
+/// Can the user send one more message on [model] right now? `.valueOrNull`
+/// for the same reason as above — an errored ledger means "unknown", which
+/// reads as 0 (safe: the top-up sheet is one tap away).
 final aiCanSendProvider = Provider.family<bool, AiModelEntry>((ref, model) {
   final price = ref.watch(aiModelPriceProvider(model));
-  final balance = ref.watch(aiCreditsProvider).value?.balance ?? 0;
+  final balance = ref.watch(aiCreditsProvider).valueOrNull?.balance ?? 0;
   final trialLeft = ref.watch(aiTrialRemainingProvider);
   return balance >= price || (model.trialEligible && trialLeft > 0);
 });

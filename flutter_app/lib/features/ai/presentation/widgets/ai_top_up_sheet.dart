@@ -160,10 +160,10 @@ class _AiTopUpSheetState extends ConsumerState<_AiTopUpSheet> {
         // leaving the user at 0 until the next sync tick.
         final pubkey = ref.read(authStateProvider).pubkey;
         if (pubkey != null && pubkey.isNotEmpty) {
-          final before = ref.read(aiCreditsProvider).value?.balance ?? 0;
+          final before = ref.read(aiCreditsProvider).valueOrNull?.balance ?? 0;
           await ref.read(aiCreditsProvider.notifier).refresh(pubkey);
           if (!mounted) return;
-          final after = ref.read(aiCreditsProvider).value?.balance ?? 0;
+          final after = ref.read(aiCreditsProvider).valueOrNull?.balance ?? 0;
           if (after > before && context.mounted) {
             AppToast.success(context, '${after - before} AI tokens recovered');
           }
@@ -181,7 +181,7 @@ class _AiTopUpSheetState extends ConsumerState<_AiTopUpSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final balance = ref.watch(aiCreditsProvider).value?.balance ?? 0;
+    final balance = ref.watch(aiCreditsProvider).valueOrNull?.balance ?? 0;
     // Watch the rate so pack sats prices re-render when it lands/updates.
     final rateAsync = ref.watch(aiSatsPerUsdProvider);
 
@@ -366,10 +366,10 @@ class _AiTopUpSheetState extends ConsumerState<_AiTopUpSheet> {
       }
       // Full refresh: reconcile the wallet history (picks up un-credited
       // payments) AND merge the relay backup (picks up other devices).
-      final before = ref.read(aiCreditsProvider).value?.balance ?? 0;
+      final before = ref.read(aiCreditsProvider).valueOrNull?.balance ?? 0;
       await ref.read(aiCreditsProvider.notifier).refresh(pubkey);
       if (!mounted) return;
-      final after = ref.read(aiCreditsProvider).value?.balance ?? 0;
+      final after = ref.read(aiCreditsProvider).valueOrNull?.balance ?? 0;
       if (!context.mounted) return;
       if (after > before) {
         AppToast.success(context, 'Restored ${after - before} AI tokens');

@@ -1,7 +1,7 @@
 name: nostrfeed_mobile
 description: "NostrFeed - Nostr Operating System for People, Creators & Communities"
 publish_to: 'none'
-version: 1.1.0+5
+version: 1.1.1+6
 
 environment:
   sdk: ^3.13.5
@@ -69,6 +69,15 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
   flutter_native_splash: ^2.4.8
+
+# shared_preferences_android 2.5.x rewrote the plugin on Pigeon JNI +
+# DataStore — its plugin class doesn't compile into the app cleanly (the
+# GeneratedPluginRegistrant can't find SharedPreferencesPlugin) and 2.5.0's
+# JNI classes get R8-stripped (the "No instance with no name has been
+# registered" crash). Pin the last stable pre-JNI line: 2.4.28 (the version
+# before the Pigeon-JNI rewrite — battle-tested).
+dependency_overrides:
+  shared_preferences_android: 2.4.28
 
 flutter:
   uses-material-design: true

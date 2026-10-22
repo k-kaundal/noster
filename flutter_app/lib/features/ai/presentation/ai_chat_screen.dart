@@ -456,7 +456,7 @@ class _BalanceChip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final balance = ref.watch(aiCreditsProvider).value?.balance ?? 0;
+    final balance = ref.watch(aiCreditsProvider).valueOrNull?.balance ?? 0;
     final trialLeft = ref.watch(aiTrialRemainingProvider);
     final scheme = Theme.of(context).colorScheme;
 

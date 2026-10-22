@@ -318,7 +318,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
     ColorScheme colorScheme,
   ) {
     final formatter = NumberFormat('#,###');
-    final balance = ref.watch(aiCreditsProvider).value?.balance ?? 0;
+    final balance = ref.watch(aiCreditsProvider).valueOrNull?.balance ?? 0;
     final trialLeft = ref.watch(aiTrialRemainingProvider);
 
     return Card(
@@ -375,7 +375,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen>
                     ),
                   ),
                   Text(
-                    'credits',
+                    'tokens',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
