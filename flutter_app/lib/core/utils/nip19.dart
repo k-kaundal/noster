@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:bech32/bech32.dart';
+import 'package:flutter/material.dart';
 import 'package:hex/hex.dart';
 
 /// Decoded NIP-19 identifier.
@@ -48,7 +48,7 @@ class Nip19Address extends Nip19Id {
 /// Returns null on parse failure.
 Nip19Id? decodeNip19(String input) {
   try {
-    final codec = const Bech32Codec();
+    const codec = Bech32Codec();
     final decoded = codec.decode(input.trim(), input.length);
     final hrp = decoded.hrp;
     final data = _convertBits(decoded.data, 5, 8, false);

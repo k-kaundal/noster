@@ -50,6 +50,15 @@ class SafeAvatar extends StatelessWidget {
                 width: radius * 2,
                 height: radius * 2,
                 fit: BoxFit.cover,
+                // Display-size decode (ADR-0004): avatars are small; a
+                // 4000 px source photo decoded per avatar is the feed
+                // memory trap.
+                memCacheWidth:
+                    (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+                        .round(),
+                memCacheHeight:
+                    (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+                        .round(),
                 // On ANY load failure show the fallback — never propagate.
                 errorWidget: (_, _, _) => fallbackWidget,
                 placeholder: (_, _) => fallbackWidget,

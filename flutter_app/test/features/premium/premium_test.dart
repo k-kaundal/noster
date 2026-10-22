@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostrfeed_mobile/core/config/env.dart';
-import 'package:nostrfeed_mobile/features/identity/providers/address_providers.dart';
-import 'package:nostrfeed_mobile/features/identity/services/address_service.dart';
+import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
+import 'package:nostrfeed_mobile/features/identity/data/address_service.dart';
 
 void main() {
   group('FreeAddress (generated free names)', () {

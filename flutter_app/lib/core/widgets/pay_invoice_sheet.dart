@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/services/wallet_payment.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
-import 'package:nostrfeed_mobile/features/wallet/widgets/invoice_qr.dart';
+import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/invoice_qr.dart';
 
 /// Result of [showPayInvoiceSheet] — how the invoice got settled (or didn't).
 enum InvoicePayResult {

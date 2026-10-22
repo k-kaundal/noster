@@ -95,6 +95,30 @@ class Env {
     defaultValue: '',
   );
 
+  // ── OpenRouter (AI) ────────────────────────────────────────────────
+  // Direct-from-app key (no proxy server). The FREE-tier key can only call
+  // `:free` models ($0 spend possible; keep its dashboard credit limit at 0).
+  // A second, credit-capped paid key will be added for paid tiers later.
+  // SECURITY: never commit a real key here. Put it in the gitignored
+  // `.env` and build/run with `--dart-define-from-file=.env`.
+  static const openRouterApiKey = String.fromEnvironment(
+    'OPENROUTER_API_KEY',
+    defaultValue: '',
+  );
+  static const openRouterBaseUrl = String.fromEnvironment(
+    'OPENROUTER_BASE_URL',
+    defaultValue: 'https://openrouter.ai/api/v1',
+  );
+
+  /// Operator pubkey (hex) that signs the AI gateway config note
+  /// (kind 30078, d-tag `nostrfeed-ai-config`) — the app only trusts config
+  /// from this key. Same key as the web app's ADMIN_PUBKEY (onboarding).
+  static const operatorPubkey = String.fromEnvironment(
+    'OPERATOR_PUBKEY',
+    defaultValue:
+        'f1ee81bb843731c983fad98784dfe984efdd0b057bcbb5e8f16ff449787e59f6',
+  );
+
   // ── GetZap Identity API ────────────────────────────────────────────
   static const getzapApi = String.fromEnvironment(
     'GETZAP_API',

@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart';
 
 /// A trending hashtag with usage count.

@@ -8,7 +8,7 @@ Flutter app for NostrFeed. Riverpod 2.6 + go_router 16, feature-first architectu
 flutter pub get
 flutter analyze        # must stay at 0 issues in lib/
 flutter test           # unit/widget tests (deterministic, no network)
-flutter run            # debug run
+flutter run --dart-define-from-file=.env   # debug run (needs .env — house wallet + OpenRouter keys; ./tool/run_app.sh wraps this)
 ```
 
 Integration tests that hit **live relays** live in `integration_test/` — do NOT run them in CI.
@@ -22,37 +22,58 @@ lib/
 ├── main.dart                 # entry point only
 ├── app/
 │   ├── app.dart              # NostrFeedApp root widget
-│   └── router.dart           # routerProvider (go_router) + NIP-19 route loader
+│   └── router.dart           # routerProvider (go_router) + appTransitionPage + NIP-19 loader
 ├── core/                     # shared, feature-agnostic
 │   ├── config/env.dart       # compile-time env (--dart-define)
 │   ├── models/nostr_models.dart   # NostrEvent, NostrFilter, NostrProfile, AuthState
 │   ├── nostr/                # Nostr infrastructure
-│   │   ├── relay_pool.dart   # WebSocket relay connections (NIP-42)
+│   │   ├── kinds.dart        # NostrKinds — kind registry + NIP-01 classification (ADR-0002)
 │   │   ├── nostr_service.dart     # facade: init, publish, event creation, delegates
 │   │   ├── nostr_context.dart     # signing context shared by repositories
-│   │   └── repositories/
-│   │       ├── feed_repository.dart        # feed/lists/discovery queries
-│   │       ├── engagement_repository.dart  # likes/reposts/zaps/interactions
-│   │       ├── social_repository.dart      # profiles, follows, search, bookmarks
-│   │       └── dm_repository.dart          # NIP-04 + NIP-17 DMs
-│   ├── providers/app_providers.dart        # global providers (auth, feed, theme…)
-│   ├── services/http_helper.dart           # ApiHttpClient + ApiHttpException
-│   ├── theme/                # app_theme.dart (AppTheme, AppStatusColors), app_spacing.dart (AppSpacing, AppDurations)
-│   ├── utils/                # nip19, markdown, event_debugger
-│   └── widgets/              # shared UI: ErrorView, EmptyState, SkeletonList,
+│   │   ├── report_types.dart      # NIP-56 report types
+│   │   ├── relay/                 # relay plumbing
+│   │   │   ├── relay_pool.dart    # WebSocket relay connections (NIP-42)
+│   │   │   ├── relay_router.dart  # NIP-65 outbox routing (read/write relays)
+│   │   │   └── dm_delivery.dart   # DM delivery routing (recipient inboxes)
+│   │   ├── repositories/          # per-domain queries
+│   │   │   ├── feed_repository.dart        # feed/lists/discovery queries
+│   │   │   ├── engagement_repository.dart  # likes/reposts/zaps/interactions
+│   │   │   ├── social_repository.dart      # profiles, follows, search, bookmarks
+│   │   │   └── dm_repository.dart          # NIP-04 + NIP-17 DMs
+│   │   └── usecases/              # domain operations (zap_receipts — NIP-57)
+│   │       └── zap_receipts.dart  # zap receipt parse/validate/summarize
+│   ├── providers/            # global providers, split by domain (ADR-0001)
+│   │   ├── app_providers.dart           # BARREL: re-exports the three below
+│   │   ├── nostr_service_providers.dart # NostrService singleton + init + exports
+│   │   ├── auth_providers.dart          # auth state, profiles, follows, user posts
+│   │   ├── content_providers.dart       # feed/trending/search/engagement/market…
+│   │   ├── connectivity_providers.dart  # online/offline + reconnect watcher
+│   │   └── app_info_providers.dart      # package_info (version from pubspec)
+│   ├── moderation/           # content_filter (NSFW/spam) + providers
+│   ├── services/             # app-level services (wallet_payment, http…)
+│   ├── theme/                # app_theme, app_spacing, app_durations, app_motion
+│   ├── utils/                # nip19, markdown, event_debugger, media, text_sanitize
+│   └── widgets/              # shared UI kit: ErrorView, EmptyState, Skeleton*,
 │                             # AsyncFeedList, AppSheet/AppDialog, app_shell,
-│                             # profile_avatar, smart_network_image
-└── features/<feature>/       # one folder per feature
-    ├── <feature>_screen.dart # screen(s)
-    ├── providers/            # feature-local Riverpod providers (if any)
-    ├── services/             # feature-local services (if any)
-    └── widgets/              # feature-local widgets (if any)
+│                             # profile_avatar, smart_network_image,
+│                             # staggered_list_item, qr_scan_sheet, detail_scaffold
+└── features/<feature>/       # one folder per feature (ADR-0001)
+    ├── domain/               # models + pure logic + contracts (pure Dart)
+    ├── data/                 # services/repositories impl (relay/API/storage)
+    ├── application/          # feature-local Riverpod providers/notifiers
+    └── presentation/         # screens + feature widgets (Flutter UI only)
 ```
 
 Feature folders: articles, auth, bookmarks, bounties, calendar, chat,
 communities, compose, docs, explore (explore+trending+hashtag), feed, groups,
 identity, lists, live, market, memberships, notifications, p2p, premium,
 profile, reels, sats_drops, search, settings, studio, wallet, zap.
+
+> **The layout change is DONE (ADR-0001).** Every feature uses
+> `domain/data/application/presentation`. Put new files in the right layer:
+> models/pure logic → `domain/`, relay/API/storage calls → `data/`,
+> providers/notifiers → `application/`, screens + feature widgets →
+> `presentation/`.
 
 Large screens are decomposed into feature-local `widgets/` (e.g.
 `features/chat/widgets/` — message bubble, new message sheet, suggested
@@ -205,6 +226,23 @@ over ~100 lines.
   - Bottom sheets → `AppSheet.show`; confirms/alerts → `AppDialog.confirm/info`
 - **Design tokens**: spacing → `AppSpacing`; timeouts → `AppDurations`;
   status colors → `AppStatusColors`; brand gradient → `AppTheme.brandGradient`.
+- **Motion (ADR-0003)**: every animation uses `AppMotion` tokens (durations,
+  curves, stagger) — never magic numbers. Cheap approaches first: Hero +
+  implicit animations + go_router `appTransitionPage` (0 KB);
+  `flutter_animate` for staggered entrances (`StaggeredListItem` for list
+  rows, PostCard has its own one-shot fade); feed images Hero-fly to
+  fullscreen (SVGs excluded). Rive is deferred (≤2 signature moments, NDK
+  pinned) — do NOT add it without an ADR change.
+- **Kind numbers (ADR-0002)**: use `NostrKinds.*` from
+  `core/nostr/kinds.dart` — never a magic kind literal (`kind: 5`,
+  `37001`, `kind == 9735`). New kinds go in the registry first.
+- **Size budget (ADR-0004)**: ≤ 35 MB download (Android arm64 AAB slice) —
+  currently **27.9 MB**. Every image decodes at display size:
+  `SmartNetworkImage` and `SafeAvatar` (shared widgets) and feed tiles use
+  `memCacheWidth`/`memCacheHeight`; the profile banner decodes at 200 dp;
+  feed tiles cap at 1200 px. Full-res decode ONLY on detail/fullscreen
+  views. New packages need a size justification; the barcode-model
+  exclusion lives in `android/app/build.gradle.kts`.
 - **Reporting (Play compliance)**: every post has a 3-dot menu with "Report
   post"; every profile has one with "Report profile". Both open
   `showReportDialog` (`core/widgets/report_dialog.dart`) which publishes a
@@ -332,9 +370,21 @@ over ~100 lines.
   `Nip5Address.localPart`, `Nip5SearchResult.reason/priceReason`. Exceptions
   (`AddressException`, `LnbitsException`) sanitize in `toString()`. Use
   `sanitizeText` (or `sanitizeTextOrNull` when null-vs-empty matters).
+  **Avatar initials**: NEVER `name[0]` — an emoji-leading name is a lone
+  high surrogate (the avatar-initial crash). Use `firstGrapheme(name)` from
+  `text_sanitize.dart` (takes the full surrogate pair) — every avatar
+  fallback uses it.
 - **Async safety**: guard `setState`/context use after async gaps with
   `mounted`; wrap fire-and-forget futures in `unawaited()`.
-- **Secrets**: never hardcode — use `--dart-define` with `Env` class.
+- **Secrets**: never hardcode — use `--dart-define` with `Env` class. Real
+  values live in the gitignored `.env` (see `.env.example`), wired in via
+  `--dart-define-from-file=.env`. Two key kinds only: receive-only LNbits
+  invoice keys (house wallet: mints AI-credit invoices + reads payment
+  status) and zero-credit OpenRouter free keys. NEVER an LNbits admin key or
+  an uncapped paid OpenRouter key. Note: all purchase features EXCEPT AI
+  credits mint invoices server-side (nostrnip5/lnurlp extensions, the relay
+  admission server, zap recipients) — the house wallet is only for AI
+  credits + web fiat subscriptions.
 
 ## Feed architecture (offline-first, FB/Insta-style)
 

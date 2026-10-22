@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:nostrfeed_mobile/features/wallet/providers/cashu_providers.dart';
-import 'package:nostrfeed_mobile/features/wallet/providers/lnbits_providers.dart';
-import 'package:nostrfeed_mobile/features/wallet/providers/lndhub_providers.dart';
-import 'package:nostrfeed_mobile/features/wallet/providers/nwc_providers.dart';
+import 'package:nostrfeed_mobile/features/wallet/application/cashu_providers.dart';
+import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
+import 'package:nostrfeed_mobile/features/wallet/application/lndhub_providers.dart';
+import 'package:nostrfeed_mobile/features/wallet/application/nwc_providers.dart';
 
 /// Which in-app wallet paid (or would pay) an invoice.
 enum WalletKind { lnbits, nwc, cashu, lndhub }

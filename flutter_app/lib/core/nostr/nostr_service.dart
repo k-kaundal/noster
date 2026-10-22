@@ -2,22 +2,22 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
-import 'package:nostrfeed_mobile/core/nostr/dm_delivery.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_router.dart';
-import 'package:nostrfeed_mobile/core/nostr/repositories/feed_repository.dart';
-import 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart';
-import 'package:nostrfeed_mobile/core/nostr/repositories/social_repository.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/dm_delivery.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_router.dart';
 import 'package:nostrfeed_mobile/core/nostr/repositories/dm_repository.dart';
+import 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart';
+import 'package:nostrfeed_mobile/core/nostr/repositories/feed_repository.dart';
+import 'package:nostrfeed_mobile/core/nostr/repositories/social_repository.dart';
+import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 
-export 'package:nostrfeed_mobile/core/nostr/repositories/feed_repository.dart'
-    show HashtagStat;
-export 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart'
-    show EventEngagement;
 export 'package:nostrfeed_mobile/core/nostr/repositories/dm_repository.dart'
     show DecryptedDm;
+export 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart'
+    show EventEngagement;
+export 'package:nostrfeed_mobile/core/nostr/repositories/feed_repository.dart'
+    show HashtagStat;
 
 /// Central Nostr service — combines relay pool, auth, and all Nostr operations.
 class NostrService {

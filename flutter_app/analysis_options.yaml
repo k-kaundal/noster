@@ -34,5 +34,12 @@ linter:
     # avoid_print: false  # Uncomment to disable the `avoid_print` rule
     # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
 
+    # ADR-0001/0004: incremental additions from very_good_analysis. These are
+    # cheap wins that don't require a mass diff:
+    prefer_const_constructors: true
+    prefer_const_declarations: true
+    directives_ordering: true
+    always_use_package_imports: true
+
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

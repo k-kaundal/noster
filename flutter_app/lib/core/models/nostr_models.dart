@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:hex/hex.dart';
 
+import 'package:nostrfeed_mobile/core/nostr/kinds.dart';
+
 export 'package:nostrfeed_mobile/core/utils/text_sanitize.dart';
 
 /// Nostr event per NIP-01.
@@ -175,7 +177,7 @@ class NostrEvent {
   String? get dTag => getTag('d');
 
   /// Is this an addressable event (kind 30000-39999)?
-  bool get isAddressable => kind >= 30000 && kind < 40000;
+  bool get isAddressable => NostrKinds.isAddressable(kind);
 
   /// Address for addressable events: kind:pubkey:dTag
   String get address => '$kind:$pubkey:${dTag ?? ''}';

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/features/wallet/widgets/invoice_qr.dart';
+import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/invoice_qr.dart';
 
 void main() {
   const bolt11 =

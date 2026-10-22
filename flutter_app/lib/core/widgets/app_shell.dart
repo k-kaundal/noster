@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_info_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
-import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
-import 'package:nostrfeed_mobile/features/chat/providers/dm_store.dart';
-import 'package:nostrfeed_mobile/features/notifications/providers/notification_center.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
+import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
+import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
+import 'package:nostrfeed_mobile/features/notifications/application/notification_center.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Navigation Architecture:
 ///
@@ -604,7 +604,7 @@ class ModernDrawer extends ConsumerWidget {
                         onTap: () => _navigate(context, '/login'),
                       ),
 
-                    _DrawerSection(title: 'Discover'),
+                    const _DrawerSection(title: 'Discover'),
                     _DrawerItem(
                       icon: Icons.explore_rounded,
                       title: 'Explore',
@@ -635,9 +635,15 @@ class ModernDrawer extends ConsumerWidget {
                       subtitle: 'Events & schedules',
                       onTap: () => _navigate(context, '/calendar'),
                     ),
+                    _DrawerItem(
+                      icon: Icons.smart_toy_rounded,
+                      title: 'AI Assistant',
+                      subtitle: 'Chat with AI — pay per message in sats',
+                      onTap: () => _navigate(context, '/ai'),
+                    ),
 
                     const _DrawerDivider(),
-                    _DrawerSection(title: 'People'),
+                    const _DrawerSection(title: 'People'),
                     _DrawerItem(
                       icon: Icons.groups_rounded,
                       title: 'Communities',
@@ -658,7 +664,7 @@ class ModernDrawer extends ConsumerWidget {
                     ),
 
                     const _DrawerDivider(),
-                    _DrawerSection(title: 'Money'),
+                    const _DrawerSection(title: 'Money'),
                     _DrawerItem(
                       icon: Icons.account_balance_wallet_rounded,
                       title: 'Wallet',
@@ -691,7 +697,7 @@ class ModernDrawer extends ConsumerWidget {
                     ),
 
                     const _DrawerDivider(),
-                    _DrawerSection(title: 'You'),
+                    const _DrawerSection(title: 'You'),
                     _DrawerItem(
                       icon: Icons.bookmark_rounded,
                       title: 'Bookmarks',

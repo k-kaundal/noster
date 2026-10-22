@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/features/wallet/services/lndhub_service.dart';
+import 'package:nostrfeed_mobile/features/wallet/data/lndhub_service.dart';
 
 void main() {
   group('LndHubCredentials.parse', () {

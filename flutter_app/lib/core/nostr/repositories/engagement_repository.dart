@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 
 /// Engagement stats for an event.
 class EventEngagement {

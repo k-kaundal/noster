@@ -26,10 +26,10 @@ class ProfileAvatar extends StatelessWidget {
   String get _fallbackLetter {
     final name = profile?.displayNameOrName;
     if (name != null && name.isNotEmpty) {
-      return name[0].toUpperCase();
+      return firstGrapheme(name);
     }
     if (pubkey != null && pubkey!.isNotEmpty) {
-      return pubkey![0].toUpperCase();
+      return firstGrapheme(pubkey!);
     }
     return '?';
   }

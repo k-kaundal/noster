@@ -52,8 +52,35 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            // ADR-0004: shrink code + resources in release builds.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
+
+    // ADR-0004: mobile_scanner ships TWO barcode backends — the bundled
+    // `com.google.mlkit:barcode-scanning` (~6 MB of libbarhopper_v3.so
+    // across ABIs) and the Play-Services one (~0.1 MB dex, model downloaded
+    // on demand). Exclude the bundled native library; the Play-Services
+    // backend covers the same scanning.
+    packaging {
+        jniLibs {
+            excludes += setOf(
+                "**/libbarhopper_v3.so",
+            )
+        }
+    }
+}
+
+// Exclude the bundled ML Kit barcode model (the ~6 MB native lib). The
+// Play-Services barcode backend in mobile_scanner does the same scanning
+// on demand — the app never needs the model baked in.
+configurations.all {
+    exclude(group = "com.google.mlkit", module = "barcode-scanning")
 }
 
 dependencies {

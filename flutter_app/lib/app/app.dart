@@ -6,10 +6,10 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/connectivity_providers.dart';
 import 'package:nostrfeed_mobile/core/services/local_notification_service.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
-import 'package:nostrfeed_mobile/features/chat/providers/dm_notifier.dart';
-import 'package:nostrfeed_mobile/features/chat/providers/dm_store.dart';
-import 'package:nostrfeed_mobile/features/notifications/providers/notification_center.dart';
-import 'package:nostrfeed_mobile/features/notifications/widgets/social_alert_banner.dart';
+import 'package:nostrfeed_mobile/features/chat/application/dm_notifier.dart';
+import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
+import 'package:nostrfeed_mobile/features/notifications/application/notification_center.dart';
+import 'package:nostrfeed_mobile/features/notifications/presentation/widgets/social_alert_banner.dart';
 
 /// Root application widget. Wires up the router and theme.
 class NostrFeedApp extends ConsumerStatefulWidget {

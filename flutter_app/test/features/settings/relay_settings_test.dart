@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/features/settings/providers/relay_settings_providers.dart';
+import 'package:nostrfeed_mobile/features/settings/application/relay_settings_providers.dart';
 
 void main() {
   group('ManagedRelay', () {

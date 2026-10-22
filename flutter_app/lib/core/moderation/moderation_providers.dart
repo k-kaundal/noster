@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
+import 'package:nostrfeed_mobile/core/nostr/kinds.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Storage keys.
 const _kHideNsfwKey = 'settings:filter_nsfw';
@@ -13,7 +13,7 @@ const _kBlockedAuthorsKey = 'settings:blocked_authors';
 
 /// NIP-51 mute list kind (public items only — private encrypted mutes are
 /// left alone; we never publish over a list that has them).
-const muteListKind = 10000;
+const muteListKind = NostrKinds.muteList;
 
 /// Master NSFW filter toggle. DEFAULT ON — the store policies (Play UGC,
 /// Apple 1.2) require explicit content hidden by default.

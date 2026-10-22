@@ -4,8 +4,8 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
-import 'package:nostrfeed_mobile/features/compose/providers/upload_providers.dart';
-import 'package:nostrfeed_mobile/features/live/providers/live_providers.dart';
+import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
+import 'package:nostrfeed_mobile/features/live/application/live_providers.dart';
 
 /// "Go Live" sheet: publish a NIP-53 live activity (kind 30311) with a
 /// streaming URL (RTMP/HLS/m3u8/web) — exactly what zap.stream / Amethyst

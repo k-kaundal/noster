@@ -5,8 +5,8 @@ import 'package:bech32/bech32.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_router.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_router.dart';
 
 class SocialRepository {
   final RelayPool relayPool;

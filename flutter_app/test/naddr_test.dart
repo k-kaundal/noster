@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
+import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
 
 void main() {
