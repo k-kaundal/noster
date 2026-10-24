@@ -9,8 +9,10 @@ import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_gap_fill.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_notifier.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
+import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
 import 'package:nostrfeed_mobile/features/notifications/application/notification_center.dart';
 import 'package:nostrfeed_mobile/features/notifications/presentation/widgets/social_alert_banner.dart';
+import 'package:nostrfeed_mobile/features/settings/application/app_update_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_live_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/wallet_sync_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/wallet_payment_banner.dart';
@@ -48,6 +50,16 @@ class _NostrFeedAppState extends ConsumerState<NostrFeedApp>
       if (nostr.isInitialized) {
         nostr.relayPool.reconnectDead();
       }
+      // The live feed subscriptions died with the OS idle socket timeout —
+      // restart them and silently refresh both feeds so the user returns to
+      // current content, not the stale list from before the app was
+      // backgrounded (the "reopen the app and it's all old" bug).
+      ref.read(globalFeedProvider.notifier)
+        ..restartLive()
+        ..refresh();
+      ref.read(followingFeedNotifierProvider.notifier)
+        ..restartLive()
+        ..refresh();
       // Money can move while the app is backgrounded (zaps received, credits
       // bought on another device) — resync every wallet on return.
       ref.read(walletSyncServiceProvider).syncNow();
@@ -57,6 +69,9 @@ class _NostrFeedAppState extends ConsumerState<NostrFeedApp>
       // DMs sent while we were dead can't be delivered retroactively by the
       // live sub — gap-fill fetches exactly what arrived in the gap.
       ref.read(dmGapFillProvider).fillGap();
+      // A new app version may have shipped while backgrounded — re-check
+      // (soft, non-blocking; shows the drawer banner only if newer).
+      ref.invalidate(appUpdateProvider);
     }
   }
 

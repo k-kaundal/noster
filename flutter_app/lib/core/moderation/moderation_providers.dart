@@ -231,6 +231,47 @@ final muteListSyncProvider = FutureProvider.autoDispose<void>((ref) async {
   await ref.read(blockedAuthorsProvider.notifier).mergeFromRelays(events.first);
 });
 
+/// How sensitive content (NIP-36 warn verdicts) displays. Blueprint's
+/// three-option user preference: hide entirely, blur until tapped, or
+/// allow. Default = blur (tap-to-reveal) — the store-compliant middle.
+enum SensitiveContentMode { hide, blur, allow }
+
+const _kSensitiveModeKey = 'settings:sensitive_mode';
+
+final sensitiveModeProvider =
+    NotifierProvider<SensitiveModeNotifier, SensitiveContentMode>(
+  SensitiveModeNotifier.new,
+);
+
+class SensitiveModeNotifier extends Notifier<SensitiveContentMode> {
+  @override
+  SensitiveContentMode build() {
+    _load();
+    return SensitiveContentMode.blur;
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString(_kSensitiveModeKey);
+      if (stored != null) {
+        state = SensitiveContentMode.values.firstWhere(
+          (m) => m.name == stored,
+          orElse: () => SensitiveContentMode.blur,
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> setMode(SensitiveContentMode mode) async {
+    state = mode;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kSensitiveModeKey, mode.name);
+    } catch (_) {}
+  }
+}
+
 /// The filter instance everything consults. Rebuilt when toggles or
 /// blocklists change; cheap — matching cost is per-post at call time.
 final contentFilterProvider = Provider<ContentFilter>((ref) {

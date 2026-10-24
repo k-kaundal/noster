@@ -56,6 +56,10 @@ class AuthNotifier extends Notifier<AuthState> {
     state = state.copyWith(profile: relayProfile);
     // Persist so the next cold start shows this profile immediately.
     await _nostr.authService.saveStoredProfile(relayProfile);
+    // Keep the account switcher's cached name/avatar fresh too.
+    if (state.pubkey != null) {
+      await _nostr.authService.updateAccountProfile(state.pubkey!, relayProfile);
+    }
   }
 
   /// Publishes our kind-10050 DM-inbox relay list (NIP-17) so OTHER clients
@@ -113,6 +117,20 @@ class AuthNotifier extends Notifier<AuthState> {
     state = const AuthState();
   }
 
+  /// Switch the active identity to a saved account (trusted-client
+  /// multi-account). Restores its keys, clears per-account DM state, and
+  /// re-inits so providers re-read the new identity.
+  Future<void> switchAccount(String pubkey) async {
+    final next = await _nostr.authService.switchAccount(pubkey);
+    if (next == null) return;
+    try {
+      ref.read(dmStoreProvider).clearAll();
+    } catch (_) {}
+    await _nostr.setAuth(next);
+    state = next;
+    if (next.isLoggedIn) _loadProfile();
+  }
+
   /// Updates the in-memory profile on the auth state without publishing.
   /// Used after a kind-0 has already been published (e.g. by the identity /
   /// lightning-address flows) so the local UI reflects it immediately.
@@ -167,6 +185,14 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 }
 
+/// All saved accounts (multi-account switcher data), freshest first.
+final savedAccountsProvider =
+    FutureProvider.autoDispose<List<SavedAccount>>((ref) async {
+  // Re-fetch when auth changes (a login/logout/switch changes the set).
+  ref.watch(authStateProvider);
+  return ref.read(nostrServiceProvider).authService.savedAccounts();
+});
+
 /// Profile fetcher for any pubkey.
 ///
 /// NOT autoDispose: profiles are the hottest data in the app (every post
@@ -207,12 +233,25 @@ final followersProvider = FutureProvider.family.autoDispose<int, String>((
 /// disposing between tabs re-fetched the whole list per tab — the profile
 /// tab flicker. The list is small (50) and profile screens are short-lived;
 /// keeping it alive while the profile is open is the right trade.
+///
+/// Fetches the full displayable set (notes, picture/video posts, articles)
+/// — picture-first accounts post kind 20/21/22, and a kind-1-only fetch is
+/// why those profiles looked EMPTY. The tabs filter per kind from this set.
 final userPostsProvider = FutureProvider.family<List<NostrEvent>, String>((
   ref,
   pubkey,
 ) async {
   final nostr = await initNostr(ref);
-  return nostr.fetchFeed(limit: 50, authors: [pubkey]);
+  return nostr.relayPool.query([
+    NostrFilter(
+      kinds: const [1, 6, 16, 20, 21, 22, 30023],
+      authors: [pubkey],
+      limit: 50,
+    ),
+  ], timeout: const Duration(seconds: 8)).then(
+    (events) =>
+        events..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
+  );
 });
 
 /// Feed events (following)

@@ -40,16 +40,61 @@ class AuthState {
   );
 }
 
+/// A saved account (metadata only — the private key lives separately in its
+/// own secure entry). Trusted-client pattern (Primal/Amethyst/Nostur):
+/// users hold several keys (personal + alt/work) and switch between them.
+class SavedAccount {
+  final String pubkey;
+  final bool isReadOnly;
+  final NostrProfile? profile;
+  const SavedAccount(this.pubkey, {this.isReadOnly = false, this.profile});
+
+  Map<String, dynamic> toJson() => {
+        'pubkey': pubkey,
+        'readOnly': isReadOnly,
+        if (profile != null) 'profile': profile!.toJson(),
+      };
+
+  factory SavedAccount.fromJson(Map<String, dynamic> j) => SavedAccount(
+        j['pubkey'] as String,
+        isReadOnly: j['readOnly'] as bool? ?? false,
+        profile: j['profile'] != null
+            ? NostrProfile.fromJson(j['profile'] as Map<String, dynamic>)
+            : null,
+      );
+}
+
 /// Nostr authentication: key management, signing, bech32 encoding.
 class AuthService {
   // Lazy — only created when first accessed (avoids plugin init issues)
   FlutterSecureStorage? _storage;
-  FlutterSecureStorage get _store => _storage ??= const FlutterSecureStorage();
+  FlutterSecureStorage get _store => _storage ??= const FlutterSecureStorage(
+        // SECURITY: the nsec is the whole identity — whoever holds it IS the
+        // user (no password reset, no support desk). It lives in the
+        // platform's hardware-backed store (Android Keystore-backed
+        // EncryptedSharedPreferences is the v11 default), and on iOS the
+        // Keychain item is unlocked-device-only — it does NOT migrate to a
+        // new device or into backups (a stolen backup can't lift the key).
+        iOptions: IOSOptions(
+          accessibility: KeychainAccessibility.unlocked,
+        ),
+      );
 
   static const _privKeyKey = 'nostr_privkey';
   static const _pubKeyKey = 'nostr_pubkey';
   static const _readOnlyKey = 'nostr_readonly';
   static const _profileKey = 'nostr_profile';
+
+  // Multi-account (trusted-client pattern — Primal/Amethyst/Nostur all let
+  // users hold several keys and switch: personal + alt/work). Accounts are
+  // keyed by pubkey; the ACTIVE one is what `_privKeyKey`/`_pubKeyKey` hold
+  // (the existing single-key path is untouched). The account registry lives
+  // in one JSON list; per-account private keys live in per-pubkey secure
+  // entries (never all in one blob — one compromised read doesn't dump
+  // every key).
+  static const _accountsKey = 'nostr_accounts_v1';
+  static const _activeAccountKey = 'nostr_active_account_v1';
+  static String _privKeyFor(String pubkey) => 'nostr_privkey_$pubkey';
 
   final _bech32 = const Bech32Codec();
 
@@ -147,6 +192,7 @@ class AuthService {
       await _store.delete(key: _privKeyKey);
       await _store.delete(key: _pubKeyKey);
       await _store.write(key: _readOnlyKey, value: pubKeyHex);
+      await _registerAccount(pubKeyHex, isReadOnly: true);
     } catch (_) {}
     return AuthState(pubkey: pubKeyHex, isLoggedIn: true, isReadOnly: true);
   }
@@ -163,8 +209,29 @@ class AuthService {
     );
   }
 
+  /// Sign out of the ACTIVE account only — other saved accounts stay.
+  /// (The old `deleteAll` wiped every account; multi-account keeps the rest.)
   Future<void> logout() async {
     try {
+      final active = await activeAccountPubkey();
+      await _store.delete(key: _privKeyKey);
+      await _store.delete(key: _pubKeyKey);
+      await _store.delete(key: _readOnlyKey);
+      await _store.delete(key: _profileKey);
+      if (active != null) {
+        await removeAccount(active);
+        await _store.delete(key: _activeAccountKey);
+      }
+    } catch (_) {}
+  }
+
+  /// Nuclear option: wipe EVERY account + credential (full reset).
+  Future<void> logoutAll() async {
+    try {
+      final accounts = await savedAccounts();
+      for (final a in accounts) {
+        await _store.delete(key: _privKeyFor(a.pubkey));
+      }
       await _store.deleteAll();
     } catch (_) {}
   }
@@ -174,7 +241,140 @@ class AuthService {
       await _store.write(key: _privKeyKey, value: privKey);
       await _store.write(key: _pubKeyKey, value: pubKey);
       await _store.delete(key: _readOnlyKey);
+      // Register the account + keep its private key in its own secure entry.
+      await _registerAccount(pubKey, privKey: privKey);
     } catch (_) {}
+  }
+
+  // ── Multi-account registry ─────────────────────────────────────────
+
+  /// All saved accounts (metadata), newest-active last. Never throws.
+  Future<List<SavedAccount>> savedAccounts() async {
+    try {
+      final raw = await _store.read(key: _accountsKey);
+      if (raw == null || raw.isEmpty) return [];
+      final list = jsonDecode(raw);
+      if (list is! List) return [];
+      return [
+        for (final item in list)
+          if (item is Map<String, dynamic>) SavedAccount.fromJson(item),
+      ];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Register/update an account (metadata + its private key in its own
+  /// secure slot). Read-only accounts store no private key.
+  Future<void> _registerAccount(
+    String pubkey, {
+    String? privKey,
+    bool isReadOnly = false,
+    NostrProfile? profile,
+  }) async {
+    try {
+      final accounts = await savedAccounts();
+      final idx = accounts.indexWhere((a) => a.pubkey == pubkey);
+      final existing = idx >= 0 ? accounts[idx] : null;
+      final updated = SavedAccount(
+        pubkey,
+        isReadOnly: isReadOnly || (existing?.isReadOnly ?? false),
+        profile: profile ?? existing?.profile,
+      );
+      if (idx >= 0) {
+        accounts[idx] = updated;
+      } else {
+        accounts.add(updated);
+      }
+      await _store.write(
+        key: _accountsKey,
+        value: jsonEncode([for (final a in accounts) a.toJson()]),
+      );
+      if (privKey != null) {
+        await _store.write(key: _privKeyFor(pubkey), value: privKey);
+      }
+      await _store.write(key: _activeAccountKey, value: pubkey);
+    } catch (_) {}
+  }
+
+  /// Update an account's cached profile (after a fresh fetch).
+  Future<void> updateAccountProfile(String pubkey, NostrProfile profile) async {
+    try {
+      final accounts = await savedAccounts();
+      final idx = accounts.indexWhere((a) => a.pubkey == pubkey);
+      if (idx < 0) return;
+      accounts[idx] = SavedAccount(
+        pubkey,
+        isReadOnly: accounts[idx].isReadOnly,
+        profile: profile,
+      );
+      await _store.write(
+        key: _accountsKey,
+        value: jsonEncode([for (final a in accounts) a.toJson()]),
+      );
+    } catch (_) {}
+  }
+
+  /// Switch the active identity to a saved account. Restores its keys into
+  /// the single-key slots the rest of the app reads. Returns the new
+  /// AuthState, or null if the account has no usable credential.
+  Future<AuthState?> switchAccount(String pubkey) async {
+    try {
+      final accounts = await savedAccounts();
+      final account = accounts.where((a) => a.pubkey == pubkey).firstOrNull;
+      if (account == null) return null;
+
+      if (account.isReadOnly) {
+        await _store.delete(key: _privKeyKey);
+        await _store.delete(key: _pubKeyKey);
+        await _store.write(key: _readOnlyKey, value: pubkey);
+        await _store.write(key: _activeAccountKey, value: pubkey);
+        return AuthState(
+          pubkey: pubkey,
+          isLoggedIn: true,
+          isReadOnly: true,
+          profile: account.profile,
+        );
+      }
+
+      final privKey = await _store.read(key: _privKeyFor(pubkey));
+      if (privKey == null) return null;
+      await _store.write(key: _privKeyKey, value: privKey);
+      await _store.write(key: _pubKeyKey, value: pubkey);
+      await _store.delete(key: _readOnlyKey);
+      await _store.write(key: _activeAccountKey, value: pubkey);
+      return AuthState(
+        pubkey: pubkey,
+        privateKey: privKey,
+        isLoggedIn: true,
+        profile: account.profile,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Remove an account (its metadata + private key). If it was active, the
+  /// caller decides what to activate next.
+  Future<void> removeAccount(String pubkey) async {
+    try {
+      final accounts = await savedAccounts()
+        ..removeWhere((a) => a.pubkey == pubkey);
+      await _store.write(
+        key: _accountsKey,
+        value: jsonEncode([for (final a in accounts) a.toJson()]),
+      );
+      await _store.delete(key: _privKeyFor(pubkey));
+    } catch (_) {}
+  }
+
+  /// The active account pubkey, or null.
+  Future<String?> activeAccountPubkey() async {
+    try {
+      return await _store.read(key: _activeAccountKey);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Sign a Nostr event (BIP-340 Schnorr).

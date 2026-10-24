@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:bip340/bip340.dart' as bip340;
 import 'package:crypto/crypto.dart';
 import 'package:hex/hex.dart';
 
@@ -94,6 +95,23 @@ class NostrEvent {
     return sha256.convert(utf8.encode(data)).toString();
   }
 
+  /// Whether this event is cryptographically genuine: its id matches the
+  /// serialized content AND the Schnorr (BIP-340) signature verifies against
+  /// the pubkey. Relays are UNTRUSTED transport — never render an event
+  /// that fails this. Returns false (never throws) on any malformed input.
+  bool get isValid {
+    try {
+      // 1. The id must commit to the exact content (a relay can't tweak a
+      //    field without changing the id).
+      final expected = computeId(pubkey, createdAt, kind, tags, content);
+      if (expected != id.toLowerCase()) return false;
+      // 2. The signature must verify against the pubkey over that id.
+      return bip340.verify(pubkey, id, sig);
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// First tag value by name — sanitized for safe rendering.
   ///
   /// Tag values arrive from arbitrary relays and can carry lone UTF-16
@@ -136,28 +154,80 @@ class NostrEvent {
   /// All 't' hashtags.
   List<String> get hashtags => getTags('t');
 
-  /// Is this a reply?
-  bool get isReply => kind == 1 && eventRefs.isNotEmpty;
+  /// All 'q' tag quote references (NIP-18 quote reposts). A `q` tag means
+  /// "this post quotes another event" — it is NOT a thread reference, so it
+  /// must never make a post count as a reply.
+  List<String> get quoteRefs => getTags('q');
+
+  /// The 'e' tags that actually participate in a THREAD (root/reply),
+  /// excluding quotes and plain mentions.
+  ///
+  /// NIP-10: marked tags carry a 4th element of `root`/`reply`/`mention`;
+  /// positional (deprecated) tags have NO marker — first is root, last is
+  /// reply, middle are mentions. A `mention`-marked tag and a `q` tag are
+  /// citations, not thread refs. Only kind-1 posts thread (NIP-22 handles
+  /// comments on other kinds via `A`/`a` scope tags, not these).
+  List<List<String>> get _threadETags {
+    final eTags = tags.where((t) => t.isNotEmpty && t[0] == 'e' && t.length > 1).toList();
+    return eTags.where((t) {
+      // A marked "mention" is a citation, not a thread ref.
+      if (t.length >= 4 && t[3] == 'mention') return false;
+      return true;
+    }).toList();
+  }
+
+  /// Is this a reply to another event (vs a standalone post or a quote)?
+  ///
+  /// The old rule (`kind == 1 && eventRefs.isNotEmpty`) counted ANY e-tag —
+  /// so a post that merely QUOTES another (e-tag mention, or only q tags)
+  /// was wrongly labeled a reply and hidden from the Posts tab.
+  bool get isReply {
+    if (kind != 1) return false;
+    return replyToId != null || rootId != null;
+  }
+
+  /// The quoted EVENT id this post cites via a `q` tag, if it's a plain
+  /// event id (64 hex). A `q` tag can also be an address (`kind:pubkey:d`)
+  /// — that's not an event id, so this returns null for those.
+  String? get quoteId {
+    if (quoteRefs.isEmpty) return null;
+    final q = quoteRefs.first;
+    return RegExp(r'^[0-9a-f]{64}$', caseSensitive: false).hasMatch(q)
+        ? q.toLowerCase()
+        : null;
+  }
 
   /// Root event id if this is a reply.
   String? get rootId {
-    final eTags = tags.where((t) => t.isNotEmpty && t[0] == 'e').toList();
+    final eTags = _threadETags;
     if (eTags.isEmpty) return null;
-    // Check for 'root' marker
+    // Marked "root" wins (NIP-10 preferred scheme).
     for (final t in eTags) {
       if (t.length >= 4 && t[3] == 'root') return t[1];
     }
-    return eTags.first[1]; // Fallback: first e-tag
+    // A single marked "reply" with no root: the reply IS the root (direct
+    // reply to the root event).
+    final replyMarked = eTags.where((t) => t.length >= 4 && t[3] == 'reply').toList();
+    if (replyMarked.length == 1 && eTags.length == 1) return replyMarked.first[1];
+    // Positional fallback (deprecated): first unmarked e-tag is the root.
+    final unmarked = eTags.where((t) => t.length < 4 || (t[3] != 'reply' && t[3] != 'root')).toList();
+    if (unmarked.isNotEmpty) return unmarked.first[1];
+    return null;
   }
 
-  /// Reply-to event id (parent).
+  /// Reply-to event id (the direct parent being responded to).
   String? get replyToId {
-    final eTags = tags.where((t) => t.isNotEmpty && t[0] == 'e').toList();
+    final eTags = _threadETags;
     if (eTags.isEmpty) return null;
+    // Marked "reply" wins (NIP-10 preferred scheme).
     for (final t in eTags) {
       if (t.length >= 4 && t[3] == 'reply') return t[1];
     }
-    return eTags.length > 1 ? eTags.last[1] : eTags.first[1];
+    // Positional fallback (deprecated): last unmarked e-tag is the parent;
+    // with a single unmarked tag, that tag is the parent (= the root).
+    final unmarked = eTags.where((t) => t.length < 4 || (t[3] != 'reply' && t[3] != 'root')).toList();
+    if (unmarked.isNotEmpty) return unmarked.last[1];
+    return null;
   }
 
   /// NIP-40 expiration timestamp.

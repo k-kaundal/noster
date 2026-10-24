@@ -211,6 +211,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onChanged: (val) =>
                 ref.read(nsfwFilterProvider.notifier).toggle(val),
           ),
+          // Three-option sensitive-content display (blueprint's user
+          // preference layer): hide / blur-until-tapped / allow.
+          ListTile(
+            leading: const Icon(Icons.blur_on_rounded),
+            title: const Text('Sensitive content display'),
+            subtitle: const Text(
+                'How posts marked sensitive (by author or detector) show'),
+            trailing: SegmentedButton<SensitiveContentMode>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                    value: SensitiveContentMode.hide,
+                    icon: Icon(Icons.block_rounded, size: 16)),
+                ButtonSegment(
+                    value: SensitiveContentMode.blur,
+                    icon: Icon(Icons.blur_on_rounded, size: 16)),
+                ButtonSegment(
+                    value: SensitiveContentMode.allow,
+                    icon: Icon(Icons.visibility_rounded, size: 16)),
+              ],
+              selected: {ref.watch(sensitiveModeProvider)},
+              onSelectionChanged: (modes) => ref
+                  .read(sensitiveModeProvider.notifier)
+                  .setMode(modes.first),
+            ),
+          ),
           SwitchListTile(
             secondary: const Icon(Icons.link_off_rounded),
             title: const Text('Hide spam links'),

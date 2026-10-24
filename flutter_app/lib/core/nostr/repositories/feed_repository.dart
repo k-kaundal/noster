@@ -1,8 +1,7 @@
-import 'dart:math';
-
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart';
+import 'package:nostrfeed_mobile/features/explore/domain/feed_ranking.dart';
 
 /// A trending hashtag with usage count.
 class HashtagStat {
@@ -22,9 +21,10 @@ class FeedRepository {
     int? until,
     List<String>? authors,
   }) async {
-    // Include: text notes, reposts, generic reposts, pictures, videos, articles
+    // Include: text notes, reposts, generic reposts, pictures, videos,
+    // articles, polls (NIP-88 kind 1068 renders via PollCard).
     final filter = NostrFilter(
-      kinds: [1, 6, 16, 20, 21, 22, 30023],
+      kinds: [1, 6, 16, 20, 21, 22, 30023, 1068],
       limit: limit,
       since: since,
       until: until,
@@ -239,30 +239,22 @@ class FeedRepository {
     final eventIds = candidates.map((e) => e.id).toList();
     final engagementMap = await engagement.fetchEngagementBatch(eventIds);
 
-    // Score each event: engagement_score / age_decay
+    // Rank with the anti-manipulation engine: unique engagers (not raw
+    // counts), freshness decay, per-author diversity cap. A bot cluster
+    // inflating raw likes can't top this — genuine conversation rises.
     final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final scored = candidates.map((event) {
-      final engagement = engagementMap[event.id] ?? const EventEngagement();
-      final ageSeconds = nowSeconds - event.createdAt;
-      final ageHours = ageSeconds / 3600;
-
-      // Hacker News style decay: score = (points + 1) / (age_hours + 2)^1.8
-      final points = engagement.score + 1;
-      final decay = pow(ageHours + 2, 1.8);
-      final score = points / decay;
-
-      return (event: event, score: score, engagement: engagement);
-    }).toList();
-
-    // Sort by score descending
-    scored.sort((a, b) => b.score.compareTo(a.score));
-
-    // Return top N, filtering out low-engagement posts
-    return scored
-        .where((s) => s.engagement.score > 0 || s.event.createdAt > since)
-        .take(limit)
-        .map((s) => s.event)
-        .toList();
+    return FeedRanking.rank(
+      candidates,
+      engagementMap: engagementMap,
+      nowSeconds: nowSeconds,
+      scoreFn: (eng, event, authorCount) => FeedRanking.trendingScore(
+        engagement: eng,
+        createdAt: event.createdAt,
+        nowSeconds: nowSeconds,
+        authorPostCountInWindow: authorCount,
+      ),
+      limit: limit,
+    );
   }
 
   Future<List<NostrEvent>> fetchLists(String pubkey) async {

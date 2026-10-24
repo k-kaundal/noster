@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nostr media comes from thousands of independent hosts (Blossom servers,
+  personal image hosts, CDNs). Many still serve over plain HTTP. Android 9+
+  (API 28+) blocks cleartext by default — which is exactly why images
+  failed "on Android side" while iOS showed them fine.
+
+  This config allows cleartext for image/media loads app-wide. Cleartext
+  only carries public images — keys never leave the device and signing is
+  local, so the risk is confined to image tampering, which the feed
+  tolerates (a broken image placeholder, not a security incident).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

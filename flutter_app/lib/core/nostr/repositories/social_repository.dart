@@ -38,6 +38,64 @@ class SocialRepository {
   /// Profiles rarely change; refetching every render made feeds feel slow.
   static const _profileTtlSeconds = 600; // 10 minutes
 
+  /// Prefetch profiles for a whole page of authors in ONE batched relay
+  /// query, filling the TTL cache so each PostCard's `profileProvider` hits
+  /// the fast path instead of firing its own per-card query. This is the
+  /// avatar/name half of the feed-speed fix (engagement batching is the
+  /// other). Fire-and-forget from the feed; cards render with cache/fallback
+  /// and fill in as the batch lands.
+  Future<void> prefetchProfiles(List<String> pubkeys) async {
+    if (pubkeys.isEmpty) return;
+    // Only fetch authors not already fresh in the TTL cache.
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final missing = pubkeys
+        .toSet()
+        .where((pk) {
+          final c = profileCache[pk];
+          return c == null || now - c.fetchedAt >= _profileTtlSeconds;
+        })
+        .toList();
+    if (missing.isEmpty) return;
+
+    // ONE query for every missing author's kind-0. Relays cap filter size,
+    // so chunk to stay under typical limits (a 50-author page → 2 chunks).
+    const chunkSize = 40;
+    for (var i = 0; i < missing.length; i += chunkSize) {
+      final chunk = missing.sublist(
+        i,
+        i + chunkSize > missing.length ? missing.length : i + chunkSize,
+      );
+      try {
+        final events = await relayPool.query([
+          NostrFilter(kinds: [0], authors: chunk),
+        ], timeout: const Duration(seconds: 5));
+        // Newest kind-0 per author wins (replaceable).
+        final byAuthor = <String, NostrEvent>{};
+        for (final e in events) {
+          final existing = byAuthor[e.pubkey];
+          if (existing == null || e.createdAt > existing.createdAt) {
+            byAuthor[e.pubkey] = e;
+          }
+        }
+        final fetchedAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        for (final entry in byAuthor.entries) {
+          try {
+            final profile = NostrProfile.fromJson(
+              jsonDecode(entry.value.content) as Map<String, dynamic>,
+            );
+            profileCache[entry.key] = (
+              profile: profile,
+              createdAt: entry.value.createdAt,
+              fetchedAt: fetchedAt,
+            );
+          } catch (_) {}
+        }
+      } catch (_) {
+        // Best-effort: cards keep their cached/fallback avatar+name.
+      }
+    }
+  }
+
   Future<NostrProfile?> fetchProfile(String pubkey) async {
     final cached = profileCache[pubkey];
 

@@ -66,6 +66,13 @@ class SmartNetworkImage extends StatelessWidget {
       fit: fit,
       memCacheWidth: memW,
       memCacheHeight: memH,
+      // A real browser UA — some hosts 403 the default Dart (empty) UA on
+      // Android but serve iOS (the "images fail on Android" cause).
+      httpHeaders: const {
+        'Accept': 'image/avif,image/webp,image/*,*/*;q=0.8',
+        'User-Agent':
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+      },
       placeholder: placeholder,
       errorWidget: errorWidget,
     );

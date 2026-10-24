@@ -4,20 +4,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
+import 'package:nostrfeed_mobile/features/feed/presentation/widgets/quote_card.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
-  const ComposeScreen({super.key});
+  /// The event being quoted (NIP-18 quote post), or null for a plain note.
+  final NostrEvent? quoted;
+  const ComposeScreen({super.key, this.quoted});
 
   @override
   ConsumerState<ComposeScreen> createState() => _ComposeScreenState();
 }
 
+enum _ComposeMode { note, poll }
+
 class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   static const _maxChars = 2000;
+  _ComposeMode _mode = _ComposeMode.note;
 
   static const _suggestedHashtags = [
     'nostr',
@@ -36,6 +43,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   bool _isUploading = false;
   final List<String> _imageUrls = [];
 
+  // ── Poll state (NIP-88) ─────────────────────────────────────────────
+  final List<TextEditingController> _pollOptions = [
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  bool _pollMultiple = false;
+  Duration? _pollDuration = const Duration(days: 1);
+
+  bool get _isQuote => widget.quoted != null;
+
   @override
   void initState() {
     super.initState();
@@ -48,17 +65,28 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    for (final c in _pollOptions) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   bool get _canPost {
     final auth = ref.read(authStateProvider);
-    return auth.isLoggedIn &&
-        !auth.isReadOnly &&
-        (_controller.text.trim().isNotEmpty || _imageUrls.isNotEmpty) &&
-        _controller.text.length <= _maxChars &&
-        !_isPosting &&
-        !_isUploading;
+    if (!auth.isLoggedIn || auth.isReadOnly || _isPosting || _isUploading) {
+      return false;
+    }
+    if (_mode == _ComposeMode.poll) {
+      // A poll needs a question + ≥2 non-empty options.
+      if (_controller.text.trim().isEmpty) return false;
+      final filled =
+          _pollOptions.where((c) => c.text.trim().isNotEmpty).length;
+      return filled >= 2;
+    }
+    return (_controller.text.trim().isNotEmpty ||
+            _imageUrls.isNotEmpty ||
+            _isQuote) &&
+        _controller.text.length <= _maxChars;
   }
 
   List<List<String>> _extractHashtags(String content) {
@@ -82,21 +110,47 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
     try {
       final nostr = ref.read(nostrServiceProvider);
-      var content = _controller.text.trim();
+      final question = _controller.text.trim();
 
-      // Append image URLs to content
-      for (final url in _imageUrls) {
-        if (content.isNotEmpty) content += '\n';
-        content += url;
+      late final NostrEvent event;
+      if (_mode == _ComposeMode.poll) {
+        // NIP-88 poll.
+        final options = <(String, String)>[
+          for (var i = 0; i < _pollOptions.length; i++)
+            if (_pollOptions[i].text.trim().isNotEmpty)
+              ('opt${i + 1}', _pollOptions[i].text.trim()),
+        ];
+        event = nostr.createPoll(
+          question: question,
+          options: options,
+          multipleChoice: _pollMultiple,
+          endsAt:
+              _pollDuration == null ? null : DateTime.now().add(_pollDuration!),
+        );
+      } else {
+        var content = question;
+        // Append image URLs to content.
+        for (final url in _imageUrls) {
+          if (content.isNotEmpty) content += '\n';
+          content += url;
+        }
+        if (_isQuote) {
+          // NIP-18 quote post: the quoted event's NIP-21 ref goes inline so
+          // clients that render inline quotes link it; the q tag is added by
+          // the factory.
+          final quotedRef = nostr.authService.encodeNote(widget.quoted!.id);
+          if (content.isNotEmpty) content += '\n';
+          content += 'nostr:$quotedRef';
+          final tags = _extractHashtags(content);
+          event = _quoteWithHashtags(nostr, content, tags);
+        } else {
+          final tags = _extractHashtags(content);
+          event = nostr.createPost(content, tags: tags);
+        }
       }
-
-      final tags = _extractHashtags(content);
-      final event = nostr.createPost(content, tags: tags);
       nostr.publish(event);
 
-      // Refresh all feeds so the new post shows up immediately everywhere
-      // (home feed, profile, following tab). The notifiers merge the new
-      // post in silently — no skeleton flicker.
+      // Refresh all feeds so the new post shows up immediately everywhere.
       ref.read(globalFeedProvider.notifier).refresh();
       ref.read(followingFeedNotifierProvider.notifier).refresh();
       ref.invalidate(trendingProvider);
@@ -110,13 +164,15 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           SnackBar(
             content: const Row(
               children: [
-                Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                Icon(Icons.check_circle_rounded,
+                    color: Colors.white, size: 20),
                 SizedBox(width: 12),
                 Text('Posted successfully!'),
               ],
             ),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             backgroundColor: Colors.green,
           ),
         );
@@ -128,12 +184,30 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           SnackBar(
             content: Text('Failed to post: $e'),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
         setState(() => _isPosting = false);
       }
     }
+  }
+
+  /// A quote post carries the factory's q/p tags PLUS the hashtags the user
+  /// typed (the factory doesn't extract those).
+  NostrEvent _quoteWithHashtags(
+    dynamic nostr,
+    String content,
+    List<List<String>> hashtagTags,
+  ) {
+    final base = nostr.createQuotePost(content, quoted: widget.quoted!);
+    // Re-sign with the combined tag set (quote tags + hashtags + client).
+    return nostr.authService.signEvent(
+      privateKey: ref.read(authStateProvider).privateKey!,
+      kind: base.kind,
+      content: base.content,
+      tags: [...base.tags, ...hashtagTags],
+    );
   }
 
   Future<void> _pickImage() async {
@@ -150,7 +224,6 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
       setState(() => _isUploading = true);
 
-      // Upload via Blossom
       final uploadService = ref.read(uploadServiceProvider);
       final url = await uploadService.uploadImage(image);
 
@@ -181,7 +254,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   void _appendHashtag(String tag) {
     HapticFeedback.lightImpact();
     final text = _controller.text;
-    final needsSpace = text.isNotEmpty && !text.endsWith(' ') && !text.endsWith('\n');
+    final needsSpace =
+        text.isNotEmpty && !text.endsWith(' ') && !text.endsWith('\n');
     _controller.text = '$text${needsSpace ? ' ' : ''}#$tag ';
     _controller.selection = TextSelection.fromPosition(
       TextPosition(offset: _controller.text.length),
@@ -202,9 +276,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       appBar: AppBar(
         elevation: 0,
         backgroundColor: colorScheme.surface,
-        title: const Text(
-          'New Post',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+        title: Text(
+          _isQuote
+              ? 'Quote post'
+              : _mode == _ComposeMode.poll
+                  ? 'New poll'
+                  : 'New Post',
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
         ),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
@@ -255,6 +333,29 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
               ],
             ),
+          // Note / Poll mode switch (hidden on quote posts — a quote is a
+          // note, not a poll).
+          if (!_isQuote)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: SegmentedButton<_ComposeMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: _ComposeMode.note,
+                    icon: Icon(Icons.edit_note_rounded),
+                    label: Text('Post'),
+                  ),
+                  ButtonSegment(
+                    value: _ComposeMode.poll,
+                    icon: Icon(Icons.poll_rounded),
+                    label: Text('Poll'),
+                  ),
+                ],
+                selected: {_mode},
+                onSelectionChanged: (s) =>
+                    setState(() => _mode = s.first),
+              ),
+            ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -286,19 +387,24 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // Text field
+                  // Text field (question in poll mode)
                   TextField(
                     controller: _controller,
                     focusNode: _focusNode,
                     autofocus: true,
                     maxLines: null,
-                    minLines: 5,
+                    minLines: _mode == _ComposeMode.poll ? 2 : 5,
                     textAlignVertical: TextAlignVertical.top,
                     style: const TextStyle(fontSize: 17, height: 1.5),
                     decoration: InputDecoration(
-                      hintText: "What's on your mind?",
+                      hintText: _mode == _ComposeMode.poll
+                          ? 'Ask a question…'
+                          : _isQuote
+                              ? 'Add your thoughts…'
+                              : "What's on your mind?",
                       hintStyle: TextStyle(
-                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                        color:
+                            colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                         fontSize: 17,
                       ),
                       border: InputBorder.none,
@@ -306,6 +412,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
+
+                  // Poll options editor
+                  if (_mode == _ComposeMode.poll) _buildPollEditor(colorScheme),
+
+                  // Quoted event preview
+                  if (_isQuote) ...[
+                    const SizedBox(height: 12),
+                    QuoteCard(reference: widget.quoted!.id),
+                  ],
+
                   // Image previews
                   if (_imageUrls.isNotEmpty) ...[
                     const SizedBox(height: 16),
@@ -334,7 +450,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.6),
+                                    color:
+                                        Colors.black.withValues(alpha: 0.6),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(
@@ -354,39 +471,42 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               ),
             ),
           ),
-          // Hashtag suggestions
-          Container(
-            height: 52,
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+          // Hashtag suggestions (notes + quotes, not polls)
+          if (_mode == _ComposeMode.note)
+            Container(
+              height: 52,
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  ),
                 ),
               ),
-            ),
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: _suggestedHashtags.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final tag = _suggestedHashtags[i];
-                return Center(
-                  child: ActionChip(
-                    label: Text('#$tag'),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _appendHashtag(tag),
-                    backgroundColor: colorScheme.primaryContainer.withValues(alpha: 0.5),
-                    labelStyle: TextStyle(
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                itemCount: _suggestedHashtags.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
+                  final tag = _suggestedHashtags[i];
+                  return Center(
+                    child: ActionChip(
+                      label: Text('#$tag'),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _appendHashtag(tag),
+                      backgroundColor:
+                          colorScheme.primaryContainer.withValues(alpha: 0.5),
+                      labelStyle: TextStyle(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ),
           // Bottom toolbar
           Container(
             decoration: BoxDecoration(
@@ -400,19 +520,22 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
-                    IconButton(
-                      icon: Icon(
-                        Icons.image_outlined,
-                        color: _isUploading
-                            ? colorScheme.onSurfaceVariant.withValues(alpha: 0.3)
-                            : colorScheme.primary,
+                    if (_mode == _ComposeMode.note)
+                      IconButton(
+                        icon: Icon(
+                          Icons.image_outlined,
+                          color: _isUploading
+                              ? colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.3)
+                              : colorScheme.primary,
+                        ),
+                        tooltip: 'Add image',
+                        onPressed: _isUploading ? null : _pickImage,
                       ),
-                      tooltip: 'Add image',
-                      onPressed: _isUploading ? null : _pickImage,
-                    ),
                     if (_isUploading) ...[
                       const SizedBox(width: 8),
                       const SizedBox(
@@ -456,6 +579,75 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPollEditor(ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < _pollOptions.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: TextField(
+                controller: _pollOptions[i],
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Option ${i + 1}',
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  suffixIcon: _pollOptions.length > 2
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: () =>
+                              setState(() => _pollOptions.removeAt(i)),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          if (_pollOptions.length < 4)
+            TextButton.icon(
+              onPressed: () =>
+                  setState(() => _pollOptions.add(TextEditingController())),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Add option'),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Allow multiple choices',
+                      style: TextStyle(fontSize: 14)),
+                  value: _pollMultiple,
+                  onChanged: (v) => setState(() => _pollMultiple = v),
+                ),
+              ),
+            ],
+          ),
+          DropdownButtonFormField<Duration?>(
+            initialValue: _pollDuration,
+            decoration: const InputDecoration(
+              labelText: 'Poll duration',
+              isDense: true,
+            ),
+            items: const [
+              DropdownMenuItem(value: Duration(hours: 1), child: Text('1 hour')),
+              DropdownMenuItem(value: Duration(days: 1), child: Text('1 day')),
+              DropdownMenuItem(value: Duration(days: 3), child: Text('3 days')),
+              DropdownMenuItem(value: Duration(days: 7), child: Text('1 week')),
+              DropdownMenuItem(value: null, child: Text('No end')),
+            ],
+            onChanged: (v) => setState(() => _pollDuration = v),
           ),
         ],
       ),

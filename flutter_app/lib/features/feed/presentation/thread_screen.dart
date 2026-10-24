@@ -1,9 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
+
+/// Resolve the event a reply points to (its direct parent), store-first then
+/// a bounded relay fetch — for the "in reply to @name" context line.
+final _parentEventProvider =
+    FutureProvider.family<NostrEvent?, String>((ref, eventId) async {
+  final cached = await EventStore.instance.eventById(eventId);
+  if (cached != null) return cached;
+  try {
+    final nostr = await initNostr(ref);
+    final ev = await nostr.fetchEventById(eventId);
+    if (ev != null) await EventStore.instance.ingest([ev]);
+    return ev;
+  } catch (_) {
+    return null;
+  }
+});
 
 class ThreadScreen extends ConsumerStatefulWidget {
   final NostrEvent rootEvent;
@@ -40,16 +58,24 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
 
     try {
       final nostr = ref.read(nostrServiceProvider);
+      // Reply to the post the thread is open on. If that post is itself a
+      // reply, propagate the thread root so the new reply threads correctly
+      // (NIP-10); notify the parent's author + the thread participants.
+      final parent = widget.rootEvent;
+      final threadRoot = parent.rootId ?? parent.id;
+      final participants = parent.pubkeyRefs;
       final replyEvent = nostr.createReply(
         content,
-        widget.rootEvent.id,
-        widget.rootEvent.pubkey,
+        parent.id,
+        parent.pubkey,
+        rootId: threadRoot,
+        notifyPubkeys: participants,
       );
       nostr.publishEvent(replyEvent);
       _replyController.clear();
 
       // Refresh replies
-      ref.invalidate(repliesProvider(widget.rootEvent.id));
+      ref.invalidate(repliesProvider(threadRoot));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -71,7 +97,10 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final repliesAsync = ref.watch(repliesProvider(widget.rootEvent.id));
+    // Replies attach to the THREAD ROOT — if the post we opened on is itself
+    // a reply, the whole conversation hangs off its root, not this post.
+    final threadRootId = widget.rootEvent.rootId ?? widget.rootEvent.id;
+    final repliesAsync = ref.watch(repliesProvider(threadRootId));
     final auth = ref.watch(authStateProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -89,6 +118,11 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
           Expanded(
             child: ListView(
               children: [
+                // "In reply to @name" context when the opened post is itself
+                // a reply — so the conversation reads top-down like X.
+                if (widget.rootEvent.replyToId != null)
+                  _ReplyContextBanner(parentId: widget.rootEvent.replyToId!),
+
                 // Parent post
                 PostCard(
                   event: widget.rootEvent,
@@ -225,6 +259,61 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// The "in reply to @name" strip above an opened reply — tap to jump to the
+/// parent post. Gives the opened reply its conversation context.
+class _ReplyContextBanner extends ConsumerWidget {
+  final String parentId;
+  const _ReplyContextBanner({required this.parentId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final parentAsync = ref.watch(_parentEventProvider(parentId));
+    final parent = parentAsync.valueOrNull;
+    final profileAsync = parent != null
+        ? ref.watch(profileProvider(parent.pubkey))
+        : null;
+    final name = profileAsync?.valueOrNull?.displayNameOrName ??
+        (parent != null
+            ? (parent.pubkey.length > 12
+                ? '${parent.pubkey.substring(0, 8)}…'
+                : parent.pubkey)
+            : 'the parent post');
+
+    return Material(
+      color: scheme.surfaceContainerLow,
+      child: InkWell(
+        onTap: parent == null
+            ? null
+            : () => context.push('/thread', extra: parent),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.reply_rounded, size: 16, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'In reply to $name',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (parent != null)
+                Icon(Icons.chevron_right_rounded,
+                    size: 16, color: scheme.onSurfaceVariant),
+            ],
+          ),
+        ),
       ),
     );
   }

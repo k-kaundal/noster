@@ -27,8 +27,8 @@ class RelayRouter {
   static const indexerRelays = [
     'wss://relay.nostrfeed.com',
     'wss://purplepag.es',
-    'wss://relay.nostr.band',
     'wss://relay.primal.net',
+    'wss://indexer.coracle.social',
     'wss://directory.yabu.me',
   ];
 
@@ -63,10 +63,9 @@ class RelayRouter {
   ) async {
     if (_cache.containsKey(pubkey)) return _cache[pubkey];
     try {
-      final events = await relayPool.query(
-        [NostrFilter(kinds: [10002], authors: [pubkey], limit: 1)],
-        timeout: const Duration(seconds: 4),
-      );
+      final events = await relayPool.query([
+        NostrFilter(kinds: [10002], authors: [pubkey], limit: 1),
+      ], timeout: const Duration(seconds: 4));
       if (events.isEmpty) return null;
       // Take the newest replaceable revision.
       events.sort((a, b) => b.createdAt.compareTo(a.createdAt));

@@ -160,15 +160,21 @@ class RelayConnection {
         case 'EVENT':
           final subId = data[1] as String;
           final event = NostrEvent.fromJson(data[2] as Map<String, dynamic>);
-          if (!event.isExpired) {
-            // Advance the sliding cursor for resubscribe — this sub's
-            // next re-issue only asks for events NEWER than this one.
-            final persistent = _persistentSubs[subId];
-            if (persistent != null && event.createdAt > persistent.newestSeen) {
-              persistent.newestSeen = event.createdAt;
-            }
-            _subs[subId]?.add(event);
+          if (event.isExpired) break;
+          // SECURITY: verify the event's id + signature BEFORE it reaches
+          // any screen. A relay is untrusted transport — it can inject a
+          // forged post under anyone's pubkey, and without verification the
+          // feed would render it as real. Cheap enough at feed volume
+          // (Schnorr verify ~100µs) and it's the only thing standing
+          // between the user and relay-served forgeries.
+          if (!event.isValid) break;
+          // Advance the sliding cursor for resubscribe — this sub's
+          // next re-issue only asks for events NEWER than this one.
+          final persistent = _persistentSubs[subId];
+          if (persistent != null && event.createdAt > persistent.newestSeen) {
+            persistent.newestSeen = event.createdAt;
           }
+          _subs[subId]?.add(event);
           break;
         case 'EOSE':
           final subId = data[1] as String;
@@ -350,7 +356,12 @@ class RelayPool {
   /// we kick every disconnected relay back to life (each reconnect then
   /// re-issues its live subscriptions via `_resubscribeAll`).
   Future<void> reconnectDead() async {
-    for (final conn in _relays.values) {
+    // Snapshot the connections FIRST. `connect()` can add new entries to
+    // `_relays` (outbox routing / ensureConnection during resubscribe), and
+    // iterating the live map while it's mutated throws
+    // "Concurrent modification during iteration" (the resume crash).
+    final snapshot = _relays.values.toList();
+    for (final conn in snapshot) {
       if (!conn.isConnected &&
           conn.state != RelayState.connecting &&
           conn.state != RelayState.authRequired) {

@@ -243,8 +243,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
     final isFollowing = followsAsync.value?.contains(pubkey) ?? false;
     final followersCount = followersAsync.valueOrNull ?? 0;
+    // Posts count = notes + picture posts (kind 20) — the displayable set.
     final postsCount = userPostsAsync.valueOrNull
-            ?.where((e) => e.kind == 1)
+            ?.where((e) => e.kind == 1 || e.kind == 20)
             .length ??
         0;
 
@@ -808,12 +809,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _PostsTab(pubkey: pubkey, filter: (e) => e.kind == 1 && !e.isReply),
+          // Posts: notes + picture posts (kind 20), not replies. Picture-
+          // first accounts post kind 20 — filtering kind==1 alone hid them.
+          _PostsTab(
+            pubkey: pubkey,
+            filter: (e) =>
+                (e.kind == 1 && !e.isReply) || e.kind == 20 || e.kind == 6,
+          ),
           _PostsTab(pubkey: pubkey, filter: (e) => e.kind == 1 && e.isReply),
           // NIP-23 long-form articles are kind 30023
           _PostsTab(pubkey: pubkey, filter: (e) => e.kind == 30023),
+          // Media: picture/video kinds + notes that carry media URLs.
           _PostsTab(
-              pubkey: pubkey, filter: (e) => e.kind == 1 && _hasMedia(e)),
+            pubkey: pubkey,
+            filter: (e) =>
+                e.kind == 20 ||
+                e.kind == 21 ||
+                e.kind == 22 ||
+                (e.kind == 1 && _hasMedia(e)),
+          ),
           // Likes = posts the USER liked (their kind-7 targets), not kind-7
           // in their own feed (which is always empty).
           _LikedPostsTab(pubkey: pubkey),

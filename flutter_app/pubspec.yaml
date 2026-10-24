@@ -1,7 +1,7 @@
 name: nostrfeed_mobile
 description: "NostrFeed - Nostr Operating System for People, Creators & Communities"
 publish_to: 'none'
-version: 1.1.1+6
+version: 1.2.0+7
 
 environment:
   sdk: ^3.13.5
@@ -31,6 +31,9 @@ dependencies:
   # Local storage
   shared_preferences: ^2.3.2
   flutter_secure_storage: ^11.2.0
+  # SQLite — the normalized event store (posts/profiles/engagement live here,
+  # not in JSON-in-SharedPreferences). Offline-first like X/FB/Insta.
+  sqflite: ^2.4.4
 
   # Local push notifications (background listener like FB/Insta)
   flutter_local_notifications: ^19.5.0
@@ -38,6 +41,7 @@ dependencies:
   # Media & files
   image_picker: ^1.1.2
   cached_network_image: ^3.4.1
+  octo_image: ^2.1.2 # smooth image crossfade (avatars/photos fade in, no flicker)
   file_picker: ^13.1.0
   flutter_svg: ^2.0.10+1
 
@@ -90,22 +94,22 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/icon/icon-1024.png"
   remove_alpha_ios: true
-  adaptive_icon_background: "#7C3AED"
+  adaptive_icon_background: "#0A66C2"
   adaptive_icon_foreground: "assets/icon/icon-foreground.png"
   web:
     generate: true
     image_path: "assets/icon/icon-1024.png"
-    background_color: "#7C3AED"
-    theme_color: "#7C3AED"
+    background_color: "#0A66C2"
+    theme_color: "#0A66C2"
 
 # Native splash generation: dart run flutter_native_splash:create
 flutter_native_splash:
-  color: "#7C3AED"
+  color: "#0A66C2"
   image: "assets/icon/splash-logo.png"
   color_dark: "#1A1025"
   image_dark: "assets/icon/splash-logo-dark.png"
   android_12:
-    color: "#7C3AED"
+    color: "#0A66C2"
     image: "assets/icon/splash-logo.png"
     color_dark: "#1A1025"
     image_dark: "assets/icon/splash-logo-dark.png"

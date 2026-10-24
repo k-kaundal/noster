@@ -9,10 +9,14 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/utils/encrypted_content.dart';
 import 'package:nostrfeed_mobile/core/utils/media.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
+import 'package:nostrfeed_mobile/features/feed/presentation/widgets/ecash_token_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/link_preview_card.dart';
+import 'package:nostrfeed_mobile/features/feed/presentation/widgets/quote_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/video_card.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Renders a Nostr event's content with full markdown support:
@@ -41,6 +45,33 @@ class NoteContent extends ConsumerWidget {
     this.showImages = true,
   });
 
+  /// Whether this event has ANYTHING to render: visible text, media, or a
+  /// quoted event. PostCard consults this to collapse the WHOLE card (not
+  /// just the body) — a card with author + action bar but no content reads
+  /// as a bug ("name, no post"), so it disappears from the feed instead.
+  static bool hasRenderableContent(NostrEvent event) {
+    final parsed = _NoteParseCache.of(event);
+    // Encrypted/token payloads render as a card (ecash claim / "encrypted"),
+    // so they count as renderable.
+    if (parsed.encryptedKind != null) return true;
+    if (parsed.quotes.isNotEmpty) return true;
+    final render = parsed.render;
+    if (render.images.isNotEmpty || render.videos.isNotEmpty) return true;
+    // Visible text: any segment that isn't a hidden (media) URL span.
+    return render.textSegments.any(
+      (s) =>
+          (s is _TextSegment && s.text.trim().isNotEmpty) ||
+          (s is _FormattedTextSegment && s.text.trim().isNotEmpty) ||
+          s is _UrlSegment ||
+          s is _NostrRefSegment ||
+          s is _HashtagSegment ||
+          s is _CodeBlockSegment ||
+          s is _HeaderSegment ||
+          s is _BlockquoteSegment ||
+          s is _ListItemSegment,
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // The heavy pure parsing (regex segmentation, media split, imeta) is
@@ -48,7 +79,27 @@ class NoteContent extends ConsumerWidget {
     // watches updates, and re-running the parser each time is what janks the
     // scroll as the feed grows. See _NoteParseCache.
     final parsed = _NoteParseCache.of(event);
-    if (parsed.content.isEmpty) return const SizedBox.shrink();
+
+    // Encrypted / token payload: render as a proper card (ecash claim or
+    // "encrypted content"), never as a base64 text wall.
+    if (parsed.encryptedKind != null) {
+      return EcashTokenCard(
+        token: parsed.content.trim(),
+        kind: parsed.encryptedKind!,
+      );
+    }
+
+    // Only collapse when there's truly NOTHING to show: no text, no media,
+    // AND no quoted event. A kind-20 picture post has empty `content` but
+    // real media in imeta; a quote post may be content-free except the quote
+    // — returning shrink() here is what blanked those cards.
+    final render0 = parsed.render;
+    if (parsed.content.isEmpty &&
+        render0.images.isEmpty &&
+        render0.videos.isEmpty &&
+        parsed.quotes.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     final defaultStyle =
         textStyle ??
@@ -92,16 +143,19 @@ class NoteContent extends ConsumerWidget {
         // Videos render as playable/branded cards (all types).
         for (final videoUrl in render.videos)
           VideoCard(url: videoUrl, imeta: imeta[videoUrl]),
+        // Quoted events render as rich embedded cards (X's quote-tweet) —
+        // the post's text stays inline above, the quote renders below.
+        for (final quoteId in parsed.quotes) QuoteCard(reference: quoteId),
         // A lone plain link (the post is basically just a shared URL) gets a
         // rich preview card — inline in the text too, plus the card below.
-        if (_shouldShowLinkCard(render))
+        if (_shouldShowLinkCard(render, parsed.quotes))
           LinkPreviewCard(url: render.links.first),
       ],
     );
   }
 
   /// Show a link preview card only when the post is dominated by a single
-  /// plain link (no images/videos, and the link IS most of the text).
+  /// plain link (no images/videos/quotes, and the link IS most of the text).
   bool _shouldShowLinkCard(
     ({
       List<_Segment> textSegments,
@@ -110,7 +164,9 @@ class NoteContent extends ConsumerWidget {
       List<String> links,
     })
     render,
+    List<String> quotes,
   ) {
+    if (quotes.isNotEmpty) return false; // a quote post isn't a link post
     if (render.links.length != 1) return false;
     if (render.images.isNotEmpty || render.videos.isNotEmpty) return false;
     final textOnly = render.textSegments
@@ -195,17 +251,72 @@ class _ParsedNote {
   /// NIP-92 imeta tags keyed by URL.
   final Map<String, ImetaInfo> imeta;
 
+  /// Event ids this post quotes (NIP-18 `q` tag + `nostr:note1…`/`nevent1…`
+  /// references in content) — rendered as embedded QuoteCards.
+  final List<String> quotes;
+
+  /// When the whole content is an encrypted/token payload (ecash, NIP-04/44,
+  /// ciphertext), its class — rendered as a card, never as text.
+  final EncryptedKind? encryptedKind;
+
   final int contentLength;
   final int tagCount;
 
-  _ParsedNote._(this.content, this.render, this.imeta, this.contentLength, this.tagCount);
+  _ParsedNote._(this.content, this.render, this.imeta, this.quotes, this.encryptedKind, this.contentLength, this.tagCount);
 
   factory _ParsedNote._from(NostrEvent event) {
-    final text = _extractContent(event.content);
-    final segments = text.isEmpty ? const <_Segment>[] : _ContentParser.parse(text);
+    var text = _extractContent(event.content);
+    // NIP-68 picture posts put the CAPTION in the `title` tag when content
+    // is empty. Fall back to it so a picture post with no body still shows
+    // its description instead of a bare image + name.
+    if (text.isEmpty && event.kind == 20) {
+      final title = event.getTag('title');
+      if (title != null && title.trim().isNotEmpty) {
+        text = sanitizeText(title.trim());
+      }
+    }
+    final encryptedKind = classifyEncrypted(text);
+    final segments = (text.isEmpty || encryptedKind != null)
+        ? const <_Segment>[]
+        : _ContentParser.parse(text);
     final render = _ContentParser.splitForRender(segments, event);
     final imeta = MediaUtils.parseImeta(event);
-    return _ParsedNote._(text, render, imeta, event.content.length, event.tags.length);
+    final quotes = _extractQuotes(event, segments);
+    return _ParsedNote._(text, render, imeta, quotes, encryptedKind, event.content.length, event.tags.length);
+  }
+
+  /// Quoted event ids: NIP-18 `q` tags + NIP-21 `note1…`/`nevent1…` refs in
+  /// the content. Deduped, order-preserving.
+  static List<String> _extractQuotes(NostrEvent event, List<_Segment> segments) {
+    final out = <String>[];
+    void add(String? id) {
+      if (id != null && !out.contains(id)) out.add(id);
+    }
+
+    // 1. q tags (NIP-18 quote reposts).
+    for (final q in event.quoteRefs) {
+      // A q tag can be an event id (64 hex) or an address (kind:pubkey:d).
+      if (RegExp(r'^[0-9a-f]{64}$', caseSensitive: false).hasMatch(q)) {
+        add(q.toLowerCase());
+      }
+    }
+    // 2. nostr:note1…/nevent1… references in the content.
+    for (final s in segments) {
+      if (s is _NostrRefSegment) {
+        final id =
+            s.ref.startsWith('nostr:') ? s.ref.substring(6) : s.ref;
+        final decoded = decodeNip19(id);
+        switch (decoded) {
+          case Nip19Note(eventId: final e):
+            add(e);
+          case Nip19Event(eventId: final e):
+            add(e);
+          default:
+            break;
+        }
+      }
+    }
+    return out;
   }
 }
 
@@ -417,6 +528,26 @@ class _ContentParser {
         textSegments.add(s);
       }
     }
+
+    // NIP-68 (kind 20) + NIP-92: media can live ONLY in `imeta` tags with an
+    // EMPTY content body (picture-first clients post the image in imeta and
+    // nothing in `content`). Scanning only content URLs misses these — the
+    // post then renders as a name + empty body (the "no content, just a
+    // name" bug). Merge imeta media URLs that aren't already in the content.
+    final imeta = MediaUtils.parseImeta(event);
+    for (final url in imeta.keys) {
+      if (images.contains(url) || videos.contains(url)) continue;
+      switch (MediaUtils.classify(url)) {
+        case MediaType.image:
+          images.add(url);
+        case MediaType.video:
+          videos.add(url);
+        case MediaType.audio:
+        case MediaType.other:
+          break; // imeta with a non-media URL isn't displayable media
+      }
+    }
+
     return (
       textSegments: textSegments,
       images: images,
@@ -1149,6 +1280,7 @@ class _ImageGallery extends StatelessWidget {
         url: url,
         height: ar != null && ar < 0.8 ? 360 : 240,
         alt: imeta[url]?.alt,
+        fallbackUrls: imeta[url]?.fallbackUrls ?? const [],
       );
     }
     final crossCount = urls.length == 2 ? 2 : (urls.length == 3 ? 3 : 2);
@@ -1164,23 +1296,73 @@ class _ImageGallery extends StatelessWidget {
           url: url,
           height: double.infinity,
           alt: imeta[url]?.alt,
+          fallbackUrls: imeta[url]?.fallbackUrls ?? const [],
         );
       }).toList(),
     );
   }
 }
 
-class _NetworkImageTile extends StatelessWidget {
+class _NetworkImageTile extends StatefulWidget {
   final String url;
   final double height;
   final String? alt;
-  const _NetworkImageTile({required this.url, required this.height, this.alt});
+  final List<String> fallbackUrls;
+  const _NetworkImageTile({
+    required this.url,
+    required this.height,
+    this.alt,
+    this.fallbackUrls = const [],
+  });
 
-  bool get _isSvg => url.toLowerCase().endsWith('.svg');
+  @override
+  State<_NetworkImageTile> createState() => _NetworkImageTileState();
+}
 
-  /// The Hero tag for the feed↔fullscreen shared-element transition. URLs
-  /// are unique per image, so they are the tag.
-  String get _heroTag => 'feed-image:$url';
+class _NetworkImageTileState extends State<_NetworkImageTile> {
+  /// 0 = primary URL, 1..N = NIP-92 fallback URLs. A failed load advances to
+  /// the next source instead of parking on "Image unavailable" (the
+  /// "images don't show" bug — a flaky host/CDN used to kill the tile for
+  /// the whole session).
+  int _sourceIndex = 0;
+
+  /// Bumped on manual retry to force the image provider to re-resolve.
+  int _retry = 0;
+
+  /// Unique-per-instance Hero tag. The SAME image URL can appear twice on
+  /// one screen (a repost + the original, an image in both a post and its
+  /// embedded quote) — keying the Hero on the URL alone made two Heroes
+  /// share a tag and threw "multiple heroes share the same tag". A per-
+  /// instance sequence keeps every tag unique while staying stable across
+  /// rebuilds of THIS tile.
+  static int _instanceCounter = 0;
+  late final String _heroTag =
+      'feed-image:${widget.url}#${_instanceCounter++}';
+
+  List<String> get _sources => [widget.url, ...widget.fallbackUrls];
+  String get _url => _sources[_sourceIndex.clamp(0, _sources.length - 1)];
+  bool get _isSvg => _url.toLowerCase().endsWith('.svg');
+
+  void _onError() {
+    // Try the next fallback source automatically; only show the error tile
+    // once every source has failed.
+    if (_sourceIndex < _sources.length - 1) {
+      setState(() => _sourceIndex++);
+    }
+  }
+
+  void _retryLoad() {
+    setState(() {
+      // Reset to the primary source and force a re-resolve. Evicting the
+      // failed image from the painting cache makes the provider refetch
+      // instead of replaying the cached failure.
+      _sourceIndex = 0;
+      _retry++;
+      PaintingBinding.instance.imageCache.evict(
+        CachedNetworkImageProvider(_url),
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1201,19 +1383,23 @@ class _NetworkImageTile extends StatelessWidget {
   Widget _buildSvgImage(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      height: height == double.infinity ? null : height,
+      height: widget.height == double.infinity ? null : widget.height,
       width: double.infinity,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
       ),
       child: SvgPicture.network(
-        url,
-        height: height == double.infinity ? null : height,
+        _url,
+        key: ValueKey('$_url#$_retry'),
+        height: widget.height == double.infinity ? null : widget.height,
         width: double.infinity,
         fit: BoxFit.cover,
         placeholderBuilder: (_) => _buildLoadingPlaceholder(context),
-        errorBuilder: (_, _, _) => _buildErrorWidget(context),
+        errorBuilder: (_, _, _) {
+          _onError();
+          return _buildErrorWidget(context);
+        },
       ),
     );
   }
@@ -1223,16 +1409,32 @@ class _NetworkImageTile extends StatelessWidget {
     // wide on any phone — decode to that, not the source's 4000 px. The
     // fullscreen view decodes separately at full size.
     final dpr = MediaQuery.devicePixelRatioOf(context);
+    // Ask the CDN for a resized variant when the host supports it (nostr.
+    // build `?w=`): ~80-90% less bandwidth per image — the difference
+    // between a feed that loads instantly and one that crawls on mobile.
+    final displayUrl = MediaUtils.optimizedImageUrl(_url, width: 1080);
     return CachedNetworkImage(
-      imageUrl: url,
-      height: height == double.infinity ? null : height,
+      // The key carries the retry counter so a manual retry builds a fresh
+      // image provider instead of replaying the parked failure.
+      key: ValueKey('$displayUrl#$_retry'),
+      imageUrl: displayUrl,
+      height: widget.height == double.infinity ? null : widget.height,
       width: double.infinity,
       fit: BoxFit.cover,
       memCacheWidth: (1200 * dpr).round(),
       placeholder: (_, _) => _buildLoadingPlaceholder(context),
-      errorWidget: (_, _, _) => _buildErrorWidget(context),
-      // Suppress network errors from crashing the app
-      httpHeaders: const {'Accept': 'image/*'},
+      errorWidget: (_, _, _) {
+        _onError();
+        return _buildErrorWidget(context);
+      },
+      // A real browser UA + Accept: some CDNs/hosts 403 the default Dart
+      // (empty) User-Agent on Android but serve iOS fine — a top cause of
+      // "images load on iOS, not Android". Accept narrows to images.
+      httpHeaders: const {
+        'Accept': 'image/avif,image/webp,image/*,*/*;q=0.8',
+        'User-Agent':
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+      },
       // Fade in animation for smooth loading
       fadeInDuration: const Duration(milliseconds: 300),
       fadeOutDuration: const Duration(milliseconds: 100),
@@ -1241,19 +1443,24 @@ class _NetworkImageTile extends StatelessWidget {
 
   Widget _buildLoadingPlaceholder(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      height: height == double.infinity ? 120 : height,
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+    // Shimmer sweep (X/Instagram-style) reads as "loading" far better than a
+    // bare spinner parked in a grey box — and it matches the feed's skeleton
+    // language. A subtle image icon sits under the shimmer so the tile still
+    // reads as an image before the pixels land.
+    return Shimmer.fromColors(
+      baseColor: colorScheme.surfaceContainerHighest,
+      highlightColor: colorScheme.surface,
+      child: Container(
+        height: widget.height == double.infinity ? 120 : widget.height,
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Icon(
+            Icons.image_outlined,
+            size: 40,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
         ),
       ),
@@ -1262,30 +1469,53 @@ class _NetworkImageTile extends StatelessWidget {
 
   Widget _buildErrorWidget(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      height: height == double.infinity ? 120 : height,
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colorScheme.outline.withValues(alpha: 0.2),
-          width: 1,
+    return GestureDetector(
+      onTap: _retryLoad,
+      child: Container(
+        height: widget.height == double.infinity ? 120 : widget.height,
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: colorScheme.outline.withValues(alpha: 0.2),
+            width: 1,
+          ),
         ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.broken_image_outlined,
-            color: colorScheme.onSurfaceVariant,
-            size: 32,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Image unavailable',
-            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
-          ),
-        ],
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.broken_image_outlined,
+              color: colorScheme.onSurfaceVariant,
+              size: 32,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Image unavailable',
+              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.refresh_rounded,
+                  size: 14,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Tap to retry',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1295,7 +1525,8 @@ class _NetworkImageTile extends StatelessWidget {
       PageRouteBuilder(
         opaque: false,
         barrierColor: Colors.black,
-        pageBuilder: (_, _, _) => _FullscreenImage(url: url, heroTag: _heroTag),
+        pageBuilder: (_, _, _) =>
+            _FullscreenImage(url: _url, heroTag: _heroTag),
         transitionsBuilder: (_, animation, _, child) {
           return FadeTransition(opacity: animation, child: child);
         },

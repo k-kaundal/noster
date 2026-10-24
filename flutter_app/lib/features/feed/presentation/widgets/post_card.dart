@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
 import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
@@ -13,9 +14,11 @@ import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/boost/application/boost_providers.dart';
 import 'package:nostrfeed_mobile/features/boost/presentation/boost_sheet.dart';
+import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
 import 'package:nostrfeed_mobile/features/feed/application/post_actions.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/article_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
@@ -24,6 +27,36 @@ import 'package:nostrfeed_mobile/features/zap/application/quick_zap.dart';
 import 'package:nostrfeed_mobile/features/zap/presentation/zap_sheet.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:timeago/timeago.dart' as timeago;
+
+/// Resolve the event a kind-6/16 repost points to when the repost's own
+/// content is EMPTY (NIP-18 allows empty repost content — the target lives
+/// only in the `e` tag). Without this the card collapsed to nothing — the
+/// "this account's posts are all empty" bug for repost-heavy accounts.
+/// Store-first (no relay hit when we've already ingested the target), then
+/// a bounded relay fetch.
+final repostTargetProvider =
+    FutureProvider.family<NostrEvent?, NostrEvent>((ref, repost) async {
+  // The reposted event id is the LAST e-tag (NIP-18: the first e-tag is the
+  // reposted note for kind 6; kind 16 may carry several).
+  final eTags = repost.getTags('e');
+  if (eTags.isEmpty) return null;
+  final targetId = eTags.first;
+
+  // Store first — the feed ingests events into SQLite, so a target we've
+  // seen is free.
+  final cached = await EventStore.instance.eventById(targetId);
+  if (cached != null) return cached;
+
+  // Bounded relay fetch.
+  try {
+    final nostr = await initNostr(ref);
+    final ev = await nostr.fetchEventById(targetId);
+    if (ev != null) await EventStore.instance.ingest([ev]);
+    return ev;
+  } catch (_) {
+    return null;
+  }
+});
 
 /// A rich post card displaying a Nostr event with author info,
 /// rich content (links, hashtags, mentions, images), and action buttons.
@@ -73,11 +106,40 @@ class _PostCardState extends ConsumerState<PostCard> {
     // The embedded-event JSON parse is memoized per event id — a feed card
     // rebuilds on every provider update, and jsonDecode + NostrEvent.fromJson
     // per rebuild is scroll jank once the feed is long. See _RepostCache.
-    final repostedEvent = _RepostCache.extract(widget.event);
+    var repostedEvent = _RepostCache.extract(widget.event);
+
+    // A repost with EMPTY content (NIP-18 allows it) has no embedded JSON —
+    // the target lives only in the e-tag. Resolve it from the store/relays
+    // instead of rendering a blank card (the "repost-heavy account looks
+    // empty" bug).
+    final isRepostKind = widget.event.kind == 6 || widget.event.kind == 16;
+    if (repostedEvent == null && isRepostKind) {
+      final targetAsync = ref.watch(repostTargetProvider(widget.event));
+      final resolved = targetAsync.valueOrNull;
+      if (resolved != null && _isDisplayable(resolved)) {
+        repostedEvent = resolved;
+      } else if (targetAsync.isLoading) {
+        // Resolving the target — show a slim placeholder row, not a blank.
+        return const _RepostResolvingTile();
+      }
+      // If it resolved to null or non-displayable, fall through and render
+      // the repost shell below (author + "reposted" header) rather than
+      // collapsing entirely.
+    }
+
     final displayEvent = repostedEvent ?? widget.event;
     final isRepost = repostedEvent != null;
 
     if (!_isDisplayable(displayEvent)) {
+      return const SizedBox.shrink();
+    }
+
+    // Collapse the WHOLE card when there's nothing renderable — author +
+    // action bar with no body is the "name, no post" bug. Articles render
+    // via ArticleCard (own content path), so this applies to NoteContent
+    // kinds only.
+    if (displayEvent.kind != 30023 &&
+        !NoteContent.hasRenderableContent(displayEvent)) {
       return const SizedBox.shrink();
     }
 
@@ -100,18 +162,20 @@ class _PostCardState extends ConsumerState<PostCard> {
         reposterProfileAsync?.valueOrNull?.displayNameOrName ??
         _truncatedNpub(widget.event.pubkey);
 
-    // Use the batched engagement provider for counts
-    final engagementAsync = ref.watch(engagementProvider(displayEvent.id));
+    // Counts come from the LOCAL SQLite engagement index — the feed ingested
+    // a page's worth of likes/reposts/replies/zaps in ONE batched relay query,
+    // so this card reads a grouped SQL count instead of firing its own relay
+    // query (the old per-card `engagementProvider` did ~150 queries per feed).
+    final countsAsync = ref.watch(localEngagementProvider(displayEvent.id));
 
-    // Use the batched user-interactions provider to know if the user has
-    // already liked or reposted — single query for all interaction types.
+    // The user's own like/repost state still comes from the relay (it's a
+    // per-user query the local index doesn't store).
     final interactionsAsync = ref.watch(
       userInteractionsProvider([displayEvent.id]),
     );
 
     final followsAsync = ref.watch(followsProvider);
     final bookmarkedIdsAsync = ref.watch(bookmarkedIdsProvider);
-    final zapReceiptsAsync = ref.watch(zapReceiptsProvider(displayEvent.id));
     final auth = ref.watch(authStateProvider);
 
     final profile = profileAsync.valueOrNull;
@@ -120,16 +184,16 @@ class _PostCardState extends ConsumerState<PostCard> {
     final authorPicture = profile?.picture;
     final timeAgo = _TimeAgoCache.format(displayEvent.createdAt);
 
-    // Counts from engagement provider
-    final engagement = engagementAsync.valueOrNull ?? const EventEngagement();
+    // Counts from the local engagement index.
+    final counts = countsAsync.valueOrNull ?? EventCounts();
 
     // Apply optimistic deltas
-    final replyCount = engagement.replies;
+    final replyCount = counts.replies;
     final reactionCount =
-        engagement.reactions +
+        counts.reactions +
         (_optimisticLiked == true ? 1 : (_optimisticLiked == false ? -1 : 0));
     final repostCount =
-        engagement.reposts +
+        counts.reposts +
         (_optimisticReposted == true
             ? 1
             : (_optimisticReposted == false ? -1 : 0));
@@ -142,9 +206,15 @@ class _PostCardState extends ConsumerState<PostCard> {
         _optimisticReposted ??
         (interactions?.reposts[displayEvent.id] ?? false);
 
-    // Zap data
-    final zapReceipts = zapReceiptsAsync.valueOrNull ?? [];
-    final zapCount = zapReceipts.length;
+    // Zap count comes from the local index too (9735 receipts were ingested
+    // with the rest of the engagement batch). The sats total still needs the
+    // receipts themselves — that stays a relay fetch, but only when the zap
+    // button shows amounts.
+    final zapCount = counts.zaps;
+    final zapReceiptsAsync = zapCount > 0
+        ? ref.watch(zapReceiptsProvider(displayEvent.id))
+        : null;
+    final zapReceipts = zapReceiptsAsync?.valueOrNull ?? [];
     final zapSats = zapReceipts.fold<int>(
       0,
       (sum, r) => sum + _zapAmountSats(r),
@@ -296,7 +366,15 @@ class _PostCardState extends ConsumerState<PostCard> {
               // ─── Content ───────────────────────────────────────
               // Articles (kind 30023) render as a compact preview card that
               // opens the full reader — never the full markdown inline.
-              if (verdict.action == FilterAction.warn)
+              // Sensitive-content display mode (user preference): hide /
+              // blur-until-tapped / allow. Default blur.
+              if (verdict.action == FilterAction.warn &&
+                  ref.watch(sensitiveModeProvider) ==
+                      SensitiveContentMode.hide)
+                const SizedBox.shrink()
+              else if (verdict.action == FilterAction.warn &&
+                  ref.watch(sensitiveModeProvider) ==
+                      SensitiveContentMode.blur)
                 _ContentWarningCover(
                   reason: verdict.reason,
                   child: displayEvent.kind == 30023
@@ -591,6 +669,39 @@ class _PostCardState extends ConsumerState<PostCard> {
   }
 }
 
+// ─── Repost-resolving placeholder ───────────────────────────────────
+
+/// A slim shimmer row shown while a repost's empty-content target is being
+/// fetched — never a blank gap in the feed.
+class _RepostResolvingTile extends StatelessWidget {
+  const _RepostResolvingTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          SkeletonCircle(radius: 22),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SkeletonLine(width: 120, height: 12),
+                SizedBox(height: 8),
+                SkeletonLine(height: 10),
+                SizedBox(height: 6),
+                SkeletonLine(width: 200, height: 10),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Post Options Menu ──────────────────────────────────────────────
 
 /// 3-dot menu on every post: Report (NIP-56, required by Google Play's
@@ -615,6 +726,13 @@ class _PostOptionsMenu extends ConsumerWidget {
       padding: EdgeInsets.zero,
       onSelected: (value) async {
         switch (value) {
+          case 'quote':
+            final auth = ref.read(authStateProvider);
+            if (!auth.isLoggedIn || auth.isReadOnly) {
+              AppToast.info(context, 'Log in to quote posts');
+              return;
+            }
+            context.push('/compose', extra: event);
           case 'boost':
             final auth = ref.read(authStateProvider);
             if (!auth.isLoggedIn || auth.isReadOnly) {
@@ -650,6 +768,16 @@ class _PostOptionsMenu extends ConsumerWidget {
         }
       },
       itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'quote',
+          child: Row(
+            children: [
+              Icon(Icons.format_quote_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Quote post'),
+            ],
+          ),
+        ),
         if (ref.watch(boostAvailableProvider).valueOrNull ?? false)
           const PopupMenuItem(
             value: 'boost',
@@ -930,6 +1058,10 @@ bool _isDisplayable(NostrEvent event) {
 
   final trimmed = event.content.trim();
   if (trimmed.isEmpty) return true; // Empty note is fine (e.g. media-only)
+
+  // Encrypted / token payloads (ecash, NIP-04/44 ciphertext) are NOT hidden
+  // — they render as a proper card (`EcashTokenCard`) in NoteContent, never
+  // as a base64 text wall. So they stay displayable here.
 
   // If it starts with `{`, it's almost certainly JSON, not a note.
   // Some clients embed JSON in kind 1 for machine-readable data — those

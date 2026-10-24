@@ -86,6 +86,17 @@ configurations.all {
 dependencies {
     // flutter_local_notifications requires core library desugaring.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+
+    // mobile_scanner's plugin class loads `com.google.mlkit.vision.common.
+    // InputImage` at REGISTRATION time. The barcode-scanning exclusion above
+    // strips the ~6 MB model but ALSO removes these vision-common classes —
+    // the plugin then throws NoClassDefFoundError inside
+    // GeneratedPluginRegistrant.registerWith, which DIES before registering
+    // sqflite and every later plugin (the "MissingPluginException: sqflite"
+    // crash — the real cause was mlkit, not sqflite). Provide the tiny
+    // vision-common classes (no model) so registration succeeds while the
+    // big model stays excluded.
+    implementation("com.google.mlkit:vision-common:17.3.0")
 }
 
 kotlin {

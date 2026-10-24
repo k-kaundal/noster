@@ -27,12 +27,13 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
 
   static const _suggestedRelays = [
     'wss://relay.damus.io',
-    'wss://relay.nostr.band',
     'wss://relay.primal.net',
     'wss://nos.lol',
-    'wss://nostr.wine',
     'wss://relay.snort.social',
     'wss://nostr.mom',
+    'wss://offchain.pub',
+    'wss://ditto.pub',
+    'wss://nostr.oxtr.dev',
     'wss://relay.nostrfeed.com',
   ];
 

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/providers/connectivity_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -164,9 +165,17 @@ class _FeedTabState extends ConsumerState<_FeedTab>
   }
 
   void _onScroll() {
-    // Infinite scroll: start loading the next page near the bottom.
-    if (_scrollController.position.pixels >
-        _scrollController.position.maxScrollExtent - 800) {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    // Guard against degenerate layouts (maxScrollExtent 0 or negative — an
+    // Android quirk during the first frames / keyboard open) that made the
+    // threshold negative and spammed loadMore, locking the scroll thread.
+    if (pos.maxScrollExtent <= 0) return;
+    // Infinite scroll: start loading the next page near the bottom. Clamp
+    // the trigger so Android's clamping overscroll (pixels can exceed
+    // maxScrollExtent during an over-fling) can't re-fire it mid-load.
+    if (pos.pixels > pos.maxScrollExtent - 800 &&
+        pos.pixels <= pos.maxScrollExtent + 1) {
       final notifier = widget.following
           ? ref.read(followingFeedNotifierProvider.notifier)
           : ref.read(globalFeedProvider.notifier);
@@ -177,19 +186,6 @@ class _FeedTabState extends ConsumerState<_FeedTab>
   NotifierProvider<FeedNotifier, FeedState> get _provider => widget.following
       ? followingFeedNotifierProvider
       : globalFeedProvider;
-
-  /// The AI promo shows once in the "For You" feed (not Following), only when
-  /// the feature is configured, after the first few posts so it isn't the
-  /// very first thing a scroller sees.
-  bool _showAiPromo(int eventCount) =>
-      !widget.following &&
-      ref.watch(aiAvailableProvider) &&
-      eventCount > _aiPromoPosition;
-
-  static const _aiPromoPosition = 3;
-
-  int _aiPromoIndex(int eventCount) =>
-      eventCount > _aiPromoPosition ? _aiPromoPosition : 0;
 
   @override
   Widget build(BuildContext context) {
@@ -267,20 +263,20 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                     key: const ValueKey('feed'),
                     controller: _scrollController,
                     padding: const EdgeInsets.only(top: 4, bottom: 180),
+                    // Always-scrollable so pull-to-refresh works even on a
+                    // short feed; bouncing on iOS, clamping on Android —
+                    // the platform default reads naturally on each. Explicit
+                    // physics avoids the "scroll gets stuck" Android quirk
+                    // where an unset physics + heavy cards lock the thread.
+                    physics: const AlwaysScrollableScrollPhysics(),
                     // Build a little ahead of the viewport so media/cards are
                     // ready before they scroll in — smooths fast flings.
                     scrollCacheExtent: const ScrollCacheExtent.pixels(800),
                     itemCount:
-                        feed.events.length +
-                        (_showAiPromo(feed.events.length) ? 1 : 0) +
-                        (feed.isLoadingMore ? 1 : 0),
+                        feed.events.length + (feed.isLoadingMore ? 1 : 0),
                     itemBuilder: (context, index) {
-                      final promoIndex = _aiPromoIndex(feed.events.length);
-                      final showPromo = _showAiPromo(feed.events.length);
-
                       // The trailing "loading more" spinner is last.
-                      if (index >=
-                          feed.events.length + (showPromo ? 1 : 0)) {
+                      if (index >= feed.events.length) {
                         return const Padding(
                           padding: EdgeInsets.all(24),
                           child: Center(
@@ -292,30 +288,29 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                           ),
                         );
                       }
-                      // The AI promo card sits a few posts down, once.
-                      if (showPromo && index == promoIndex) {
-                        return const _AiPromoCard();
-                      }
-                      final eventIndex =
-                          showPromo && index > promoIndex ? index - 1 : index;
                       return PostCard(
                         // A stable key lets Flutter reuse the card's element +
                         // optimistic-like state as the list grows, instead of
                         // rebuilding every card from scratch on each page.
-                        key: ValueKey(feed.events[eventIndex].id),
-                        event: feed.events[eventIndex],
+                        key: ValueKey(feed.events[index].id),
+                        event: feed.events[index],
                       );
                     },
                   ),
           ),
 
           // Offline / error banner — a slim strip, not a replacement screen.
+          // Shows "offline" ONLY when connectivity actually reports offline;
+          // an online-but-failed refresh (relays unreachable from the
+          // emulator/network) gets an honest "couldn't refresh" message
+          // instead of a wrong "you're offline" (the banner-stuck bug).
           if (feed.error != null && feed.events.isNotEmpty)
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: _OfflineBanner(
+                offline: ref.watch(isOfflineProvider),
                 onRetry: () => ref.read(_provider.notifier).refresh(),
               ),
             ),
@@ -351,8 +346,9 @@ class _FeedTabState extends ConsumerState<_FeedTab>
 
 /// Slim offline/error strip at the top — the feed behind it stays usable.
 class _OfflineBanner extends StatelessWidget {
+  final bool offline;
   final VoidCallback onRetry;
-  const _OfflineBanner({required this.onRetry});
+  const _OfflineBanner({required this.offline, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -365,12 +361,19 @@ class _OfflineBanner extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              Icon(Icons.cloud_off_rounded,
-                  size: 16, color: scheme.onErrorContainer),
+              Icon(
+                offline ? Icons.cloud_off_rounded : Icons.sync_problem_rounded,
+                size: 16,
+                color: scheme.onErrorContainer,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'You\'re offline — showing saved posts',
+                  // Honest message: "offline" only when connectivity says so,
+                  // otherwise the refresh just failed (relays unreachable).
+                  offline
+                      ? 'You\'re offline — showing saved posts'
+                      : 'Couldn\'t refresh — tap to retry',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -421,95 +424,6 @@ class _NewPostsPill extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// In-feed discovery card for the AI assistant — a branded gradient tile
-/// slipped into the For You feed once, so the flagship feature finds users
-/// who never open the drawer.
-class _AiPromoCard extends ConsumerWidget {
-  const _AiPromoCard();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final trialLeft = ref.watch(aiTrialRemainingProvider);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Material(
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            context.push('/ai');
-          },
-          child: Ink(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [scheme.primary, scheme.tertiary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.auto_awesome_rounded,
-                      color: Colors.white,
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Ask NostrFeed AI',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          trialLeft > 0
-                              ? '$trialLeft free messages today — summarize '
-                                  'threads, draft posts, generate images'
-                              : 'Summarize threads, draft posts, generate '
-                                  'images — pay per message in sats',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.9),
-                            fontSize: 12.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ],
-              ),
-            ),
           ),
         ),
       ),

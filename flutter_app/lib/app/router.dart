@@ -149,7 +149,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       // Compose
-      GoRoute(path: '/compose', builder: (_, _) => const ComposeScreen()),
+      GoRoute(
+        path: '/compose',
+        builder: (_, state) => ComposeScreen(quoted: state.extra as NostrEvent?),
+      ),
 
       // Search (from drawer or chat)
       GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),

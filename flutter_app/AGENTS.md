@@ -205,14 +205,14 @@ over ~100 lines.
   (Discover / People / Money / You) — never a flat 20+ item list. Detail
   routes use `DetailScaffold` (back button + title). Never hand-roll a drawer
   button inside a screen (it resolves to the inner drawer-less Scaffold).
-- **AI Assistant visibility** (the flagship feature — surface it everywhere,
-  gated on `aiAvailableProvider` so keyless builds never tease it): the shell
-  AppBar has a ✨ button next to Search, the create sheet leads with "Ask AI",
-  the Home feed's tab row has a compact ✨ shortcut button next to the avatar,
-  and an `_AiPromoCard` is injected once into the For You feed at position 3
-  (For You only, never Following — the ListView indices shift by one after
-  it). Drawer entry lives under Discover → AI Assistant; the guide is in Docs
-  (route `/ai`). The AI chat itself is a detail route outside the shell.
+- **AI Assistant visibility** (gated on `aiAvailableProvider` so keyless
+  builds never tease it): the shell AppBar has a ✨ button next to Search,
+  the create sheet leads with "Ask AI", and the Home feed's tab row has a
+  compact ✨ shortcut button next to the avatar. Drawer entry lives under
+  Discover → AI Assistant; the guide is in Docs (route `/ai`). The AI chat
+  itself is a detail route outside the shell. **No in-feed promo card** —
+  an `_AiPromoCard` used to be injected into the For You feed; it was
+  removed (read as an ad). Don't re-add promo cards to the feed.
   NOTE: never make AI a third home Tab — the TabController's length is fixed
   at init while AI availability resolves async (recreating it mid-build
   crashes `SingleTickerProviderStateMixin`).
@@ -237,6 +237,15 @@ over ~100 lines.
   - Bottom sheets → `AppSheet.show`; confirms/alerts → `AppDialog.confirm/info`
 - **Design tokens**: spacing → `AppSpacing`; timeouts → `AppDurations`;
   status colors → `AppStatusColors`; brand gradient → `AppTheme.brandGradient`.
+- **Brand color = ice blue** (`core/theme/app_theme.dart`), Primal-style.
+  The schemes are HAND-SPECIFIED (never `ColorScheme.fromSeed` — M3's seed
+  algorithm skews violet→blue and picks murky surfaces, the original
+  "bluish-muddy" complaint). Light mode: deep ocean blue `#0A66C2` primary
+  on ice-white `#F7FAFD`; dark mode: bright ice blue `#4FA3E8` on deep
+  ocean-charcoal `#0B0F14`. All text pairs pass WCAG AA. Change the brand by
+  editing `_brand`/`_brandDark` only — the app uses `colorScheme.*` tokens
+  throughout, so it re-themes at once. (History: violet seed → Lightning
+  amber → ice blue; the first two were reverted on review.)
 - **Motion (ADR-0003)**: every animation uses `AppMotion` tokens (durations,
   curves, stagger) — never magic numbers. Cheap approaches first: Hero +
   implicit animations + go_router `appTransitionPage` (0 KB);
@@ -257,6 +266,127 @@ over ~100 lines.
   `AnimationController` or an unmemoized `jsonDecode`/regex/`normalize` in a
   feed card's `build`. The feed `ListView` also uses stable `ValueKey`s +
   `scrollCacheExtent` so Flutter reuses elements as the list grows.
+- **Avatars crossfade, never flicker** (`core/widgets/safe_image.dart`):
+  `SafeAvatar` uses `OctoImage` so the photo FADES IN OVER the initial
+  letter — the old `CachedNetworkImage(placeholder: fallback)` hard-swapped
+  letter→photo every load (the "shows a small K then the image" flicker).
+  Errors still fall back to the initial; never remove the error boundary.
+- **Media-only / kind-20 posts render their media** (`note_content.dart`):
+  NIP-68/NIP-92 media can live ONLY in `imeta` tags with empty `content`
+  (picture-first clients). `splitForRender` merges imeta media URLs into the
+  gallery, `_ParsedNote` falls back to the `title` tag as caption, and the
+  card only collapses when there's genuinely nothing (no text AND no
+  media). Returning `SizedBox.shrink()` on empty content alone was the
+  "post shows a name, no content" bug.
+- **The WHOLE card collapses when there's nothing to show**
+  (`NoteContent.hasRenderableContent`): a card with author + action bar but
+  no body reads as a bug ("name, no post"), so PostCard returns
+  `SizedBox.shrink()` for non-article kinds when there's no text, no media,
+  AND no quote. Articles (30023) render via ArticleCard and are exempt.
+  Multilingual content (CJK/Arabic/Hindi/emoji) is NOT stripped —
+  `sanitizeText` only drops lone UTF-16 surrogates, and the content
+  filter's homoglyph fold does NOT false-positive genuine non-Latin text
+  (verified). Never add ASCII-only filtering — it's the
+  "non-English posts vanish" trap.
+- **Thread context** (`thread_screen.dart`): opening a reply shows an
+  "In reply to @name" banner (`_ReplyContextBanner`, parent resolved
+  store-first) above the post, and replies attach to the thread ROOT.
+- **Encrypted/token payloads render as CARDS, never base64 walls**
+  (`core/utils/encrypted_content.dart` + `ecash_token_card.dart`):
+  `classifyEncrypted` returns the payload class (nip04 `?iv=`, ecash
+  `cashuA/B`, colonCipher, bareBase64, schemePayload) — prose with spaces,
+  URLs, and multilingual text are NEVER classified. `NoteContent` renders
+  `EcashTokenCard`: Cashu `cashuA` is decoded to amount+mint (base64 JSON,
+  `decodeEcash`), `cashuB` (CBOR) shows "ecash token (v4)", other ciphertext
+  shows a compact "Encrypted content" card with a copy button. Nothing is
+  hidden and nothing dumps base64 into the feed.
+- **scheme://action/base64 app payloads decode to cards**
+  (`decodeSchemePayload`): `bala://offer/<base64-JSON>` and similar
+  app-specific payloads (WebRTC call offers, etc.) render a "Call offer" /
+  "{scheme} {action}" card with a decoded summary (name · room · N
+  connection candidates), Copy-offer + Join-call actions. Plain https URLs
+  are never treated as scheme payloads. **Join = app handoff, not native**:
+  the payload is a proprietary WebRTC signal (JSON offer + a `BALA`-magic
+  binary blob). Joining natively would need `flutter_webrtc` + reverse-
+  engineering an undocumented binary protocol — out of scope. The "Join
+  call" button launches the `bala://` URI; it only joins when the owning
+  app is installed, otherwise it tells the user and copies the offer
+  (never a silent no-op). Don't fake native call support.
+- **Feed ordering clamps future timestamps** (`FeedNotifier._orderTs`): a
+  post with a future `created_at` (clock skew or a manipulated/boosted
+  post) is clamped to now+tolerance (15 min) for ORDERING — naive
+  created_at sort pinned such a post at the TOP of the feed forever (the
+  "one post stuck on top" bug). Applies to both the merge and pagination.
+- **Storage is bounded** (`EventStore.prune`): the SQLite store has a row
+  cap (3000 events), a BYTE budget (~24 MB of content), and a profile cap
+  (1500) — like X/FB, least-recently-used content evicts. Runs
+  fire-and-forget after ingests (never on the render path). `storeBytes()` /
+  `counts()` expose diagnostics. Never let the cache grow to fill the
+  user's storage.
+- **Replies are NOT main-feed posts** (`FeedNotifier._isFeedPost`): a kind-1
+  reply (thread parent set) is filtered from For You + Following page
+  fetches, the live tail pill, and the cold-start cache — it read as a
+  context-free "post". Replies still live in threads, the profile Replies
+  tab, and the store. Quotes (q tag) and reposts stay (standalone content).
+- **Empty-content reposts resolve their target** (`post_card.dart`): NIP-18
+  allows kind-6/16 reposts with EMPTY content — the reposted event lives
+  only in the `e` tag. `repostTargetProvider` fetches it (SQLite store
+  first, then a bounded relay fetch, ingested back). While resolving, the
+  card shows a `_RepostResolvingTile` shimmer row — NEVER a blank card. An
+  unresolved/non-displayable target falls through to the repost shell
+  (author + "reposted" header). A repost-heavy account rendering as ALL
+  EMPTY posts was this bug. Profile tabs fetch kinds 1/6/16/20/21/22/30023
+  via `userPostsProvider` (kind-1-only hid picture-first accounts).
+- **Threads & quotes (NIP-10/18)** (`core/models/nostr_models.dart`):
+  - `isReply` = kind 1 AND (rootId or replyToId set) — an `e`-tag
+    "mention" or a `q` tag is a CITATION, never a thread ref (the old
+    `eventRefs.isNotEmpty` rule hid quote posts from the Posts tab).
+  - `rootId`/`replyToId` implement NIP-10 marked tags (preferred) with the
+    positional fallback (deprecated): marked `root`/`reply` win; unmarked →
+    first is root, last is parent. Direct reply-to-root = single `root` tag.
+  - `quoteRefs`/`quoteId` read the `q` tag (NIP-18 quote reposts);
+    `quoteId` only yields 64-hex event ids (a `q` can be an address).
+  - Quotes render as `QuoteCard` (`quote_card.dart`) — an embedded
+    X-style preview from the `q` tag AND `nostr:note1…/nevent1…` content
+    refs, resolved store-first then bounded relay fetch (never a bare "🔗
+    note abc…" link). A quote post is never also a link-preview post.
+  - `createReply` writes NIP-10 marked tags with a real relay hint (our
+    first connected relay, not `""`) and copies the parent's `p` tags +
+    author so the whole thread is notified; it takes `rootId` +
+    `notifyPubkeys`. `createRepost` carries the relay hint on the `e` tag
+    (NIP-18 REQUIRED) and only writes the `k` tag for kind-16 (never for
+    kind 6 — that implies kind 1).
+  - `ThreadScreen` attaches replies to the thread ROOT (`rootId ?? id`) —
+    opening a mid-thread reply shows the whole conversation.
+  - **Quote POSTING** (`compose_screen.dart` + `NostrService.createQuotePost`):
+    the post 3-dot menu → "Quote post" pushes `/compose` with the event; the
+    composer shows the `QuoteCard` preview and publishes a kind-1 with the
+    quoted `nostr:note1…` inline + the factory's `q`/`p` tags (+ hashtags).
+    A quote is a NOTE, never a poll (mode switch hidden on quotes).
+- **Polls (NIP-88)**: `NostrService.createPoll(question, options, multipleChoice,
+  endsAt)` writes kind 1068 (`option`/`polltype`/`endsAt`/`relay` tags);
+  the composer has a Post/Poll `SegmentedButton` (question + 2–4 options,
+  single/multiple, duration). Voting already existed (kind 1018 → the
+  poll's declared relays). The feed fetches kind 1068 so polls show inline.
+- **Default relays** (`core/config/env.dart`): our own relay
+  (`wss://relay.nostrfeed.com`) FIRST, then a curated set of HEALTHY, free,
+  well-run relays (damus, nos.lol, primal, snort, nostr.mom, offchain,
+  ditto, oxtr) — sourced from the health-checked awesome-nostr-relays
+  catalogue + nostr.watch + NostrMash activity rankings. Deliberately
+  excludes adult-oriented relays (store compliance) AND dead relays:
+  **relay.nostr.band has been offline a long time** — never re-add it (a
+  relay that never connects is a top reason a fresh setup looks broken;
+  metadata indexing moved to purplepag.es / indexer.coracle / yabu). Users
+  add more from Settings → Relays (read/write toggles + NIP-65 sync);
+  NIP-65 outbox routing layers per-user relays on top.
+- **Image CDN optimization** (`MediaUtils.optimizedImageUrl`): media URLs on
+  resize-capable FREE Nostr CDNs (nostr.build / blossom.band, `?w=` param)
+  are rewritten to a resized variant before load — ~80-90% less bandwidth
+  per image. Feed tiles request 1080 px; avatars 192; banners 1200. This is
+  the network half of the ADR-0004 size budget (`memCacheWidth` is the
+  decode half). Non-CDN hosts are left unchanged. Other free media infra:
+  media.nostr.band profile-pic thumbs, Blossom servers (uploads), BUD-03
+  sha256 re-hosting for dead media URLs.
 - **Kind numbers (ADR-0002)**: use `NostrKinds.*` from
   `core/nostr/kinds.dart` — never a magic kind literal (`kind: 5`,
   `37001`, `kind == 9735`). New kinds go in the registry first.
@@ -400,6 +530,22 @@ over ~100 lines.
   fallback uses it.
 - **Async safety**: guard `setState`/context use after async gaps with
   `mounted`; wrap fire-and-forget futures in `unawaited()`.
+- **Event signature verification (trust boundary)**: relays are UNTRUSTED
+  transport — a relay can inject a forged post under anyone's pubkey. Every
+  incoming EVENT is verified at the pool (`RelayConnection._handleMessage`)
+  BEFORE it reaches a screen: `NostrEvent.isValid` recomputes the id
+  (commits to the exact content) AND Schnorr-verifies the signature
+  (BIP-340). Forged/tampered events are dropped silently. Never render an
+  event that hasn't crossed this boundary; never verify on the render path
+  (too late). Tests pin genuine-valid + forged/tampered/malformed-rejected.
+- **Key storage (the nsec IS the identity — no reset, no support desk)**:
+  `flutter_secure_storage` (hardware-backed), iOS Keychain item is
+  `KeychainAccessibility.unlocked` (device-only, NOT migrated to a new
+  device or into backups — a stolen backup can't lift the key). Never log
+  or display the nsec, never store it in plaintext prefs. NIP-44 for all
+  new encryption (never NIP-04); gift-wrapped DMs (NIP-17). NIP-46 remote
+  signing / NIP-49 ncryptsec are the upgrade path for not holding the key
+  on-device (see Premium → Nostr Bunker).
 - **Secrets**: never hardcode — use `--dart-define` with `Env` class. Real
   values live in the gitignored `.env` (see `.env.example`), wired in via
   `--dart-define-from-file=.env`. Two key kinds only: receive-only LNbits
@@ -523,15 +669,43 @@ over ~100 lines.
 
 ## Feed architecture (offline-first, FB/Insta-style)
 
-- **FeedStore** (`features/feed/providers/feed_store.dart`): bounded JSON
-  cache in SharedPreferences (300 events per feed). Cold start renders the
-  cache on the first frame — posts, not skeletons.
+- **EventStore** (`core/db/event_store.dart`): the normalized SQLite store —
+  the single source of truth for feed content, like X/FB's on-device cache.
+  Three tables: `events` (one row per event, id-keyed), `event_refs` (the
+  engagement index — one row per event→`e`-tag target, so "who liked/
+  reposted/replied to X" is a local grouped COUNT, not a relay query), and
+  `profiles`. All writes are `INSERT OR REPLACE` keyed on stable ids, so the
+  page fetch and the live tail can both ingest without deduping in Dart.
+  `prune()` keeps it bounded. Cold start reads the feed from here (indexed,
+  survives >300 events); the legacy JSON `FeedStore` is migrated into SQLite
+  on first run and dropped.
+- **Batched data layer** (the "~150 relay queries per feed" fix): a page of
+  50 posts needs ONE relay fetch for the posts, ONE batched engagement fetch
+  (`_syncEngagement` → ingested into `event_refs`), and ONE batched profile
+  prefetch (`SocialRepository.prefetchProfiles` → fills the TTL cache).
+  PostCards then read counts from `localEngagementProvider` (a local SQL
+  grouped count, rebuilt only when `engagementVersionProvider` bumps) and
+  avatars/names from the warm profile cache — instead of each card firing
+  its own relay query. Both warm paths are fire-and-forget so posts render
+  immediately and counts/avatars pop in as the batch lands.
+- **FeedStore** (`features/feed/application/feed_store.dart`): legacy JSON
+  cache in SharedPreferences. Kept only for the one-time migration into
+  EventStore; new reads/writes go through SQLite.
 - **FeedNotifier** (`feed_notifier.dart`): `FeedState(events, isRefreshing,
   hasMore, isLoadingMore, newCount, error, lastSyncedAt)`. Pipeline:
-  disk → silent network refresh (merges, no re-order, no skeleton) →
-  persist. Live subscription counts new posts into `newCount` (the "N new
-  posts" pill — NEVER auto-inserts, that yanks scroll position).
-  `loadMore()` walks the `until` cursor for infinite scroll.
+  disk → silent network refresh (merges, no skeleton) → persist. Live
+  subscription counts new posts into `newCount` (the "N new posts" pill —
+  NEVER auto-inserts, that yanks scroll position). `loadMore()` walks the
+  `until` cursor for infinite scroll. Three rules that keep the feed
+  FB/Insta-smooth:
+  - **Merge never re-orders.** `_merge` inserts genuinely-new events by
+    time into the EXISTING order — visible posts never jump (NIP-17
+    backdated/clock-skewed posts used to shuffle the list mid-scroll).
+  - **Follows resolve once.** The Following feed's author list is fetched
+    a single time per session (`_resolveFollows`), not per page — and both
+    For You + Following have a live tail (`restartLive`).
+  - **`refresh()`/`loadMore()` are serialized** through `_inFlight` — a
+    pull-to-refresh near the bottom can't double-fetch a page.
 - **Providers**: `globalFeedProvider`, `followingFeedNotifierProvider` —
   NotifierProviders (not autoDispose). Refresh after posting goes through
   `.refresh()` (silent merge), never `ref.invalidate` (that flickered).
@@ -539,7 +713,39 @@ over ~100 lines.
   usable) + new-posts pill + pagination spinner. Tabs keepAlive.
 - **Connectivity** (`core/providers/connectivity_providers.dart`):
   `connectivity_plus` stream → `isOfflineProvider`; `connectivityWatcherProvider`
-  reconnects dead relays on offline→online (watched at app root).
+  on offline→online does THREE things: reconnect dead relays, evict failed
+  image loads (`PaintingBinding.imageCache.clearLiveImages()` — offline
+  failures park in CachedNetworkImage's error state and never retry alone),
+  and restart the live tail + silently refresh both feeds. App RESUME does
+  the same via `didChangeAppLifecycleState` (feeds + `restartLive`).
+  **Android gotcha**: Android reports an EMPTY connectivity list on radio
+  hand-off/VPN churn, and `every()` on an empty list is TRUE — so
+  `_isOfflineResults` treats empty as OFFLINE (the old code read empty as
+  online → the "internet on/off checker wrong on Android" bug). The watcher
+  also tracks the last offline state across the listener so a null/empty
+  `previous` doesn't swallow the first real recovery.
+- **Android image/scroll quirks**: (1) every network image sends a real
+  browser `User-Agent` + `Accept` header — some CDNs/hosts 403 the default
+  Dart (empty) UA on Android but serve iOS fine (a top cause of "images
+  load on iOS, fail on Android"). Applied in `_NetworkImageTile`,
+  `SmartNetworkImage`, and `SafeAvatar` (via
+  `CachedNetworkImageProvider(headers:)` — OctoImage has no httpHeaders
+  param). (2) the feed `ListView` uses explicit
+  `AlwaysScrollableScrollPhysics` + a guarded infinite-scroll trigger
+  (`maxScrollExtent > 0`, clamped pixels) — an unset physics + degenerate
+  layout threshold made Android spam loadMore and lock the scroll thread.
+- **Feed images self-heal** (`_NetworkImageTile` in `note_content.dart`):
+  a failed load auto-walks the NIP-92 `fallback` URLs, then shows a
+  tap-to-retry tile (evicts the parked failure + re-resolves) — a flaky
+  host/CDN no longer kills the tile for the session. Loading shows a
+  shimmer sweep (not a bare spinner); error shows "Tap to retry".
+- **Android cleartext images**: `android/app/src/main/res/xml/
+  network_security_config.xml` + the manifest's
+  `android:networkSecurityConfig` allow cleartext for media loads. Nostr
+  images come from thousands of independent hosts, many plain-HTTP — Android
+  9+ blocks cleartext by default, which is exactly why images failed "on
+  Android side" while iOS showed them. Keys/signing stay local; cleartext
+  only ever carries public images. Never remove this config.
 - **Profiles**: `profileProvider` is keepAlive (NOT autoDispose) — the
   10-min `profileCache` handles staleness; disposing on scroll-away was
   the avatar flicker. `userPostsProvider` is also keepAlive (profile tabs
@@ -551,6 +757,22 @@ over ~100 lines.
   `appVersionProvider` read the platform bundle (pubspec `version:`) via
   `package_info_plus`. The drawer footer and Settings → App Version use it
   — NEVER hardcode a version string (the old `v1.0.0` lied on day two).
+
+## Soft update check (non-blocking)
+
+- `features/settings/application/app_update_service.dart`: fetches a tiny
+  JSON manifest (`UPDATE_MANIFEST_URL`, default
+  `https://nostrfeed.com/app-version.json` — template at
+  `web/app-version.json`), compares semantic version + build number, and
+  exposes an `AppRelease` when the running build is older. **Direct store
+  links**: Android opens `market://details?id=com.nostrfeed.nostrfeed_mobile`
+  (web fallback); iOS opens `itms-apps://apps.apple.com/app/id<APPLE_ID>`
+  (set the numeric App ID in `AppUpdateService._appleId` after listing).
+- **NEVER force-update.** The `_UpdateAvailableBanner` sits at the top of
+  the drawer (dismissible "Later" per version, persisted), and re-checks on
+  app resume. Offline/failure → NO banner (never a false alarm). Publish
+  the manifest on each release (bump `version`/`buildNumber`/`notes`); the
+  banner appears to users on older builds without blocking them.
 
 ## QR flows (scan + share)
 
@@ -653,6 +875,34 @@ over ~100 lines.
 - **Store compliance**: Play UGC + Apple 1.2 require hidden-by-default
   explicit content, report + block. Report dialog is NIP-56 (child safety
   first); block is local + NIP-51 mute list.
+- **Anti-manipulation feed ranking** (`features/explore/domain/feed_ranking.dart`):
+  Trending/Discover rank on signals that are EXPENSIVE TO FAKE, not raw
+  engagement counts (a bot cluster can inflate "most liked"). The formula
+  (validated by `feed_ranking_test.dart`): **unique engagers dominate**
+  (deduped pubkeys — 50 fresh-key likes ≈ 1-2 real engagers), raw
+  reactions/reposts are discounted + capped (bot upside bounded), **zaps
+  weigh 1.5×** (they cost sats — the strongest anti-spam signal), freshness
+  decays (HN-style), and a **per-author diversity cap** stops one author
+  dominating. `EventEngagement.uniqueEngagers` (deduped) is the key input —
+  rank on it, never on raw `score`. Safety/moderation is a HARD exclusion
+  applied by the caller before ranking — popularity never overrides a
+  filter verdict.
+- **Sensitive-content display preference** (`sensitiveModeProvider`,
+  Settings → Content filters): the blueprint's three-option user layer —
+  `hide` (collapse), `blur` (tap-to-reveal `_ContentWarningCover`, the
+  default), `allow` (show). Applies to NIP-36 warn verdicts (author-tagged
+  OR detector-flagged). Never render the sensitive image under an overlay —
+  the cover REPLACES it (thumbnails/previews must not leak it either).
+- **Flood / duplicate-post filter** (`core/moderation/flood_detector.dart`):
+  keeps the platform from drowning in "same post every few minutes" spam
+  (the bala-offer / token-drop floods). Three signals, judged client-side in
+  `FeedNotifier._applyFlood` + the live tail: **author flood** (same author,
+  same normalized content ≥3× in 30 min), **spray** (same content from ≥4
+  DISTINCT authors in 30 min — catches disposable-key waves), and
+  **rapid-fire** (one author ≥8 posts in 5 min regardless of content).
+  `contentKey` normalizes trim/whitespace/case/trailing-punct so near-
+  duplicates cluster. Legit/distinct posts pass through (pinned by tests);
+  kind ≠1 events are never flood-judged. Bounded in-memory LRU (no disk).
 
 ## Post rendering edge cases (the "empty post" family)
 
