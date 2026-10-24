@@ -1,7 +1,7 @@
 {
-  "version": "1.2.1",
-  "buildNumber": 8,
-  "notes": "Android fixes: camera scanner, offline detection, feed stability",
+  "version": "1.2.2",
+  "buildNumber": 9,
+  "notes": "Fix profile & drawer banners, pull-to-refresh, feed stability on Android",
   "playStoreUrl": "https://play.google.com/store/apps/details?id=com.nostrfeed.nostrfeed_mobile",
   "appStoreUrl": "https://apps.apple.com/app/id0000000000"
 }

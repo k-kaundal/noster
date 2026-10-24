@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
@@ -508,6 +509,7 @@ class _ImageSection extends StatelessWidget {
               clipBehavior: Clip.antiAlias,
               child: hasImage
                   ? CachedNetworkImage(
+                      httpHeaders: kImageHttpHeaders,
                       imageUrl: url,
                       fit: BoxFit.cover,
                       placeholder: (_, _) => Center(

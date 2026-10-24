@@ -8,6 +8,7 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/live/application/live_providers.dart';
 import 'package:nostrfeed_mobile/features/live/domain/live_event.dart';
 import 'package:nostrfeed_mobile/features/zap/presentation/zap_sheet.dart';
@@ -189,6 +190,7 @@ class _LiveRoomScreenState extends ConsumerState<LiveRoomScreen> {
                   ? VideoPlayer(_videoController!)
                   : widget.event.image != null
                       ? CachedNetworkImage(
+                          httpHeaders: kImageHttpHeaders,
                           imageUrl: widget.event.image!,
                           fit: BoxFit.cover,
                           errorWidget: (_, _, _) => const _VideoFallback(),

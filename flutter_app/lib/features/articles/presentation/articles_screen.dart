@@ -13,6 +13,7 @@ import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/articles/presentation/article_editor_screen.dart';
 import 'package:nostrfeed_mobile/features/zap/presentation/zap_sheet.dart';
 import 'package:share_plus/share_plus.dart';
@@ -114,6 +115,7 @@ class _ArticleCard extends ConsumerWidget {
           children: [
             if (image != null)
               CachedNetworkImage(
+                httpHeaders: kImageHttpHeaders,
                 imageUrl: image,
                 height: 160,
                 width: double.infinity,
@@ -468,6 +470,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: CachedNetworkImage(
+                  httpHeaders: kImageHttpHeaders,
                   imageUrl: image,
                   width: double.infinity,
                   fit: BoxFit.cover,
@@ -576,6 +579,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: CachedNetworkImage(
+                      httpHeaders: kImageHttpHeaders,
                       imageUrl: config.uri.toString(),
                       fit: BoxFit.cover,
                       placeholder: (_, _) => Container(

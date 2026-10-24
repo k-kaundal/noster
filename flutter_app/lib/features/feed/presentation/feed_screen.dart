@@ -220,7 +220,9 @@ class _FeedTabState extends ConsumerState<_FeedTab>
     }
 
     return RefreshIndicator(
-      onRefresh: () => ref.read(_provider.notifier).refresh(),
+      // refreshFromPull clears any stuck refresh flag from a prior hung
+      // fetch first, so a pull ALWAYS gets a fresh attempt (never blocked).
+      onRefresh: () => ref.read(_provider.notifier).refreshFromPull(),
       child: Stack(
         children: [
           // Skeleton → content cross-fade (ADR-0003): the first load is the
