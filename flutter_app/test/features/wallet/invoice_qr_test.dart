@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/features/wallet/widgets/invoice_qr.dart';
+import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/invoice_qr.dart';
 
 void main() {
   const bolt11 =
@@ -16,9 +16,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // QR + invoice + copy button all render.
+    // QR + invoice + copy/share buttons all render.
     expect(find.text(bolt11), findsOneWidget);
-    expect(find.text('Copy invoice'), findsOneWidget);
+    expect(find.text('Copy'), findsOneWidget);
+    expect(find.text('Share'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

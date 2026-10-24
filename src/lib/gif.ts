@@ -61,10 +61,11 @@ const KLIPY_BASE = 'https://api.klipy.com/v2';
  * The Klipy API key.
  *
  * Client-side by design — Klipy's model is per-IP rate limiting, not
- * per-key secrecy, which is the same model GIPHY uses. The test key covers
- * development; a production key is requested from their partner panel.
+ * per-key secrecy, which is the same model GIPHY uses. Comes from
+ * `VITE_KLIPY_API_KEY` in the gitignored `.env` — never hardcode a key here.
+ * GIF search is hidden when no key is configured.
  */
-const KLIPY_KEY = import.meta.env.VITE_KLIPY_API_KEY ?? 'C0IgkB77GJXE6vUXnPhAuOoAZKVhLOMx';
+const KLIPY_KEY = import.meta.env.VITE_KLIPY_API_KEY ?? '';
 
 function readGif(result: KlipyResult): GifResult | null {
   // Two response shapes: featured (Tenor-compatible) and search (Klipy native)
@@ -96,11 +97,15 @@ function readGif(result: KlipyResult): GifResult | null {
   return null;
 }
 
+/** True when a Klipy key is configured — the picker hides GIFs otherwise. */
+export const gifsEnabled = KLIPY_KEY.length > 0;
+
 /** Trending GIFs, which is what the picker opens to before anybody types. */
 export async function fetchTrendingGifs(
   limit = 30,
   signal?: AbortSignal
 ): Promise<GifResult[]> {
+  if (!gifsEnabled) return [];
   const url = `${KLIPY_BASE}/gifs/featured?limit=${limit}&key=${KLIPY_KEY}`;
 
   const response = await fetch(url, { signal });
@@ -119,6 +124,7 @@ export async function searchGifs(
   limit = 30,
   signal?: AbortSignal
 ): Promise<GifResult[]> {
+  if (!gifsEnabled) return [];
   const url = `${KLIPY_BASE}/gifs/search?q=${encodeURIComponent(query)}&per_page=${limit}&key=${KLIPY_KEY}`;
 
   const response = await fetch(url, { signal });

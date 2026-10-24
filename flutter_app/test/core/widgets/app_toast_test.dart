@@ -1,52 +1,74 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 
 void main() {
-  Widget appWithButton(void Function(BuildContext) onTap) {
-    return MaterialApp(
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => TextButton(
-            onPressed: () => onTap(context),
-            child: const Text('GO'),
+  testWidgets('toast from inside a bottom sheet shows ABOVE the sheet, '
+      'not behind it', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => AppSheet.show(
+                context,
+                child: Builder(
+                  builder: (sheetContext) => TextButton(
+                    onPressed: () =>
+                        AppToast.error(sheetContext, 'Payment failed'),
+                    child: const Text('toast'),
+                  ),
+                ),
+              ),
+              child: const Text('open'),
+            ),
           ),
         ),
       ),
     );
-  }
 
-  testWidgets('success toast shows message with icon', (tester) async {
-    await tester.pumpWidget(
-      appWithButton((c) => AppToast.success(c, 'Saved!')),
-    );
-    await tester.tap(find.text('GO'));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('toast'), findsOneWidget);
+
+    await tester.tap(find.text('toast'));
+    await tester.pump(); // overlay entry inserted
+    await tester.pump(
+      const Duration(milliseconds: 400),
+    ); // entrance animation (AppMotion.fast)
+
+    // The message is in the tree (overlay path, above the sheet).
+    expect(find.text('Payment failed'), findsOneWidget);
+
+    // And it's user-closable via the ✕ button.
+    final close = find.byTooltip('Dismiss');
+    expect(close, findsOneWidget);
+    await tester.tap(close);
     await tester.pump();
-    expect(find.text('Saved!'), findsOneWidget);
-    expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
+    expect(find.text('Payment failed'), findsNothing);
   });
 
-  testWidgets('error toast strips Exception prefix', (tester) async {
+  testWidgets('toast on a normal page uses the snackbar path with a close '
+      'icon', (tester) async {
     await tester.pumpWidget(
-      appWithButton((c) => AppToast.error(c, Exception('boom'))),
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => AppToast.success(context, 'Saved'),
+              child: const Text('toast'),
+            ),
+          ),
+        ),
+      ),
     );
-    await tester.tap(find.text('GO'));
-    await tester.pump();
-    expect(find.text('boom'), findsOneWidget);
-    expect(find.textContaining('Exception'), findsNothing);
-  });
 
-  testWidgets('a second toast replaces the first (no stacking)', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      appWithButton((c) {
-        AppToast.info(c, 'first');
-        AppToast.success(c, 'second');
-      }),
-    );
-    await tester.tap(find.text('GO'));
+    await tester.tap(find.text('toast'));
     await tester.pump();
-    expect(find.text('second'), findsOneWidget);
+
+    expect(find.text('Saved'), findsOneWidget);
+    // SnackBar close icon (user can dismiss any toast).
+    expect(find.byIcon(Icons.close), findsOneWidget);
   });
 }

@@ -32,6 +32,21 @@ class AppSheet {
       ),
     );
   }
+
+  /// The app's ROOT overlay context — the context that never dies, used to
+  /// open a sheet/dialog from inside another sheet (whose own context dies
+  /// the moment it closes). Returns the root navigator's overlay context,
+  /// or null when there is no overlay yet (app not fully built).
+  ///
+  /// Why this exists: a bottom sheet's own context is destroyed when the
+  /// sheet closes. Opening a second sheet on it crashes MediaQuery with
+  /// "Null check operator used on a null value" (the dead-context crash
+  /// seen on the AI top-up flow). Open the second sheet on THIS context
+  /// instead.
+  static BuildContext? rootOverlayContext(BuildContext context) {
+    final overlay = Navigator.of(context, rootNavigator: true).overlay;
+    return overlay?.context;
+  }
 }
 
 /// Shared alert-dialog helpers.

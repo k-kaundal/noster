@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/features/premium/services/bunker_service.dart';
-import 'package:nostrfeed_mobile/features/premium/services/nwc_provider_service.dart';
+import 'package:nostrfeed_mobile/features/premium/data/bunker_service.dart';
+import 'package:nostrfeed_mobile/features/premium/data/nwc_provider_service.dart';
 
 void main() {
   group('BunkerConnection.fromJson', () {

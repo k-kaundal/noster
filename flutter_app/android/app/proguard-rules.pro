@@ -1,0 +1,28 @@
+# Please add these rules to your existing keep rules in order to suppress warnings.
+# This is generated automatically by the Android Gradle plugin.
+-dontwarn com.google.android.gms.tasks.OnCanceledListener
+-dontwarn com.google.android.gms.tasks.OnCompleteListener
+-dontwarn com.google.android.gms.tasks.OnFailureListener
+-dontwarn com.google.android.gms.tasks.OnSuccessListener
+-dontwarn com.google.android.gms.tasks.Task
+-dontwarn com.google.mlkit.vision.barcode.BarcodeScanner
+-dontwarn com.google.mlkit.vision.barcode.BarcodeScannerOptions$Builder
+-dontwarn com.google.mlkit.vision.barcode.BarcodeScannerOptions
+-dontwarn com.google.mlkit.vision.barcode.BarcodeScanning
+-dontwarn com.google.mlkit.vision.barcode.ZoomSuggestionOptions$Builder
+-dontwarn com.google.mlkit.vision.barcode.ZoomSuggestionOptions$ZoomCallback
+-dontwarn com.google.mlkit.vision.barcode.ZoomSuggestionOptions
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$Address
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$CalendarDateTime
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$CalendarEvent
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$ContactInfo
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$DriverLicense
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$Email
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$GeoPoint
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$PersonName
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$Phone
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$Sms
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$UrlBookmark
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode$WiFi
+-dontwarn com.google.mlkit.vision.barcode.common.Barcode
+-dontwarn com.google.mlkit.vision.common.InputImage

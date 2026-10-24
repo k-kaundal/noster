@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/features/wallet/services/lnbits_service.dart';
+import 'package:nostrfeed_mobile/features/wallet/data/lnbits_service.dart';
 
 void main() {
   group('active LNbits url (settings override)', () {

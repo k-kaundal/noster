@@ -348,6 +348,37 @@ const appDocs = [
 
   // ── Features ─────────────────────────────────────────────────────
   AppDoc(
+    title: 'AI Assistant',
+    description:
+        'Chat with AI, summarize threads and hashtags, draft posts, and generate images — paid per message in tokens.',
+    category: 'Features',
+    icon: Icons.smart_toy,
+    route: '/ai',
+    sections: [
+      DocSection('What it can do', [
+        'The AI assistant reads straight from your relays: ask it to '
+            'summarize a thread or a hashtag, profile a npub, translate a '
+            'post, draft a reply, or generate images and short videos.',
+        'Open it from the ✨ button in the top bar, the center Create '
+            'button, or the AI tab on the Home feed.',
+      ]),
+      DocSection('Pay per message in tokens', [
+        'There is no subscription. Every day you get a few free messages; '
+            'after that each message costs a few AI tokens, priced by the '
+            'model you pick (the picker shows the price up front). Tokens '
+            'are dollar-pegged — 1,000 tokens = \$1 — so a message\u2019s '
+            'price never jumps around with Bitcoin.',
+        'Top up with any Lightning wallet: you pay in sats at the live '
+            'exchange rate, and the tokens follow your key across devices, '
+            'so a purchase on one phone shows up on the other.',
+      ]),
+      DocSection('Your privacy', [
+        'Messages are processed by third-party AI providers. Never paste '
+            'your nsec or any secret into the chat.',
+      ]),
+    ],
+  ),
+  AppDoc(
     title: 'Communities & Groups',
     description:
         'Create or join communities, moderate content, and participate in group chats.',

@@ -2,14 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/providers/app_info_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
-import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
-import 'package:nostrfeed_mobile/features/chat/providers/dm_store.dart';
-import 'package:nostrfeed_mobile/features/notifications/providers/notification_center.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
+import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
+import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
+import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
+import 'package:nostrfeed_mobile/features/notifications/application/notification_center.dart';
+import 'package:nostrfeed_mobile/features/settings/application/app_update_providers.dart';
+import 'package:nostrfeed_mobile/features/settings/application/app_update_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Navigation Architecture:
 ///
@@ -143,6 +147,20 @@ class _AppShellState extends ConsumerState<AppShell>
           : AppBar(
               title: Text(_titleFor(location)),
               actions: [
+                // AI Assistant — the flagship feature, always one tap away.
+                // Hidden on builds without a provider key (nothing to sell).
+                if (ref.watch(aiAvailableProvider))
+                  IconButton(
+                    icon: Icon(
+                      Icons.auto_awesome_rounded,
+                      color: colorScheme.primary,
+                    ),
+                    tooltip: 'AI Assistant',
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      context.push('/ai');
+                    },
+                  ),
                 // Global search
                 IconButton(
                   icon: const Icon(Icons.search_rounded),
@@ -279,6 +297,12 @@ class _AppShellState extends ConsumerState<AppShell>
                 ),
               ),
               const SizedBox(height: 16),
+              _CreateAction(
+                icon: Icons.auto_awesome_rounded,
+                label: 'Ask AI',
+                subtitle: 'Draft, summarize, generate images & video',
+                onTap: () => _go(ctx, '/ai'),
+              ),
               _CreateAction(
                 icon: Icons.edit_rounded,
                 label: 'Post',
@@ -586,6 +610,10 @@ class ModernDrawer extends ConsumerWidget {
         child: SafeArea(
           child: Column(
             children: [
+              // Soft update banner — a new version exists, dismissible,
+              // never blocks the user. Only renders when one is available.
+              const _UpdateAvailableBanner(),
+
               // Header with profile
               _DrawerHeader(auth: auth),
 
@@ -603,7 +631,7 @@ class ModernDrawer extends ConsumerWidget {
                         onTap: () => _navigate(context, '/login'),
                       ),
 
-                    _DrawerSection(title: 'Discover'),
+                    const _DrawerSection(title: 'Discover'),
                     _DrawerItem(
                       icon: Icons.explore_rounded,
                       title: 'Explore',
@@ -634,9 +662,15 @@ class ModernDrawer extends ConsumerWidget {
                       subtitle: 'Events & schedules',
                       onTap: () => _navigate(context, '/calendar'),
                     ),
+                    _DrawerItem(
+                      icon: Icons.smart_toy_rounded,
+                      title: 'AI Assistant',
+                      subtitle: 'Chat with AI — pay per message in sats',
+                      onTap: () => _navigate(context, '/ai'),
+                    ),
 
                     const _DrawerDivider(),
-                    _DrawerSection(title: 'People'),
+                    const _DrawerSection(title: 'People'),
                     _DrawerItem(
                       icon: Icons.groups_rounded,
                       title: 'Communities',
@@ -657,7 +691,7 @@ class ModernDrawer extends ConsumerWidget {
                     ),
 
                     const _DrawerDivider(),
-                    _DrawerSection(title: 'Money'),
+                    const _DrawerSection(title: 'Money'),
                     _DrawerItem(
                       icon: Icons.account_balance_wallet_rounded,
                       title: 'Wallet',
@@ -690,7 +724,7 @@ class ModernDrawer extends ConsumerWidget {
                     ),
 
                     const _DrawerDivider(),
-                    _DrawerSection(title: 'You'),
+                    const _DrawerSection(title: 'You'),
                     _DrawerItem(
                       icon: Icons.bookmark_rounded,
                       title: 'Bookmarks',
@@ -970,6 +1004,24 @@ class _DrawerHeader extends ConsumerWidget {
                           icon: Icons.visibility_rounded,
                           label: 'Read-only',
                         ),
+                      const Spacer(),
+                      // Account switcher (trusted-client multi-account) —
+                      // tap to switch between saved keys / add another.
+                      GestureDetector(
+                        onTap: () => _showAccountSwitcher(context, ref, auth),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.25),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.switch_account_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -977,6 +1029,217 @@ class _DrawerHeader extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Account switcher sheet ──────────────────────────────────────────
+
+/// The multi-account switcher (trusted-client pattern): list saved accounts,
+/// tap to switch, "Add account" to log in another key. Each row shows the
+/// account's avatar + name + npub; the active one is marked.
+void _showAccountSwitcher(BuildContext context, WidgetRef ref, AuthState auth) {
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Consumer(
+        builder: (ctx, ref, _) {
+          final accountsAsync = ref.watch(savedAccountsProvider);
+          final scheme = Theme.of(ctx).colorScheme;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: scheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Accounts',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                accountsAsync.when(
+                  loading: () => const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(),
+                  ),
+                  error: (_, _) => const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('Could not load accounts'),
+                  ),
+                  data: (accounts) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final account in accounts)
+                        _AccountTile(
+                          account: account,
+                          isActive: account.pubkey == auth.pubkey,
+                          onTap: () async {
+                            if (account.pubkey == auth.pubkey) {
+                              Navigator.pop(ctx);
+                              return;
+                            }
+                            Navigator.pop(ctx);
+                            await ref
+                                .read(authStateProvider.notifier)
+                                .switchAccount(account.pubkey);
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 24),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.add_rounded, color: scheme.primary),
+                  ),
+                  title: const Text(
+                    'Add account',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text('Log in with another key'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    ctx.push('/login');
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ),
+  );
+}
+
+class _AccountTile extends StatelessWidget {
+  final SavedAccount account;
+  final bool isActive;
+  final VoidCallback onTap;
+  const _AccountTile({
+    required this.account,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final name = account.profile?.displayNameOrName ?? 'Nostr user';
+    final npub = account.pubkey.length > 16
+        ? '${account.pubkey.substring(0, 8)}…${account.pubkey.substring(account.pubkey.length - 4)}'
+        : account.pubkey;
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: scheme.primaryContainer,
+        backgroundImage: account.profile?.picture != null
+            ? NetworkImage(account.profile!.picture!)
+            : null,
+        child: account.profile?.picture == null
+            ? Icon(Icons.person_rounded, color: scheme.onPrimaryContainer)
+            : null,
+      ),
+      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(
+        account.isReadOnly ? '$npub · read-only' : npub,
+        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+      ),
+      trailing: isActive
+          ? Icon(Icons.check_circle_rounded, color: scheme.primary)
+          : null,
+      onTap: onTap,
+    );
+  }
+}
+
+// ─── Soft update banner ──────────────────────────────────────────────
+
+/// The "new version available" banner at the top of the drawer. Dismissible
+/// ("Later" hides it for that version), taps through to the store listing.
+/// Renders NOTHING when the app is current or offline — never a false
+/// alarm, never blocking.
+class _UpdateAvailableBanner extends ConsumerWidget {
+  const _UpdateAvailableBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final releaseAsync = ref.watch(appUpdateProvider);
+    final release = releaseAsync.valueOrNull;
+    if (release == null) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Icon(Icons.system_update_alt_rounded,
+                color: scheme.onPrimaryContainer, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Update available — v${release.version}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13.5,
+                      color: scheme.onPrimaryContainer,
+                    ),
+                  ),
+                  if (release.notes != null && release.notes!.isNotEmpty)
+                    Text(
+                      release.notes!,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: scheme.onPrimaryContainer
+                            .withValues(alpha: 0.85),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => AppUpdateService.openStore(release),
+              child: const Text('Update'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 18),
+              tooltip: 'Later',
+              visualDensity: VisualDensity.compact,
+              color: scheme.onPrimaryContainer,
+              onPressed: () async {
+                await AppUpdateService.dismiss(release.version);
+                ref.invalidate(appUpdateProvider);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1161,12 +1424,15 @@ class _DrawerDivider extends StatelessWidget {
 
 // ─── Drawer Footer ──────────────────────────────────────────────────
 
-class _DrawerFooter extends StatelessWidget {
+class _DrawerFooter extends ConsumerWidget {
   const _DrawerFooter();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
+    // The version comes from the platform bundle (pubspec `version:`), not
+    // a string someone has to remember to bump.
+    final version = ref.watch(appVersionProvider);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1210,7 +1476,7 @@ class _DrawerFooter extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'v1.0.0',
+                  version.isEmpty ? '…' : 'v$version',
                   style: TextStyle(
                     fontSize: 11,
                     color: colorScheme.onSurfaceVariant,

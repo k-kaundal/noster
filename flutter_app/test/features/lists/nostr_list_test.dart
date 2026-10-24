@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/features/lists/models/nostr_list.dart';
+import 'package:nostrfeed_mobile/features/lists/domain/nostr_list.dart';
 
 NostrEvent _listEvent({
   String id = 'e1',

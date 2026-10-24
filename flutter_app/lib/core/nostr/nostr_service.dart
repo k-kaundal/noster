@@ -2,22 +2,22 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
-import 'package:nostrfeed_mobile/core/nostr/dm_delivery.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_router.dart';
-import 'package:nostrfeed_mobile/core/nostr/repositories/feed_repository.dart';
-import 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart';
-import 'package:nostrfeed_mobile/core/nostr/repositories/social_repository.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/dm_delivery.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_router.dart';
 import 'package:nostrfeed_mobile/core/nostr/repositories/dm_repository.dart';
+import 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart';
+import 'package:nostrfeed_mobile/core/nostr/repositories/feed_repository.dart';
+import 'package:nostrfeed_mobile/core/nostr/repositories/social_repository.dart';
+import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 
-export 'package:nostrfeed_mobile/core/nostr/repositories/feed_repository.dart'
-    show HashtagStat;
-export 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart'
-    show EventEngagement;
 export 'package:nostrfeed_mobile/core/nostr/repositories/dm_repository.dart'
     show DecryptedDm;
+export 'package:nostrfeed_mobile/core/nostr/repositories/engagement_repository.dart'
+    show EventEngagement;
+export 'package:nostrfeed_mobile/core/nostr/repositories/feed_repository.dart'
+    show HashtagStat;
 
 /// Central Nostr service — combines relay pool, auth, and all Nostr operations.
 class NostrService {
@@ -291,17 +291,81 @@ class NostrService {
     );
   }
 
+  /// NIP-18 quote post: the user's commentary ([content]) about another
+  /// event. Carries a `q` tag for the quoted event (so it's a quote, never
+  /// a reply) and a `p` tag notifying the quoted author. The quoted event's
+  /// NIP-21 reference (`nostr:note1…`) should already be in [content] so
+  /// clients that render inline quotes can link it.
+  NostrEvent createQuotePost(
+    String content, {
+    required NostrEvent quoted,
+  }) {
+    _requireSigning();
+    final hint = relayPool.connectedUrls.isNotEmpty
+        ? relayPool.connectedUrls.first
+        : '';
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: 1,
+      content: content,
+      tags: [
+        ['q', quoted.id, hint, quoted.pubkey],
+        ['p', quoted.pubkey],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
+  /// NIP-88 poll (kind 1068). [options] are (id, label) pairs; single or
+  /// multiple choice; optional end time; response relays tell voters where
+  /// to send kind-1018 responses.
+  NostrEvent createPoll({
+    required String question,
+    required List<(String, String)> options,
+    bool multipleChoice = false,
+    DateTime? endsAt,
+  }) {
+    _requireSigning();
+    final responseRelays = relayPool.connectedUrls.take(2).toList();
+    return authService.signEvent(
+      privateKey: _auth.privateKey!,
+      kind: 1068,
+      content: question,
+      tags: [
+        for (final (id, label) in options) ['option', id, label],
+        ['polltype', multipleChoice ? 'multiplechoice' : 'singlechoice'],
+        if (endsAt != null)
+          ['endsAt', '${endsAt.millisecondsSinceEpoch ~/ 1000}'],
+        for (final r in responseRelays) ['relay', r],
+        ['client', 'nostrfeed'],
+      ],
+    );
+  }
+
   NostrEvent createReply(
     String content,
     String replyToId,
     String replyToPubkey, {
     String? rootId,
+    List<String> notifyPubkeys = const [],
   }) {
     _requireSigning();
+    // A relay hint on the e-tag lets OTHER clients find the thread (NIP-10
+    // SHOULD). Use our first connected relay.
+    final hint = relayPool.connectedUrls.isNotEmpty
+        ? relayPool.connectedUrls.first
+        : '';
     final tags = <List<String>>[
-      if (rootId != null) ['e', rootId, '', 'root'],
-      ['e', replyToId, '', 'reply'],
-      ['p', replyToPubkey],
+      // Direct reply to the root: only a "root" marker (NIP-10). Otherwise
+      // both: "reply" = the parent, "root" = the thread root.
+      if (rootId != null && rootId != replyToId) ...[
+        ['e', replyToId, hint, 'reply', replyToPubkey],
+        ['e', rootId, hint, 'root'],
+      ] else
+        ['e', replyToId, hint, 'root', replyToPubkey],
+      // Notify the parent's author AND the thread participants we know of,
+      // so everyone in the conversation sees the reply (NIP-10: copy p tags).
+      for (final pk in {replyToPubkey, ...notifyPubkeys}) ['p', pk],
       ['client', 'nostrfeed'],
     ];
     return authService.signEvent(
@@ -317,14 +381,20 @@ class NostrService {
     // Kind 1 posts use kind 6 reposts; everything else uses kind 16 generic reposts.
     final isKind1 = event.kind == 1;
     final kind = isKind1 ? 6 : 16;
+    // NIP-18: the e-tag MUST carry a relay URL hint (where to fetch the
+    // original). The k tag is for kind-16 generic reposts only (kind 6
+    // implies kind 1 and never carries it).
+    final hint = relayPool.connectedUrls.isNotEmpty
+        ? relayPool.connectedUrls.first
+        : '';
     final tags = <List<String>>[
-      ['e', event.id],
+      ['e', event.id, hint],
       ['p', event.pubkey],
       // For addressable events (30000-39999), include the 'a' coordinate so
       // clients can resolve the addressable event properly (NIP-18).
       if (event.kind >= 30000 && event.kind < 40000)
         ['a', '${event.kind}:${event.pubkey}:${event.getTag('d') ?? ''}'],
-      ['k', '${event.kind}'],
+      if (!isKind1) ['k', '${event.kind}'],
       ['client', 'nostrfeed'],
     ];
     return authService.signEvent(
@@ -539,6 +609,12 @@ class NostrService {
 
   Future<NostrProfile?> fetchProfile(String pubkey) =>
       social.fetchProfile(pubkey);
+
+  /// Batch-prefetch profiles for a page of authors (fills the TTL cache so
+  /// per-card profile providers hit the fast path). See
+  /// `SocialRepository.prefetchProfiles`.
+  Future<void> prefetchProfiles(List<String> pubkeys) =>
+      social.prefetchProfiles(pubkeys);
 
   Future<List<NostrEvent>> fetchFeed({
     int limit = 50,

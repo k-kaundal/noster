@@ -49,11 +49,30 @@ class SmartNetworkImage extends StatelessWidget {
       );
     }
 
+    // Decode at display size (ADR-0004): a 4000×3000 photo rendered as a
+    // 44 px avatar costs ~48 MB decoded RAM vs ~0.6 MB — across a fast
+    // scroll of avatars this is the feed memory trap. memCache* downscales
+    // the decoded bitmap; the device pixel ratio keeps it crisp on 3x
+    // screens. Full-res decode is only for detail/fullscreen views (those
+    // use CachedNetworkImage directly).
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final memW = width != null ? (width! * dpr).round() : null;
+    final memH = height != null ? (height! * dpr).round() : null;
+
     return CachedNetworkImage(
       imageUrl: url,
       width: width,
       height: height,
       fit: fit,
+      memCacheWidth: memW,
+      memCacheHeight: memH,
+      // A real browser UA — some hosts 403 the default Dart (empty) UA on
+      // Android but serve iOS (the "images fail on Android" cause).
+      httpHeaders: const {
+        'Accept': 'image/avif,image/webp,image/*,*/*;q=0.8',
+        'User-Agent':
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+      },
       placeholder: placeholder,
       errorWidget: errorWidget,
     );

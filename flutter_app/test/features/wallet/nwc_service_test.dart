@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/features/wallet/services/nwc_service.dart';
+import 'package:nostrfeed_mobile/features/wallet/data/nwc_service.dart';
 
 void main() {
   group('NwcService.parseUri (NIP-47)', () {

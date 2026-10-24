@@ -8,7 +8,7 @@ Flutter app for NostrFeed. Riverpod 2.6 + go_router 16, feature-first architectu
 flutter pub get
 flutter analyze        # must stay at 0 issues in lib/
 flutter test           # unit/widget tests (deterministic, no network)
-flutter run            # debug run
+flutter run --dart-define-from-file=.env   # debug run (needs .env — house wallet + OpenRouter keys; ./tool/run_app.sh wraps this)
 ```
 
 Integration tests that hit **live relays** live in `integration_test/` — do NOT run them in CI.
@@ -22,37 +22,58 @@ lib/
 ├── main.dart                 # entry point only
 ├── app/
 │   ├── app.dart              # NostrFeedApp root widget
-│   └── router.dart           # routerProvider (go_router) + NIP-19 route loader
+│   └── router.dart           # routerProvider (go_router) + appTransitionPage + NIP-19 loader
 ├── core/                     # shared, feature-agnostic
 │   ├── config/env.dart       # compile-time env (--dart-define)
 │   ├── models/nostr_models.dart   # NostrEvent, NostrFilter, NostrProfile, AuthState
 │   ├── nostr/                # Nostr infrastructure
-│   │   ├── relay_pool.dart   # WebSocket relay connections (NIP-42)
+│   │   ├── kinds.dart        # NostrKinds — kind registry + NIP-01 classification (ADR-0002)
 │   │   ├── nostr_service.dart     # facade: init, publish, event creation, delegates
 │   │   ├── nostr_context.dart     # signing context shared by repositories
-│   │   └── repositories/
-│   │       ├── feed_repository.dart        # feed/lists/discovery queries
-│   │       ├── engagement_repository.dart  # likes/reposts/zaps/interactions
-│   │       ├── social_repository.dart      # profiles, follows, search, bookmarks
-│   │       └── dm_repository.dart          # NIP-04 + NIP-17 DMs
-│   ├── providers/app_providers.dart        # global providers (auth, feed, theme…)
-│   ├── services/http_helper.dart           # ApiHttpClient + ApiHttpException
-│   ├── theme/                # app_theme.dart (AppTheme, AppStatusColors), app_spacing.dart (AppSpacing, AppDurations)
-│   ├── utils/                # nip19, markdown, event_debugger
-│   └── widgets/              # shared UI: ErrorView, EmptyState, SkeletonList,
+│   │   ├── report_types.dart      # NIP-56 report types
+│   │   ├── relay/                 # relay plumbing
+│   │   │   ├── relay_pool.dart    # WebSocket relay connections (NIP-42)
+│   │   │   ├── relay_router.dart  # NIP-65 outbox routing (read/write relays)
+│   │   │   └── dm_delivery.dart   # DM delivery routing (recipient inboxes)
+│   │   ├── repositories/          # per-domain queries
+│   │   │   ├── feed_repository.dart        # feed/lists/discovery queries
+│   │   │   ├── engagement_repository.dart  # likes/reposts/zaps/interactions
+│   │   │   ├── social_repository.dart      # profiles, follows, search, bookmarks
+│   │   │   └── dm_repository.dart          # NIP-04 + NIP-17 DMs
+│   │   └── usecases/              # domain operations (zap_receipts — NIP-57)
+│   │       └── zap_receipts.dart  # zap receipt parse/validate/summarize
+│   ├── providers/            # global providers, split by domain (ADR-0001)
+│   │   ├── app_providers.dart           # BARREL: re-exports the three below
+│   │   ├── nostr_service_providers.dart # NostrService singleton + init + exports
+│   │   ├── auth_providers.dart          # auth state, profiles, follows, user posts
+│   │   ├── content_providers.dart       # feed/trending/search/engagement/market…
+│   │   ├── connectivity_providers.dart  # online/offline + reconnect watcher
+│   │   └── app_info_providers.dart      # package_info (version from pubspec)
+│   ├── moderation/           # content_filter (NSFW/spam) + providers
+│   ├── services/             # app-level services (wallet_payment, http…)
+│   ├── theme/                # app_theme, app_spacing, app_durations, app_motion
+│   ├── utils/                # nip19, markdown, event_debugger, media, text_sanitize
+│   └── widgets/              # shared UI kit: ErrorView, EmptyState, Skeleton*,
 │                             # AsyncFeedList, AppSheet/AppDialog, app_shell,
-│                             # profile_avatar, smart_network_image
-└── features/<feature>/       # one folder per feature
-    ├── <feature>_screen.dart # screen(s)
-    ├── providers/            # feature-local Riverpod providers (if any)
-    ├── services/             # feature-local services (if any)
-    └── widgets/              # feature-local widgets (if any)
+│                             # profile_avatar, smart_network_image,
+│                             # staggered_list_item, qr_scan_sheet, detail_scaffold
+└── features/<feature>/       # one folder per feature (ADR-0001)
+    ├── domain/               # models + pure logic + contracts (pure Dart)
+    ├── data/                 # services/repositories impl (relay/API/storage)
+    ├── application/          # feature-local Riverpod providers/notifiers
+    └── presentation/         # screens + feature widgets (Flutter UI only)
 ```
 
 Feature folders: articles, auth, bookmarks, bounties, calendar, chat,
 communities, compose, docs, explore (explore+trending+hashtag), feed, groups,
 identity, lists, live, market, memberships, notifications, p2p, premium,
 profile, reels, sats_drops, search, settings, studio, wallet, zap.
+
+> **The layout change is DONE (ADR-0001).** Every feature uses
+> `domain/data/application/presentation`. Put new files in the right layer:
+> models/pure logic → `domain/`, relay/API/storage calls → `data/`,
+> providers/notifiers → `application/`, screens + feature widgets →
+> `presentation/`.
 
 Large screens are decomposed into feature-local `widgets/` (e.g.
 `features/chat/widgets/` — message bubble, new message sheet, suggested
@@ -178,12 +199,23 @@ over ~100 lines.
   strip `Exception: ` prefixes.
 - **Navigation architecture**: bottom nav = **Home · Reels · Create (center) ·
   Chat (badge) · Wallet**. The center CREATE button opens a create sheet
-  (post/article/reel/live/group) — Instagram pattern. The shell AppBar +
-  bottom nav are **hidden on immersive routes** (chat threads, reels player)
-  which render their own headers. Drawer is grouped by intent (Discover /
-  People / Money / You) — never a flat 20+ item list. Detail routes use
-  `DetailScaffold` (back button + title). Never hand-roll a drawer button
-  inside a screen (it resolves to the inner drawer-less Scaffold).
+  (Ask AI / post / article / reel / live / group) — Instagram pattern. The
+  shell AppBar + bottom nav are **hidden on immersive routes** (chat threads,
+  reels player) which render their own headers. Drawer is grouped by intent
+  (Discover / People / Money / You) — never a flat 20+ item list. Detail
+  routes use `DetailScaffold` (back button + title). Never hand-roll a drawer
+  button inside a screen (it resolves to the inner drawer-less Scaffold).
+- **AI Assistant visibility** (gated on `aiAvailableProvider` so keyless
+  builds never tease it): the shell AppBar has a ✨ button next to Search,
+  the create sheet leads with "Ask AI", and the Home feed's tab row has a
+  compact ✨ shortcut button next to the avatar. Drawer entry lives under
+  Discover → AI Assistant; the guide is in Docs (route `/ai`). The AI chat
+  itself is a detail route outside the shell. **No in-feed promo card** —
+  an `_AiPromoCard` used to be injected into the For You feed; it was
+  removed (read as an ad). Don't re-add promo cards to the feed.
+  NOTE: never make AI a third home Tab — the TabController's length is fixed
+  at init while AI availability resolves async (recreating it mid-build
+  crashes `SingleTickerProviderStateMixin`).
   **Detail routes** (everything outside the 4 tabs: lists, calendar,
   communities, profiles, settings, etc.) are OUTSIDE the shell — they get
   NO AppShell, so they MUST use `DetailScaffold` (`core/widgets/
@@ -205,6 +237,166 @@ over ~100 lines.
   - Bottom sheets → `AppSheet.show`; confirms/alerts → `AppDialog.confirm/info`
 - **Design tokens**: spacing → `AppSpacing`; timeouts → `AppDurations`;
   status colors → `AppStatusColors`; brand gradient → `AppTheme.brandGradient`.
+- **Brand color = ice blue** (`core/theme/app_theme.dart`), Primal-style.
+  The schemes are HAND-SPECIFIED (never `ColorScheme.fromSeed` — M3's seed
+  algorithm skews violet→blue and picks murky surfaces, the original
+  "bluish-muddy" complaint). Light mode: deep ocean blue `#0A66C2` primary
+  on ice-white `#F7FAFD`; dark mode: bright ice blue `#4FA3E8` on deep
+  ocean-charcoal `#0B0F14`. All text pairs pass WCAG AA. Change the brand by
+  editing `_brand`/`_brandDark` only — the app uses `colorScheme.*` tokens
+  throughout, so it re-themes at once. (History: violet seed → Lightning
+  amber → ice blue; the first two were reverted on review.)
+- **Motion (ADR-0003)**: every animation uses `AppMotion` tokens (durations,
+  curves, stagger) — never magic numbers. Cheap approaches first: Hero +
+  implicit animations + go_router `appTransitionPage` (0 KB);
+  `flutter_animate` for staggered entrances (`StaggeredListItem` for list
+  rows; `PostCard` fades in ONLY in thread view — never in a feed, see the
+  feed-performance rule below); feed images Hero-fly to fullscreen (SVGs
+  excluded). Rive is deferred (≤2 signature moments, NDK pinned) — do NOT
+  add it without an ADR change.
+- **Feed performance (scroll jank)**: a feed `PostCard` rebuilds on EVERY
+  provider fan-out (engagement, zaps, profiles landing as pages arrive), so
+  anything expensive per-build must be memoized per event or it re-runs
+  constantly as the feed grows. Memoized already: the content regex parse +
+  media split + imeta (`_NoteParseCache` in `note_content.dart`), the repost
+  embedded-event JSON decode (`_RepostCache` in `post_card.dart`), the
+  timeago label (`_TimeAgoCache`), and the content-filter verdict
+  (`_VerdictCache` keyed on `filterConfigVersionProvider` — a config change
+  re-filters, an engagement landing does not). Never put a per-card
+  `AnimationController` or an unmemoized `jsonDecode`/regex/`normalize` in a
+  feed card's `build`. The feed `ListView` also uses stable `ValueKey`s +
+  `scrollCacheExtent` so Flutter reuses elements as the list grows.
+- **Avatars crossfade, never flicker** (`core/widgets/safe_image.dart`):
+  `SafeAvatar` uses `OctoImage` so the photo FADES IN OVER the initial
+  letter — the old `CachedNetworkImage(placeholder: fallback)` hard-swapped
+  letter→photo every load (the "shows a small K then the image" flicker).
+  Errors still fall back to the initial; never remove the error boundary.
+- **Media-only / kind-20 posts render their media** (`note_content.dart`):
+  NIP-68/NIP-92 media can live ONLY in `imeta` tags with empty `content`
+  (picture-first clients). `splitForRender` merges imeta media URLs into the
+  gallery, `_ParsedNote` falls back to the `title` tag as caption, and the
+  card only collapses when there's genuinely nothing (no text AND no
+  media). Returning `SizedBox.shrink()` on empty content alone was the
+  "post shows a name, no content" bug.
+- **The WHOLE card collapses when there's nothing to show**
+  (`NoteContent.hasRenderableContent`): a card with author + action bar but
+  no body reads as a bug ("name, no post"), so PostCard returns
+  `SizedBox.shrink()` for non-article kinds when there's no text, no media,
+  AND no quote. Articles (30023) render via ArticleCard and are exempt.
+  Multilingual content (CJK/Arabic/Hindi/emoji) is NOT stripped —
+  `sanitizeText` only drops lone UTF-16 surrogates, and the content
+  filter's homoglyph fold does NOT false-positive genuine non-Latin text
+  (verified). Never add ASCII-only filtering — it's the
+  "non-English posts vanish" trap.
+- **Thread context** (`thread_screen.dart`): opening a reply shows an
+  "In reply to @name" banner (`_ReplyContextBanner`, parent resolved
+  store-first) above the post, and replies attach to the thread ROOT.
+- **Encrypted/token payloads render as CARDS, never base64 walls**
+  (`core/utils/encrypted_content.dart` + `ecash_token_card.dart`):
+  `classifyEncrypted` returns the payload class (nip04 `?iv=`, ecash
+  `cashuA/B`, colonCipher, bareBase64, schemePayload) — prose with spaces,
+  URLs, and multilingual text are NEVER classified. `NoteContent` renders
+  `EcashTokenCard`: Cashu `cashuA` is decoded to amount+mint (base64 JSON,
+  `decodeEcash`), `cashuB` (CBOR) shows "ecash token (v4)", other ciphertext
+  shows a compact "Encrypted content" card with a copy button. Nothing is
+  hidden and nothing dumps base64 into the feed.
+- **scheme://action/base64 app payloads decode to cards**
+  (`decodeSchemePayload`): `bala://offer/<base64-JSON>` and similar
+  app-specific payloads (WebRTC call offers, etc.) render a "Call offer" /
+  "{scheme} {action}" card with a decoded summary (name · room · N
+  connection candidates), Copy-offer + Join-call actions. Plain https URLs
+  are never treated as scheme payloads. **Join = app handoff, not native**:
+  the payload is a proprietary WebRTC signal (JSON offer + a `BALA`-magic
+  binary blob). Joining natively would need `flutter_webrtc` + reverse-
+  engineering an undocumented binary protocol — out of scope. The "Join
+  call" button launches the `bala://` URI; it only joins when the owning
+  app is installed, otherwise it tells the user and copies the offer
+  (never a silent no-op). Don't fake native call support.
+- **Feed ordering clamps future timestamps** (`FeedNotifier._orderTs`): a
+  post with a future `created_at` (clock skew or a manipulated/boosted
+  post) is clamped to now+tolerance (15 min) for ORDERING — naive
+  created_at sort pinned such a post at the TOP of the feed forever (the
+  "one post stuck on top" bug). Applies to both the merge and pagination.
+- **Storage is bounded** (`EventStore.prune`): the SQLite store has a row
+  cap (3000 events), a BYTE budget (~24 MB of content), and a profile cap
+  (1500) — like X/FB, least-recently-used content evicts. Runs
+  fire-and-forget after ingests (never on the render path). `storeBytes()` /
+  `counts()` expose diagnostics. Never let the cache grow to fill the
+  user's storage.
+- **Replies are NOT main-feed posts** (`FeedNotifier._isFeedPost`): a kind-1
+  reply (thread parent set) is filtered from For You + Following page
+  fetches, the live tail pill, and the cold-start cache — it read as a
+  context-free "post". Replies still live in threads, the profile Replies
+  tab, and the store. Quotes (q tag) and reposts stay (standalone content).
+- **Empty-content reposts resolve their target** (`post_card.dart`): NIP-18
+  allows kind-6/16 reposts with EMPTY content — the reposted event lives
+  only in the `e` tag. `repostTargetProvider` fetches it (SQLite store
+  first, then a bounded relay fetch, ingested back). While resolving, the
+  card shows a `_RepostResolvingTile` shimmer row — NEVER a blank card. An
+  unresolved/non-displayable target falls through to the repost shell
+  (author + "reposted" header). A repost-heavy account rendering as ALL
+  EMPTY posts was this bug. Profile tabs fetch kinds 1/6/16/20/21/22/30023
+  via `userPostsProvider` (kind-1-only hid picture-first accounts).
+- **Threads & quotes (NIP-10/18)** (`core/models/nostr_models.dart`):
+  - `isReply` = kind 1 AND (rootId or replyToId set) — an `e`-tag
+    "mention" or a `q` tag is a CITATION, never a thread ref (the old
+    `eventRefs.isNotEmpty` rule hid quote posts from the Posts tab).
+  - `rootId`/`replyToId` implement NIP-10 marked tags (preferred) with the
+    positional fallback (deprecated): marked `root`/`reply` win; unmarked →
+    first is root, last is parent. Direct reply-to-root = single `root` tag.
+  - `quoteRefs`/`quoteId` read the `q` tag (NIP-18 quote reposts);
+    `quoteId` only yields 64-hex event ids (a `q` can be an address).
+  - Quotes render as `QuoteCard` (`quote_card.dart`) — an embedded
+    X-style preview from the `q` tag AND `nostr:note1…/nevent1…` content
+    refs, resolved store-first then bounded relay fetch (never a bare "🔗
+    note abc…" link). A quote post is never also a link-preview post.
+  - `createReply` writes NIP-10 marked tags with a real relay hint (our
+    first connected relay, not `""`) and copies the parent's `p` tags +
+    author so the whole thread is notified; it takes `rootId` +
+    `notifyPubkeys`. `createRepost` carries the relay hint on the `e` tag
+    (NIP-18 REQUIRED) and only writes the `k` tag for kind-16 (never for
+    kind 6 — that implies kind 1).
+  - `ThreadScreen` attaches replies to the thread ROOT (`rootId ?? id`) —
+    opening a mid-thread reply shows the whole conversation.
+  - **Quote POSTING** (`compose_screen.dart` + `NostrService.createQuotePost`):
+    the post 3-dot menu → "Quote post" pushes `/compose` with the event; the
+    composer shows the `QuoteCard` preview and publishes a kind-1 with the
+    quoted `nostr:note1…` inline + the factory's `q`/`p` tags (+ hashtags).
+    A quote is a NOTE, never a poll (mode switch hidden on quotes).
+- **Polls (NIP-88)**: `NostrService.createPoll(question, options, multipleChoice,
+  endsAt)` writes kind 1068 (`option`/`polltype`/`endsAt`/`relay` tags);
+  the composer has a Post/Poll `SegmentedButton` (question + 2–4 options,
+  single/multiple, duration). Voting already existed (kind 1018 → the
+  poll's declared relays). The feed fetches kind 1068 so polls show inline.
+- **Default relays** (`core/config/env.dart`): our own relay
+  (`wss://relay.nostrfeed.com`) FIRST, then a curated set of HEALTHY, free,
+  well-run relays (damus, nos.lol, primal, snort, nostr.mom, offchain,
+  ditto, oxtr) — sourced from the health-checked awesome-nostr-relays
+  catalogue + nostr.watch + NostrMash activity rankings. Deliberately
+  excludes adult-oriented relays (store compliance) AND dead relays:
+  **relay.nostr.band has been offline a long time** — never re-add it (a
+  relay that never connects is a top reason a fresh setup looks broken;
+  metadata indexing moved to purplepag.es / indexer.coracle / yabu). Users
+  add more from Settings → Relays (read/write toggles + NIP-65 sync);
+  NIP-65 outbox routing layers per-user relays on top.
+- **Image CDN optimization** (`MediaUtils.optimizedImageUrl`): media URLs on
+  resize-capable FREE Nostr CDNs (nostr.build / blossom.band, `?w=` param)
+  are rewritten to a resized variant before load — ~80-90% less bandwidth
+  per image. Feed tiles request 1080 px; avatars 192; banners 1200. This is
+  the network half of the ADR-0004 size budget (`memCacheWidth` is the
+  decode half). Non-CDN hosts are left unchanged. Other free media infra:
+  media.nostr.band profile-pic thumbs, Blossom servers (uploads), BUD-03
+  sha256 re-hosting for dead media URLs.
+- **Kind numbers (ADR-0002)**: use `NostrKinds.*` from
+  `core/nostr/kinds.dart` — never a magic kind literal (`kind: 5`,
+  `37001`, `kind == 9735`). New kinds go in the registry first.
+- **Size budget (ADR-0004)**: ≤ 35 MB download (Android arm64 AAB slice) —
+  currently **27.9 MB**. Every image decodes at display size:
+  `SmartNetworkImage` and `SafeAvatar` (shared widgets) and feed tiles use
+  `memCacheWidth`/`memCacheHeight`; the profile banner decodes at 200 dp;
+  feed tiles cap at 1200 px. Full-res decode ONLY on detail/fullscreen
+  views. New packages need a size justification; the barcode-model
+  exclusion lives in `android/app/build.gradle.kts`.
 - **Reporting (Play compliance)**: every post has a 3-dot menu with "Report
   post"; every profile has one with "Report profile". Both open
   `showReportDialog` (`core/widgets/report_dialog.dart`) which publishes a
@@ -332,9 +524,399 @@ over ~100 lines.
   `Nip5Address.localPart`, `Nip5SearchResult.reason/priceReason`. Exceptions
   (`AddressException`, `LnbitsException`) sanitize in `toString()`. Use
   `sanitizeText` (or `sanitizeTextOrNull` when null-vs-empty matters).
+  **Avatar initials**: NEVER `name[0]` — an emoji-leading name is a lone
+  high surrogate (the avatar-initial crash). Use `firstGrapheme(name)` from
+  `text_sanitize.dart` (takes the full surrogate pair) — every avatar
+  fallback uses it.
 - **Async safety**: guard `setState`/context use after async gaps with
   `mounted`; wrap fire-and-forget futures in `unawaited()`.
-- **Secrets**: never hardcode — use `--dart-define` with `Env` class.
+- **Event signature verification (trust boundary)**: relays are UNTRUSTED
+  transport — a relay can inject a forged post under anyone's pubkey. Every
+  incoming EVENT is verified at the pool (`RelayConnection._handleMessage`)
+  BEFORE it reaches a screen: `NostrEvent.isValid` recomputes the id
+  (commits to the exact content) AND Schnorr-verifies the signature
+  (BIP-340). Forged/tampered events are dropped silently. Never render an
+  event that hasn't crossed this boundary; never verify on the render path
+  (too late). Tests pin genuine-valid + forged/tampered/malformed-rejected.
+- **Key storage (the nsec IS the identity — no reset, no support desk)**:
+  `flutter_secure_storage` (hardware-backed), iOS Keychain item is
+  `KeychainAccessibility.unlocked` (device-only, NOT migrated to a new
+  device or into backups — a stolen backup can't lift the key). Never log
+  or display the nsec, never store it in plaintext prefs. NIP-44 for all
+  new encryption (never NIP-04); gift-wrapped DMs (NIP-17). NIP-46 remote
+  signing / NIP-49 ncryptsec are the upgrade path for not holding the key
+  on-device (see Premium → Nostr Bunker).
+- **Secrets**: never hardcode — use `--dart-define` with `Env` class. Real
+  values live in the gitignored `.env` (see `.env.example`), wired in via
+  `--dart-define-from-file=.env`. Two key kinds only: receive-only LNbits
+  invoice keys (house wallet: mints AI-credit invoices + reads payment
+  status) and zero-credit OpenRouter free keys. NEVER an LNbits admin key or
+  an uncapped paid OpenRouter key. Note: all purchase features EXCEPT AI
+  credits mint invoices server-side (nostrnip5/lnurlp extensions, the relay
+  admission server, zap recipients) — the house wallet is only for AI
+  credits + web fiat subscriptions.
+
+## AI assistant (chat, context, entry points)
+
+- **Entry points**: pinned FIRST row of the chat conversation list
+  (`_AiChatTile` in `features/chat/presentation/chat_screen.dart` — Telegram
+  "Saved Messages" pattern, visible even with zero DMs), drawer → Discover,
+  Explore card, wallet AI-credits card, shell ✨ button, create sheet "Ask AI".
+- **Relay access**: `AiContextService` (note/thread links, npub/nprofile,
+  64-hex ids, "#hashtag" + summarize intent) fetches live context from the
+  user's relays into a second system message — the model answers FROM it,
+  never invents posts. Bounded (8s total, 6k chars) and never blocks a send.
+- **Context window**: `trimToContextBudget` (domain, pure) fits history into
+  the request budget — per-message head+tail cap (4k chars), total window cap
+  (22k chars), and the system prompt + Nostr context block counted AGAINST
+  the budget (a big relay fetch shrinks history instead of blowing the
+  model's context window). Dropped history is counted into
+  `AiChatState.contextDropped` → `_ContextNote` shows "N older messages out
+  of context — clear chat to reset" (a silent trim reads as "the AI forgot").
+- **Bubble actions**: long-press any bubble → Copy / Share. Failed sends
+  restore their text into the composer (`AiChatState.failedText`) so a retry
+  is one tap. History persisted capped at 300 messages (`AiChatStore`).
+
+## AI credits (buy flow — payment → credits)
+
+- **Units = AI TOKENS, not sats**: 1 token = $0.001 (`tokensPerUsd = 1000` in
+  `ai_credits.dart`). Users BUY tokens with sats at the live exchange rate
+  and SPEND tokens per message at dollar-pegged prices that never move with
+  BTC — spending sats felt like spending money (high-value), spending tokens
+  feels like points, and the prices stay stable. Sats appear ONLY at top-up.
+- **Pricing (never a loss)**: token price =
+  `upstream usage.cost USD × (1 + platformFee 5.5%) × profitMargin 1.5 ×
+  tokensPerUsd` (+ modality uplift tokens). OpenRouter's platform fee is
+  priced IN (pricing off raw `usage.cost` alone sells every message ~5%
+  short); the settle is EXACT (`usage.cost`) with the top-up capped at
+  reserve × 2 (`AiGatewayConfig.cappedSettleTokens`) so a runaway
+  reasoning-model request can't drain a balance — and the operator's
+  worst-case forgiveness is bounded too.
+- **Flow**: `AiTopUpSheet` picks a TOKEN pack → its sats price is computed
+  at the live rate + volatility buffer (`AiCreditPack.priceSats`, rate from
+  `aiSatsPerUsdProvider`) → `AiCreditsService.createTopUpInvoice(pack,
+  priceSats:)` mints a bolt11 on the house wallet (memo ALWAYS `NostrFeed AI
+  credits {pack} · {pubkey12}` + optional note — losing prefix/pubkey makes
+  the payment unrecoverable) → `showPayInvoiceSheet` → `creditPayment()`.
+- **Confirmation = auto-poll, never one-shot**: `pay_invoice_sheet.dart`
+  polls `checkPaid()` every 2s while open — actively after an in-app pay
+  (bounded 2 min), passively for QR payments, and once on app resume. The
+  old single-check told users to press "I've paid"; a closed sheet lost the
+  credit even though sats left the wallet.
+- **Reconcile (safety net)**: `AiCreditsNotifier.build` + `WalletSyncService`
+  (30s/resume) + the top-up sheet's "Restore" all run `reconcile(pubkey,
+  satsPerUsd: live)` — it pages `GET /api/v1/payments` on the OPERATOR
+  `Env.lnbitsUrl` (HouseWallet keys live there; NOT the user-overridable
+  `lnbitsUrl`), matches memos CLIENT-side (`AiPaymentTracker.isAiCreditMemo`;
+  the server-side `memo` param silently returns nothing on some LNbits
+  builds), and credits only SETTLED incoming payments, converting sats →
+  tokens at the live rate (a recovered top-up grants its true current $ value).
+- **Exactly-once**: reconcile keys idempotency on
+  `AiPaymentRecord.idempotencyKey` (`hash:` → `bolt11:` → `amount:time:memo`
+  fallback — a settled payment is NEVER skipped for lacking a hash).
+  `markCredited` writes the same `hash:`-prefixed key. Credit is saved
+  BEFORE the keys are recorded (a lost key re-grants safely; a recorded key
+  with no credit loses paid sats).
+- **Credits follow the key (relay backup)**: the ledger mirrors to a NIP-44
+  self-encrypted kind-30078 event (d-tag `nostrfeed-ai-credits`) via
+  `AiCreditsBackupService` — only the owner's key reads it. The payload is
+  unit-tagged (`{unit:'tokens', ledger:…}`); a legacy sats-era backup
+  converts sats → tokens on restore BEFORE merging (mixing units would
+  inflate a balance ~1,200×). Build merges local + remote with
+  `AiCreditsLedger.mergeWith` (union: max of the monotonic purchased/spent
+  counters, balance RE-DERIVED — never max-balance, which would resurrect
+  spent credits). Every credit/debit publishes a backup fire-and-forget.
+- **Sats→tokens migration**: `AiCreditsService.load` converts a legacy
+  sats-denominated ledger ONCE (flag `ai:credits_migrated_to_tokens_v1`) at
+  `migrationSatsPerUsd`, preserving its dollar value.
+- **Live exchange rate** (`AiExchangeRateService` + `aiSatsPerUsdProvider`,
+  auto-refresh every 10 min): house LNbits `/api/v1/rate/USD` →
+  mempool.space → disk cache → constant `kFallbackSatsPerUsd`. Used ONLY for
+  top-up sats pricing + reconcile conversion — never for per-message prices
+  (those are dollar-pegged tokens).
+- **Ledger**: `AiCreditsLedger` (pure Dart, checksummed, `updatedAt` stamp)
+  in secure storage; read-only logins skip backup/restore silently.
+- **Tests**: `test/features/ai/ai_credits_flow_test.dart` pins the
+  payment→credit + exactly-once + merge contracts; `ai_payment_tracker_test.dart`
+  pins the memo matcher; `ai_credits_test.dart` pins ledger math + merge +
+  token pricing (`estimatePriceTokens`/`settlePriceTokens`/`priceSats`).
+
+## Realtime wallet (LNbits websocket + notifications)
+
+- **Live channel**: `LnbitsLiveService` (`features/wallet/data/`) wraps
+  `wss://{base}/api/v1/ws/{invoiceKey}` — the wallet's **inkey** is the
+  subscription id (wallet *ids* were dropped in LNbits 0.12.8 as public —
+  lnbits#2545). `LnbitsLivePayment.tryParse` accepts BOTH frame shapes:
+  `{"type":"payment","amount":sats,…}` and `{"balance":msat,"payment":{…}}`.
+- **Coordinator**: `lnbitsLiveServiceProvider` (`features/wallet/application/
+  lnbits_live_providers.dart`, watched at app root in `app.dart`) runs TWO
+  sockets — the active user wallet (`lnbitsUrl`, the Settings-following
+  active instance) and the **house wallet** (pinned to `defaultLnbitsUrl` =
+  the operator instance, same pin as `AiCreditsService`/`AiPaymentTracker` —
+  never the user override). Reconnect on `onDone` with 5s→2min backoff,
+  `resync()` on app resume (mirrors the relay-pool resilience rule).
+- **On a user-wallet payment**: debounced (600ms) `lnbitsAuthProvider.refresh()`
+  (a zap burst = ONE `/api/v1/auth` fetch) + incoming settled sats fire
+  `LocalNotificationService.showZap` and set `lnbitsLiveAlertProvider` →
+  `WalletPaymentBanner` (above the router, next to DM/social banners, tap →
+  `/wallet`). On a house payment: `aiCreditsProvider.reconcile(pubkey)` —
+  top-ups land in seconds, no "I've paid" tap.
+- **Fallback**: the 30s `WalletSyncService` poll + receive-dialog 3s poll
+  stay — the socket is primary, polls are the gap cover. Never remove the
+  polls (proxy idle timeouts kill quiet websockets).
+- **Tests**: `test/features/wallet/lnbits_live_test.dart` pins the frame
+  parser for both shapes + garbage frames.
+
+## Feed architecture (offline-first, FB/Insta-style)
+
+- **EventStore** (`core/db/event_store.dart`): the normalized SQLite store —
+  the single source of truth for feed content, like X/FB's on-device cache.
+  Three tables: `events` (one row per event, id-keyed), `event_refs` (the
+  engagement index — one row per event→`e`-tag target, so "who liked/
+  reposted/replied to X" is a local grouped COUNT, not a relay query), and
+  `profiles`. All writes are `INSERT OR REPLACE` keyed on stable ids, so the
+  page fetch and the live tail can both ingest without deduping in Dart.
+  `prune()` keeps it bounded. Cold start reads the feed from here (indexed,
+  survives >300 events); the legacy JSON `FeedStore` is migrated into SQLite
+  on first run and dropped.
+- **Batched data layer** (the "~150 relay queries per feed" fix): a page of
+  50 posts needs ONE relay fetch for the posts, ONE batched engagement fetch
+  (`_syncEngagement` → ingested into `event_refs`), and ONE batched profile
+  prefetch (`SocialRepository.prefetchProfiles` → fills the TTL cache).
+  PostCards then read counts from `localEngagementProvider` (a local SQL
+  grouped count, rebuilt only when `engagementVersionProvider` bumps) and
+  avatars/names from the warm profile cache — instead of each card firing
+  its own relay query. Both warm paths are fire-and-forget so posts render
+  immediately and counts/avatars pop in as the batch lands.
+- **FeedStore** (`features/feed/application/feed_store.dart`): legacy JSON
+  cache in SharedPreferences. Kept only for the one-time migration into
+  EventStore; new reads/writes go through SQLite.
+- **FeedNotifier** (`feed_notifier.dart`): `FeedState(events, isRefreshing,
+  hasMore, isLoadingMore, newCount, error, lastSyncedAt)`. Pipeline:
+  disk → silent network refresh (merges, no skeleton) → persist. Live
+  subscription counts new posts into `newCount` (the "N new posts" pill —
+  NEVER auto-inserts, that yanks scroll position). `loadMore()` walks the
+  `until` cursor for infinite scroll. Three rules that keep the feed
+  FB/Insta-smooth:
+  - **Merge never re-orders.** `_merge` inserts genuinely-new events by
+    time into the EXISTING order — visible posts never jump (NIP-17
+    backdated/clock-skewed posts used to shuffle the list mid-scroll).
+  - **Follows resolve once.** The Following feed's author list is fetched
+    a single time per session (`_resolveFollows`), not per page — and both
+    For You + Following have a live tail (`restartLive`).
+  - **`refresh()`/`loadMore()` are serialized** through `_inFlight` — a
+    pull-to-refresh near the bottom can't double-fetch a page.
+- **Providers**: `globalFeedProvider`, `followingFeedNotifierProvider` —
+  NotifierProviders (not autoDispose). Refresh after posting goes through
+  `.refresh()` (silent merge), never `ref.invalidate` (that flickered).
+- **FeedScreen**: RefreshIndicator + offline banner (slim strip, feed stays
+  usable) + new-posts pill + pagination spinner. Tabs keepAlive.
+- **Connectivity** (`core/providers/connectivity_providers.dart`):
+  `connectivity_plus` stream → `isOfflineProvider`; `connectivityWatcherProvider`
+  on offline→online does THREE things: reconnect dead relays, evict failed
+  image loads (`PaintingBinding.imageCache.clearLiveImages()` — offline
+  failures park in CachedNetworkImage's error state and never retry alone),
+  and restart the live tail + silently refresh both feeds. App RESUME does
+  the same via `didChangeAppLifecycleState` (feeds + `restartLive`).
+  **Android gotcha**: Android reports an EMPTY connectivity list on radio
+  hand-off/VPN churn, and `every()` on an empty list is TRUE — so
+  `_isOfflineResults` treats empty as OFFLINE (the old code read empty as
+  online → the "internet on/off checker wrong on Android" bug). The watcher
+  also tracks the last offline state across the listener so a null/empty
+  `previous` doesn't swallow the first real recovery.
+- **Android image/scroll quirks**: (1) every network image sends a real
+  browser `User-Agent` + `Accept` header — some CDNs/hosts 403 the default
+  Dart (empty) UA on Android but serve iOS fine (a top cause of "images
+  load on iOS, fail on Android"). Applied in `_NetworkImageTile`,
+  `SmartNetworkImage`, and `SafeAvatar` (via
+  `CachedNetworkImageProvider(headers:)` — OctoImage has no httpHeaders
+  param). (2) the feed `ListView` uses explicit
+  `AlwaysScrollableScrollPhysics` + a guarded infinite-scroll trigger
+  (`maxScrollExtent > 0`, clamped pixels) — an unset physics + degenerate
+  layout threshold made Android spam loadMore and lock the scroll thread.
+- **Feed images self-heal** (`_NetworkImageTile` in `note_content.dart`):
+  a failed load auto-walks the NIP-92 `fallback` URLs, then shows a
+  tap-to-retry tile (evicts the parked failure + re-resolves) — a flaky
+  host/CDN no longer kills the tile for the session. Loading shows a
+  shimmer sweep (not a bare spinner); error shows "Tap to retry".
+- **Android cleartext images**: `android/app/src/main/res/xml/
+  network_security_config.xml` + the manifest's
+  `android:networkSecurityConfig` allow cleartext for media loads. Nostr
+  images come from thousands of independent hosts, many plain-HTTP — Android
+  9+ blocks cleartext by default, which is exactly why images failed "on
+  Android side" while iOS showed them. Keys/signing stay local; cleartext
+  only ever carries public images. Never remove this config.
+- **Profiles**: `profileProvider` is keepAlive (NOT autoDispose) — the
+  10-min `profileCache` handles staleness; disposing on scroll-away was
+  the avatar flicker. `userPostsProvider` is also keepAlive (profile tabs
+  all filter the same list; disposing per tab re-fetched it).
+
+## App version
+
+- `core/providers/app_info_providers.dart`: `packageInfoProvider` +
+  `appVersionProvider` read the platform bundle (pubspec `version:`) via
+  `package_info_plus`. The drawer footer and Settings → App Version use it
+  — NEVER hardcode a version string (the old `v1.0.0` lied on day two).
+
+## Soft update check (non-blocking)
+
+- `features/settings/application/app_update_service.dart`: fetches a tiny
+  JSON manifest (`UPDATE_MANIFEST_URL`, default
+  `https://nostrfeed.com/app-version.json` — template at
+  `web/app-version.json`), compares semantic version + build number, and
+  exposes an `AppRelease` when the running build is older. **Direct store
+  links**: Android opens `market://details?id=com.nostrfeed.nostrfeed_mobile`
+  (web fallback); iOS opens `itms-apps://apps.apple.com/app/id<APPLE_ID>`
+  (set the numeric App ID in `AppUpdateService._appleId` after listing).
+- **NEVER force-update.** The `_UpdateAvailableBanner` sits at the top of
+  the drawer (dismissible "Later" per version, persisted), and re-checks on
+  app resume. Offline/failure → NO banner (never a false alarm). Publish
+  the manifest on each release (bump `version`/`buildNumber`/`notes`); the
+  banner appears to users on older builds without blocking them.
+
+## QR flows (scan + share)
+
+- **Shared scanner**: `core/widgets/qr_scan_sheet.dart` — `showQrScanSheet()`
+  full-screen camera sheet (mobile_scanner), returns the scanned string.
+  Used by Send (recipient) and LndHub (connect). NWC keeps its own inline
+  scanner. New scan needs → use this sheet, don't grow another copy.
+- **Send dialog**: recipient field has Paste + Scan; a scanned QR is
+  normalized (strips `lightning:` prefix, uppercase bolt11).
+- **Receive dialog**: the lightning address has a QR toggle (scannable as
+  `lightning:addr`); minted invoices use `InvoiceQrView` (QR + Copy +
+  Share — share emits `lightning:<bolt11>`).
+
+## Payment decode (GetZap Decoder)
+
+- **API**: `POST /api/v1/payments/decode` `{data}` — decodes bolt11/LNURL
+  (bech32) server-side → amount, destination, description, expiry. It does
+  NOT decode lightning addresses (those resolve via LNURL-pay instead).
+- **Service**: `WalletToolsService.decodePayment` + `decodePaymentProvider`
+  (family, keyed on the invoice string). Wired into the Send dialog as
+  `_DecodedInvoiceCard` — destination/description/expiry shown before the
+  sats leave, so a malformed or surprising invoice is caught in review.
+
+## LndHub wallet (BlueWallet protocol)
+
+- **Protocol**: `lndhub://login:password@host` QR (BlueWallet export, Zeus,
+  Alby, Umbrel, BTCPay "LNDhub API"). Login+password → `POST /auth` → OAuth
+  access token; then `/getbalance`, `/payinvoice`, `/addinvoice`,
+  `/getuserinvoices`, `/gettxs`. Token auto-refreshes on 401 once.
+- **Files**: `services/lndhub_service.dart` (credentials + API),
+  `providers/lndhub_providers.dart` (state, credentials in secure storage
+  `lndhub:credentials`), `lndhub_screen.dart` (scan/paste connect).
+  Route `/wallet/lndhub`, card on the wallet hub.
+- **Spending**: `payWithAnyWallet` tries LNbits → NWC → Cashu → LndHub;
+  `WalletKind.lndhub`. `hasPayingWallet` counts a connected hub.
+- **Tests**: `test/features/wallet/lndhub_test.dart` (URI parse + tx parse).
+
+## Relay management (Settings → Relays)
+
+- **State**: `features/settings/providers/relay_settings_providers.dart` —
+  `RelaySettingsNotifier` holds `ManagedRelay(url, read, write)`, persisted
+  to SharedPreferences (`settings:managed_relays_v1`, survives restarts).
+- **Read/write intent actually drives behavior**: the notifier maintains the
+  module-level `readRelayUrls`/`writeRelayUrls` sets, and `RelayPool.query`
+  skips write-only relays while `RelayPool.publishWithAck` skips read-only
+  ones (empty sets = first run, everything allowed). The old screen had
+  toggles wired to nothing.
+- **NIP-65 sync** (kind 10002): `publishList()` writes `r` tags
+  (read/write markers), `mergeFromNetwork()` merges the user's published
+  list (remote wins per-URL). The screen's cloud-sync action runs
+  merge → publish so every client agrees.
+
+## Multi-wallet LNbits accounts
+
+- **LNbits accounts hold several wallets** (users API: create/share/delete,
+  `GET/POST /users/api/v1/user/{id}/wallet`). One account = one sign-in,
+  many wallets (spending vs savings).
+- **Active wallet**: `LnbitsAuthState.activeWalletId` (persisted per Nostr
+  pubkey in secure storage, `lnbits:active_wallet`) and
+  `LnbitsAuthState.activeWallet` getter — the stored choice wins when it
+  still exists, else the first wallet. NEVER read `wallets.first` directly:
+  use `lnbits.activeWallet` (state) or `lnbitsActiveWalletProvider` (widget).
+  `createAndActivateWallet(name)` adds a wallet and switches to it.
+- **Switcher UI**: the balance card on `lnbits_screen.dart` shows
+  "N wallets — tap to switch" when the account holds >1; the bottom sheet
+  picks or creates. The wallet hub (`wallet_screen.dart`) names the active
+  wallet on its card.
+- **Multiple USERS**: already handled — session tokens are keyed per Nostr
+  pubkey (`lnbits:tokens:<pubkey>`), so each Nostr account gets its own
+  LNbits session + its own active-wallet choice.
+
+## Content moderation (NSFW / spam filtering)
+
+- **Library**: `core/moderation/content_filter.dart` — pure, testable
+  `ContentFilter` class. `verdictForEvent` / `verdictForProfile` return a
+  `FilterVerdict(FilterAction.show/hide/warn, reason)`. Term lists in
+  `filter_terms.dart` (explicit-adult only, 30+ languages, trimmed from
+  LDNOOBW + the documented Nostr spam dataset). Matching runs on
+  `normalize()`d text: case fold, diacritic/homoglyph strip, separator
+  removal, leet digit-fold via `_evasionForms`, long-term (≥6 char) token
+  prefix match. Word-boundary token match — "sex" does not match "Essex".
+- **Providers**: `core/moderation/moderation_providers.dart` —
+  `nsfwFilterProvider` / `spamFilterProvider` (toggles, default ON,
+  SharedPreferences), `blockedWordsProvider`, `blockedAuthorsProvider`
+  (local-first, NIP-51 kind 10000 sync via `muteListSyncProvider`),
+  `contentFilterProvider`, `filteredEventVerdict(ref, event, {authorProfile})`.
+- **Hook points**: `PostCard` (hide + NIP-36 warn cover `_ContentWarningCover`),
+  `ProfileScreen` (blocked/NSFW placeholder), `SearchScreen` people+posts
+  tabs, `ExploreScreen` hashtag chips + People-to-follow. Block actions:
+  post 3-dot menu → "Block author"; profile 3-dot menu → "Block account";
+  manage lists in Settings → Content filters.
+- **Spam links**: `search.html`-class search-spam paths, known spam hosts
+  (t.me spam waves, postimg QR spam), link dumps (>3 URLs or >60% link
+  characters) hide outright.
+- **Hashtag spam** (the `#ziwei-comm-anchor` class — bots planting tags in
+  feeds, fought the same way as Amethyst's `hasExcessiveHashtags`): an
+  anchor-shaped tag (`-comm-anchor`/`-anchor`/… suffixes), a hashtag-only
+  post, hashtags + ≤2 camouflage words, and >5 hashtags (content + t tags)
+  all hide. Author labels beat spam shape — a lone `#nsfw` warns, not hides.
+- **Store compliance**: Play UGC + Apple 1.2 require hidden-by-default
+  explicit content, report + block. Report dialog is NIP-56 (child safety
+  first); block is local + NIP-51 mute list.
+- **Anti-manipulation feed ranking** (`features/explore/domain/feed_ranking.dart`):
+  Trending/Discover rank on signals that are EXPENSIVE TO FAKE, not raw
+  engagement counts (a bot cluster can inflate "most liked"). The formula
+  (validated by `feed_ranking_test.dart`): **unique engagers dominate**
+  (deduped pubkeys — 50 fresh-key likes ≈ 1-2 real engagers), raw
+  reactions/reposts are discounted + capped (bot upside bounded), **zaps
+  weigh 1.5×** (they cost sats — the strongest anti-spam signal), freshness
+  decays (HN-style), and a **per-author diversity cap** stops one author
+  dominating. `EventEngagement.uniqueEngagers` (deduped) is the key input —
+  rank on it, never on raw `score`. Safety/moderation is a HARD exclusion
+  applied by the caller before ranking — popularity never overrides a
+  filter verdict.
+- **Sensitive-content display preference** (`sensitiveModeProvider`,
+  Settings → Content filters): the blueprint's three-option user layer —
+  `hide` (collapse), `blur` (tap-to-reveal `_ContentWarningCover`, the
+  default), `allow` (show). Applies to NIP-36 warn verdicts (author-tagged
+  OR detector-flagged). Never render the sensitive image under an overlay —
+  the cover REPLACES it (thumbnails/previews must not leak it either).
+- **Flood / duplicate-post filter** (`core/moderation/flood_detector.dart`):
+  keeps the platform from drowning in "same post every few minutes" spam
+  (the bala-offer / token-drop floods). Three signals, judged client-side in
+  `FeedNotifier._applyFlood` + the live tail: **author flood** (same author,
+  same normalized content ≥3× in 30 min), **spray** (same content from ≥4
+  DISTINCT authors in 30 min — catches disposable-key waves), and
+  **rapid-fire** (one author ≥8 posts in 5 min regardless of content).
+  `contentKey` normalizes trim/whitespace/case/trailing-punct so near-
+  duplicates cluster. Legit/distinct posts pass through (pinned by tests);
+  kind ≠1 events are never flood-judged. Bounded in-memory LRU (no disk).
+
+## Post rendering edge cases (the "empty post" family)
+
+- **Media-only posts** (content was only image/video URLs) render ONLY the
+  media — `NoteContent` collapses the text column when no visible segment
+  remains (`hasVisibleText`). Audio/plain links count as visible.
+- **Raw 64-char hex keys** in content resolve to a mention label (the
+  person's name) via `_HexKeySegment` + `_MentionLabel` — never the wall of
+  hex itself.
+- **UTF-16 safety**: `NostrEvent.getTag`/`getTags` sanitize by default
+  (lone surrogates in titles/names/descriptions were crashing the paint
+  pipeline). Use `getTagRaw` only for values that never reach a Text widget
+  (bolt11, JSON blobs, addresses). `nostr_models.dart` re-exports
+  `text_sanitize.dart` so `sanitizeText` is available wherever models are.
 
 ## In-app documentation
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/features/premium/services/admission_service.dart';
+import 'package:nostrfeed_mobile/features/premium/data/admission_service.dart';
 
 void main() {
   group('AdmissionService.readAdmission', () {

@@ -49,3 +49,26 @@ String safeSnippet(String? input, [int maxLength = 200]) {
 /// distinguishable from "empty value" (e.g. `username != null` checks).
 String? sanitizeTextOrNull(String? input) =>
     input == null ? null : sanitizeText(input);
+
+/// The first grapheme (user-perceived character) of [input], sanitized.
+///
+/// `name[0]` on a name that starts with an emoji is a lone high surrogate,
+/// and a Text widget fed one crashes the paint pipeline ("string is not
+/// well-formed UTF-16") — the avatar-initial crash this fixes. Takes the
+/// first full surrogate PAIR when the name starts with one, so "😀alice"
+/// shows "😀" instead of a broken box.
+String firstGrapheme(String? input) {
+  final clean = sanitizeText(input);
+  if (clean.isEmpty) return '?';
+  final codes = clean.codeUnits;
+  if (codes.isEmpty) return '?';
+  // Leading high surrogate + low surrogate = one grapheme (emoji).
+  if (codes.length >= 2 &&
+      codes[0] >= 0xD800 &&
+      codes[0] <= 0xDBFF &&
+      codes[1] >= 0xDC00 &&
+      codes[1] <= 0xDFFF) {
+    return String.fromCharCodes([codes[0], codes[1]]);
+  }
+  return String.fromCharCode(codes[0]);
+}

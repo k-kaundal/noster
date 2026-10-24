@@ -1,50 +1,81 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
-import 'package:nostrfeed_mobile/features/feed/feed_screen.dart';
-import 'package:nostrfeed_mobile/features/feed/thread_screen.dart';
-import 'package:nostrfeed_mobile/features/explore/hashtag_screen.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/features/profile/profile_screen.dart';
-import 'package:nostrfeed_mobile/features/compose/compose_screen.dart';
-import 'package:nostrfeed_mobile/features/search/search_screen.dart';
-import 'package:nostrfeed_mobile/features/notifications/notifications_screen.dart';
-import 'package:nostrfeed_mobile/features/chat/chat_screen.dart';
-import 'package:nostrfeed_mobile/features/wallet/wallet_screen.dart';
-import 'package:nostrfeed_mobile/features/wallet/nwc_screen.dart';
-import 'package:nostrfeed_mobile/features/wallet/cashu_wallet_screen.dart';
-import 'package:nostrfeed_mobile/features/wallet/lnbits_screen.dart';
-import 'package:nostrfeed_mobile/features/wallet/buy_name_screen.dart';
-import 'package:nostrfeed_mobile/features/settings/settings_screen.dart';
-import 'package:nostrfeed_mobile/features/bookmarks/bookmarks_screen.dart';
-import 'package:nostrfeed_mobile/features/communities/communities_screen.dart';
-import 'package:nostrfeed_mobile/features/communities/community_detail_screen.dart';
-import 'package:nostrfeed_mobile/features/articles/articles_screen.dart';
-import 'package:nostrfeed_mobile/features/lists/list_detail_screen.dart';
-import 'package:nostrfeed_mobile/features/lists/models/nostr_list.dart';
-import 'package:nostrfeed_mobile/features/groups/group_chat_screen.dart';
-import 'package:nostrfeed_mobile/features/live/live_room_screen.dart';
-import 'package:nostrfeed_mobile/features/live/models/live_event.dart';
-import 'package:nostrfeed_mobile/features/market/market_screen.dart';
-import 'package:nostrfeed_mobile/features/explore/explore_screen.dart';
-import 'package:nostrfeed_mobile/features/explore/trending_screen.dart';
-import 'package:nostrfeed_mobile/features/reels/reels_screen.dart';
-import 'package:nostrfeed_mobile/features/lists/lists_screen.dart';
-import 'package:nostrfeed_mobile/features/calendar/calendar_screen.dart';
-import 'package:nostrfeed_mobile/features/groups/groups_screen.dart';
-import 'package:nostrfeed_mobile/features/p2p/p2p_screen.dart';
-import 'package:nostrfeed_mobile/features/live/live_screen.dart';
-import 'package:nostrfeed_mobile/features/identity/identity_screen.dart';
-import 'package:nostrfeed_mobile/features/studio/studio_screen.dart';
-import 'package:nostrfeed_mobile/features/bounties/bounties_screen.dart';
-import 'package:nostrfeed_mobile/features/memberships/memberships_screen.dart';
-import 'package:nostrfeed_mobile/features/sats_drops/sats_drops_screen.dart';
-import 'package:nostrfeed_mobile/features/premium/premium_screen.dart';
-import 'package:nostrfeed_mobile/features/docs/docs_screen.dart';
-import 'package:nostrfeed_mobile/features/auth/login_screen.dart';
+import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_shell.dart';
+import 'package:nostrfeed_mobile/features/ai/presentation/ai_chat_screen.dart';
+import 'package:nostrfeed_mobile/features/articles/presentation/articles_screen.dart';
+import 'package:nostrfeed_mobile/features/auth/presentation/login_screen.dart';
+import 'package:nostrfeed_mobile/features/bookmarks/presentation/bookmarks_screen.dart';
+import 'package:nostrfeed_mobile/features/bounties/presentation/bounties_screen.dart';
+import 'package:nostrfeed_mobile/features/calendar/presentation/calendar_screen.dart';
+import 'package:nostrfeed_mobile/features/chat/presentation/chat_screen.dart';
+import 'package:nostrfeed_mobile/features/communities/presentation/communities_screen.dart';
+import 'package:nostrfeed_mobile/features/communities/presentation/community_detail_screen.dart';
+import 'package:nostrfeed_mobile/features/compose/presentation/compose_screen.dart';
+import 'package:nostrfeed_mobile/features/docs/presentation/docs_screen.dart';
+import 'package:nostrfeed_mobile/features/explore/presentation/explore_screen.dart';
+import 'package:nostrfeed_mobile/features/explore/presentation/hashtag_screen.dart';
+import 'package:nostrfeed_mobile/features/explore/presentation/trending_screen.dart';
+import 'package:nostrfeed_mobile/features/feed/presentation/feed_screen.dart';
+import 'package:nostrfeed_mobile/features/feed/presentation/thread_screen.dart';
+import 'package:nostrfeed_mobile/features/groups/presentation/group_chat_screen.dart';
+import 'package:nostrfeed_mobile/features/groups/presentation/groups_screen.dart';
+import 'package:nostrfeed_mobile/features/identity/presentation/identity_screen.dart';
+import 'package:nostrfeed_mobile/features/lists/domain/nostr_list.dart';
+import 'package:nostrfeed_mobile/features/lists/presentation/list_detail_screen.dart';
+import 'package:nostrfeed_mobile/features/lists/presentation/lists_screen.dart';
+import 'package:nostrfeed_mobile/features/live/domain/live_event.dart';
+import 'package:nostrfeed_mobile/features/live/presentation/live_room_screen.dart';
+import 'package:nostrfeed_mobile/features/live/presentation/live_screen.dart';
+import 'package:nostrfeed_mobile/features/market/presentation/market_screen.dart';
+import 'package:nostrfeed_mobile/features/memberships/presentation/memberships_screen.dart';
+import 'package:nostrfeed_mobile/features/notifications/presentation/notifications_screen.dart';
+import 'package:nostrfeed_mobile/features/p2p/presentation/p2p_screen.dart';
+import 'package:nostrfeed_mobile/features/premium/presentation/premium_screen.dart';
+import 'package:nostrfeed_mobile/features/profile/presentation/profile_screen.dart';
+import 'package:nostrfeed_mobile/features/reels/presentation/reels_screen.dart';
+import 'package:nostrfeed_mobile/features/sats_drops/presentation/sats_drops_screen.dart';
+import 'package:nostrfeed_mobile/features/search/presentation/search_screen.dart';
+import 'package:nostrfeed_mobile/features/settings/presentation/settings_screen.dart';
+import 'package:nostrfeed_mobile/features/studio/presentation/studio_screen.dart';
+import 'package:nostrfeed_mobile/features/wallet/presentation/buy_name_screen.dart';
+import 'package:nostrfeed_mobile/features/wallet/presentation/cashu_wallet_screen.dart';
+import 'package:nostrfeed_mobile/features/wallet/presentation/lnbits_screen.dart';
+import 'package:nostrfeed_mobile/features/wallet/presentation/lndhub_screen.dart';
+import 'package:nostrfeed_mobile/features/wallet/presentation/nwc_screen.dart';
+import 'package:nostrfeed_mobile/features/wallet/presentation/wallet_screen.dart';
+
+/// The default page transition for pushed routes: shared-axis-style fade +
+/// a 2% rise, [AppMotion.normal]. Tab switches use [NoTransitionPage] —
+/// transitions between bottom-nav tabs feel wrong.
+Page<T> appTransitionPage<T>({
+  required LocalKey key,
+  required Widget child,
+}) {
+  return CustomTransitionPage<T>(
+    key: key,
+    child: child,
+    transitionDuration: AppMotion.normal,
+    reverseTransitionDuration: AppMotion.normal,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(parent: animation, curve: AppMotion.curve);
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.02),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authListenable = ValueNotifier(0);
@@ -118,7 +149,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       // Compose
-      GoRoute(path: '/compose', builder: (_, _) => const ComposeScreen()),
+      GoRoute(
+        path: '/compose',
+        builder: (_, state) => ComposeScreen(quoted: state.extra as NostrEvent?),
+      ),
 
       // Search (from drawer or chat)
       GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),
@@ -168,6 +202,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Wallet detail screens
       GoRoute(path: '/wallet/nwc', builder: (_, _) => const NwcScreen()),
       GoRoute(path: '/wallet/cashu', builder: (_, _) => const CashuWalletScreen()),
+      GoRoute(path: '/wallet/lndhub', builder: (_, _) => const LndHubScreen()),
       GoRoute(path: '/wallet/lnbits', builder: (_, _) => const LnbitsScreen()),
       GoRoute(path: '/wallet/buy-name', builder: (_, _) => const BuyNameScreen()),
 
@@ -185,6 +220,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/memberships', builder: (_, _) => const MembershipsScreen()),
       GoRoute(path: '/sats-drops', builder: (_, _) => const SatsDropsScreen()),
       GoRoute(path: '/docs', builder: (_, _) => const DocsScreen()),
+      GoRoute(path: '/ai', builder: (_, _) => const AiChatScreen()),
     ],
   );
 });

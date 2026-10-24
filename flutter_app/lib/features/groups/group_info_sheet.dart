@@ -6,7 +6,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
-import 'package:nostrfeed_mobile/features/groups/providers/group_providers.dart';
+import 'package:nostrfeed_mobile/features/groups/application/group_providers.dart';
 
 /// Group info bottom sheet: about, members (with admin remove), admins,
 /// and leave group. Opened from the group chat header.
@@ -200,7 +200,7 @@ class _MemberTile extends ConsumerWidget {
       leading: SafeAvatar(
         imageUrl: profile?.picture,
         radius: 20,
-        fallback: Text(name.isNotEmpty ? name[0].toUpperCase() : '?'),
+        fallback: Text(firstGrapheme(name)),
       ),
       title: Row(
         children: [

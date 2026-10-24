@@ -95,6 +95,40 @@ class Env {
     defaultValue: '',
   );
 
+  // ── OpenRouter (AI) ────────────────────────────────────────────────
+  // Direct-from-app key (no proxy server). The FREE-tier key can only call
+  // `:free` models ($0 spend possible; keep its dashboard credit limit at 0).
+  // A second, credit-capped paid key will be added for paid tiers later.
+  // SECURITY: never commit a real key here. Put it in the gitignored
+  // `.env` and build/run with `--dart-define-from-file=.env`.
+  static const openRouterApiKey = String.fromEnvironment(
+    'OPENROUTER_API_KEY',
+    defaultValue: '',
+  );
+  static const openRouterBaseUrl = String.fromEnvironment(
+    'OPENROUTER_BASE_URL',
+    defaultValue: 'https://openrouter.ai/api/v1',
+  );
+
+  /// Operator pubkey (hex) that signs the AI gateway config note
+  /// (kind 30078, d-tag `nostrfeed-ai-config`) — the app only trusts config
+  /// from this key. Same key as the web app's ADMIN_PUBKEY (onboarding).
+  static const operatorPubkey = String.fromEnvironment(
+    'OPERATOR_PUBKEY',
+    defaultValue:
+        'f1ee81bb843731c983fad98784dfe984efdd0b057bcbb5e8f16ff449787e59f6',
+  );
+
+  /// The lightning address paid boosts are zapped to (NIP-57, `e`-tagging
+  /// the promoted note). Its lnurl metadata's `nostrPubkey` is resolved at
+  /// runtime and used to verify boost receipts — a receipt signed by any
+  /// other key is not a boost. Must point at a pay link on the operator's
+  /// LNbits (the house/operator wallet) with zaps enabled.
+  static const platformLightningAddress = String.fromEnvironment(
+    'PLATFORM_LIGHTNING_ADDRESS',
+    defaultValue: 'boost@ln.nostrfeed.com',
+  );
+
   // ── GetZap Identity API ────────────────────────────────────────────
   static const getzapApi = String.fromEnvironment(
     'GETZAP_API',
@@ -102,28 +136,44 @@ class Env {
   );
 
   // ── Default Relays ─────────────────────────────────────────────────
+  // Our own relay FIRST (best latency + we control retention), then a
+  // curated set of HEALTHY, free, well-run general relays. Sources: the
+  // health-checked awesome-nostr-relays catalogue + nostr.watch + NostrMash
+  // activity rankings. Deliberately excludes adult-oriented relays (store
+  // compliance) AND dead relays — relay.nostr.band has been offline for a
+  // long time (many stale guides still list it; a relay that never
+  // connects is a top reason a fresh setup looks broken). Users can add
+  // more from Settings → Relays; NIP-65 outbox routing layers per-user
+  // relays on top.
   static const defaultRelays = [
-    'wss://relay.nostrfeed.com', // primary — our own relay
-    'wss://relay.damus.io',
-    'wss://relay.nostr.band',
-    'wss://relay.primal.net',
+    'wss://relay.nostrfeed.com', // our own relay — primary
+    'wss://relay.damus.io', // most popular, fast, US
+    'wss://nos.lol', // reliable, high activity share
+    'wss://relay.primal.net', // highest activity share (NostrMash #1)
+    'wss://relay.snort.social', // Snort's relay
+    'wss://nostr.mom', // community-run, steady
+    'wss://offchain.pub', // healthy, good coverage
+    'wss://ditto.pub', // healthy, rising
+    'wss://nostr.oxtr.dev', // healthy, open
   ];
 
-  /// Indexer relays for kind 0 / 10002 lookups.
+  /// Indexer relays for kind 0 / 10002 lookups (NIP-50 search + metadata).
+  /// nostr.band was the classic indexer but is dead — purplepag.es +
+  /// coracle + yabu carry metadata indexing now.
   static const indexerRelays = [
     'wss://relay.nostrfeed.com', // our own relay first
-    'wss://relay.nostr.band',
     'wss://relay.primal.net',
     'wss://purplepag.es',
+    'wss://indexer.coracle.social',
     'wss://directory.yabu.me',
   ];
 
   /// Receipt relays for kind 9735 zap receipt queries.
   static const receiptRelays = [
-    'wss://relay.nostr.band',
     'wss://relay.primal.net',
     'wss://relay.damus.io',
     'wss://nos.lol',
+    'wss://nostr.mom',
   ];
 
   /// Blossom upload servers (fallback defaults).

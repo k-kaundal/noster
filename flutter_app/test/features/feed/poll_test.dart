@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/features/feed/models/poll.dart';
+import 'package:nostrfeed_mobile/features/feed/domain/poll.dart';
 
 NostrEvent _pollEvent({
   String id = 'poll1',

@@ -78,6 +78,35 @@ class MediaUtils {
   static List<String> extractUrls(String text) =>
       _urlRegex.allMatches(text).map((m) => m.group(0)!).toList();
 
+  // ── Media CDN optimization (bandwidth + speed) ──────────────────────
+
+  /// Hosts that serve on-the-fly resized variants via a query param:
+  /// - nostr.build / blossom.nostr.build: `?w=720` (or `?w=720p`)
+  /// - image.nostr.build, i.nostr.build, video.nostr.build thumbs
+  /// These are FREE CDNs run for Nostr (nostr.build since 2022) — using
+  /// them cuts image bandwidth ~80-90% vs the full-size original.
+  static final _resizableCdnHosts = RegExp(
+    r'(^|\.)(nostr\.build|blossom\.band)$',
+    caseSensitive: false,
+  );
+
+  /// Rewrite a media URL to a CDN-resized variant at [width] px when the
+  /// host supports it — a feed tile never needs the original 4000 px
+  /// upload. Returns the original URL unchanged for non-CDN hosts (we
+  /// can't assume arbitrary hosts resize).
+  ///
+  /// Feed tiles use width ≈1080 (memCache caps decode anyway); profile
+  /// avatars use 192; banners 1200. See ADR-0004 (size budget) — this is
+  /// the network-side half of it (memCache is the decode-side half).
+  static String optimizedImageUrl(String url, {int width = 1080}) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return url;
+    if (!_resizableCdnHosts.hasMatch(uri.host)) return url;
+    // Already resized — don't stack params.
+    if (uri.queryParameters.containsKey('w')) return url;
+    return uri.replace(queryParameters: {...uri.queryParameters, 'w': '$width'}).toString();
+  }
+
   /// Parse all `imeta` tags from an event into URL → info map (NIP-92).
   static Map<String, ImetaInfo> parseImeta(NostrEvent event) {
     final result = <String, ImetaInfo>{};

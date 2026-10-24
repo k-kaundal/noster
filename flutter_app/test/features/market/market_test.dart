@@ -3,9 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
-import 'package:nostrfeed_mobile/features/auth/services/auth_service.dart';
-import 'package:nostrfeed_mobile/features/market/models/listing.dart';
-import 'package:nostrfeed_mobile/features/p2p/models/p2p_order.dart';
+import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
+import 'package:nostrfeed_mobile/features/market/domain/listing.dart';
+import 'package:nostrfeed_mobile/features/p2p/domain/p2p_order.dart';
 
 ProviderContainer _makeContainer() {
   SharedPreferences.setMockInitialValues({});

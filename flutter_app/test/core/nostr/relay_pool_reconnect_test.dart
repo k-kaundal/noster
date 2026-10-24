@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 
 void main() {
   group('RelayPool reconnection resilience', () {

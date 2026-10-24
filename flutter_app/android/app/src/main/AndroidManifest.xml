@@ -5,10 +5,14 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Camera: QR scanner (mobile_scanner) + image picker camera. Without
+         this the scanner Activity throws on open (the camera-open crash). -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <application
         android:label="Nostr Feed"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

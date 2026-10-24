@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/core/nostr/relay_pool.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 
 /// Engagement stats for an event.
 class EventEngagement {
@@ -10,12 +10,20 @@ class EventEngagement {
   final int reposts;
   final int zaps;
   final int zapSats;
+
+  /// UNIQUE pubkeys that engaged (reply/react/repost/zap), deduped. This is
+  /// the anti-manipulation signal the raw totals lack: a bot cluster of 50
+  /// keys liking one post counts 50 raw but ~1-2 genuinely independent
+  /// engagers. Trending ranks on this, not the raw score.
+  final int uniqueEngagers;
+
   const EventEngagement({
     this.replies = 0,
     this.reactions = 0,
     this.reposts = 0,
     this.zaps = 0,
     this.zapSats = 0,
+    this.uniqueEngagers = 0,
   });
   int get score => replies + reactions + reposts + zaps;
 }
@@ -155,7 +163,9 @@ class EngagementRepository {
   /// Compute engagement stats from a list of related events.
   EventEngagement _computeEngagement(List<NostrEvent> events) {
     int replies = 0, reactions = 0, reposts = 0, zaps = 0, zapSats = 0;
+    final engagers = <String>{};
     for (final e in events) {
+      engagers.add(e.pubkey);
       switch (e.kind) {
         case 1:
         case 1111: // NIP-22 comments count as replies
@@ -181,6 +191,7 @@ class EngagementRepository {
       reposts: reposts,
       zaps: zaps,
       zapSats: zapSats,
+      uniqueEngagers: engagers.length,
     );
   }
 
