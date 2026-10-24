@@ -143,6 +143,13 @@ class FeedNotifier extends Notifier<FeedState> {
 
   /// Refresh the newest page and merge it in silently. Public for
   /// pull-to-refresh and the connectivity/app-resume watchers.
+  ///
+  /// HARD TIMEOUT: a hung relay fetch (dead socket, emulator's flaky route)
+  /// would otherwise leave `isRefreshing` true FOREVER — the spinner spins
+  /// forever and `if (state.isRefreshing) return` blocks every retry (the
+  /// "feed stuck" bug). The timeout resets state so the next pull works.
+  static const _refreshTimeout = Duration(seconds: 15);
+
   Future<void> refresh() {
     // Serialize against loadMore — an overlapping fetch double-loads a page.
     final run = _inFlight.then((_) => _refresh());
@@ -150,9 +157,34 @@ class FeedNotifier extends Notifier<FeedState> {
     return run;
   }
 
+  /// Pull-to-refresh entry: clears a stuck `isRefreshing`/`isLoadingMore`
+  /// flag from a previous hung fetch before starting, so a user pull ALWAYS
+  /// gets a fresh attempt (the "pull does nothing when stuck" bug).
+  Future<void> refreshFromPull() {
+    if (state.isRefreshing || state.isLoadingMore) {
+      state = state.copyWith(isRefreshing: false, isLoadingMore: false);
+    }
+    return refresh();
+  }
+
   Future<void> _refresh() async {
     if (state.isRefreshing) return;
     state = state.copyWith(isRefreshing: true, clearError: true);
+    try {
+      await _refreshInner().timeout(_refreshTimeout, onTimeout: () {
+        // A hung fetch: reset so the NEXT pull-to-refresh isn't blocked.
+        // Keep the current events on screen (the cache is still good).
+        state = state.copyWith(
+          isRefreshing: false,
+          error: 'Refresh timed out — pull to retry',
+        );
+      });
+    } catch (e) {
+      state = state.copyWith(isRefreshing: false, error: e.toString());
+    }
+  }
+
+  Future<void> _refreshInner() async {
     try {
       final nostr = ref.read(nostrServiceProvider);
       if (!nostr.isInitialized) await nostr.init();
@@ -214,6 +246,17 @@ class FeedNotifier extends Notifier<FeedState> {
       return;
     }
     state = state.copyWith(isLoadingMore: true);
+    try {
+      await _loadMoreInner().timeout(_refreshTimeout, onTimeout: () {
+        // Same hung-fetch guard as refresh: reset so pagination isn't stuck.
+        state = state.copyWith(isLoadingMore: false);
+      });
+    } catch (_) {
+      state = state.copyWith(isLoadingMore: false);
+    }
+  }
+
+  Future<void> _loadMoreInner() async {
     try {
       final nostr = ref.read(nostrServiceProvider);
       if (!nostr.isInitialized) await nostr.init();

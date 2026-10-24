@@ -2,6 +2,17 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+/// The HTTP headers every network image request sends. A real browser
+/// User-Agent is REQUIRED — many CDNs/hosts 403 the default Dart (empty) UA
+/// on Android but serve iOS fine (the "images load on iOS, fail on Android"
+/// cause). Accept narrows to images. Use this for every CachedNetworkImage
+/// that isn't going through SmartNetworkImage/SafeAvatar.
+const Map<String, String> kImageHttpHeaders = {
+  'Accept': 'image/avif,image/webp,image/*,*/*;q=0.8',
+  'User-Agent':
+      'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+};
+
 /// Network image that picks the right decoder for the URL.
 ///
 /// `CachedNetworkImage` throws `Invalid image data` on SVGs — they aren't
@@ -68,11 +79,7 @@ class SmartNetworkImage extends StatelessWidget {
       memCacheHeight: memH,
       // A real browser UA — some hosts 403 the default Dart (empty) UA on
       // Android but serve iOS (the "images fail on Android" cause).
-      httpHeaders: const {
-        'Accept': 'image/avif,image/webp,image/*,*/*;q=0.8',
-        'User-Agent':
-            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
-      },
+      httpHeaders: kImageHttpHeaders,
       placeholder: placeholder,
       errorWidget: errorWidget,
     );

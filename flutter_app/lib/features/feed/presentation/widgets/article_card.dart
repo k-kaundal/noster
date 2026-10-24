@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 
 /// Compact preview card for a long-form article (kind 30023, NIP-23) when
 /// it appears in a feed. Shows cover image, title, and summary — tapping
@@ -40,6 +41,7 @@ class ArticleCard extends StatelessWidget {
             // Cover image
             if (image != null && image.isNotEmpty)
               CachedNetworkImage(
+                httpHeaders: kImageHttpHeaders,
                 imageUrl: image,
                 height: 160,
                 width: double.infinity,

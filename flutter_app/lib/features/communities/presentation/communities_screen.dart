@@ -8,6 +8,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 
 /// Communities home: browse NIP-72 moderated communities (kind 34550).
@@ -316,6 +317,7 @@ class _CommunityCard extends ConsumerWidget {
               width: double.infinity,
               child: image != null
                   ? CachedNetworkImage(
+                      httpHeaders: kImageHttpHeaders,
                       imageUrl: image,
                       fit: BoxFit.cover,
                       placeholder: (_, _) =>

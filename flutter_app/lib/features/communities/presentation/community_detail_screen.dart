@@ -8,6 +8,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 
 /// Posts approved for a community (NIP-72 kind 4550 approvals, plus the
@@ -123,6 +124,7 @@ class CommunityDetailScreen extends ConsumerWidget {
               ),
               background: image != null
                   ? CachedNetworkImage(
+                      httpHeaders: kImageHttpHeaders,
                       imageUrl: image,
                       fit: BoxFit.cover,
                       errorWidget: (_, _, _) => _CoverFallback(scheme: scheme),

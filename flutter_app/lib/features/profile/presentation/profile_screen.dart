@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +11,7 @@ import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/profile_avatar.dart';
 import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/communities/presentation/community_detail_screen.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
@@ -404,14 +404,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     right: 0,
                     height: 200,
                     child: profile?.banner != null && profile!.banner!.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: profile.banner!,
+                        ? SmartNetworkImage(
+                            url: profile.banner!,
                             fit: BoxFit.cover,
                             // Display-size decode (ADR-0004): the banner is
                             // 200 dp tall on every phone.
-                            memCacheHeight:
-                                (200 * MediaQuery.devicePixelRatioOf(context))
-                                    .round(),
                             placeholder: (_, _) => Container(color: scheme.surfaceContainerHighest),
                             errorWidget: (_, _, _) => Container(color: scheme.surfaceContainerHighest),
                           )

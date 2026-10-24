@@ -9,6 +9,7 @@ import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 import 'package:nostrfeed_mobile/features/market/application/market_providers.dart';
 import 'package:nostrfeed_mobile/features/market/domain/listing.dart';
@@ -145,6 +146,7 @@ class _ListingCard extends ConsumerWidget {
                   width: double.infinity,
                   child: listing.image != null
                       ? CachedNetworkImage(
+                          httpHeaders: kImageHttpHeaders,
                           imageUrl: listing.image!,
                           fit: BoxFit.cover,
                           errorWidget: (_, _, _) =>
@@ -289,6 +291,7 @@ class _ListingDetailSheet extends ConsumerWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: CachedNetworkImage(
+                httpHeaders: kImageHttpHeaders,
                 imageUrl: listing.image!,
                 height: 200,
                 width: double.infinity,

@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/utils/media.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Video handling for note content:
@@ -176,6 +177,7 @@ class _DirectVideoTile extends StatelessWidget {
           children: [
             if (thumb != null)
               CachedNetworkImage(
+                httpHeaders: kImageHttpHeaders,
                 imageUrl: thumb,
                 fit: BoxFit.cover,
                 errorWidget: (_, _, _) => const SizedBox.shrink(),

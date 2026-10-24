@@ -727,13 +727,20 @@ over ~100 lines.
 - **Android image/scroll quirks**: (1) every network image sends a real
   browser `User-Agent` + `Accept` header — some CDNs/hosts 403 the default
   Dart (empty) UA on Android but serve iOS fine (a top cause of "images
-  load on iOS, fail on Android"). Applied in `_NetworkImageTile`,
-  `SmartNetworkImage`, and `SafeAvatar` (via
-  `CachedNetworkImageProvider(headers:)` — OctoImage has no httpHeaders
-  param). (2) the feed `ListView` uses explicit
-  `AlwaysScrollableScrollPhysics` + a guarded infinite-scroll trigger
-  (`maxScrollExtent > 0`, clamped pixels) — an unset physics + degenerate
-  layout threshold made Android spam loadMore and lock the scroll thread.
+  load on iOS, fail on Android"). The headers live in ONE place —
+  `kImageHttpHeaders` (`core/widgets/smart_network_image.dart`) — used by
+  `SmartNetworkImage`, `SafeAvatar`, and every raw `CachedNetworkImage`
+  (profile banner, communities, articles, video cards, live, market).
+  NEVER add a raw `CachedNetworkImage` without `httpHeaders: kImageHttpHeaders`.
+  (2) the feed `ListView` uses explicit `AlwaysScrollableScrollPhysics` +
+  a guarded infinite-scroll trigger (`maxScrollExtent > 0`, clamped pixels).
+- **Feed refresh never hangs** (`feed_notifier.dart`): `_refresh`/`_loadMore`
+  run under a 15s `_refreshTimeout` — a hung relay fetch (dead socket,
+  emulator's flaky route) resets `isRefreshing`/`isLoadingMore` instead of
+  leaving it true forever (the spinner-spins-forever + retry-blocked
+  "feed stuck" bug). Pull-to-refresh goes through `refreshFromPull()`, which
+  clears a stuck flag from a prior hung fetch first so a user pull ALWAYS
+  gets a fresh attempt.
 - **Feed images self-heal** (`_NetworkImageTile` in `note_content.dart`):
   a failed load auto-walks the NIP-92 `fallback` URLs, then shows a
   tap-to-retry tile (evicts the parked failure + re-resolves) — a flaky

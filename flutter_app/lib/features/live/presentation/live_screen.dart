@@ -7,6 +7,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/live/application/live_providers.dart';
 import 'package:nostrfeed_mobile/features/live/domain/live_event.dart';
 import 'package:nostrfeed_mobile/features/live/go_live_sheet.dart';
@@ -138,6 +139,7 @@ class _LiveCard extends ConsumerWidget {
                   width: double.infinity,
                   child: event.image != null
                       ? CachedNetworkImage(
+                          httpHeaders: kImageHttpHeaders,
                           imageUrl: event.image!,
                           fit: BoxFit.cover,
                           errorWidget: (_, _, _) =>
