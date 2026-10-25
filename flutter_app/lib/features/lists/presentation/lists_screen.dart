@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
@@ -11,7 +12,6 @@ import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/lists/application/list_providers.dart';
 import 'package:nostrfeed_mobile/features/lists/domain/nostr_list.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Lists home: the user's NIP-51 follow sets with create + manage.
 class ListsScreen extends ConsumerWidget {

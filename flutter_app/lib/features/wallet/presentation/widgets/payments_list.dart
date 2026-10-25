@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/lnbits_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/invoice_qr.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 // ── Payments list ────────────────────────────────────────────────────────

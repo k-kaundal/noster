@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/qr_scan_sheet.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
@@ -11,7 +11,6 @@ import 'package:nostrfeed_mobile/features/wallet/application/wallet_tools_provid
 import 'package:nostrfeed_mobile/features/wallet/data/lnbits_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/lnurl_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/utils/payment_input.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// "Send sats" — one box for every destination, because the string says
 /// which it is (invoice / lightning address / LNURL).
@@ -208,7 +207,7 @@ class _SendDialogState extends ConsumerState<SendDialog> {
                 decoration: InputDecoration(
                   labelText: 'Recipient',
                   hintText: 'name@domain.com · lnbc… · lnurl…',
-                  prefixIcon: AppIcon('zap', size: AppIconSize.md),
+                  prefixIcon: const AppIcon('zap', size: AppIconSize.md),
                   suffixIcon: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

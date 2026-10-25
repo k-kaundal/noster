@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
@@ -12,9 +11,9 @@ import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/profile_avatar.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/premium/application/premium_providers.dart';
-import 'package:nostrfeed_mobile/features/studio/application/studio_providers.dart';
 import 'package:nostrfeed_mobile/features/settings/application/app_update_providers.dart';
 import 'package:nostrfeed_mobile/features/settings/application/app_update_service.dart';
+import 'package:nostrfeed_mobile/features/studio/application/studio_providers.dart';
 
 /// The "You" surface (Refined drawer-replacement): a profile hub behind the
 /// AppBar avatar. Profile summary + quick stats + grouped rows (Create &
@@ -147,7 +146,7 @@ class YouScreen extends ConsumerWidget {
             ),
           ),
 
-          _GroupLabel('Create & earn'),
+          const _GroupLabel('Create & earn'),
           _YouRow(
             icon: 'chart',
             title: 'Studio',
@@ -170,7 +169,7 @@ class YouScreen extends ConsumerWidget {
             onTap: () => context.push('/memberships'),
           ),
 
-          _GroupLabel('Library'),
+          const _GroupLabel('Library'),
           _YouRow(
             icon: 'bookmark',
             title: 'Bookmarks',
@@ -184,7 +183,7 @@ class YouScreen extends ConsumerWidget {
             onTap: () => context.push('/lists'),
           ),
 
-          _GroupLabel('Account'),
+          const _GroupLabel('Account'),
           if (auth.isLoggedIn)
             _YouRow(
               icon: 'users',

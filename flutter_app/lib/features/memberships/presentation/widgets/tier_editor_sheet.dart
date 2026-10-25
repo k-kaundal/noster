@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/memberships/application/membership_providers.dart';
 import 'package:nostrfeed_mobile/features/studio/domain/subscription.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Create or edit a subscription tier (kind 37001). The slug is the tier's
 /// identity: editing keeps it, so the new event replaces the old one at the

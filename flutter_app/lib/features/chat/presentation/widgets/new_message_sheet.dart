@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/chat_screen.dart'
     show normalizePubkey;
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/search_results.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/suggested_peers.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Bottom-sheet "new message" picker with live people search.
 /// Accepts: npub, nprofile, hex pubkey, NIP-05 (alice@domain.com),
@@ -123,7 +122,7 @@ class _NewMessageSheetState extends ConsumerState<NewMessageSheet> {
                   autocorrect: false,
                   decoration: InputDecoration(
                     hintText: 'Name, npub, NIP-05, or lightning address…',
-                    prefixIcon: AppIcon('search', size: AppIconSize.md),
+                    prefixIcon: const AppIcon('search', size: AppIconSize.md),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
                             icon: const AppIcon('plus'),

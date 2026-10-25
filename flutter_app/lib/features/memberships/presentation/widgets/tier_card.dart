@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/nostr/usecases/zap_receipts.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/features/memberships/application/membership_providers.dart';
 import 'package:nostrfeed_mobile/features/studio/domain/subscription.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// What a creator asks for, and where the reader stands on it.
 ///

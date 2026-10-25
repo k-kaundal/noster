@@ -3,9 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:video_player/video_player.dart';
 
 /// NIP-71 reel uploader: pick a video → upload via Blossom → publish a

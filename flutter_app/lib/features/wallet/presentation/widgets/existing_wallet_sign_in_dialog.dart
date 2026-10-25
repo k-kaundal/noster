@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
 
 // ── Existing wallet sign-in dialog ───────────────────────────────────────
 

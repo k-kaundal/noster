@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -15,7 +16,6 @@ import 'package:nostrfeed_mobile/features/identity/application/address_providers
 import 'package:nostrfeed_mobile/features/identity/data/address_service.dart';
 import 'package:nostrfeed_mobile/features/identity/presentation/widgets/owned_nip5_tile.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Identity screen: profile, signer, lightning address, NIP-05, and relays.
 class IdentityScreen extends ConsumerWidget {
@@ -529,7 +529,7 @@ class _LightningAddressCard extends ConsumerWidget {
                   decoration: InputDecoration(
                     labelText: 'Username',
                     hintText: freeName ?? 'u…',
-                    prefixIcon: AppIcon('at', size: AppIconSize.md),
+                    prefixIcon: const AppIcon('at', size: AppIconSize.md),
                     suffixText: '@$selectedDomain',
                   ),
                   onChanged: (_) => setState(() {}),
@@ -804,7 +804,7 @@ class _Nip5Card extends ConsumerWidget {
                     decoration: InputDecoration(
                       labelText: 'Choose a name',
                       hintText: 'alice',
-                      prefixIcon: AppIcon('verified', size: AppIconSize.md),
+                      prefixIcon: const AppIcon('verified', size: AppIconSize.md),
                       suffixText: selectedDomain != null
                           ? '@${selectedDomain!.domain}'
                           : null,

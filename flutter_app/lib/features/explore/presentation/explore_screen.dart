@@ -7,13 +7,13 @@ import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 class ExploreScreen extends ConsumerWidget {
   const ExploreScreen({super.key});

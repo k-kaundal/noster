@@ -3,15 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/compose/data/upload_service.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/quote_card.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
   /// The event being quoted (NIP-18 quote post), or null for a plain note.

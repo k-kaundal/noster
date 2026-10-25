@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/qr_scan_sheet.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lndhub_providers.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// LndHub wallet: connect by scanning a `lndhub://` QR (the BlueWallet /
 /// Zeus / Alby / Umbrel / BTCPay "connect wallet" code), see the balance,

@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/features/premium/application/premium_providers.dart';
 import 'package:nostrfeed_mobile/features/premium/data/admission_service.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// The mark for paid relay admission, which is not a name tier.
 ///

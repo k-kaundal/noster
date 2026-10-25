@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/data/address_service.dart';
 import 'package:nostrfeed_mobile/features/identity/presentation/widgets/owned_nip5_tile.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 // ── Buy Name Section ──────────────────────────────────────────────────
 

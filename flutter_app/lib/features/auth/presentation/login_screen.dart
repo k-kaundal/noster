@@ -5,9 +5,10 @@ import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/auth/data/key_backup_service.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Auth flow inspired by Damus, Amethyst, X, and Threads:
 /// - Hero brand section on top (gradient, logo, tagline)
@@ -366,7 +367,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               decoration: InputDecoration(
                 labelText: 'Public Key',
                 hintText: 'npub1…',
-                prefixIcon: AppIcon('users', size: AppIconSize.md),
+                prefixIcon: const AppIcon('users', size: AppIconSize.md),
                 border: OutlineInputBorder(
                   borderRadius: AppShapes.radiusMd,
                 ),
@@ -456,7 +457,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             decoration: InputDecoration(
               labelText: 'Secret key',
               hintText: 'nsec1…',
-              prefixIcon: AppIcon('key', size: AppIconSize.md),
+              prefixIcon: const AppIcon('key', size: AppIconSize.md),
               suffixIcon: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -756,12 +757,11 @@ class _HeroSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-      color: scheme.primary,
+      decoration: const BoxDecoration(gradient: AppTheme.brandGradient),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -776,13 +776,16 @@ class _HeroSection extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // Logo mark — flat accent rounded square with a white AppIcon
+          // Brand mark — frosted-glass bolt tile on the brand gradient
           Center(
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.15), // token-guard: allow — on accent hero
                 borderRadius: AppShapes.radiusLg,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.25), // token-guard: allow — on accent hero
+                ),
               ),
               child: const AppIcon(
                 'zap',
@@ -792,12 +795,28 @@ class _HeroSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          // Two-tone wordmark — same lockup as the AppBar brand
           Center(
-            child: Text(
-              'NostrFeed',
-              style: theme.textTheme.headlineMedium?.copyWith(
-                color: Colors.white, // token-guard: allow — on accent hero
-                fontWeight: FontWeight.bold,
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'nostr',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: Colors.white, // token-guard: allow — on accent hero
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                  TextSpan(
+                    text: 'feed',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.75), // token-guard: allow — on accent hero
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

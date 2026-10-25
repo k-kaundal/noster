@@ -8,6 +8,7 @@ import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_badge.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/brand_logo.dart';
 import 'package:nostrfeed_mobile/core/widgets/command_palette.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
@@ -140,38 +141,7 @@ class _AppShellState extends ConsumerState<AppShell>
               // (drawer is gone) and NO 3-dot (replaced by the avatar → /you).
               titleSpacing: 16,
               title: _titleFor(location) == 'nostrfeed'
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Refined logo mark — a 28dp accent tile + wordmark.
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: colorScheme.primary,
-                            borderRadius: AppShapes.radiusMd,
-                          ),
-                          child: const Center(
-                            child: AppIcon(
-                              'zap',
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 9),
-                        Text(
-                          _titleFor(location),
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.5,
-                              ),
-                        ),
-                      ],
-                    )
+                  ? const BrandLogo()
                   : Text(
                       _titleFor(location),
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(

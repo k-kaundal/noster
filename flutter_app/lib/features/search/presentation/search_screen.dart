@@ -11,11 +11,11 @@ import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
@@ -171,7 +171,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               borderRadius: AppShapes.radiusFull,
               borderSide: BorderSide.none,
             ),
-            prefixIcon: AppIcon('search', size: AppIconSize.md),
+            prefixIcon: const AppIcon('search', size: AppIconSize.md),
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
                     icon: const AppIcon('plus'),

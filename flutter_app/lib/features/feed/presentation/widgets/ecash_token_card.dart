@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
 import 'package:nostrfeed_mobile/core/utils/encrypted_content.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Renders an ecash / encrypted-token payload as a proper card instead of a

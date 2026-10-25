@@ -10,12 +10,12 @@ import 'package:nostrfeed_mobile/core/services/background_sync.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/settings/presentation/relay_settings_screen.dart';
 import 'package:nostrfeed_mobile/features/settings/presentation/widgets/wallet_settings_section.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// App settings screen: profile, account keys, appearance, relays,

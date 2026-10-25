@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/settings/application/settings_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/nwc_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/wallet_tools_providers.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// The Wallet section of Settings: the LNbits instance this app talks to,
 /// quick links to the wallet + NWC + Cashu, and a Premium entry.

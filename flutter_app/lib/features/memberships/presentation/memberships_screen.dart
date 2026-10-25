@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
@@ -14,7 +14,6 @@ import 'package:nostrfeed_mobile/features/memberships/presentation/widgets/membe
 import 'package:nostrfeed_mobile/features/memberships/presentation/widgets/tier_card.dart';
 import 'package:nostrfeed_mobile/features/memberships/presentation/widgets/tier_editor_sheet.dart';
 import 'package:nostrfeed_mobile/features/studio/domain/subscription.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Memberships — user-to-user subscriptions.
 ///

@@ -7,12 +7,12 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
 import 'package:nostrfeed_mobile/features/groups/application/group_providers.dart';
 import 'package:nostrfeed_mobile/features/groups/group_info_sheet.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 /// NIP-29 relay-group chat room: kind 9 (chat) / kind 11 (thread) / kind 1

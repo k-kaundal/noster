@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
@@ -15,7 +15,6 @@ import 'package:nostrfeed_mobile/features/premium/application/premium_providers.
 import 'package:nostrfeed_mobile/features/premium/data/admission_service.dart';
 import 'package:nostrfeed_mobile/features/premium/presentation/widgets/bunker_card.dart';
 import 'package:nostrfeed_mobile/features/premium/presentation/widgets/nwc_provider_card.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Premium: verified names (NIP-05) + paid relay + lightning addresses.
 class PremiumScreen extends ConsumerStatefulWidget {

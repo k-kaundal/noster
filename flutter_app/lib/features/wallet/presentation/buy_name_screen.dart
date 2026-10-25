@@ -4,11 +4,11 @@ import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/data/address_service.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Dedicated screen for buying a verified NIP-05 name or custom lightning
 /// address. Replaces the cramped AlertDialog with a full-screen flow that
@@ -356,7 +356,7 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                   decoration: InputDecoration(
                     labelText: 'Name',
                     hintText: 'alice',
-                    prefixIcon: AppIcon('verified', size: AppIconSize.md),
+                    prefixIcon: const AppIcon('verified', size: AppIconSize.md),
                     suffixText: _selectedDomain != null
                         ? '@${_selectedDomain!.domain}'
                         : null,
@@ -414,7 +414,7 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                   controller: _promoController,
                   decoration: InputDecoration(
                     labelText: 'Promo code (optional)',
-                    prefixIcon: AppIcon('hash', size: AppIconSize.md),
+                    prefixIcon: const AppIcon('hash', size: AppIconSize.md),
                     border: OutlineInputBorder(
                       borderRadius: AppShapes.radiusMd,
                     ),

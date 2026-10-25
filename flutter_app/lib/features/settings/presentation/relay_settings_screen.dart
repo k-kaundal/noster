@@ -6,9 +6,9 @@ import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/settings/application/relay_settings_providers.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Relay management: connection status per relay, read/write intent that
 /// actually drives queries and publishes, and NIP-65 list sync.
@@ -119,7 +119,7 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                     controller: _addRelayController,
                     decoration: InputDecoration(
                       hintText: 'wss://relay.example.com',
-                      prefixIcon: AppIcon('link', size: AppIconSize.md),
+                      prefixIcon: const AppIcon('link', size: AppIconSize.md),
                       border: OutlineInputBorder(
                         borderRadius: AppShapes.radiusMd,
                       ),

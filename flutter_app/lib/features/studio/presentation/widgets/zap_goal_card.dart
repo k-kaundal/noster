@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/studio/application/studio_providers.dart';
 import 'package:nostrfeed_mobile/features/studio/domain/zap_goal.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// A fundraising goal and how far along it is (NIP-75). Amounts are stored
 /// in millisats and shown in sats.

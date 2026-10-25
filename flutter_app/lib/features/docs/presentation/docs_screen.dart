@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/features/docs/docs_data.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DocsScreen extends StatefulWidget {

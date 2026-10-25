@@ -5,10 +5,10 @@ import 'package:intl/intl.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/cashu_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/cashu_service.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 /// Cashu ecash wallet screen. Supports minting (Lightning → ecash),
@@ -642,7 +642,7 @@ class _CashuWalletScreenState extends ConsumerState<CashuWalletScreen> {
                 decoration: InputDecoration(
                   labelText: 'Cashu Token',
                   hintText: 'cashuA…',
-                  prefixIcon: AppIcon('key', size: AppIconSize.md),
+                  prefixIcon: const AppIcon('key', size: AppIconSize.md),
                   suffixIcon: IconButton(
                     icon: const AppIcon('edit', size: AppIconSize.md),
                     onPressed: () async {

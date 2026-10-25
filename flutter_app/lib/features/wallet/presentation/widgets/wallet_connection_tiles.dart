@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/cashu_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/nwc_providers.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Wallet-connection status tiles (LNbits, NWC, Cashu) — each a CircleAvatar
 /// status icon + name + live balance summary + chevron, navigating to the

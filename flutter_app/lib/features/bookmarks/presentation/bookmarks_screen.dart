@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/features/feed/application/post_actions.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Saved posts. Each row is a PostCard (with its own bookmark toggle), and a
 /// swipe removes it — the explicit UNBOOKMARK path, so removing a save isn't

@@ -2,14 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/app/router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart' show DecryptedDm;
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/services/local_notification_service.dart';
-import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
 
 /// A pending "someone sent you a message" banner.
 class DmAlert {

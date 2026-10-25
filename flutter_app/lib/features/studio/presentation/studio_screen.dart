@@ -5,6 +5,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
@@ -15,7 +16,6 @@ import 'package:nostrfeed_mobile/features/studio/application/studio_providers.da
 import 'package:nostrfeed_mobile/features/studio/domain/subscription.dart';
 import 'package:nostrfeed_mobile/features/studio/presentation/widgets/zap_goal_card.dart';
 import 'package:nostrfeed_mobile/features/studio/presentation/widgets/zap_goal_editor.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Creator Studio — what you earned, and the tools to earn it.
 ///

@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/boost/application/boost_providers.dart';
 import 'package:nostrfeed_mobile/features/boost/application/boost_purchase.dart';
 import 'package:nostrfeed_mobile/features/boost/domain/boost.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// The boost purchase sheet: pick a tier, pay sats, the boost goes live
 /// when the platform's zap receipt lands on relays.

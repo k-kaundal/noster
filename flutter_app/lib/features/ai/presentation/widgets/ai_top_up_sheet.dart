@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/providers/auth_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_credits.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// AI credits top-up: pick a token pack or enter a custom token amount
 /// (+3% processing) → house-wallet invoice priced in SATS at the LIVE

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_badge.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -13,7 +14,6 @@ import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/live/application/live_providers.dart';
 import 'package:nostrfeed_mobile/features/live/domain/live_event.dart';
 import 'package:nostrfeed_mobile/features/live/go_live_sheet.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Live home: currently-live + upcoming NIP-53 activities.
 class LiveScreen extends ConsumerWidget {

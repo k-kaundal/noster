@@ -124,29 +124,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final convosAsync = ref.watch(conversationListProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
-    // AppBar is owned by AppShell (hamburger → drawer). This view adds its
-    // action row (search + new message) inline at the top of the body.
+    // AppBar is owned by AppShell (hamburger → drawer). New message lives on
+    // the floating action button (bottom-right, above the bottom nav).
     return Scaffold(
       backgroundColor: colorScheme.surface,
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 90),
+        child: FloatingActionButton(
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            _showNewMessageDialog(context);
+          },
+          tooltip: 'New message',
+          elevation: 4,
+          child: const AppIcon('edit'),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Column(
         children: [
-          // Action row: new message (search lives in the AppBar).
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-            child: Row(
-              children: [
-                const Spacer(),
-                IconButton(
-                  icon: const AppIcon('edit', size: AppIconSize.lg),
-                  tooltip: 'New message',
-                  onPressed: () {
-                    HapticFeedback.lightImpact();
-                    _showNewMessageDialog(context);
-                  },
-                ),
-              ],
-            ),
-          ),
           Expanded(
             child: convosAsync.when(
               loading: () => _buildLoadingState(colorScheme),

@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/premium/application/nwc_provider_providers.dart';
 import 'package:nostrfeed_mobile/features/premium/data/nwc_provider_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// NWC Provider — mint `nostr+walletconnect://` links for your own wallet.
 ///

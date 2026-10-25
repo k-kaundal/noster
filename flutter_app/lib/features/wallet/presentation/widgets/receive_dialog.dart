@@ -3,14 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/lnbits_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/invoice_qr.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 /// Amounts people actually ask for, so most requests need no typing.

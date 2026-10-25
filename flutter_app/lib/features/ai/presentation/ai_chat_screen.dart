@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
@@ -18,7 +18,6 @@ import 'package:nostrfeed_mobile/features/ai/domain/ai_models.dart';
 import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_generated_media.dart';
 import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_model_picker.dart';
 import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_top_up_sheet.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// The AI assistant chat screen — streaming, markdown answers, per-model

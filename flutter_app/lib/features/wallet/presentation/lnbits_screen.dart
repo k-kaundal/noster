@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/lnbits_service.dart';
@@ -17,7 +18,6 @@ import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/payments_l
 import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/receive_dialog.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/send_dialog.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/wallet_login_prompt.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// LNbits wallet screen matching the web WalletPage flow.
 ///

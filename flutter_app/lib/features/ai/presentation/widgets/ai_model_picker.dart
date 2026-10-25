@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_gateway.dart';
-import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Opens the model picker sheet. Selects the model on tap.
 Future<void> showAiModelPicker(BuildContext context) {
