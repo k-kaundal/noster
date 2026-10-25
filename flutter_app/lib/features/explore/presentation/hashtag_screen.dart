@@ -29,7 +29,7 @@ class HashtagScreen extends ConsumerWidget {
           if (events.isEmpty) {
             return EmptyState(
               icon: Icons.tag,
-              iconColor: Colors.grey,
+              iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
               title: 'No posts tagged #$tag',
             );
           }

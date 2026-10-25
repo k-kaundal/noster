@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
@@ -155,8 +156,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
               color: Colors.green.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.arrow_downward,
-                size: 16, color: Colors.green),
+            child: const AppIcon('arrow_down', size: 16, color: Colors.green),
           ),
           const SizedBox(width: 10),
           Text(hasInvoice ? 'Invoice' : 'Receive sats'),
@@ -188,7 +188,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.add),
+                : const AppIcon('plus'),
             label: Text(_isWorking ? 'Creating…' : 'Create invoice'),
           )
         else
@@ -261,7 +261,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      icon: const AppIcon('edit', size: 16),
                       tooltip: 'Copy address',
                       visualDensity: VisualDensity.compact,
                       onPressed: () {
@@ -321,7 +321,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
           decoration: const InputDecoration(
             labelText: 'Amount (sats)',
             hintText: '0',
-            prefixIcon: Icon(Icons.currency_bitcoin),
+            prefixIcon: AppIcon('zap', size: AppIconSize.md),
           ),
           keyboardType: TextInputType.number,
           onChanged: (_) => setState(() {}),
@@ -347,7 +347,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
           decoration: const InputDecoration(
             labelText: 'Description (optional)',
             hintText: 'Coffee, donation…',
-            prefixIcon: Icon(Icons.description_outlined),
+            prefixIcon: AppIcon('article', size: AppIconSize.md),
           ),
         ),
         if (_errorMsg != null) ...[
@@ -376,7 +376,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
         // Live status — the piece that was missing: without it the QR just
         // sat there and "the invoice didn't show" (nothing confirmed).
         AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
+          duration: AppMotion.fast,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: _isPaid
@@ -393,7 +393,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (_isPaid)
-                const Icon(Icons.check_circle, color: Colors.green, size: 18)
+                const AppIcon('check', size: 18, color: Colors.green)
               else
                 const SizedBox(
                   width: 16,

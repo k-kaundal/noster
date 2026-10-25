@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
 
 // ── Existing wallet sign-in dialog ───────────────────────────────────────
@@ -79,7 +79,7 @@ class _ExistingWalletSignInDialogState
                           decoration: const InputDecoration(
                             labelText: 'Your wallet address',
                             hintText: 'https://…/wallet?usr=…',
-                            prefixIcon: Icon(Icons.link),
+                            prefixIcon: AppIcon('link', size: AppIconSize.md),
                           ),
                           maxLines: 2,
                           minLines: 1,
@@ -118,7 +118,7 @@ class _ExistingWalletSignInDialogState
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2),
                                   )
-                                : const Icon(Icons.link),
+                                : const AppIcon('link'),
                             label: const Text('Sign in'),
                           ),
                         ),
@@ -136,7 +136,7 @@ class _ExistingWalletSignInDialogState
                           decoration: const InputDecoration(
                             labelText: 'Username',
                             hintText: 'satoshi',
-                            prefixIcon: Icon(Icons.person),
+                            prefixIcon: AppIcon('users', size: AppIconSize.md),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -144,7 +144,7 @@ class _ExistingWalletSignInDialogState
                           controller: _passwordController,
                           decoration: const InputDecoration(
                             labelText: 'Password',
-                            prefixIcon: Icon(Icons.lock),
+                            prefixIcon: AppIcon('key', size: AppIconSize.md),
                           ),
                           obscureText: true,
                         ),
@@ -176,7 +176,7 @@ class _ExistingWalletSignInDialogState
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2),
                                   )
-                                : const Icon(Icons.key),
+                                : const AppIcon('key'),
                             label: const Text('Sign in'),
                           ),
                         ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -78,31 +79,38 @@ class ChatMessage {
 /// immediately (a NIP-17 gift wrap cannot be decrypted by its sender, and
 /// its timestamp is randomized up to 2 days back for privacy — so relying
 /// on the relay round-trip alone makes sent messages vanish or sort wrong).
-class DmStore {
-  final Ref _ref;
-
+///
+/// This IS a Riverpod [Notifier] (converted like `NotificationCenter`):
+/// mutations emit a new [DmStoreState] via `state =` — NOT the old
+/// `dmStoreVersionProvider` hand-poke. Watchers use
+/// `dmStoreProvider.select(...)` for rebuild granularity.
+class DmStore extends Notifier<DmStoreState> {
   /// Completes once the persisted outbox has been loaded from disk.
   /// Await this before reading [conversations] or [threadFor] after a cold
   /// start — otherwise the outbox is still empty and sent messages vanish.
   late final Future<void> ready;
 
-  /// Bumped every time the outbox or decryption cache changes. The UI
-  /// watches [dmStoreVersionProvider] to rebuild threads/conversation lists
-  /// reactively (e.g. right after sending a message).
+  /// Bumped every time the outbox or decryption cache changes — kept for
+  /// tests/diagnostics; the rebuild signal is [DmStoreState.version].
   int _version = 0;
   int get version => _version;
 
-  DmStore(this._ref) {
+  @override
+  DmStoreState build() {
     ready = Future.wait([_restoreOutbox(), _restoreLastRead()])
         .then((_) => _bump());
+    return const DmStoreState();
   }
 
   void _bump() {
     _version++;
-    _ref.read(dmStoreVersionProvider.notifier).state = _version;
+    state = DmStoreState(version: _version);
   }
 
   /// eventId → decrypted payload, for events we successfully decrypted.
+  /// LRU-bounded (Dart Maps keep insertion order): on a heavy DM day these
+  /// grew for the whole session; a miss just re-decrypts from the event.
+  static const _maxCacheEntries = 500;
   final Map<String, DecryptedDm> _decrypted = {};
 
   /// eventId → unit, for events we already tried and failed to decrypt
@@ -122,6 +130,16 @@ class DmStore {
   /// time is the only honest signal for live deliveries.
   final Map<String, int> _arrivalTs = {};
 
+  /// LRU touch + cap for [_decrypted]/[_liveEvents]/[_arrivalTs]: move the
+  /// key to most-recently-used and evict the oldest past [_maxCacheEntries].
+  void _cachePut<K, V>(Map<K, V> map, K key, V value) {
+    map.remove(key);
+    map[key] = value;
+    while (map.length > _maxCacheEntries) {
+      map.remove(map.keys.first);
+    }
+  }
+
   /// Ingest a DM event from the live subscription. Decrypts it, records
   /// arrival time, and bumps listeners (badge, banner, thread views).
   Future<void> ingest(NostrEvent event) async {
@@ -130,8 +148,12 @@ class DmStore {
     if (_decrypted.containsKey(event.id) || _undecryptable.contains(event.id)) {
       return;
     }
-    _liveEvents[event.id] = event;
-    _arrivalTs[event.id] = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    _cachePut(_liveEvents, event.id, event);
+    _cachePut(
+      _arrivalTs,
+      event.id,
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    );
     await prime([event]);
     _bump();
   }
@@ -141,7 +163,7 @@ class DmStore {
   /// subscription re-delivering them moments later can't re-fire unread
   /// counts or notifications (the "opening chat re-notifies" bug).
   void _clampReadEvents(String peerPubkey, int watermark) {
-    final auth = _ref.read(authStateProvider);
+    final auth = ref.read(authStateProvider);
     final myPubkey = auth.pubkey;
     if (myPubkey == null) return;
     for (final entry in _liveEvents.entries) {
@@ -227,7 +249,7 @@ class DmStore {
       if (_decrypted.containsKey(e.id) || _undecryptable.contains(e.id)) {
         continue;
       }
-      _liveEvents[e.id] = e;
+      _cachePut(_liveEvents, e.id, e);
       added++;
     }
     if (added > 0) {
@@ -265,15 +287,25 @@ class DmStore {
     final existing = _lastRead[peerPubkey] ?? 0;
     if (watermark <= existing) return;
     _lastRead[peerPubkey] = watermark;
+    // Cap watermarks to the most recent peers — an old peer's unread count
+    // just resets to "all unread" (safe: the user re-reads on open), and the
+    // map no longer grows one entry per DM peer forever.
+    while (_lastRead.length > 200) {
+      _lastRead.remove(_lastRead.keys.first);
+    }
     // Clamp known live events to the watermark so the live subscription
     // re-delivering them can't re-fire unread counts or notifications.
     _clampReadEvents(peerPubkey, watermark);
     _bump();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final json = _lastRead.map((k, v) => MapEntry(k, v.toString()));
-      await prefs.setString(_lastReadKey, jsonEncode(json));
-    } catch (_) {}
+    // Debounced write (was a full-map write on EVERY read mark).
+    _lastReadWriteTimer?.cancel();
+    _lastReadWriteTimer = Timer(_writeDebounce, () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final json = _lastRead.map((k, v) => MapEntry(k, v.toString()));
+        await prefs.setString(_lastReadKey, jsonEncode(json));
+      } catch (_) {}
+    });
   }
 
   /// The effective "when did this message reach us" timestamp for unread
@@ -285,7 +317,7 @@ class DmStore {
   /// Unread incoming messages from [peerPubkey] (excludes my own messages
   /// and anything at/before the last-read timestamp).
   int unreadFor(List<NostrEvent> events, String peerPubkey) {
-    final auth = _ref.read(authStateProvider);
+    final auth = ref.read(authStateProvider);
     final myPubkey = auth.pubkey;
     if (myPubkey == null) return 0;
     events = _withLive(events);
@@ -312,7 +344,7 @@ class DmStore {
 
   /// Total unread across all conversations — drives the chat tab badge.
   int totalUnread(List<NostrEvent> events) {
-    final auth = _ref.read(authStateProvider);
+    final auth = ref.read(authStateProvider);
     if (auth.pubkey == null) return 0;
     var total = 0;
     for (final c in conversations(events)) {
@@ -336,22 +368,41 @@ class DmStore {
   }
 
   /// Decrypt all DM events we haven't processed yet.
+  ///
+  /// TIME-SLICED: the NIP-44/NIP-04 crypto inside [decryptDm] is SYNCHRONOUS
+  /// on the UI isolate — a gap-fill of 50 gift-wraps is ~100 sequential
+  /// NIP-44 decryptions, which used to block the UI for the whole batch (the
+  /// "chat is janky after opening" freeze). Yield to the event loop every
+  /// few events so frames keep rendering; the batch takes a hair longer
+  /// wall-clock but the app stays interactive throughout.
   Future<void> prime(List<NostrEvent> events) async {
-    final nostr = _ref.read(nostrServiceProvider);
-    final auth = _ref.read(authStateProvider);
+    final nostr = ref.read(nostrServiceProvider);
+    final auth = ref.read(authStateProvider);
     if (auth.pubkey == null) return;
 
+    var processed = 0;
     for (final e in events) {
       if (_decrypted.containsKey(e.id) || _undecryptable.contains(e.id)) {
         continue;
       }
       if (e.kind == 1059 || e.kind == 4) {
+        // Yield every 4 decryptions — hands the isolate back to the frame
+        // scheduler mid-burst. 0ms is enough (it's a task-queue yield, not
+        // a delay).
+        if (++processed % 4 == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
         final d = await nostr.decryptDm(e);
         if (d == null) {
           _undecryptable.add(e.id);
+          // Bound the failure set too — evict oldest (a later retry just
+          // re-fails, which is cheap and correct).
+          while (_undecryptable.length > _maxCacheEntries) {
+            _undecryptable.remove(_undecryptable.first);
+          }
           continue;
         }
-        _decrypted[e.id] = d;
+        _cachePut(_decrypted, e.id, d);
         // First-seen time for relay-fetched NIP-17 messages: the rumor's
         // created_at is backdated up to 2 days, so without an arrival stamp
         // a fresh message sorts as "2d ago" and gets buried in the thread.
@@ -359,7 +410,11 @@ class DmStore {
         if (e.kind == 1059 &&
             d.senderPubkey != auth.pubkey &&
             !_arrivalTs.containsKey(e.id)) {
-          _arrivalTs[e.id] = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          _cachePut(
+            _arrivalTs,
+            e.id,
+            DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          );
         }
         // A wrap we CAN decrypt that was sent BY us means the peer echoed our
         // own message back (some relay setups) — clear matching outbox entry.
@@ -372,7 +427,7 @@ class DmStore {
   /// Messages exchanged with [peerPubkey], sorted newest-first.
   /// Combines decrypted relay events + live events + local outbox.
   List<ChatMessage> threadFor(List<NostrEvent> events, String peerPubkey) {
-    final auth = _ref.read(authStateProvider);
+    final auth = ref.read(authStateProvider);
     final myPubkey = auth.pubkey;
     if (myPubkey == null) return const [];
 
@@ -436,7 +491,7 @@ class DmStore {
   /// Returns (peerPubkey, latest event, latest decrypted payload if known).
   List<({String peer, NostrEvent lastEvent, DecryptedDm? decrypted})>
   conversations(List<NostrEvent> events) {
-    final auth = _ref.read(authStateProvider);
+    final auth = ref.read(authStateProvider);
     final myPubkey = auth.pubkey;
     if (myPubkey == null) return const [];
 
@@ -524,7 +579,7 @@ class DmStore {
     required String plaintext,
     required String eventId,
   }) {
-    final auth = _ref.read(authStateProvider);
+    final auth = ref.read(authStateProvider);
     if (auth.pubkey == null) return '';
     final msg = ChatMessage(
       id: 'local-$eventId',
@@ -595,7 +650,21 @@ class DmStore {
 
   // ── Outbox persistence ─────────────────────────────────────────────
 
-  Future<void> _persistOutbox() async {
+  /// Writes are DEBOUNCED: `recordSent`/`markStatus`/`markFileMessage`/
+  /// `removePending` each call [_persistOutbox], and every one used to write
+  /// the ENTIRE outbox JSON — sending 5 messages was 5 full-map writes.
+  /// Batching bursts into one write per window kills the amplification.
+  /// The in-memory state is always current, so the disk write can lag.
+  Timer? _outboxWriteTimer;
+  Timer? _lastReadWriteTimer;
+  static const _writeDebounce = Duration(milliseconds: 500);
+
+  void _persistOutbox() {
+    _outboxWriteTimer?.cancel();
+    _outboxWriteTimer = Timer(_writeDebounce, _writeOutboxNow);
+  }
+
+  Future<void> _writeOutboxNow() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final json = _outbox.map(
@@ -687,7 +756,7 @@ class DmStore {
   }
 
   void _reconcileOutbox(String senderPubkey, String plaintext, int createdAt) {
-    final auth = _ref.read(authStateProvider);
+    final auth = ref.read(authStateProvider);
     if (senderPubkey != auth.pubkey) return;
     // Find which peer this was to and drop the matching pending message.
     for (final entry in _outbox.entries) {
@@ -701,12 +770,24 @@ class DmStore {
   }
 }
 
-final dmStoreProvider = Provider<DmStore>((ref) => DmStore(ref));
+/// Immutable snapshot emitted on every store mutation. `version` is
+/// monotonic — watchers use it as the rebuild signal (equivalent to the
+/// old `dmStoreVersionProvider`, minus the manual poke).
+class DmStoreState {
+  final int version;
+  const DmStoreState({this.version = 0});
+}
+
+final dmStoreProvider = NotifierProvider<DmStore, DmStoreState>(
+  DmStore.new,
+);
 
 /// Real-time DM subscription: streams incoming kind 4 (NIP-04) and kind 1059
 /// (NIP-17) events p-tagged to the current user from ALL connected relays.
 /// Without this, messages only appear on manual refresh — the "message sent
 /// from Primal never shows up" bug.
+///
+/// ADR-0005: shared EventBus (acquire → local filter), not a raw sub.
 final dmLiveEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return const Stream.empty();
@@ -716,7 +797,7 @@ final dmLiveEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
   // (while relays were still connecting) aren't missed. Deduped in DmStore.
   final since =
       DateTime.now().millisecondsSinceEpoch ~/ 1000 - 6 * 3600; // 6h back
-  return nostr.relayPool.subscribe([
+  final spec = [
     NostrFilter(
       kinds: [4, 1059],
       tagFilters: {
@@ -724,7 +805,11 @@ final dmLiveEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
       },
       since: since,
     ),
-  ]);
+  ];
+  final bus = ref.watch(eventBusProvider);
+  final handle = bus.acquire(spec);
+  ref.onDispose(handle.dispose);
+  return bus.stream.where(spec.matchesAny);
 });
 
 /// Wires the live subscription into the store. Watch this once at the app
@@ -733,32 +818,35 @@ final dmLiveEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
 final dmLiveListenerProvider = Provider<void>((ref) {
   ref.listen(dmLiveEventsProvider, (_, next) {
     next.whenData((event) {
-      ref.read(dmStoreProvider).ingest(event);
+      ref.read(dmStoreProvider.notifier).ingest(event);
     });
   });
 });
 
-/// Version counter for [DmStore] mutations. Widgets watch this to rebuild
-/// threads/conversation lists reactively when the outbox or decryption cache
-/// changes (e.g. right after sending a message).
-final dmStoreVersionProvider = StateProvider<int>((ref) => 0);
+/// Version counter for [DmStore] mutations — kept as a thin shim so
+/// existing watchers (`ref.watch(dmStoreVersionProvider)`) keep compiling
+/// while they migrate to `dmStoreProvider` directly. New code watches
+/// `dmStoreProvider` (the Notifier state) or a `.select` on it.
+final dmStoreVersionProvider = Provider<int>((ref) {
+  return ref.watch(dmStoreProvider.select((s) => s.version));
+});
 
 /// Reactive conversation list: combines relay DM events + outbox, decrypts
 /// once, and rebuilds only when the underlying data changes.
 ///
 /// This is a FutureProvider so it can await the async decryption. It watches
-/// BOTH [dmsProvider] (relay events) and [dmStoreVersionProvider] (outbox /
-/// decryption cache bumps) so any change re-evaluates the future and the UI
-/// rebuilds with the latest conversations.
+/// BOTH [dmsProvider] (relay events) and [dmStoreProvider] (outbox /
+/// decryption cache mutations) so any change re-evaluates the future and
+/// the UI rebuilds with the latest conversations.
 final conversationListProvider =
     FutureProvider.autoDispose<List<({String peer, NostrEvent lastEvent, DecryptedDm? decrypted})>>(
         (ref) async {
   final events = await ref.watch(dmsProvider.future);
-  // Watch the version so this provider re-evaluates when the outbox or
+  // Watch the store state so this provider re-evaluates when the outbox or
   // decryption cache changes (e.g. after sending a message, or when prime()
   // finishes decrypting a batch of incoming DMs).
-  ref.watch(dmStoreVersionProvider);
-  final store = ref.read(dmStoreProvider);
+  ref.watch(dmStoreProvider);
+  final store = ref.read(dmStoreProvider.notifier);
   await store.ready;
   await store.prime(events);
   return store.conversations(events);

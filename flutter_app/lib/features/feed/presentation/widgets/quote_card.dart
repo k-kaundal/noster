@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 
@@ -105,7 +105,7 @@ class QuoteCard extends ConsumerWidget {
       scheme,
       child: Row(
         children: [
-          Icon(Icons.link_off_rounded, size: 16, color: scheme.onSurfaceVariant),
+          AppIcon('link', size: 16, color: scheme.onSurfaceVariant),
           const SizedBox(width: 8),
           Text(
             'Quoted post unavailable',
@@ -178,8 +178,7 @@ class _QuoteBody extends ConsumerWidget {
             const SizedBox(height: 6),
             Row(
               children: [
-                Icon(Icons.photo_library_outlined,
-                    size: 14, color: scheme.primary),
+                AppIcon('image', size: 14, color: scheme.primary),
                 const SizedBox(width: 6),
                 Text(
                   'Media',

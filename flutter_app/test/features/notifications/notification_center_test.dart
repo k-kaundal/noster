@@ -23,7 +23,7 @@ ProviderContainer _makeContainer() {
 Future<NotificationCenter> _freshCenter(ProviderContainer c) async {
   // Each test gets a clean center: let any in-flight restore finish, THEN
   // reset so no stale watermark/events survive from the previous test.
-  final center = c.read(notificationCenterProvider);
+  final center = c.read(notificationCenterProvider.notifier);
   await center.ready;
   center.reset();
   return center;

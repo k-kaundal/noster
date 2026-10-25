@@ -89,7 +89,7 @@ class PostActions {
 
   void _scheduleEngagementRefresh(String eventId) {
     Future.delayed(const Duration(seconds: 2), () {
-      _ref.invalidate(userInteractionsProvider([eventId]));
+      _ref.invalidate(userInteractionsProvider(eventId));
       _ref.invalidate(engagementProvider(eventId));
     });
   }

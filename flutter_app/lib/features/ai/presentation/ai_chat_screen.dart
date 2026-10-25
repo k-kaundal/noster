@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
@@ -56,9 +60,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         notifier.clearError();
         showAiTopUpSheet(context);
       } else if (error != null && error.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error)),
-        );
+        AppToast.error(context, error);
         notifier.clearError();
       }
     });
@@ -78,7 +80,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       actions: [
         const _BalanceChip(),
         IconButton(
-          icon: const Icon(Icons.delete_outline_rounded),
+          icon: const AppIcon('eye_off'),
           tooltip: 'Clear chat',
           onPressed: chatState.messages.isEmpty
               ? null
@@ -129,6 +131,14 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                             )
                           : ListView.builder(
                               controller: _scrollController,
+                              // WhatsApp-style reversed list: the newest
+                              // message renders at the BOTTOM, short
+                              // conversations bottom-anchor, and the view
+                              // stays glued to the streaming answer when the
+                              // keyboard opens. `messages` is oldest-first,
+                              // so the index maps as len-1-i (offset 0 =
+                              // the newest message).
+                              reverse: true,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                                 vertical: 8,
@@ -138,22 +148,24 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                               itemCount: chatState.messages.length +
                                   (chatState.contextDropped > 0 ? 1 : 0),
                               itemBuilder: (context, index) {
-                                if (chatState.contextDropped > 0) {
-                                  if (index == 0) {
-                                    return _ContextNote(
-                                      dropped: chatState.contextDropped,
-                                    );
-                                  }
-                                  index -= 1;
+                                final messages = chatState.messages;
+                                // The context note belongs at the VISUAL top
+                                // = the LAST index of the reversed list.
+                                if (index == messages.length) {
+                                  return _ContextNote(
+                                    dropped: chatState.contextDropped,
+                                  );
                                 }
-                                final message = chatState.messages[index];
+                                final i = messages.length - 1 - index;
+                                final message = messages[i];
                                 if (message.role == AiRole.system) {
                                   return const SizedBox.shrink();
                                 }
                                 return _MessageBubble(
+                                  key: ValueKey(message.id),
                                   message: message,
                                   isStreaming: chatState.isStreaming &&
-                                      index == chatState.messages.length - 1,
+                                      i == messages.length - 1,
                                 );
                               },
                             ),
@@ -175,15 +187,21 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     );
   }
 
+  /// Scroll to the newest message — offset 0 in the reversed list. Waits TWO
+  /// frames: the outgoing message + the assistant placeholder are inserted
+  /// async by the notifier, so the list must rebuild before the offset
+  /// exists (a single post-frame callback can fire before the insert).
   void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: AppMotion.normal,
+            curve: AppMotion.curve,
+          );
+        }
+      });
     });
   }
 }
@@ -205,12 +223,15 @@ class _ContextNote extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppShapes.radiusMd,
         ),
         child: Text(
           '$dropped older ${dropped == 1 ? 'message' : 'messages'} out of '
           'context — clear chat to reset',
-          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+          style: Theme.of(context)
+              .textTheme
+              .labelSmall
+              ?.copyWith(color: scheme.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
       ),
@@ -230,17 +251,20 @@ class _PrivacyBanner extends StatelessWidget {
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: scheme.tertiaryContainer.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: AppShapes.radiusMd,
       ),
       child: Row(
         children: [
-          Icon(Icons.privacy_tip_outlined, size: 18, color: scheme.tertiary),
+          AppIcon('key', size: 18, color: scheme.tertiary),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               'Messages are processed by third-party AI providers. '
               'Never share your nsec or secrets.',
-              style: TextStyle(fontSize: 12, color: scheme.onSurface),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: scheme.onSurface),
             ),
           ),
         ],
@@ -262,21 +286,21 @@ class _WelcomeView extends StatelessWidget {
 
   /// (icon, label, prompt, prefillOnly) — prefill-only suggestions carry
   /// a placeholder the user replaces (a note link to summarize).
-  static const _suggestions = <(IconData, String, String, bool)>[
+  static const _suggestions = <(String, String, String, bool)>[
     (
-      Icons.summarize_outlined,
+      'article',
       'Summarize #hashtag',
       'Summarize the top posts on #bitcoin today in 5 bullet points',
       false,
     ),
     (
-      Icons.link_rounded,
+      'link',
       'Summarize a thread',
       'Summarize this thread: ',
       true,
     ),
     (
-      Icons.edit_outlined,
+      'edit',
       'Draft a post',
       'Draft a short Nostr post about why decentralization matters',
       false,
@@ -293,7 +317,7 @@ class _WelcomeView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.smart_toy_rounded, size: 56, color: scheme.primary),
+            AppIcon('sparkle', size: 56, color: scheme.primary),
             const SizedBox(height: 16),
             Text(
               'Ask me anything',
@@ -306,7 +330,8 @@ class _WelcomeView extends StatelessWidget {
               'relays, translate, draft, generate images and video, '
               'or just chat. Paid in tokens — only for what you use.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: scheme.onSurfaceVariant),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 24),
             for (final (icon, label, prompt, prefillOnly) in _suggestions) ...[
@@ -330,7 +355,7 @@ class _WelcomeView extends StatelessWidget {
 }
 
 class _SuggestionChip extends StatelessWidget {
-  final IconData icon;
+  final String icon;
   final String label;
   final String prompt;
   final VoidCallback onTap;
@@ -346,18 +371,19 @@ class _SuggestionChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: AppShapes.radiusMd,
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm + 2, vertical: AppSpacing.sm - 1),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppShapes.radiusMd,
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: scheme.primary),
+            AppIcon(icon, size: AppIconSize.md, color: scheme.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -365,24 +391,24 @@ class _SuggestionChip extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   Text(
                     prompt,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.north_west_rounded,
+            AppIcon('back',
                 size: 14, color: scheme.onSurfaceVariant),
           ],
         ),
@@ -405,44 +431,41 @@ class _ModelSelectorButton extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppShapes.radiusMd,
         onTap: () => showAiModelPicker(context),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: AppShapes.radiusMd,
           ),
           child: Row(
             children: [
-              Icon(Icons.auto_awesome_rounded, size: 16, color: scheme.primary),
+              AppIcon('sparkle', size: 16, color: scheme.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   model.label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Icon(Icons.bolt_rounded, size: 13, color: scheme.primary),
+              AppIcon('zap', size: 13, color: scheme.primary),
               Text(
                 '~$price tokens/msg',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant,
+                    ),
               ),
               const SizedBox(width: 4),
-              Icon(
-                Icons.unfold_more_rounded,
-                size: 16,
-                color: scheme.onSurfaceVariant,
-              ),
+              AppIcon('chevron_r',
+                  size: AppIconSize.sm, color: scheme.onSurfaceVariant),
             ],
           ),
         ),
@@ -463,25 +486,26 @@ class _BalanceChip extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: AppShapes.radiusFull,
         onTap: () => showAiTopUpSheet(context),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm - 2, vertical: AppSpacing.xxs),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: AppShapes.radiusFull,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.bolt_rounded, size: 14, color: scheme.primary),
+              AppIcon('zap', size: 14, color: scheme.primary),
               const SizedBox(width: 2),
               Text(
                 trialLeft > 0 ? '$trialLeft free · $balance' : '$balance',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelMedium
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -495,7 +519,11 @@ class _MessageBubble extends StatelessWidget {
   final AiMessage message;
   final bool isStreaming;
 
-  const _MessageBubble({required this.message, this.isStreaming = false});
+  const _MessageBubble({
+    super.key,
+    required this.message,
+    this.isStreaming = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -517,12 +545,14 @@ class _MessageBubble extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.82,
         ),
         decoration: BoxDecoration(
-          color: isUser ? scheme.primary : scheme.surfaceContainerHighest,
+          // Mine = flat tertiary (the accent); theirs = surfaceContainerHighest.
+          // Same 8 dp + 2 dp tail-corner language as the DM bubbles.
+          color: isUser ? scheme.tertiary : scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isUser ? 16 : 4),
-            bottomRight: Radius.circular(isUser ? 4 : 16),
+            topLeft: const Radius.circular(AppShapes.sm),
+            topRight: const Radius.circular(AppShapes.sm),
+            bottomLeft: Radius.circular(isUser ? AppShapes.sm : 2),
+            bottomRight: Radius.circular(isUser ? 2 : AppShapes.sm),
           ),
         ),
         child: Column(
@@ -531,7 +561,10 @@ class _MessageBubble extends StatelessWidget {
             if (isUser)
               Text(
                 message.content,
-                style: TextStyle(color: scheme.onPrimary, fontSize: 15),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.copyWith(color: scheme.onTertiary),
               )
             else ...[
               if (message.images.isNotEmpty)
@@ -551,7 +584,10 @@ class _MessageBubble extends StatelessWidget {
                     ? '…'
                     : message.content,
                 styleSheet: MarkdownStyleSheet(
-                  p: TextStyle(color: scheme.onSurface, fontSize: 15),
+                  p: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(color: scheme.onSurface),
                   code: TextStyle(
                     backgroundColor: scheme.surfaceContainer,
                     color: scheme.onSurface,
@@ -559,16 +595,36 @@ class _MessageBubble extends StatelessWidget {
                   ),
                   codeblockDecoration: BoxDecoration(
                     color: scheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppShapes.radiusSm,
                   ),
                 ),
               ),
             ],
             if (!isUser && !isStreaming && message.model != null) ...[
               const SizedBox(height: 4),
-              Text(
-                '${message.model} · ${message.costTokens == 0 ? "trial" : "${message.costTokens} tokens"}',
-                style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+              Builder(
+                builder: (context) {
+                  final tokens = message.costTokens ?? 0;
+                  final zapColor =
+                      AppActionColors.zapFor(Theme.of(context).brightness);
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (tokens > 0) ...[
+                        AppIcon('zap', size: AppIconSize.xs, color: zapColor),
+                        const SizedBox(width: 2),
+                      ],
+                      Text(
+                        '${message.model} · ${tokens == 0 ? "trial" : "$tokens tokens"}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: tokens == 0
+                                  ? scheme.onSurfaceVariant
+                                  : zapColor,
+                            ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           ],
@@ -590,7 +646,7 @@ class _MessageBubble extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(Icons.copy_rounded, color: scheme.primary),
+              leading: AppIcon('edit', color: scheme.primary),
               title: const Text('Copy text'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -599,7 +655,7 @@ class _MessageBubble extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: Icon(Icons.share_rounded, color: scheme.primary),
+              leading: AppIcon('share', color: scheme.primary),
               title: const Text('Share…'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -663,12 +719,12 @@ class _InputBar extends ConsumerWidget {
                       filled: true,
                       fillColor: scheme.surfaceContainerHighest,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: AppShapes.radiusPill,
                         borderSide: BorderSide.none,
                       ),
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm - 2,
                       ),
                     ),
                   ),
@@ -677,13 +733,13 @@ class _InputBar extends ConsumerWidget {
                 isStreaming
                     ? IconButton.filled(
                         onPressed: onStop,
-                        icon: const Icon(Icons.stop_rounded),
+                        icon: const AppIcon('plus'),
                         tooltip: 'Stop',
                       )
                     : IconButton.filled(
                         onPressed:
                             canSend ? () => onSend(controller.text) : null,
-                        icon: const Icon(Icons.send_rounded),
+                        icon: const AppIcon('send'),
                         tooltip: 'Send',
                       ),
               ],
@@ -693,7 +749,10 @@ class _InputBar extends ConsumerWidget {
               showTrial
                   ? '$trialLeft free messages left today · then ~$price tokens/msg'
                   : '≈ $price tokens per message on ${model.label}',
-              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ),

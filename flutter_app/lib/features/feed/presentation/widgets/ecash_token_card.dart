@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
 import 'package:nostrfeed_mobile/core/utils/encrypted_content.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Renders an ecash / encrypted-token payload as a proper card instead of a
@@ -147,8 +148,7 @@ class EcashTokenCard extends StatelessWidget {
                   color: scheme.primaryContainer,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.paid_rounded,
-                    size: 20, color: scheme.onPrimaryContainer),
+                child: AppIcon('zap', size: 20, color: scheme.onPrimaryContainer),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -219,7 +219,7 @@ class EcashTokenCard extends StatelessWidget {
       scheme,
       child: Row(
         children: [
-          Icon(Icons.lock_rounded, size: 18, color: scheme.onSurfaceVariant),
+          AppIcon('key', size: 18, color: scheme.onSurfaceVariant),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -232,7 +232,7 @@ class EcashTokenCard extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: Icon(Icons.copy_rounded, size: 16, color: scheme.primary),
+            icon: AppIcon('edit', size: 16, color: scheme.primary),
             tooltip: 'Copy',
             visualDensity: VisualDensity.compact,
             onPressed: () => _copy(context),
@@ -297,12 +297,7 @@ class EcashTokenCard extends StatelessWidget {
 
   void _copy(BuildContext context) {
     Clipboard.setData(ClipboardData(text: token));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Token copied'),
-        duration: Duration(seconds: 1),
-      ),
-    );
+    AppToast.success(context, 'Token copied');
   }
 
   void _openWallet(BuildContext context) {
@@ -322,15 +317,8 @@ class EcashTokenCard extends StatelessWidget {
     } else {
       await Clipboard.setData(ClipboardData(text: token));
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'No app on this device opens ${uri?.scheme ?? 'this'} links — '
-            'the offer was copied instead',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppToast.success(context, 'No app on this device opens ${uri?.scheme ?? 'this'} links — '
+            'the offer was copied instead');
     }
   }
 

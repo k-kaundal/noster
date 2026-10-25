@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_badge.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -82,9 +85,8 @@ class LiveScreen extends ConsumerWidget {
                 showDragHandle: true,
                 builder: (_) => const GoLiveSheet(),
               ),
-              icon: const Icon(Icons.sensors_rounded),
+              icon: const AppIcon('live'),
               label: const Text('Go Live'),
-              backgroundColor: Colors.red,
             )
           : null,
     );
@@ -101,12 +103,11 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
       child: Text(
         title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.4,
-          color: Theme.of(context).colorScheme.primary,
-        ),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: Theme.of(context).colorScheme.primary,
+            ),
       ),
     );
   }
@@ -122,10 +123,14 @@ class _LiveCard extends ConsumerWidget {
     final hostAsync = ref.watch(profileProvider(event.hostPubkey));
     final host = hostAsync.valueOrNull;
 
-    return Card(
+    final card = Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: () => context.push('/live/room', extra: event),
         child: Column(
@@ -160,19 +165,22 @@ class _LiveCard extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.black54, // token-guard: allow — scrim over cover media
+                        borderRadius: AppShapes.radiusSm,
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.visibility_rounded,
-                              color: Colors.white, size: 12),
+                          const AppIcon('eye',
+                              color: Colors.white, // token-guard: allow — on dark scrim
+                              size: AppIconSize.xs),
                           const SizedBox(width: 4),
                           Text(
                             '${event.currentParticipants}',
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 11),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: Colors.white), // token-guard: allow — on dark scrim
                           ),
                         ],
                       ),
@@ -187,7 +195,7 @@ class _LiveCard extends ConsumerWidget {
                   SafeAvatar(
                     imageUrl: host?.picture,
                     radius: 18,
-                    fallback: const Icon(Icons.person, size: 18),
+                    fallback: const AppIcon('users', size: AppIconSize.md),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -196,8 +204,10 @@ class _LiveCard extends ConsumerWidget {
                       children: [
                         Text(
                           event.title,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -212,8 +222,10 @@ class _LiveCard extends ConsumerWidget {
                                     event.starts! * 1000),
                               ),
                           ].join(' · '),
-                          style: TextStyle(
-                              fontSize: 12, color: scheme.onSurfaceVariant),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -221,8 +233,8 @@ class _LiveCard extends ConsumerWidget {
                     ),
                   ),
                   if (event.isLive)
-                    Icon(Icons.play_circle_fill_rounded,
-                        color: scheme.primary, size: 28),
+                    AppIcon('play',
+                        color: scheme.primary, size: AppIconSize.xl),
                 ],
               ),
             ),
@@ -230,6 +242,12 @@ class _LiveCard extends ConsumerWidget {
         ),
       ),
     );
+
+    // Ended streams read as dimmed/archived (status-first hierarchy).
+    if (event.isEnded) {
+      return Opacity(opacity: 0.55, child: card);
+    }
+    return card;
   }
 }
 
@@ -239,27 +257,11 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = switch (status) {
-      LiveStatus.live => ('LIVE', Colors.red),
-      LiveStatus.planned => ('UPCOMING', Colors.blue),
-      LiveStatus.ended => ('ENDED', Colors.grey),
+    return switch (status) {
+      LiveStatus.live => const StatusBadge.error('LIVE'),
+      LiveStatus.planned => const StatusBadge.info('UPCOMING'),
+      LiveStatus.ended => const StatusBadge.info('ENDED'),
     };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
   }
 }
 
@@ -270,18 +272,10 @@ class _ThumbFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [scheme.primary, scheme.tertiary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
+      color: scheme.surfaceContainerHigh,
       child: Center(
-        child: Icon(
-          Icons.live_tv_rounded,
-          color: Colors.white.withValues(alpha: 0.5),
-          size: 44,
+        child: AppIcon('live', color: scheme.onSurfaceVariant,
+          size: AppIconSize.xl,
         ),
       ),
     );

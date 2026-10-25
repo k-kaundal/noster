@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -61,7 +62,7 @@ class InvoiceQrView extends StatelessWidget {
                   Clipboard.setData(ClipboardData(text: bolt11));
                   AppToast.success(context, 'Invoice copied');
                 },
-                icon: const Icon(Icons.copy_rounded, size: 18),
+                icon: const AppIcon('edit', size: 18),
                 label: const Text('Copy'),
               ),
             ),
@@ -69,7 +70,7 @@ class InvoiceQrView extends StatelessWidget {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: () => _share(context),
-                icon: const Icon(Icons.share_outlined, size: 18),
+                icon: const AppIcon('share', size: 18),
                 label: const Text('Share'),
               ),
             ),

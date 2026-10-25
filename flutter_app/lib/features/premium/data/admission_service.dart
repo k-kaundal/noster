@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/services/http_helper.dart';
@@ -85,19 +84,15 @@ class AdmissionService {
   /// timeout, non-JSON, non-2xx — resolves to [AdmissionState.unknown],
   /// which must never be shown as "has not paid".
   Future<AdmissionState> check(String pubkey) async {
-    try {
-      final res = await http
-          .get(checkUrl(pubkey), headers: const {'Accept': 'application/json'})
-          .timeout(_timeout);
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        return AdmissionState.unknown;
-      }
-      final admitted = readAdmission(jsonDecode(res.body));
-      if (admitted == null) return AdmissionState.unknown;
-      return admitted ? AdmissionState.admitted : AdmissionState.unpaid;
-    } catch (_) {
-      return AdmissionState.unknown;
-    }
+    // Probe-style: tryGetJson returns null on any failure, and a failed
+    // check is never a refusal.
+    final body = await const ApiHttpClient(timeout: _timeout).tryGetJson(
+      checkUrl(pubkey),
+      headers: const {'Accept': 'application/json'},
+    );
+    final admitted = readAdmission(body);
+    if (admitted == null) return AdmissionState.unknown;
+    return admitted ? AdmissionState.admitted : AdmissionState.unpaid;
   }
 
   /// Quotes the admission fee from the endpoint that will actually charge it.
@@ -143,21 +138,16 @@ class AdmissionService {
     ];
 
     var failure = 'The relay did not answer';
+    const client = ApiHttpClient(timeout: _timeout);
     for (final (headers, body) in attempts) {
-      try {
-        final res = await http
-            .post(url, headers: headers, body: body)
-            .timeout(_timeout);
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          failure = 'The relay returned ${res.statusCode}';
-          continue;
-        }
-        final invoice = readInvoice(jsonDecode(res.body));
-        if (invoice != null) return invoice;
-        failure = 'The relay did not return an invoice';
-      } catch (e) {
-        failure = e.toString();
+      final json = await client.tryPostRaw(url, headers: headers, body: body);
+      if (json == null) {
+        failure = 'The relay returned an error';
+        continue;
       }
+      final invoice = readInvoice(json);
+      if (invoice != null) return invoice;
+      failure = 'The relay did not return an invoice';
     }
     throw AdmissionException(failure);
   }

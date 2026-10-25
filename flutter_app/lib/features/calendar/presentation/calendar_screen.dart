@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
@@ -54,7 +57,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           action: auth.isLoggedIn
               ? FilledButton.icon(
                   onPressed: () => _showNewEventSheet(context),
-                  icon: const Icon(Icons.event),
+                  icon: const AppIcon('calendar'),
                   label: const Text('Create an event'),
                 )
               : null,
@@ -66,7 +69,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       floatingActionButton: auth.isLoggedIn
           ? FloatingActionButton.extended(
               onPressed: () => _showNewEventSheet(context),
-              icon: const Icon(Icons.event),
+              icon: const AppIcon('calendar'),
               label: const Text('New Event'),
             )
           : null,
@@ -145,9 +148,12 @@ class EventCard extends ConsumerWidget {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: AppShapes.radiusLg,
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: AppSpacing.paddingMd,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -155,29 +161,34 @@ class EventCard extends ConsumerWidget {
             if (startDate != null)
               Container(
                 width: 58,
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                    vertical: AppSpacing.sm - 2),
                 decoration: BoxDecoration(
                   color: scheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: AppShapes.radiusMd,
                 ),
                 child: Column(
                   children: [
                     Text(
                       DateFormat('MMM').format(startDate).toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onPrimaryContainer,
-                        letterSpacing: 0.5,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onPrimaryContainer,
+                            letterSpacing: 0.5,
+                          ),
                     ),
                     Text(
                       '${startDate.day}',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: scheme.onPrimaryContainer,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: scheme.onPrimaryContainer,
+                          ),
                     ),
                   ],
                 ),
@@ -188,9 +199,9 @@ class EventCard extends ConsumerWidget {
                 height: 58,
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: AppShapes.radiusMd,
                 ),
-                child: Icon(Icons.event, color: scheme.onSurfaceVariant),
+                child: AppIcon('calendar', color: scheme.onSurfaceVariant),
               ),
             const SizedBox(width: 14),
             Expanded(
@@ -199,19 +210,19 @@ class EventCard extends ConsumerWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(
-                        _isDateBased
-                            ? Icons.calendar_today_outlined
-                            : Icons.schedule_rounded,
-                        size: 13,
+                      AppIcon(
+                        _isDateBased ? 'calendar' : 'clock',
+                        size: AppIconSize.xs,
                         color: scheme.onSurfaceVariant,
                       ),
                       const SizedBox(width: 4),
@@ -223,8 +234,10 @@ class EventCard extends ConsumerWidget {
                                 : DateFormat('EEE, MMM d • h:mm a')
                                     .format(startDate)
                             : 'Date TBD',
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onSurfaceVariant),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -232,15 +245,15 @@ class EventCard extends ConsumerWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(Icons.location_on_outlined,
-                            size: 13, color: scheme.onSurfaceVariant),
+                        AppIcon('globe', size: AppIconSize.xs, color: scheme.onSurfaceVariant),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             location,
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.onSurfaceVariant),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -255,15 +268,16 @@ class EventCard extends ConsumerWidget {
                       SafeAvatar(
                         imageUrl: profileAsync.value?.picture,
                         radius: 10,
-                        fallback: const Icon(Icons.person, size: 10),
+                        fallback: const AppIcon('users', size: 10),
                       ),
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text(
                           'by ${profileAsync.value?.displayNameOrName ?? '${event.pubkey.substring(0, 8)}…'}',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: scheme.onSurfaceVariant),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -277,11 +291,13 @@ class EventCard extends ConsumerWidget {
                             if (counts.tentative > 0)
                               '${counts.tentative} maybe',
                           ].join(' · '),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: scheme.primary,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: scheme.primary,
+                              ),
                         ),
                     ],
                   ),
@@ -331,21 +347,21 @@ class _RsvpButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Material(
       color: selected ? scheme.primary : scheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: AppShapes.radiusFull,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: AppShapes.radiusFull,
         child: Container(
           constraints: const BoxConstraints(minHeight: 40, minWidth: 56),
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color:
+                      selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+                ),
           ),
         ),
       ),
@@ -486,7 +502,7 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
                         ?.copyWith(fontWeight: FontWeight.bold)),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const AppIcon('plus'),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -510,7 +526,7 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
             ),
             OutlinedButton.icon(
               onPressed: _pickStart,
-              icon: const Icon(Icons.schedule),
+              icon: const AppIcon('clock'),
               label: Text(
                 _allDay
                     ? DateFormat('EEE, MMM d yyyy').format(_start)
@@ -520,7 +536,7 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: _pickEnd,
-              icon: const Icon(Icons.event_available_outlined),
+              icon: const AppIcon('calendar'),
               label: Text(
                 _end == null
                     ? 'Add end time (optional)'
@@ -566,7 +582,7 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
                         color: scheme.onPrimary,
                       ),
                     )
-                  : const Icon(Icons.publish),
+                  : const AppIcon('share'),
               label: const Text('Publish Event'),
             ),
           ],

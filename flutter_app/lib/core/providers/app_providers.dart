@@ -12,3 +12,4 @@ library;
 export 'auth_providers.dart';
 export 'content_providers.dart';
 export 'nostr_service_providers.dart';
+export 'theme_providers.dart';

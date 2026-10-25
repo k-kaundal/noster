@@ -6,6 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_badge.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
@@ -129,36 +133,23 @@ class _LiveRoomScreenState extends ConsumerState<LiveRoomScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            if (widget.event.isLive)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'LIVE',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+            if (widget.event.isLive) const StatusBadge.error('LIVE'),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 widget.event.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 16),
+                style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.bolt_rounded, color: Colors.amber),
+            icon: AppIcon('zap',
+                color: AppActionColors.zapFor(
+                    Theme.of(context).colorScheme.brightness)),
             tooltip: 'Zap the host',
             onPressed: () => showZapDialog(
               context: context,
@@ -207,7 +198,7 @@ class _LiveRoomScreenState extends ConsumerState<LiveRoomScreen> {
                 SafeAvatar(
                   imageUrl: host?.picture,
                   radius: 18,
-                  fallback: const Icon(Icons.person, size: 18),
+                  fallback: const AppIcon('users', size: 18),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -217,25 +208,29 @@ class _LiveRoomScreenState extends ConsumerState<LiveRoomScreen> {
                       Text(
                         host?.displayNameOrName ??
                             '${widget.event.hostPubkey.substring(0, 8)}…',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       if (widget.event.currentParticipants != null)
                         Text(
                           '${widget.event.currentParticipants} watching',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
                         ),
                     ],
                   ),
                 ),
                 if (widget.event.streamingUrl != null)
                   IconButton(
-                    icon: const Icon(Icons.open_in_new_rounded),
+                    icon: const AppIcon('link'),
                     tooltip: 'Open stream',
                     onPressed: () => launchUrl(
                       Uri.parse(widget.event.streamingUrl!),
@@ -253,7 +248,10 @@ class _LiveRoomScreenState extends ConsumerState<LiveRoomScreen> {
                 ? Center(
                     child: Text(
                       'No chat messages yet — say hi!',
-                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                   )
                 : ListView.builder(
@@ -287,9 +285,8 @@ class _LiveRoomScreenState extends ConsumerState<LiveRoomScreen> {
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(20),
+                      color: colorScheme.surfaceContainerHighest,
+                      borderRadius: AppShapes.radiusPill,
                     ),
                     child: TextField(
                       controller: _chatController,
@@ -314,7 +311,8 @@ class _LiveRoomScreenState extends ConsumerState<LiveRoomScreen> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Icon(Icons.send_rounded, color: colorScheme.primary),
+                      : AppIcon('send',
+                          size: AppIconSize.md, color: colorScheme.primary),
                 ),
               ],
             ),
@@ -348,7 +346,7 @@ class _ChatMessage extends ConsumerWidget {
             radius: 14,
             fallback: Text(
               firstGrapheme(name),
-              style: const TextStyle(fontSize: 10),
+              style: Theme.of(context).textTheme.labelSmall,
             ),
           ),
           const SizedBox(width: 8),
@@ -361,11 +359,13 @@ class _ChatMessage extends ConsumerWidget {
                     Flexible(
                       child: Text(
                         name,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.primary,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.primary,
+                            ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -373,17 +373,20 @@ class _ChatMessage extends ConsumerWidget {
                     const SizedBox(width: 6),
                     Text(
                       timeago.format(time, locale: 'en_short'),
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
                 const SizedBox(height: 2),
                 Text(
                   event.content,
-                  style: const TextStyle(fontSize: 13, height: 1.3),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(height: 1.3),
                 ),
               ],
             ),
@@ -400,8 +403,9 @@ class _VideoFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Center(
-      child: Icon(Icons.play_circle_outline_rounded,
-          color: Colors.white54, size: 56),
+      child: AppIcon('play',
+          color: Colors.white54, // token-guard: allow — on black video surface
+          size: AppIconSize.xl),
     );
   }
 }

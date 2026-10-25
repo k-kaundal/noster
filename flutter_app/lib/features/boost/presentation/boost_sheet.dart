@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/boost/application/boost_providers.dart';
@@ -66,7 +67,7 @@ class _BoostSheetState extends ConsumerState<_BoostSheet> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const AppIcon('plus'),
                   onPressed: busy ? null : () => Navigator.of(context).pop(),
                 ),
               ],
@@ -75,11 +76,10 @@ class _BoostSheetState extends ConsumerState<_BoostSheet> {
               'Pay sats to show this post to more NostrFeed readers, for a '
               'limited time. The payment is a public zap to the platform — '
               'anyone can verify it on relays. No refunds.',
-              style: TextStyle(
-                fontSize: 13,
-                color: scheme.onSurfaceVariant,
-                height: 1.4,
-              ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
             ),
             const SizedBox(height: 16),
             for (final tier in boostTiers) ...[
@@ -103,7 +103,7 @@ class _BoostSheetState extends ConsumerState<_BoostSheet> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.rocket_launch_rounded),
+                  : const AppIcon('sparkle'),
               label: Text(
                 busy
                     ? _busyLabel(purchase.stage)
@@ -115,11 +115,10 @@ class _BoostSheetState extends ConsumerState<_BoostSheet> {
               'Boosted posts are labeled “Boosted”, capped at 10% of any '
               'feed, and never bypass content filters. Boosts lift posts '
               'for NostrFeed readers — other clients see an ordinary zap.',
-              style: TextStyle(
-                fontSize: 11,
-                color: scheme.onSurfaceVariant,
-                height: 1.4,
-              ),
+              style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
             ),
           ],
         ),
@@ -157,13 +156,13 @@ class _TierTile extends StatelessWidget {
     final days = tier.duration.inDays;
 
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: AppShapes.radiusMd,
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: AppShapes.radiusMd,
           border: selected
               ? Border.all(color: scheme.primary, width: 1.5)
               : null,
@@ -184,18 +183,18 @@ class _TierTile extends StatelessWidget {
                 children: [
                   Text(
                     tier.label,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   Text(
                     '${days == 1 ? '24 hours' : '$days days'} · '
                     '${tier.multiplier}× visibility',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -203,13 +202,13 @@ class _TierTile extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.bolt_rounded, size: 15, color: scheme.primary),
+                AppIcon('zap', size: 15, color: scheme.primary),
                 Text(
                   '${tier.priceSats}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ],
             ),

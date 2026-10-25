@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/chat_screen.dart'
     show normalizePubkey;
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/search_results.dart';
@@ -78,7 +79,9 @@ class _NewMessageSheetState extends ConsumerState<NewMessageSheet> {
       child: Container(
         decoration: BoxDecoration(
           color: colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppShapes.xl),
+          ),
         ),
         child: SafeArea(
           top: false,
@@ -106,7 +109,7 @@ class _NewMessageSheetState extends ConsumerState<NewMessageSheet> {
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: const Icon(Icons.close),
+                      icon: const AppIcon('plus'),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
@@ -122,10 +125,10 @@ class _NewMessageSheetState extends ConsumerState<NewMessageSheet> {
                   autocorrect: false,
                   decoration: InputDecoration(
                     hintText: 'Name, npub, NIP-05, or lightning address…',
-                    prefixIcon: const Icon(Icons.search),
+                    prefixIcon: const AppIcon('search', size: AppIconSize.md),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear),
+                            icon: const AppIcon('plus'),
                             onPressed: () {
                               _searchController.clear();
                               setState(() {
@@ -136,7 +139,8 @@ class _NewMessageSheetState extends ConsumerState<NewMessageSheet> {
                           )
                         : null,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: AppShapes.radiusLg,
+                      borderSide: BorderSide.none,
                     ),
                     filled: true,
                     fillColor: colorScheme.surfaceContainerHighest.withValues(
@@ -175,23 +179,23 @@ class _NewMessageSheetState extends ConsumerState<NewMessageSheet> {
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: () => _openDirectChat(context, _query),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: AppShapes.radiusMd,
                       child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           color: colorScheme.primaryContainer.withValues(
                             alpha: 0.4,
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: AppShapes.radiusMd,
                           border: Border.all(
                             color: colorScheme.primary.withValues(alpha: 0.3),
                           ),
                         ),
                         child: Row(
                           children: [
-                            Icon(
-                              Icons.key_rounded,
-                              size: 20,
+                            AppIcon(
+                              'key',
+                              size: AppIconSize.lg,
                               color: colorScheme.primary,
                             ),
                             const SizedBox(width: 12),
@@ -218,9 +222,9 @@ class _NewMessageSheetState extends ConsumerState<NewMessageSheet> {
                                 ],
                               ),
                             ),
-                            Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              size: 14,
+                            AppIcon(
+                              'chevron_r',
+                              size: AppIconSize.sm,
                               color: colorScheme.primary,
                             ),
                           ],

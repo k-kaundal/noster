@@ -4,10 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart' show DecryptedDm;
+import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart'
+    show DecryptedDm;
 import 'package:nostrfeed_mobile/core/nostr/relay/dm_delivery.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
@@ -20,7 +24,7 @@ import 'package:nostrfeed_mobile/features/chat/presentation/widgets/chat_date_se
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/new_message_sheet.dart';
 import 'package:nostrfeed_mobile/features/compose/data/upload_service.dart';
-import 'package:timeago/timeago.dart' as timeago;
+import 'package:share_plus/share_plus.dart';
 
 /// Chat / DM screen with end-to-end encryption (NIP-04/NIP-17).
 /// - No [peerNpub]: shows the conversation list.
@@ -40,15 +44,46 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _isSending = false;
   bool _isUploading = false;
 
+  /// Whether the ↓ jump-to-latest pill is visible (user scrolled up into
+  /// history, away from the newest message at offset 0).
+  bool _showJumpToLatest = false;
+
   /// The message being replied to (NIP-17 reply via 'e' tag). Set by
   /// swiping a bubble, cleared after send or via the cancel button.
   ChatMessage? _replyingTo;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Show the ↓ pill only when the user has scrolled a meaningful distance
+  /// away from the newest message (reversed list: bottom = offset 0).
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final show = _scrollController.offset > 400;
+    if (show != _showJumpToLatest) {
+      setState(() => _showJumpToLatest = show);
+    }
+  }
+
+  /// Jump back to the newest message (bottom of the reversed list).
+  void _scrollToLatest() {
+    if (!_scrollController.hasClients) return;
+    HapticFeedback.lightImpact();
+    _scrollController.animateTo(
+      0,
+      duration: AppMotion.normal,
+      curve: AppMotion.curve,
+    );
   }
 
   @override
@@ -72,7 +107,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
+                    icon: const AppIcon('back', size: AppIconSize.lg),
                     tooltip: 'Back',
                     onPressed: () => context.pop(),
                   ),
@@ -86,16 +121,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline, size: 48),
+                      const AppIcon('eye_off', size: 48, color: Colors.grey),
                       const SizedBox(height: 16),
                       const Text('Invalid recipient identifier'),
                       const SizedBox(height: 8),
                       Text(
                         widget.peerNpub!,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(fontFamily: 'monospace'),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -122,29 +155,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final convosAsync = ref.watch(conversationListProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
-    // AppBar is owned by AppShell (hamburger → drawer). This view adds its
-    // action row (search + new message) inline at the top of the body.
+    // AppBar is owned by AppShell. New message lives on the floating action
+    // button (bottom-right, above the bottom nav).
     return Scaffold(
       backgroundColor: colorScheme.surface,
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 90),
+        child: FloatingActionButton(
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            _showNewMessageDialog(context);
+          },
+          tooltip: 'New message',
+          elevation: 3,
+          highlightElevation: 6,
+          child: const AppIcon('edit', size: AppIconSize.lg),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Action row: new message (search lives in the AppBar).
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-            child: Row(
-              children: [
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.add_comment_outlined),
-                  tooltip: 'New message',
-                  onPressed: () {
-                    HapticFeedback.lightImpact();
-                    _showNewMessageDialog(context);
-                  },
-                ),
-              ],
-            ),
-          ),
           Expanded(
             child: convosAsync.when(
               loading: () => _buildLoadingState(colorScheme),
@@ -164,23 +195,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             // in the chat list — even with zero DMs.
                             const _AiChatTile(),
                             SizedBox(
-                              height:
-                                  MediaQuery.of(context).size.height * 0.45,
+                              height: MediaQuery.of(context).size.height * 0.45,
                               child: _buildEmptyState(context),
                             ),
                           ],
                         )
-                      : ListView.separated(
+                      : ListView.builder(
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           // Pinned row 0: the AI assistant (Telegram "Saved
                           // Messages" pattern).
                           itemCount: conversations.length + 1,
-                          separatorBuilder: (_, index) => Divider(
-                            height: 1,
-                            indent: 84,
-                            color: colorScheme.outlineVariant
-                                .withValues(alpha: 0.3),
-                          ),
                           itemBuilder: (context, index) {
                             if (index == 0) return const _AiChatTile();
                             return _conversationTile(
@@ -219,7 +243,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   width: 120,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: AppShapes.radiusXs,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -228,7 +252,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: AppShapes.radiusXs,
                   ),
                 ),
               ],
@@ -255,14 +279,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   ) {
     final profileAsync = ref.watch(profileProvider(conv.peer));
     final colorScheme = Theme.of(context).colorScheme;
-    final lastTimestamp =
-        conv.decrypted?.createdAt ?? conv.lastEvent.createdAt;
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      lastTimestamp * 1000,
-    );
+    final textTheme = Theme.of(context).textTheme;
+    final lastTimestamp = conv.decrypted?.createdAt ?? conv.lastEvent.createdAt;
+    final timestamp = DateTime.fromMillisecondsSinceEpoch(lastTimestamp * 1000);
     // Unread count for this peer (cleared when the thread is opened).
     final dms = ref.watch(dmsProvider).valueOrNull ?? const <NostrEvent>[];
-    final unread = ref.read(dmStoreProvider).unreadFor(dms, conv.peer);
+    final unread = ref.read(dmStoreProvider.notifier).unreadFor(dms, conv.peer);
+    final hasUnread = unread > 0;
 
     return Material(
       color: Colors.transparent,
@@ -271,19 +294,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           HapticFeedback.lightImpact();
           context.push('/chat/${conv.peer}');
         },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          // Unread conversations get a whisper of accent so they pop from
+          // the read ones (WhatsApp/Telegram unread emphasis).
+          color: hasUnread
+              ? colorScheme.primary.withValues(alpha: 0.05)
+              : Colors.transparent,
           child: Row(
             children: [
               profileAsync.when(
                 data: (profile) => ChatAvatar(
                   imageUrl: profile?.picture,
                   name: profile?.displayNameOrName ?? conv.peer,
+                  radius: 26,
                 ),
-                loading: () => ChatAvatar(name: conv.peer),
-                error: (_, _) => ChatAvatar(name: conv.peer),
+                loading: () => ChatAvatar(name: conv.peer, radius: 26),
+                error: (_, _) => ChatAvatar(name: conv.peer, radius: 26),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,65 +326,71 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                   _shortKey(conv.peer),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
+                              style: textTheme.titleMedium?.copyWith(
+                                fontWeight: hasUnread
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
                                 letterSpacing: -0.2,
                               ),
                             ),
-                            loading: () => Text(_shortKey(conv.peer)),
-                            error: (_, _) => Text(_shortKey(conv.peer)),
+                            loading: () => Text(
+                              _shortKey(conv.peer),
+                              style: textTheme.titleMedium,
+                            ),
+                            error: (_, _) => Text(
+                              _shortKey(conv.peer),
+                              style: textTheme.titleMedium,
+                            ),
                           ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
-                          timeago.format(timestamp, locale: 'en_short'),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.onSurfaceVariant,
+                          _listTimestamp(timestamp),
+                          style: textTheme.labelSmall?.copyWith(
+                            color: hasUnread
+                                ? colorScheme.primary
+                                : colorScheme.onSurfaceVariant,
+                            fontWeight: hasUnread
+                                ? FontWeight.w700
+                                : FontWeight.normal,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Row(
                       children: [
-                        Icon(
-                          Icons.lock_rounded,
-                          size: 12,
-                          color: colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.6,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             conv.decrypted?.plaintext ?? '…',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: colorScheme.onSurfaceVariant,
-                              fontWeight: unread > 0
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: hasUnread
+                                  ? colorScheme.onSurface
+                                  : colorScheme.onSurfaceVariant,
+                              fontWeight: hasUnread
                                   ? FontWeight.w600
                                   : FontWeight.normal,
                             ),
                           ),
                         ),
-                        if (unread > 0) ...[
+                        if (hasUnread) ...[
                           const SizedBox(width: 8),
                           Container(
+                            constraints: const BoxConstraints(minWidth: 20),
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
+                              horizontal: 6,
+                              vertical: 2,
                             ),
                             decoration: BoxDecoration(
                               color: colorScheme.primary,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: AppShapes.radiusFull,
                             ),
                             child: Text(
                               unread > 99 ? '99+' : '$unread',
-                              style: TextStyle(
-                                fontSize: 11,
+                              textAlign: TextAlign.center,
+                              style: textTheme.labelSmall?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colorScheme.onPrimary,
                               ),
@@ -374,6 +409,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  /// Conversation-list timestamp: HH:mm today, weekday this week, date older.
+  String _listTimestamp(DateTime t) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(t.year, t.month, t.day);
+    final diff = today.difference(day).inDays;
+    if (diff <= 0) {
+      return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    }
+    if (diff == 1) return 'Yesterday';
+    if (diff < 7) {
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return days[t.weekday - 1];
+    }
+    return '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')}/${t.year % 100}';
+  }
+
   // ─── Chat thread ───────────────────────────────────────────────────
 
   Widget _buildChatThread(BuildContext context, String peerPubkey) {
@@ -385,7 +437,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // Opening this thread marks its messages as read (clears unread badge).
     // MUST run post-frame: markThreadRead bumps dmStoreVersionProvider, and
     // modifying a provider DURING build is illegal (crashes the frame).
-    final store = ref.read(dmStoreProvider);
+    final store = ref.read(dmStoreProvider.notifier);
     final dmsForRead = dmsAsync.valueOrNull ?? const <NostrEvent>[];
     var latestTs = 0;
     for (final e in dmsForRead) {
@@ -402,6 +454,111 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // so this header owns the whole top area — back button, peer identity,
     // encryption status, and profile shortcut in one row (WhatsApp/Telegram
     // style). The conversation list ("/chat" tab) keeps the shell AppBar.
+    final headerRow = profileAsync.when(
+      data: (profile) => InkWell(
+        onTap: () => context.push('/profile/$peerPubkey'),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(4, 6, 8, 10),
+          child: Row(
+            children: [
+              // Back button (shell AppBar is hidden on threads).
+              IconButton(
+                icon: const AppIcon('back', size: AppIconSize.lg),
+                tooltip: 'Back',
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  context.pop();
+                },
+              ),
+              ChatAvatar(
+                imageUrl: profile?.picture,
+                name: profile?.displayNameOrName ?? peerPubkey,
+                radius: 19,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      profile?.displayNameOrName ?? _shortKey(peerPubkey),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 1),
+                    // E2EE status pill — the trust signal, quiet but present.
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.08),
+                        borderRadius: AppShapes.radiusFull,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppIcon('key', size: 10, color: colorScheme.primary),
+                          const SizedBox(width: 3),
+                          Text(
+                            'End-to-end encrypted',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  fontSize: 10,
+                                  color: colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const AppIcon('users', size: AppIconSize.lg),
+                tooltip: 'View profile',
+                onPressed: () => context.push('/profile/$peerPubkey'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      loading: () => SizedBox(
+        height: 64,
+        child: Row(
+          children: [
+            IconButton(
+              icon: const AppIcon('back', size: AppIconSize.lg),
+              onPressed: () => context.pop(),
+            ),
+            const SizedBox(width: 12),
+            Text(_shortKey(peerPubkey)),
+          ],
+        ),
+      ),
+      error: (_, _) => SizedBox(
+        height: 64,
+        child: Row(
+          children: [
+            IconButton(
+              icon: const AppIcon('back', size: AppIconSize.lg),
+              onPressed: () => context.pop(),
+            ),
+            const SizedBox(width: 12),
+            Text(_shortKey(peerPubkey)),
+          ],
+        ),
+      ),
+    );
+
     return Scaffold(
       backgroundColor: colorScheme.surface,
       body: Column(
@@ -409,175 +566,127 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           // Immersive thread header.
           Material(
             color: colorScheme.surface,
-            child: Padding(
+            child: Container(
               padding: EdgeInsets.only(
                 top: MediaQuery.of(context).viewPadding.top,
               ),
-              child: profileAsync.when(
-                data: (profile) => InkWell(
-                  onTap: () => context.push('/profile/$peerPubkey'),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-                    child: Row(
-                      children: [
-                        // Back button (shell AppBar is hidden on threads).
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_rounded),
-                          tooltip: 'Back',
-                          onPressed: () {
-                            HapticFeedback.lightImpact();
-                            context.pop();
-                          },
-                        ),
-                        ChatAvatar(
-                          imageUrl: profile?.picture,
-                          name: profile?.displayNameOrName ?? peerPubkey,
-                          radius: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                profile?.displayNameOrName ??
-                                    _shortKey(peerPubkey),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.lock_rounded,
-                                    size: 11,
-                                    color: colorScheme.primary,
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    'End-to-end encrypted',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: colorScheme.primary,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.person_outline_rounded),
-                          tooltip: 'View profile',
-                          onPressed: () =>
-                              context.push('/profile/$peerPubkey'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                loading: () => SizedBox(
-                  height: 64,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded),
-                        onPressed: () => context.pop(),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(_shortKey(peerPubkey)),
-                    ],
-                  ),
-                ),
-                error: (_, _) => SizedBox(
-                  height: 64,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded),
-                        onPressed: () => context.pop(),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(_shortKey(peerPubkey)),
-                    ],
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
                   ),
                 ),
               ),
+              child: headerRow,
             ),
           ),
-          Divider(
-            height: 1,
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
           Expanded(
-            child: ref.watch(dmThreadProvider(peerPubkey)).when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, _) => Center(
-                child: Text(
-                  'Failed to load messages',
-                  style: TextStyle(color: colorScheme.error),
-                ),
-              ),
-              data: (thread) {
-                if (thread.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.waving_hand_rounded,
-                    title: 'No messages yet',
-                    subtitle: 'Say hello! Messages are end-to-end encrypted.',
-                  );
-                }
-                return ListView.builder(
-                  controller: _scrollController,
-                  reverse: true,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+            child: ref
+                .watch(dmThreadProvider(peerPubkey))
+                .when(
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (err, _) => ErrorView.fromError(
+                    err,
+                    onRetry: () => ref.invalidate(dmThreadProvider(peerPubkey)),
                   ),
-                  itemCount: thread.length,
-                  itemBuilder: (context, index) {
-                    final msg = thread[index];
-                    final isSent = msg.senderPubkey == auth.pubkey;
-                    final showDateSeparator =
-                        index == thread.length - 1 ||
-                        !_isSameDay(
-                          thread[index].createdAt,
-                          thread[index + 1].createdAt,
-                        );
-                    return Column(
+                  data: (thread) {
+                    if (thread.isEmpty) {
+                      return const EmptyState(
+                        icon: Icons.waving_hand_rounded,
+                        title: 'No messages yet',
+                        subtitle:
+                            'Say hello! Messages are end-to-end encrypted.',
+                      );
+                    }
+                    // WhatsApp-style reversed list (the standard Flutter chat
+                    // pattern): `thread` is newest-first and item 0 renders
+                    // at the BOTTOM. Short conversations bottom-anchor with
+                    // NO spacer hack, the list stays glued to the newest
+                    // message when the keyboard opens, and sending scrolls
+                    // to offset 0. A jump-to-latest pill appears when the
+                    // user scrolls up into history.
+                    return Stack(
                       children: [
-                        if (showDateSeparator)
-                          ChatDateSeparator(timestamp: msg.createdAt),
-                        // Swipe right → reply to this message (NIP-17
-                        // 'e' tag reply). Only for text messages.
-                        GestureDetector(
-                          onHorizontalDragEnd: msg.text.isNotEmpty
-                              ? (_) {
-                                  HapticFeedback.lightImpact();
-                                  setState(() => _replyingTo = msg);
-                                }
-                              : null,
-                          child: MessageBubble(
-                            key: ValueKey(msg.id),
-                            message: msg,
-                            isSent: isSent,
-                            onRetry: msg.status == MessageStatus.failed
-                                ? () => _retryMessage(peerPubkey, msg)
-                                : null,
-                            onDelete: msg.status == MessageStatus.failed
-                                ? () => _deleteFailed(peerPubkey, msg)
-                                : null,
+                        ListView.builder(
+                          controller: _scrollController,
+                          reverse: true,
+                          // Same list padding as the AI chat page.
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
                           ),
+                          itemCount: thread.length,
+                          itemBuilder: (context, index) {
+                            final msg = thread[index];
+                            final isSent = msg.senderPubkey == auth.pubkey;
+                            // The date separator attaches to the OLDEST
+                            // message of each day (the next item in the list
+                            // is older in time).
+                            final showDateSeparator =
+                                index == thread.length - 1 ||
+                                !_isSameDay(
+                                  thread[index].createdAt,
+                                  thread[index + 1].createdAt,
+                                );
+                            // Grouping: this message CONTINUES a group when
+                            // the next (older) message is from the same
+                            // sender.
+                            final continuesGroup =
+                                index < thread.length - 1 &&
+                                thread[index + 1].senderPubkey ==
+                                    msg.senderPubkey;
+                            return Column(
+                              children: [
+                                if (showDateSeparator)
+                                  ChatDateSeparator(timestamp: msg.createdAt),
+                                // Swipe right → reply to this message (NIP-17
+                                // 'e' tag reply). Only for text messages.
+                                GestureDetector(
+                                  onHorizontalDragEnd: msg.text.isNotEmpty
+                                      ? (_) {
+                                          HapticFeedback.lightImpact();
+                                          setState(() => _replyingTo = msg);
+                                        }
+                                      : null,
+                                  child: MessageBubble(
+                                    key: ValueKey(msg.id),
+                                    message: msg,
+                                    isSent: isSent,
+                                    isGroupContinuation: continuesGroup,
+                                    onRetry: msg.status == MessageStatus.failed
+                                        ? () => _retryMessage(peerPubkey, msg)
+                                        : null,
+                                    onDelete: msg.status == MessageStatus.failed
+                                        ? () => _deleteFailed(peerPubkey, msg)
+                                        : null,
+                                    // Long-press → copy/share, same as the
+                                    // AI chat bubble actions.
+                                    onLongPress:
+                                        msg.text.isNotEmpty && !msg.isFile
+                                        ? () => _showMessageActions(msg)
+                                        : null,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
                         ),
+                        // WhatsApp's round ↓ button — floats above the input
+                        // bar when the user has scrolled away from the
+                        // newest message.
+                        if (_showJumpToLatest)
+                          Positioned(
+                            right: 16,
+                            bottom: 12,
+                            child: _JumpToLatestButton(
+                              onTap: _scrollToLatest,
+                            ),
+                          ),
                       ],
                     );
                   },
-                );
-              },
-            ),
+                ),
           ),
           _buildInputBar(context, auth, peerPubkey),
         ],
@@ -614,7 +723,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             child: Row(
               children: [
-                Icon(Icons.reply_rounded, size: 16, color: colorScheme.primary),
+                AppIcon(
+                  'back',
+                  size: AppIconSize.sm,
+                  color: colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -623,8 +736,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     children: [
                       Text(
                         'Reply to',
-                        style: TextStyle(
-                          fontSize: 11,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: colorScheme.primary,
                         ),
@@ -633,114 +745,94 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         replying.text.isEmpty ? '🔒 message' : replying.text,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18),
+                  icon: AppIcon(
+                    'plus',
+                    size: AppIconSize.sm,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                   onPressed: () => setState(() => _replyingTo = null),
                 ),
               ],
             ),
           ),
-        Container(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 8,
-            top: 8,
-            bottom: MediaQuery.of(context).viewPadding.bottom + 8,
-          ),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(
-          top: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // Attach (image) — kind-15 file message, WhatsApp-style.
-          IconButton(
-            icon: _isUploading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add_photo_alternate_outlined),
-            tooltip: 'Send an image',
-            onPressed: _isUploading || !auth.isLoggedIn || auth.isReadOnly
-                ? null
-                : () => _sendImage(auth, peerPubkey),
-          ),
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.7,
+        // Same input-bar language as the AI chat: borderless filled pill
+        // field + M3 filled send button on a clean SafeArea row.
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 12, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Attach (image) — kind-15 file message, WhatsApp-style.
+                IconButton(
+                  icon: _isUploading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : AppIcon(
+                          'image',
+                          size: AppIconSize.lg,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  tooltip: 'Send an image',
+                  onPressed: _isUploading || !auth.isLoggedIn || auth.isReadOnly
+                      ? null
+                      : () => _sendImage(auth, peerPubkey),
                 ),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: TextField(
-                controller: _messageController,
-                decoration: InputDecoration(
-                  hintText: 'Message…',
-                  hintStyle: TextStyle(
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                ),
-                minLines: 1,
-                maxLines: 4,
-                textCapitalization: TextCapitalization.sentences,
-                enabled: auth.isLoggedIn && !auth.isReadOnly,
-                onSubmitted: (_) => _send(auth, peerPubkey),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [colorScheme.primary, colorScheme.tertiary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              onPressed: _isSending || !auth.isLoggedIn
-                  ? null
-                  : () => _send(auth, peerPubkey),
-              icon: _isSending
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    decoration: InputDecoration(
+                      hintText: 'Message…',
+                      filled: true,
+                      fillColor: colorScheme.surfaceContainerHighest,
+                      border: OutlineInputBorder(
+                        borderRadius: AppShapes.radiusPill,
+                        borderSide: BorderSide.none,
                       ),
-                    )
-                  : const Icon(
-                      Icons.send_rounded,
-                      color: Colors.white,
-                      size: 20,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                     ),
+                    minLines: 1,
+                    maxLines: 5,
+                    textInputAction: TextInputAction.send,
+                    textCapitalization: TextCapitalization.sentences,
+                    enabled: auth.isLoggedIn && !auth.isReadOnly,
+                    onSubmitted: (_) => _send(auth, peerPubkey),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  onPressed: _isSending || !auth.isLoggedIn
+                      ? null
+                      : () => _send(auth, peerPubkey),
+                  icon: _isSending
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.onPrimary,
+                          ),
+                        )
+                      : const AppIcon('send'),
+                  tooltip: 'Send',
+                ),
+              ],
             ),
           ),
-        ],
-      ),
         ),
       ],
     );
@@ -752,7 +844,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     HapticFeedback.mediumImpact();
     setState(() => _isSending = true);
-    final store = ref.read(dmStoreProvider);
+    final store = ref.read(dmStoreProvider.notifier);
     try {
       final nostr = ref.read(nostrServiceProvider);
       // NIP-17 gift-wrapped DM (kind 1059). Returns TWO wraps: the
@@ -778,10 +870,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       store.markThreadRead(peerPubkey);
       await Future.delayed(const Duration(milliseconds: 100));
       if (_scrollController.hasClients) {
+        // Reversed list: offset 0 = the newest message (bottom).
         _scrollController.animateTo(
           0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+          duration: AppMotion.normal,
+          curve: AppMotion.curve,
         );
       }
 
@@ -859,12 +952,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (file == null || !mounted) return;
 
     setState(() => _isUploading = true);
-    final store = ref.read(dmStoreProvider);
+    final store = ref.read(dmStoreProvider.notifier);
     try {
       final nostr = ref.read(nostrServiceProvider);
       // 1. Upload to Blossom (public URL).
-      final url = await UploadService(nostr.authService, nostr)
-          .uploadImage(file);
+      final url = await UploadService(
+        nostr.authService,
+        nostr,
+      ).uploadImage(file);
       if (!mounted) return;
 
       // 2. Wrap as a kind-15 file message (plaintext = the URL).
@@ -884,10 +979,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       store.markFileMessage(peerPubkey, localId, mimeType: 'image/');
       store.markThreadRead(peerPubkey);
       if (_scrollController.hasClients) {
+        // Reversed list: offset 0 = the newest message (bottom).
         _scrollController.animateTo(
           0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+          duration: AppMotion.normal,
+          curve: AppMotion.curve,
         );
       }
 
@@ -933,17 +1029,53 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// Long-press actions on a message — copy the text or share it out
+  /// (mirrors the AI chat bubble actions).
+  void _showMessageActions(ChatMessage msg) {
+    final colorScheme = Theme.of(context).colorScheme;
+    HapticFeedback.lightImpact();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: AppIcon('edit', color: colorScheme.primary),
+              title: const Text('Copy text'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                Clipboard.setData(ClipboardData(text: msg.text));
+                AppToast.success(context, 'Copied');
+              },
+            ),
+            ListTile(
+              leading: AppIcon('share', color: colorScheme.primary),
+              title: const Text('Share…'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                SharePlus.instance.share(ShareParams(text: msg.text));
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Re-publish a failed message: remove the old entry and send again.
   Future<void> _retryMessage(String peerPubkey, ChatMessage msg) async {
     final auth = ref.read(authStateProvider);
-    ref.read(dmStoreProvider).removePending(peerPubkey, msg.id);
+    ref.read(dmStoreProvider.notifier).removePending(peerPubkey, msg.id);
     _messageController.text = msg.text;
     await _send(auth, peerPubkey);
   }
 
   /// Discard a failed outgoing message.
   void _deleteFailed(String peerPubkey, ChatMessage msg) {
-    ref.read(dmStoreProvider).removePending(peerPubkey, msg.id);
+    ref.read(dmStoreProvider.notifier).removePending(peerPubkey, msg.id);
     AppToast.info(context, 'Message deleted');
   }
 
@@ -957,7 +1089,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           HapticFeedback.lightImpact();
           _showNewMessageDialog(context);
         },
-        icon: const Icon(Icons.add_rounded),
+        icon: const AppIcon('plus', size: AppIconSize.lg),
         label: const Text('New Message'),
       ),
     );
@@ -1000,43 +1132,45 @@ class _AiChatTile extends ConsumerWidget {
           HapticFeedback.lightImpact();
           context.push('/ai');
         },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+              ),
+            ),
+          ),
           child: Row(
             children: [
-              // Gradient avatar — visually distinct from every DM peer.
+              // Flat accent circle — visually distinct from every DM peer
+              // (Refined: no gradients except the logo mark).
               Container(
-                width: 56,
-                height: 56,
+                width: 52,
+                height: 52,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      colorScheme.primary.withValues(alpha: 0.8),
-                      colorScheme.tertiary.withValues(alpha: 0.8),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: colorScheme.primary,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  Icons.smart_toy_rounded,
-                  color: colorScheme.onPrimary,
-                  size: 28,
+                child: Center(
+                  child: AppIcon(
+                    'sparkle',
+                    color: colorScheme.onPrimary,
+                    size: 24,
+                  ),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'NostrFeed AI',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
-                        fontSize: 16,
                         letterSpacing: -0.2,
                       ),
                     ),
@@ -1045,29 +1179,64 @@ class _AiChatTile extends ConsumerWidget {
                       !available
                           ? 'Assistant (not configured)'
                           : trialLeft > 0
-                              ? 'Summarize, translate, create · '
-                                  '$trialLeft free today'
-                              : 'Summarize, translate, create · '
-                                  '$balance credits',
+                          ? 'Summarize, translate, create · '
+                                '$trialLeft free today'
+                          : 'Summarize, translate, create · '
+                                '$balance credits',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: available
                             ? colorScheme.onSurfaceVariant
-                            : colorScheme.onSurfaceVariant
-                                .withValues(alpha: 0.5),
+                            : colorScheme.onSurfaceVariant.withValues(
+                                alpha: 0.5,
+                              ),
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.auto_awesome_rounded,
+              AppIcon(
+                'chevron_r',
                 size: 18,
-                color: colorScheme.primary.withValues(alpha: 0.7),
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// WhatsApp's round ↓ jump-to-latest button — floats above the input bar
+/// when the user has scrolled up into history.
+class _JumpToLatestButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _JumpToLatestButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: colorScheme.surfaceContainerLowest,
+      shape: CircleBorder(
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.8),
+        ),
+      ),
+      elevation: 3,
+      shadowColor: colorScheme.shadow.withValues(alpha: 0.3),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: AppIcon(
+            'arrow_down',
+            size: AppIconSize.md,
+            color: colorScheme.primary,
           ),
         ),
       ),

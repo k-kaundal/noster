@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -51,7 +51,7 @@ class GroupInfoSheet extends ConsumerWidget {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close_rounded),
+                icon: const AppIcon('plus'),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
@@ -108,7 +108,7 @@ class GroupInfoSheet extends ConsumerWidget {
           if (auth.isLoggedIn && !auth.isReadOnly)
             OutlinedButton.icon(
               onPressed: () => _leaveGroup(context, ref),
-              icon: Icon(Icons.logout_rounded, color: scheme.error),
+              icon: AppIcon('back', color: scheme.error),
               label: Text('Leave group',
                   style: TextStyle(color: scheme.error)),
               style: OutlinedButton.styleFrom(

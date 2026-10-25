@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
@@ -139,12 +140,12 @@ class _ListDetailScreenState extends ConsumerState<ListDetailScreen>
         title: Text(_list.title),
         actions: [
           IconButton(
-            icon: const Icon(Icons.person_add_alt_rounded),
+            icon: const AppIcon('plus'),
             tooltip: 'Add member',
             onPressed: _addMember,
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline_rounded),
+            icon: const AppIcon('eye_off'),
             tooltip: 'Delete list',
             onPressed: _deleteList,
           ),
@@ -173,7 +174,7 @@ class _ListDetailScreenState extends ConsumerState<ListDetailScreen>
               action: _list.members.isEmpty
                   ? FilledButton.icon(
                       onPressed: _addMember,
-                      icon: const Icon(Icons.person_add_alt_rounded),
+                      icon: const AppIcon('plus'),
                       label: const Text('Add members'),
                     )
                   : null,
@@ -189,7 +190,7 @@ class _ListDetailScreenState extends ConsumerState<ListDetailScreen>
                   subtitle: 'Add people to build this list.',
                   action: FilledButton.icon(
                     onPressed: _addMember,
-                    icon: const Icon(Icons.person_add_alt_rounded),
+                    icon: const AppIcon('plus'),
                     label: const Text('Add members'),
                   ),
                 )
@@ -233,17 +234,19 @@ class _MemberTile extends ConsumerWidget {
         name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w600),
+        style: Theme.of(context)
+            .textTheme
+            .titleSmall
+            ?.copyWith(fontWeight: FontWeight.w600),
       ),
       subtitle: profile?.nip05 != null
           ? Text(
               profile!.nip05!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
             )
           : null,
       trailing: IconButton(

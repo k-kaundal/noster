@@ -5,6 +5,9 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
 import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -21,17 +24,10 @@ class ExploreScreen extends ConsumerWidget {
     // Default to 24h for explore page trending posts
     final trending = ref.watch(trendingProvider(24));
 
+    // Explore is a TAB inside the shell (Refined v2.1) — the shell owns the
+    // AppBar (title "Explore" + search/bell/overflow), so this screen renders
+    // NO internal AppBar (that would double the bar).
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Explore'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () => context.push('/search'),
-            tooltip: 'Search',
-          ),
-        ],
-      ),
       body: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(trendingHashtagsProvider);
@@ -44,18 +40,35 @@ class ExploreScreen extends ConsumerWidget {
             if (ref.watch(aiAvailableProvider))
               const SliverToBoxAdapter(child: _AskAiCard()),
 
-            // Trending hashtags — NSFW tags filtered out before display.
+            // Browse — the discovery & community features that used to live
+            // in the drawer (killed). One chip row, no second home.
+            const SliverToBoxAdapter(
+              child: _SectionHeader('Browse'),
+            ),
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text(
-                  'Trending Hashtags',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.bold),
+              child: SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: const [
+                    _BrowseChip(icon: 'trending', label: 'Trending', route: '/trending'),
+                    _BrowseChip(icon: 'video', label: 'Reels', route: '/reels'),
+                    _BrowseChip(icon: 'article', label: 'Articles', route: '/articles'),
+                    _BrowseChip(icon: 'calendar', label: 'Calendar', route: '/calendar'),
+                    _BrowseChip(icon: 'group', label: 'Communities', route: '/communities'),
+                    _BrowseChip(icon: 'group', label: 'Groups', route: '/groups'),
+                    _BrowseChip(icon: 'live', label: 'Live', route: '/live'),
+                    _BrowseChip(icon: 'shopping', label: 'Market', route: '/market'),
+                    _BrowseChip(icon: 'users', label: 'Lists', route: '/lists'),
+                  ],
                 ),
               ),
+            ),
+
+            // Trending hashtags — NSFW tags filtered out before display.
+            const SliverToBoxAdapter(
+              child: _SectionHeader('Trending Hashtags'),
             ),
             SliverToBoxAdapter(
               child: hashtagsAsync.when(
@@ -71,10 +84,11 @@ class ExploreScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
                         'No trending hashtags right now',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontSize: 13,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
                       ),
                     );
                   }
@@ -88,7 +102,7 @@ class ExploreScreen extends ConsumerWidget {
                       itemBuilder: (context, i) {
                         final stat = filtered[i];
                         return ActionChip(
-                          avatar: const Icon(Icons.tag, size: 16),
+                          avatar: const AppIcon('hash', size: 16),
                           label: Text('${stat.tag} (${stat.count})'),
                           onPressed: () => context.push(
                               '/hashtag/${Uri.encodeComponent(stat.tag)}'),
@@ -102,27 +116,19 @@ class ExploreScreen extends ConsumerWidget {
 
             // People to follow — trending authors, profiles checked.
             const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 20, 16, 4),
-                child: _PeopleToFollowHeader(),
-              ),
+              child: _SectionHeader('People to follow', top: 20),
             ),
             const SliverToBoxAdapter(child: _PeopleToFollow()),
 
             // Trending posts
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                padding: const EdgeInsets.only(bottom: 4),
                 child: Row(
                   children: [
-                    Text(
-                      'Trending Posts',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                    const Expanded(
+                      child: _SectionHeader('Trending Posts', top: 20),
                     ),
-                    const Spacer(),
                     TextButton(
                       onPressed: () => context.push('/trending'),
                       child: const Text('See all'),
@@ -204,52 +210,60 @@ class _AskAiCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final trialLeft = ref.watch(aiTrialRemainingProvider);
 
+    final textTheme = Theme.of(context).textTheme;
+
+    // Refined: a quiet hairline card (no gradient) — the accent icon tile is
+    // the only color. Discovery intent, not an ad.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.sm, AppSpacing.md, 0),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: AppShapes.radiusMd,
         onTap: () => context.push('/ai'),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm + 2, vertical: AppSpacing.sm + 1),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                scheme.primaryContainer.withValues(alpha: 0.55),
-                scheme.tertiaryContainer.withValues(alpha: 0.35),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(14),
+            color: scheme.surfaceContainerLowest,
+            border: Border.all(color: scheme.outlineVariant),
+            borderRadius: AppShapes.radiusMd,
           ),
           child: Row(
             children: [
-              Icon(Icons.auto_awesome_rounded,
-                  size: 20, color: scheme.primary),
-              const SizedBox(width: 10),
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: scheme.primary,
+                  borderRadius: AppShapes.radiusMd,
+                ),
+                child: Center(
+                  child: AppIcon('sparkle', size: 18, color: scheme.onPrimary),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Ask NostrFeed AI',
-                      style: TextStyle(
+                      style: textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
-                        fontSize: 14,
                       ),
                     ),
                     Text(
                       trialLeft > 0
                           ? 'Summarize, translate, create · $trialLeft free today'
                           : 'Summarize, translate, create · from 1⚡/msg',
-                      style: TextStyle(
-                        fontSize: 11.5,
+                      style: textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded,
-                  size: 14, color: scheme.onSurfaceVariant),
+              AppIcon('chevron_r', size: AppIconSize.xs, color: scheme.onSurfaceVariant),
             ],
           ),
         ),
@@ -258,17 +272,68 @@ class _AskAiCard extends ConsumerWidget {
   }
 }
 
-class _PeopleToFollowHeader extends StatelessWidget {
-  const _PeopleToFollowHeader();
+/// A browse chip — the discovery/community features that used to live in
+/// the drawer. Hairline chip with a stroke icon, taps to the feature route.
+class _BrowseChip extends StatelessWidget {
+  final String icon;
+  final String label;
+  final String route;
+  const _BrowseChip({required this.icon, required this.label, required this.route});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      'People to follow',
-      style: Theme.of(context)
-          .textTheme
-          .titleSmall
-          ?.copyWith(fontWeight: FontWeight.bold),
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: () => context.push(route),
+        borderRadius: AppShapes.radiusFull,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerLowest,
+            border: Border.all(color: colorScheme.outlineVariant),
+            borderRadius: AppShapes.radiusFull,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(icon, size: AppIconSize.sm, color: colorScheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Refined section header — uppercase accent label, consistent across
+/// every Explore section (hashtags / people / posts).
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final double top;
+  const _SectionHeader(this.title, {this.top = 12});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, top, 16, 6),
+      child: Text(
+        title.toUpperCase(),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colorScheme.primary,
+              letterSpacing: 1.2,
+            ),
+      ),
     );
   }
 }
@@ -332,12 +397,15 @@ class _PersonCard extends ConsumerWidget {
     final name = profile?.displayNameOrName ??
         '${pubkey.substring(0, 8)}…';
 
+    final textTheme = Theme.of(context).textTheme;
+
     return Container(
       width: 132,
-      padding: const EdgeInsets.all(12),
+      padding: AppSpacing.paddingSm,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(14),
+        color: scheme.surfaceContainerLowest,
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: AppShapes.radiusMd,
       ),
       child: Column(
         children: [
@@ -349,19 +417,19 @@ class _PersonCard extends ConsumerWidget {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            style: textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
           ),
           if (profile?.nip05 != null && profile!.nip05!.isNotEmpty)
             Text(
               profile.nip05!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10, color: scheme.primary),
+              style: textTheme.labelSmall?.copyWith(color: scheme.primary),
             ),
           const Spacer(),
           SizedBox(
@@ -369,10 +437,11 @@ class _PersonCard extends ConsumerWidget {
             child: FilledButton.tonal(
               onPressed: () => context.push('/profile/$pubkey'),
               style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                    vertical: AppSpacing.xxs),
                 minimumSize: const Size(0, 30),
               ),
-              child: const Text('View', style: TextStyle(fontSize: 12)),
+              child: Text('View', style: textTheme.labelMedium),
             ),
           ),
         ],

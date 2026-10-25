@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 import 'package:video_player/video_player.dart';
@@ -90,8 +91,9 @@ class _ReelUploadSheetState extends ConsumerState<_ReelUploadSheet> {
     HapticFeedback.mediumImpact();
     setState(() => _uploading = true);
     try {
-      // 1. Upload the video bytes via Blossom.
-      final bytes = await _video!.readAsBytes();
+      // 1. Upload the video as a STREAM — never fully in memory. The old
+      //    `readAsBytes()` path OOM-killed the app on multi-hundred-MB
+      //    clips (bytes + request buffer = ~2× file size resident).
       final name = _video!.name;
       final ext = name.split('.').last.toLowerCase();
       final mime = switch (ext) {
@@ -100,24 +102,28 @@ class _ReelUploadSheetState extends ConsumerState<_ReelUploadSheet> {
         'webm' => 'video/webm',
         _ => 'video/mp4',
       };
-      final url = await ref.read(uploadProvider.notifier).uploadBytes(
-            bytes,
-            filename: name,
+      final result = await ref.read(uploadProvider.notifier).uploadFile(
+            _video!,
             mimeType: mime,
           );
 
-      // 2. Publish the kind-22 NIP-71 event with imeta metadata.
+      // 2. Publish the kind-22 NIP-71 event with imeta metadata (now with
+      //    the sha256 + size the upload computed — they used to be thrown
+      //    away).
       final nostr = ref.read(nostrServiceProvider);
       final caption = _captionController.text.trim();
       // b.nostr.build serves a free poster frame at ?poster; for other hosts
       // the tag is simply omitted by clients that don't generate one.
-      final posterUrl = url.contains('nostr.build') ? '$url?poster' : null;
+      final posterUrl =
+          result.url.contains('nostr.build') ? '${result.url}?poster' : null;
       final event = nostr.createVideoEvent(
-        url: url,
+        url: result.url,
         mimeType: mime,
         caption: caption,
         posterUrl: posterUrl,
         durationSec: _durationSec,
+        sha256: result.sha256,
+        sizeBytes: result.sizeBytes,
         hashtags: _hashtags(caption).map((t) => t[1]).toList(),
       );
       await nostr.publishEvent(event);
@@ -181,7 +187,7 @@ class _ReelUploadSheetState extends ConsumerState<_ReelUploadSheet> {
               padding: const EdgeInsets.fromLTRB(20, 0, 8, 12),
               child: Row(
                 children: [
-                  Icon(Icons.video_call_rounded, color: colorScheme.primary),
+                  AppIcon('video', color: colorScheme.primary),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -193,7 +199,7 @@ class _ReelUploadSheetState extends ConsumerState<_ReelUploadSheet> {
                   ),
                   // Close button — dismisses keyboard + sheet cleanly.
                   IconButton(
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const AppIcon('plus'),
                     tooltip: 'Close',
                     onPressed: () {
                       FocusScope.of(context).unfocus();
@@ -345,7 +351,7 @@ class _ReelUploadSheetState extends ConsumerState<_ReelUploadSheet> {
                           color: Colors.white,
                         ),
                       )
-                    : const Icon(Icons.publish_rounded),
+                    : const AppIcon('share'),
                 label: Text(_uploading ? 'Publishing…' : 'Publish reel'),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),

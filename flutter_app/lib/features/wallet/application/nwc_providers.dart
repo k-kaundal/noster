@@ -144,14 +144,24 @@ class NwcNotifier extends Notifier<NwcState> {
 
       List<NwcConnection> connections = [];
 
+      var loaded = false;
       if (secureJson != null) {
-        // Load from secure storage
-        final list = (jsonDecode(secureJson) as List).cast<String>();
-        connections = list
-            .map((s) => NwcConnection.fromJson(_decode(s)))
-            .toList();
-      } else if (prefs != null) {
-        // Migration: load from legacy SharedPreferences
+        // Load from secure storage. A CORRUPT blob (partially-wiped
+        // keychain, plugin bug) must not wipe every connection — fall
+        // through to the legacy prefs path before giving up.
+        try {
+          final list = (jsonDecode(secureJson) as List).cast<String>();
+          connections = list
+              .map((s) => NwcConnection.fromJson(_decode(s)))
+              .toList();
+          loaded = true;
+        } catch (_) {
+          // Corrupt secure JSON — try the legacy store next.
+        }
+      }
+      if (!loaded && prefs != null) {
+        // Migration (or corrupt-secure fallback): load from legacy
+        // SharedPreferences
         final listJson = prefs.getStringList(_storageKey) ?? [];
         if (listJson.isNotEmpty) {
           connections = listJson

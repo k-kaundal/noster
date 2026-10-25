@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/settings/application/relay_settings_providers.dart';
 
@@ -74,7 +77,7 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.cloud_sync_outlined),
+                  : const AppIcon('globe'),
               tooltip: 'Sync with NIP-65 list',
               onPressed: _syncBusy ? null : _syncNip65,
             ),
@@ -89,7 +92,10 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
               child: Center(
                 child: Text(
                   'No relays configured. Add one below.',
-                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: colorScheme.onSurfaceVariant),
                 ),
               ),
             )
@@ -113,9 +119,9 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                     controller: _addRelayController,
                     decoration: InputDecoration(
                       hintText: 'wss://relay.example.com',
-                      prefixIcon: const Icon(Icons.add_link),
+                      prefixIcon: const AppIcon('link', size: AppIconSize.md),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppShapes.radiusMd,
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 10),
@@ -127,7 +133,7 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                 const SizedBox(width: 8),
                 IconButton.filled(
                   onPressed: _addRelay,
-                  icon: const Icon(Icons.add),
+                  icon: const AppIcon('plus'),
                   tooltip: 'Add relay',
                 ),
               ],
@@ -141,15 +147,16 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                   (r) => r.url == url.replaceAll(RegExp(r'/$'), '')))
               .map(
                 (url) => ListTile(
-                  leading: const Icon(Icons.cloud_outlined),
+                  leading: const AppIcon('globe'),
                   title: Text(
                     url,
-                    style: const TextStyle(
-                        fontFamily: 'monospace', fontSize: 13),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontFamily: 'monospace'),
                   ),
                   trailing: IconButton(
-                    icon: Icon(Icons.add_circle_outline,
-                        color: colorScheme.primary),
+                    icon: AppIcon('plus', color: colorScheme.primary),
                     tooltip: 'Add this relay',
                     onPressed: () => ref
                         .read(relaySettingsProvider.notifier)
@@ -167,11 +174,10 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
               'you publish. "Sync" publishes this set as your NIP-65 relay '
               'list (kind 10002) and merges the one already on the network, '
               'so other clients use the same relays.',
-              style: TextStyle(
-                fontSize: 12,
-                color: colorScheme.onSurfaceVariant,
-                height: 1.4,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
             ),
           ),
         ],
@@ -184,12 +190,11 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Text(
         title,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: colorScheme.primary,
-          letterSpacing: 1.2,
-        ),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colorScheme.primary,
+              letterSpacing: 1.2,
+            ),
       ),
     );
   }
@@ -198,11 +203,11 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     final (statusColor, statusLabel) = switch (state) {
-      RelayState.connected => (Colors.green, 'Connected'),
-      RelayState.connecting => (Colors.orange, 'Connecting'),
-      RelayState.authRequired => (Colors.blue, 'Auth required'),
-      RelayState.disconnected => (Colors.red, 'Disconnected'),
-      RelayState.error => (Colors.red, 'Error'),
+      RelayState.connected => (AppStatusColors.success, 'Connected'),
+      RelayState.connecting => (AppStatusColors.warning, 'Connecting'),
+      RelayState.authRequired => (AppStatusColors.info, 'Auth required'),
+      RelayState.disconnected => (AppStatusColors.error, 'Disconnected'),
+      RelayState.error => (AppStatusColors.error, 'Error'),
     };
 
     return Card(
@@ -218,26 +223,27 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
                 decoration: BoxDecoration(
                   color: statusColor,
                   shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                        color: statusColor.withValues(alpha: 0.4),
-                        blurRadius: 4),
-                  ],
                 ),
               ),
               title: Text(
                 relay.url,
-                style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
               subtitle: Text(
                 statusLabel,
-                style: TextStyle(color: statusColor, fontSize: 12),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: statusColor),
               ),
               trailing: IconButton(
-                icon: Icon(Icons.delete_outline, color: colorScheme.error),
+                icon: AppIcon('eye_off', color: colorScheme.error),
                 tooltip: 'Remove relay',
                 onPressed: () => _removeRelay(relay.url),
               ),
@@ -279,7 +285,7 @@ class _RelaySettingsScreenState extends ConsumerState<RelaySettingsScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: const TextStyle(fontSize: 13)),
+        Text(label, style: Theme.of(context).textTheme.bodyMedium),
         const Spacer(),
         Switch(
           value: value,

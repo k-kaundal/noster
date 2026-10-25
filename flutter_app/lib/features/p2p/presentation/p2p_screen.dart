@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
@@ -87,7 +90,7 @@ class _P2PScreenState extends ConsumerState<P2PScreen>
                 showDragHandle: true,
                 builder: (_) => const _CreateOrderSheet(),
               ),
-              icon: const Icon(Icons.swap_horiz_rounded),
+              icon: const AppIcon('repost'),
               label: const Text('New Order'),
             )
           : null,
@@ -95,14 +98,14 @@ class _P2PScreenState extends ConsumerState<P2PScreen>
   }
 }
 
-class _OrderList extends StatelessWidget {
+class _OrderList extends ConsumerWidget {
   final List<P2POrder> orders;
   final String emptyLabel;
 
   const _OrderList({required this.orders, required this.emptyLabel});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (orders.isEmpty) {
       return EmptyState(
         icon: Icons.swap_horiz_rounded,
@@ -111,12 +114,47 @@ class _OrderList extends StatelessWidget {
       );
     }
     return RefreshIndicator(
-      onRefresh: () async {},
+      onRefresh: () async => ref.invalidate(p2pOrdersProvider),
       child: ListView.separated(
         padding: const EdgeInsets.all(12),
-        itemCount: orders.length,
+        itemCount: orders.length + 1,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (context, i) => _OrderCard(order: orders[i]),
+        itemBuilder: (context, i) =>
+            i == 0 ? const _EscrowNote() : _OrderCard(order: orders[i - 1]),
+      ),
+    );
+  }
+}
+
+/// Trades settle over encrypted chat with Lightning escrow (NIP-69/Mostro) —
+/// a quiet note, shown once at the top of the book.
+class _EscrowNote extends StatelessWidget {
+  const _EscrowNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusMd,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          AppIcon('key', size: AppIconSize.md, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Trades settle over encrypted chat with Lightning escrow — the sats are locked until both sides confirm.',
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant, height: 1.35),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -133,9 +171,15 @@ class _OrderCard extends ConsumerWidget {
     final maker = makerAsync.valueOrNull;
     final isBuy = order.isBuy;
 
-    return Card(
+    final typeColor = isBuy ? AppStatusColors.success : AppStatusColors.warning;
+
+    return Container(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -148,29 +192,29 @@ class _OrderCard extends ConsumerWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: isBuy
-                        ? Colors.green.withValues(alpha: 0.15)
-                        : Colors.orange.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
+                    color: typeColor.withValues(alpha: 0.15),
+                    borderRadius: AppShapes.radiusSm,
                   ),
                   child: Text(
                     isBuy ? 'BUY' : 'SELL',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: isBuy ? Colors.green.shade700 : Colors.orange.shade700,
-                      letterSpacing: 0.5,
-                    ),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: typeColor,
+                          letterSpacing: 0.5,
+                        ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     order.amountDisplay,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 17,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -178,11 +222,10 @@ class _OrderCard extends ConsumerWidget {
                 if (order.premium != null)
                   Text(
                     '+${order.premium}%',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.primary,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: scheme.primary,
+                        ),
                   ),
               ],
             ),
@@ -199,14 +242,14 @@ class _OrderCard extends ConsumerWidget {
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: scheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: AppShapes.radiusXs,
                       ),
                       child: Text(
                         pm,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                     ),
                 ],
@@ -218,7 +261,7 @@ class _OrderCard extends ConsumerWidget {
                 SafeAvatar(
                   imageUrl: maker?.picture,
                   radius: 12,
-                  fallback: const Icon(Icons.person, size: 12),
+                  fallback: const AppIcon('users', size: 12),
                 ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -234,8 +277,10 @@ class _OrderCard extends ConsumerWidget {
                         locale: 'en_short',
                       ),
                     ].join(' · '),
-                    style: TextStyle(
-                        fontSize: 11, color: scheme.onSurfaceVariant),
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -248,7 +293,7 @@ class _OrderCard extends ConsumerWidget {
                   ),
                   child: Text(
                     isBuy ? 'Sell to them' : 'Buy from them',
-                    style: const TextStyle(fontSize: 12),
+                    style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ),
               ],
@@ -352,7 +397,7 @@ class _CreateOrderSheetState extends ConsumerState<_CreateOrderSheet> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded),
+                  icon: const AppIcon('plus'),
                   tooltip: 'Close',
                   onPressed: () => Navigator.pop(context),
                 ),
@@ -365,12 +410,12 @@ class _CreateOrderSheetState extends ConsumerState<_CreateOrderSheet> {
                 ButtonSegment(
                   value: 'sell',
                   label: Text('I want to SELL sats'),
-                  icon: Icon(Icons.south_rounded),
+                  icon: AppIcon('arrow_down'),
                 ),
                 ButtonSegment(
                   value: 'buy',
                   label: Text('I want to BUY sats'),
-                  icon: Icon(Icons.north_rounded),
+                  icon: AppIcon('arrow_up'),
                 ),
               ],
               selected: {_type},
@@ -438,14 +483,17 @@ class _CreateOrderSheetState extends ConsumerState<_CreateOrderSheet> {
                           color: colorScheme.onPrimary,
                         ),
                       )
-                    : const Icon(Icons.publish_rounded),
+                    : const AppIcon('share'),
                 label: const Text('Publish order'),
               ),
             ),
             const SizedBox(height: 6),
             Text(
               'Published as a NIP-69 P2P order (kind 38383) — traders contact you via encrypted chat to trade with Lightning escrow.',
-              style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ],
         ),

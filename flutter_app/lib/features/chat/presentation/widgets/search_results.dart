@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/chat_avatar.dart';
 
 /// Search results list — shows matching users from relays.
@@ -77,12 +79,12 @@ class _PeerTile extends ConsumerWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppShapes.radiusMd,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
-              ChatAvatar(imageUrl: profile?.picture, name: name),
+              ChatAvatar(imageUrl: profile?.picture, name: name, radius: 24),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -95,18 +97,16 @@ class _PeerTile extends ConsumerWidget {
                             name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                         ),
                         if (profile?.nip05 != null &&
                             profile!.nip05!.isNotEmpty) ...[
                           const SizedBox(width: 4),
-                          Icon(
-                            Icons.verified_rounded,
-                            size: 14,
+                          AppIcon(
+                            'verified',
+                            size: AppIconSize.sm,
                             color: colorScheme.primary,
                           ),
                         ],
@@ -117,17 +117,16 @@ class _PeerTile extends ConsumerWidget {
                         profile.nip05!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colorScheme.primary,
                         ),
                       ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.chat_bubble_outline_rounded,
-                size: 18,
+              AppIcon(
+                'chat',
+                size: AppIconSize.md,
                 color: colorScheme.primary,
               ),
             ],

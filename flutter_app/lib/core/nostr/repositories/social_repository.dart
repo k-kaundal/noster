@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:bech32/bech32.dart';
 
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
+import 'package:nostrfeed_mobile/core/nostr/profile_cache.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_router.dart';
 
@@ -83,8 +86,9 @@ class SocialRepository {
             final profile = NostrProfile.fromJson(
               jsonDecode(entry.value.content) as Map<String, dynamic>,
             );
-            profileCache[entry.key] = (
-              profile: profile,
+            _writeProfileEverywhere(
+              entry.key,
+              profile,
               createdAt: entry.value.createdAt,
               fetchedAt: fetchedAt,
             );
@@ -99,46 +103,72 @@ class SocialRepository {
   Future<NostrProfile?> fetchProfile(String pubkey) async {
     final cached = profileCache[pubkey];
 
-    // TTL FAST PATH: a recently-fetched profile is returned immediately with
-    // NO relay round-trip (this was the main feed slowdown — every post card
+    // TTL FAST PATH (memory): a recently-fetched profile returns with NO
+    // relay round-trip (this was the main feed slowdown — every post card
     // + avatar re-queried relays on every navigation).
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     if (cached != null && now - cached.fetchedAt < _profileTtlSeconds) {
       return cached.profile;
     }
 
-    // Query default (already-connected) relays first with a short timeout —
-    // the vast majority of profiles resolve here in <1s. The outbox-model
-    // lookups below only run when this misses.
-    var events = await relayPool.query([
-      NostrFilter(kinds: [0], authors: [pubkey], limit: 1),
-    ], timeout: const Duration(seconds: 3));
-
-    if (events.isEmpty) {
-      // NIP-65 outbox model: query the user's WRITE relays (where THEY
-      // publish their kind-0). Runs concurrently, capped at top 3 relays
-      // and a short per-relay timeout so a dead relay can't stall the UI.
-      final writeRelays = await relayRouter
-          .getWriteRelays(pubkey)
-          .timeout(const Duration(seconds: 3), onTimeout: () => []);
-      if (writeRelays.isNotEmpty) {
-        final results = await Future.wait(
-          writeRelays.take(3).map(
-                (url) => relayPool.queryOnRelay(
-                  url,
-                  [NostrFilter(kinds: [0], authors: [pubkey], limit: 1)],
-                  timeout: const Duration(seconds: 2),
-                ),
-              ),
-        );
-        events = results.expand((e) => e).toList();
+    // PERSISTENT CACHE (SQLite): the store's `profiles` table was WRITTEN
+    // but never READ — every cold start re-fetched every avatar/banner from
+    // relays (the "slow first paint everywhere" + "we need local cache for
+    // profile data" complaint). Read-through: a stored profile renders
+    // instantly and warms the memory LRU; stale rows still render NOW and
+    // refresh from relays behind (stale-while-revalidate).
+    if (cached == null) {
+      try {
+        final row = await EventStore.instance.profileRowFor(pubkey);
+        if (row != null) {
+          final ageMs = DateTime.now().millisecondsSinceEpoch - row.fetchedAtMs;
+          final freshEnough = ageMs < _profileTtlSeconds * 1000;
+          // Warm memory with the stored profile. A fresh row gets a live
+          // TTL; a stale row gets an expired TTL so the NEXT call revalidates
+          // — but this call serves it instantly (no relay wait).
+          profileCache.cacheProfileBounded(
+            pubkey,
+            profile: row.profile,
+            createdAt: 0, // revision unknown — any relay kind-0 wins later
+            fetchedAt: freshEnough ? now : now - _profileTtlSeconds,
+          );
+          if (!freshEnough) {
+            unawaited(_refreshProfileFromRelays(pubkey));
+          }
+          return row.profile;
+        }
+      } catch (_) {
+        // Store hiccup — fall through to relays.
       }
     }
 
-    if (events.isEmpty) {
-      // Last resort: well-known indexer relays (concurrent, short timeout).
+    return _refreshProfileFromRelays(pubkey, fallback: cached?.profile);
+  }
+
+  /// The relay side of profile fetch — CONCURRENT legs, first-hit wins,
+  /// write-through to BOTH caches (memory LRU + SQLite persistent). Returns
+  /// the freshest profile known, or [fallback] when relays have nothing.
+  Future<NostrProfile?> _refreshProfileFromRelays(
+    String pubkey, {
+    NostrProfile? fallback,
+  }) async {
+    final cached = profileCache[pubkey];
+
+    // Profile fetch — CONCURRENT, not a serial waterfall. The old code ran
+    // default relays (3s) → outbox write relays (2s) → indexers (2s) one
+    // after another: a miss on all three cost ~7s per profile (avatars/
+    // banners stalling in). All three legs race NOW; first non-empty wins.
+    final defaultLeg = relayPool.query([
+      NostrFilter(kinds: [0], authors: [pubkey], limit: 1),
+    ], timeout: const Duration(seconds: 3));
+
+    final outboxLeg = relayRouter
+        .getWriteRelays(pubkey)
+        .timeout(const Duration(seconds: 3), onTimeout: () => <String>[])
+        .then((writeRelays) async {
+      if (writeRelays.isEmpty) return <NostrEvent>[];
       final results = await Future.wait(
-        RelayRouter.indexerRelays.take(3).map(
+        writeRelays.take(3).map(
               (url) => relayPool.queryOnRelay(
                 url,
                 [NostrFilter(kinds: [0], authors: [pubkey], limit: 1)],
@@ -146,8 +176,21 @@ class SocialRepository {
               ),
             ),
       );
-      events = results.expand((e) => e).toList();
-    }
+      return results.expand((e) => e).toList();
+    });
+
+    final indexerLeg = Future.wait(
+      RelayRouter.indexerRelays.take(3).map(
+            (url) => relayPool.queryOnRelay(
+              url,
+              [NostrFilter(kinds: [0], authors: [pubkey], limit: 1)],
+              timeout: const Duration(seconds: 2),
+            ),
+          ),
+    ).then((r) => r.expand((e) => e).toList());
+
+    // First NON-EMPTY leg wins (a slow empty leg never blocks a fast hit).
+    final events = await _firstNonEmpty([defaultLeg, outboxLeg, indexerLeg]);
 
     if (events.isNotEmpty) {
       try {
@@ -164,15 +207,17 @@ class SocialRepository {
         // already have. Otherwise our local write is fresher — keep it.
         final fetchedAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         if (cached == null || relayEvent.createdAt >= cached.createdAt) {
-          profileCache[pubkey] = (
-            profile: relayProfile,
+          _writeProfileEverywhere(
+            pubkey,
+            relayProfile,
             createdAt: relayEvent.createdAt,
             fetchedAt: fetchedAt,
           );
           return relayProfile;
         }
         // Refresh the TTL so we don't re-query for another 10 minutes.
-        profileCache[pubkey] = (
+        profileCache.cacheProfileBounded(
+          pubkey,
           profile: cached.profile,
           createdAt: cached.createdAt,
           fetchedAt: fetchedAt,
@@ -185,7 +230,52 @@ class SocialRepository {
 
     // Relay returned nothing (or unparseable) — fall back to our last known
     // profile so the UI doesn't flash empty.
-    return cached?.profile;
+    return fallback ?? cached?.profile;
+  }
+
+  /// Write-through: memory LRU + the SQLite persistent profile cache (so a
+  /// cold start renders avatars/banners with zero relay round-trips).
+  void _writeProfileEverywhere(
+    String pubkey,
+    NostrProfile profile, {
+    required int createdAt,
+    required int fetchedAt,
+  }) {
+    profileCache.cacheProfileBounded(
+      pubkey,
+      profile: profile,
+      createdAt: createdAt,
+      fetchedAt: fetchedAt,
+    );
+    unawaited(EventStore.instance.saveProfile(pubkey, profile));
+  }
+
+  /// Returns the first future whose result is non-empty, or empty if every
+  /// leg misses. All legs run concurrently (futures created by the caller
+  /// BEFORE this races them) — the winner is the fastest HIT, not the first
+  /// leg in list order (the old serial waterfall waited out every leg).
+  static Future<List<NostrEvent>> _firstNonEmpty(
+    List<Future<List<NostrEvent>>> legs,
+  ) {
+    final completer = Completer<List<NostrEvent>>();
+    var remaining = legs.length;
+    for (final leg in legs) {
+      leg.then((result) {
+        if (completer.isCompleted) return;
+        if (result.isNotEmpty) {
+          completer.complete(result);
+          return;
+        }
+        if (--remaining == 0 && !completer.isCompleted) {
+          completer.complete(const []);
+        }
+      }).catchError((_) {
+        if (--remaining == 0 && !completer.isCompleted) {
+          completer.complete(const []);
+        }
+      });
+    }
+    return completer.future;
   }
 
   Future<List<String>> fetchFollows(String pubkey) async {
@@ -273,41 +363,28 @@ class SocialRepository {
     // ── 3. NIP-50 search on connected relays ─────────────────────────
     final indexerResults = await relayPool.query([
       NostrFilter(kinds: [0], search: trimmed, limit: limit),
-    ], timeout: const Duration(seconds: 6));
+    ], timeout: const Duration(seconds: 5));
 
     // ── 4. Client-side fallback / merge ──────────────────────────────
-    // Fetch a batch of recent profiles and match locally — catches
-    // partial-name matches even when NIP-50 isn't supported by the relay.
+    // Match profiles we ALREADY hold locally (the persistent profile cache
+    // warms on every feed/avatar render) — catches partial-name matches
+    // even when NIP-50 isn't supported by the relay. The old code fired a
+    // SECOND relay query for 500 recent kind-0s on EVERY search — a whole
+    // extra waterfall per query (the "search is slow" complaint). The local
+    // scan now runs ONLY over stored profiles, costs zero network, and is
+    // skipped entirely when NIP-50 already filled the result set.
     final lowerQ = trimmed.toLowerCase();
-    final recent = await relayPool.query([
-      NostrFilter(kinds: [0], limit: 500),
-    ], timeout: const Duration(seconds: 6));
-
-    bool matches(NostrEvent e) {
-      try {
-        final json = jsonDecode(e.content) as Map<String, dynamic>;
-        final name = (json['name'] as String?)?.toLowerCase() ?? '';
-        final display = (json['display_name'] as String?)?.toLowerCase() ?? '';
-        final displayName =
-            (json['displayName'] as String?)?.toLowerCase() ?? '';
-        final nip05 = (json['nip05'] as String?)?.toLowerCase() ?? '';
-        final about = (json['about'] as String?)?.toLowerCase() ?? '';
-        final username = (json['username'] as String?)?.toLowerCase() ?? '';
-        return name.contains(lowerQ) ||
-            display.contains(lowerQ) ||
-            displayName.contains(lowerQ) ||
-            nip05.contains(lowerQ) ||
-            username.contains(lowerQ) ||
-            about.contains(lowerQ);
-      } catch (_) {
-        return false;
-      }
+    List<NostrEvent> localMatches = const [];
+    if (indexerResults.length < limit) {
+      localMatches =
+          (await EventStore.instance.searchProfiles(lowerQ, limit: limit))
+              .map((r) => _profileAsEvent(r.pubkey, r.profile))
+              .toList();
     }
 
-    final localMatches = recent.where(matches).toList();
-
     // Merge indexer results with local matches, dedupe by pubkey, keep the
-    // newest kind-0 per pubkey.
+    // newest kind-0 per pubkey (relay hits lead; local profile rows sort
+    // last via their createdAt: 0).
     final byPubkey = <String, NostrEvent>{};
     for (final e in [...indexerResults, ...localMatches]) {
       final existing = byPubkey[e.pubkey];
@@ -319,6 +396,21 @@ class SocialRepository {
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     return merged.take(limit).toList();
+  }
+
+  /// Wrap a stored profile in a kind-0-shaped event so search results merge
+  /// uniformly with relay kind-0s (the People tab parses content JSON back
+  /// into a NostrProfile). id is synthetic but stable per pubkey.
+  static NostrEvent _profileAsEvent(String pubkey, NostrProfile p) {
+    return NostrEvent(
+      id: 'profile-$pubkey',
+      pubkey: pubkey,
+      createdAt: 0, // sorts last in the newest-first merge — relay hits lead
+      kind: 0,
+      tags: const [],
+      content: jsonEncode(p.toJson()),
+      sig: '',
+    );
   }
 
   bool _looksLikeNip05(String q) {

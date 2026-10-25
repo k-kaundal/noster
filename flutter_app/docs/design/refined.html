@@ -1,0 +1,2218 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NostrFeed Refined — Content-first Design</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   NOSTRFEED REFINED — quiet, dense, content-first
+   Small readable type · consistent 20px stroke icons · hairlines ·
+   one accent used with restraint. The "reads like a newspaper,
+   feels like a precision tool" direction.
+   ═══════════════════════════════════════════════════════════════ */
+:root{
+  --accent:#2F6BFF;          /* one confident blue, used sparingly */
+  --accent-soft:rgba(47,107,255,.09);
+  --zap:#E8860B;             /* muted amber — less neon than before */
+  --zap-soft:rgba(232,134,11,.1);
+  --like:#D64B7F; --repost:#2E9E63; --bookmark:#2F6BFF;
+
+  --bg:#FFFFFF; --bg-soft:#F7F8FA; --bg-raised:#FFFFFF;
+  --ink:#16181D;             /* near-black, warm */
+  --ink-2:#5B616E;           /* secondary text */
+  --ink-3:#9BA1AE;           /* tertiary — timestamps, handles */
+  --line:#E8EAEF;            /* hairlines */
+  --line-soft:#F1F2F6;
+  --nav-bg:rgba(255,255,255,.86);
+
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-full:999px;
+  --ease:cubic-bezier(.25,.8,.25,1);
+}
+[data-mode="dark"]{
+  --accent:#6B96FF;
+  --accent-soft:rgba(107,150,255,.13);
+  --zap:#F0A03C;
+  --zap-soft:rgba(240,160,60,.13);
+  --like:#E86FA0; --repost:#45C182; --bookmark:#6B96FF;
+
+  --bg:#0E0F13; --bg-soft:#15171D; --bg-raised:#181B22;
+  --ink:#EDEEF2;
+  --ink-2:#A2A8B5;
+  --ink-3:#666D7C;
+  --line:#23262F;
+  --line-soft:#1B1E26;
+  --nav-bg:rgba(14,15,19,.84);
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  transition:background .3s,color .3s;
+}
+
+.hdr{
+  position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:12px;
+  padding:13px 24px;background:var(--nav-bg);backdrop-filter:saturate(1.6) blur(18px);
+  border-bottom:1px solid var(--line);
+}
+.logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16.5px;letter-spacing:-.02em}
+.logo .mk{width:27px;height:27px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff}
+.logo .mk svg{width:15px;height:15px}
+.logo em{font-style:normal;color:var(--ink-3);font-weight:500;font-size:13px}
+.sp{flex:1}
+.modes{display:flex;border:1px solid var(--line);border-radius:var(--r-full);padding:2px;background:var(--bg-soft)}
+.modes button{border:0;background:transparent;color:var(--ink-2);padding:5px 13px;border-radius:var(--r-full);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px}
+.modes button svg{width:12px;height:12px}
+.modes button.on{background:var(--bg-raised);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+
+.wrap{max-width:1240px;margin:0 auto;padding:0 24px}
+
+section{padding:52px 0 10px}
+.sec-k{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:7px}
+.sec-k svg{width:13px;height:13px}
+.sec-t{font-size:clamp(24px,3vw,32px);font-weight:700;letter-spacing:-.028em;margin:9px 0 7px}
+.sec-s{color:var(--ink-2);font-size:14px;max-width:640px;line-height:1.65}
+
+/* intro */
+.intro{padding:52px 0 8px;max-width:720px}
+.intro h1{font-size:clamp(30px,4.4vw,46px);font-weight:700;letter-spacing:-.035em;line-height:1.08}
+.intro h1 .a{color:var(--accent)}
+.intro p{color:var(--ink-2);font-size:16px;line-height:1.7;margin-top:16px}
+.intro .points{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.pt{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--ink-2);border:1px solid var(--line);border-radius:var(--r-full);padding:7px 14px;background:var(--bg-raised)}
+.pt svg{width:13px;height:13px;color:var(--accent)}
+
+/* ── SVG icon system ── */
+.ic{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.ic.sm{width:16px;height:16px}
+.ic.xs{width:13px;height:13px}
+.ic.lg{width:22px;height:22px}
+
+.icon-table{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px;margin-top:20px}
+.icon-cell{border:1px solid var(--line);border-radius:var(--r-md);padding:14px 10px;text-align:center;background:var(--bg-raised);transition:border-color .2s}
+.icon-cell:hover{border-color:var(--accent)}
+.icon-cell .ic{width:21px;height:21px;color:var(--ink)}
+.icon-cell .nm{display:block;font-size:10px;color:var(--ink-3);margin-top:8px;font-weight:500}
+
+/* buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;cursor:pointer;
+  font-family:inherit;font-size:13.5px;font-weight:600;letter-spacing:-.01em;
+  padding:9px 18px;border-radius:var(--r-full);transition:all .18s var(--ease);
+}
+.btn svg{width:15px;height:15px}
+.btn.primary{background:var(--ink);color:var(--bg)}
+[data-mode="dark"] .btn.primary{background:var(--ink);color:#12141A}
+.btn.primary:hover{opacity:.85}
+.btn.accent{background:var(--accent);color:#fff}
+.btn.accent:hover{opacity:.88}
+.btn.soft{background:var(--bg-soft);color:var(--ink);border:1px solid var(--line)}
+.btn.soft:hover{border-color:var(--ink-3)}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.zap{background:var(--zap-soft);color:var(--zap);border:1px solid transparent}
+.btn.zap:hover{border-color:var(--zap)}
+.btn.sm{padding:6px 13px;font-size:12px}
+
+/* ── PHONES ── */
+.phones{display:flex;gap:28px;flex-wrap:wrap;padding:30px 0 8px}
+.ph{width:300px;flex-shrink:0}
+.ph-frame{
+  width:300px;height:624px;border-radius:42px;background:#0a0a0c;padding:8px;position:relative;
+  box-shadow:0 0 0 1px rgba(120,120,140,.25),0 20px 50px rgba(10,10,20,.18);
+}
+.ph-scr{width:100%;height:100%;border-radius:34px;overflow:hidden;background:var(--bg);position:relative;display:flex;flex-direction:column;transition:background .3s}
+.ph-notch{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:96px;height:22px;background:#0a0a0c;border-radius:16px;z-index:30}
+.ph-status{height:36px;flex-shrink:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 22px 2px;font-size:10.5px;font-weight:600;color:var(--ink)}
+.ph-hi{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);width:100px;height:4px;border-radius:2px;background:var(--ink);opacity:.25;z-index:40}
+.ph-label{margin-top:14px}
+.ph-label b{display:block;font-size:13.5px;font-weight:700;letter-spacing:-.015em}
+.ph-label span{font-size:11.5px;color:var(--ink-3)}
+
+/* mini app bar */
+.m-bar{flex-shrink:0;display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--bg)}
+.m-bar .t{font-size:16px;font-weight:700;letter-spacing:-.025em;flex:1;display:flex;align-items:center;gap:7px}
+.m-bar .t .mk{width:22px;height:22px;border-radius:6px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center}
+.m-bar .t .mk svg{width:12px;height:12px}
+.m-ic{width:32px;height:32px;border-radius:var(--r-full);display:inline-flex;align-items:center;justify-content:center;color:var(--ink-2);cursor:pointer;position:relative;transition:background .15s}
+.m-ic:hover{background:var(--bg-soft)}
+.m-ic .dot{position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--accent);border:1.5px solid var(--bg)}
+.m-body{flex:1;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.m-scroll{flex:1;overflow-y:auto;scrollbar-width:none}
+.m-scroll::-webkit-scrollbar{display:none}
+
+/* tab bar (feed top) */
+.m-tabs{display:flex;align-items:center;padding:0 6px;border-bottom:1px solid var(--line);flex-shrink:0}
+.m-tab{padding:10px 13px;font-size:13px;font-weight:600;color:var(--ink-3);cursor:pointer;position:relative}
+.m-tab.on{color:var(--ink);font-weight:700}
+.m-tab.on::after{content:"";position:absolute;left:13px;right:13px;bottom:-1px;height:2.5px;border-radius:2px;background:var(--accent)}
+
+/* bottom nav — clean, icon-first, no pill box */
+.m-nav{
+  flex-shrink:0;display:flex;align-items:center;border-top:1px solid var(--line);
+  background:var(--nav-bg);backdrop-filter:saturate(1.6) blur(18px);padding:6px 10px 10px;
+}
+.m-ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0 2px;cursor:pointer;color:var(--ink-3);position:relative}
+.m-ni .ic{width:21px;height:21px}
+.m-ni .lb{font-size:9px;font-weight:600;letter-spacing:.01em}
+.m-ni.on{color:var(--accent)}
+.m-ni.on::before{content:"";position:absolute;top:-7px;width:18px;height:3px;border-radius:2px;background:var(--accent)}
+.m-ni .bdg{position:absolute;top:1px;left:calc(50% + 4px);min-width:15px;height:15px;padding:0 4px;border-radius:var(--r-full);background:var(--accent);color:#fff;font-size:8.5px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1.5px solid var(--bg)}
+.m-ni.create .cb{width:38px;height:26px;border-radius:var(--r-full);border:1.5px solid var(--ink-3);display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+.m-ni.create .ic{width:16px;height:16px;stroke-width:2}
+
+/* avatar */
+.av{border-radius:50%;background:var(--bg-soft);border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;color:var(--ink-2);overflow:hidden}
+
+/* ── POST — content-first, compact ── */
+.post{display:flex;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line-soft);cursor:pointer;transition:background .15s}
+.post:hover{background:var(--bg-soft)}
+.post .col-l{width:38px;flex-shrink:0}
+.post .col-r{flex:1;min-width:0}
+.post .hd{display:flex;align-items:baseline;gap:5px;min-width:0;font-size:13px}
+.post .hd .nm{font-weight:700;font-size:13px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.post .hd .vf{color:var(--accent);flex-shrink:0}
+.post .hd .vf svg{width:13px;height:13px}
+.post .hd .hd2{color:var(--ink-3);font-size:12px;white-space:nowrap;flex-shrink:0}
+.post .hd .more{margin-left:auto;color:var(--ink-3);flex-shrink:0}
+.post .hd .more svg{width:16px;height:16px}
+.post .tx{font-size:13.5px;line-height:1.5;margin-top:2px;letter-spacing:-.005em;word-wrap:break-word}
+.post .tx .m{color:var(--accent);font-weight:500}
+.post .ax{display:flex;align-items:center;margin-top:7px;margin-left:-8px}
+.post .ax .a{
+  display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:11.5px;font-weight:500;
+  padding:5px 9px;border-radius:var(--r-full);cursor:pointer;transition:all .15s;font-variant-numeric:tabular-nums;
+}
+.post .ax .a .ic{width:16.5px;height:16.5px}
+.post .ax .a:hover{background:var(--bg-soft);color:var(--ink)}
+.post .ax .a.on.lk{color:var(--like)}
+.post .ax .a.on.rp{color:var(--repost)}
+.post .ax .a.zp{color:var(--zap)}
+.post .ax .a.zp:hover{background:var(--zap-soft)}
+.post .ax .a.bm.on{color:var(--bookmark)}
+.post .ax .sp{flex:1}
+
+/* repost line */
+.rp-line{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-3);font-weight:600;margin-bottom:2px;margin-left:0}
+.rp-line svg{width:13px;height:13px}
+
+/* compact media (constrained, not hero) */
+.md{border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;margin-top:7px;display:grid;gap:1.5px;background:var(--line)}
+.md .c{background:var(--bg-soft);display:flex;align-items:center;justify-content:center;color:var(--ink-3);overflow:hidden;position:relative}
+.md .c svg{width:22px;height:22px;opacity:.5}
+.md.g1 .c{aspect-ratio:16/9}
+.md.g2{grid-template-columns:1fr 1fr}.md.g2 .c{aspect-ratio:1}
+.md.g4{grid-template-columns:1fr 1fr}.md.g4 .c{aspect-ratio:1.25}
+
+/* link card */
+.lk-card{display:flex;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;margin-top:7px;background:var(--bg-raised)}
+.lk-card .th{width:64px;min-height:64px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;color:var(--ink-3);flex-shrink:0;border-right:1px solid var(--line)}
+.lk-card .th svg{width:20px;height:20px}
+.lk-card .mt{padding:8px 11px;min-width:0}
+.lk-card .mt .t1{font-size:12px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lk-card .mt .t2{font-size:10.5px;color:var(--ink-3);margin-top:2px;display:flex;align-items:center;gap:4px}
+.lk-card .mt .t2 svg{width:10px;height:10px}
+
+/* poll */
+.pl{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.pl .o{border:1px solid var(--line);border-radius:var(--r-sm);padding:7px 11px;font-size:12px;font-weight:600;position:relative;overflow:hidden;cursor:pointer}
+.pl .o .f{position:absolute;left:0;top:0;bottom:0;background:var(--accent-soft)}
+.pl .o .r{position:relative;display:flex;justify-content:space-between}
+.pl .o .pc{color:var(--accent);font-weight:700}
+.pl .mta{font-size:10.5px;color:var(--ink-3);display:flex;gap:8px;align-items:center}
+.pl .mta svg{width:11px;height:11px}
+
+/* quote */
+.qt{border:1px solid var(--line);border-radius:var(--r-md);padding:9px 12px;margin-top:7px;cursor:pointer;background:var(--bg-raised)}
+.qt:hover{background:var(--bg-soft)}
+
+/* new posts pill — subtle */
+.np-pill{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:12;display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;font-size:11px;font-weight:600;padding:6px 13px;border-radius:var(--r-full);cursor:pointer;box-shadow:0 4px 14px rgba(47,107,255,.35)}
+.np-pill svg{width:12px;height:12px}
+
+/* offline strip */
+.off-strip{flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--bg-soft);color:var(--ink-2);font-size:10.5px;font-weight:600;padding:5px;border-bottom:1px solid var(--line)}
+.off-strip svg{width:12px;height:12px}
+
+/* CW cover */
+.cw{margin-top:7px;border:1px dashed var(--line);border-radius:var(--r-md);background:var(--bg-soft);padding:15px 13px;display:flex;align-items:center;gap:10px;cursor:pointer}
+.cw .icn{width:30px;height:30px;border-radius:50%;background:var(--bg-raised);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink-2);flex-shrink:0}
+.cw .icn svg{width:15px;height:15px}
+.cw .t1{font-size:12px;font-weight:700}
+.cw .t2{font-size:10.5px;color:var(--ink-3)}
+
+/* chat */
+.ch{display:flex;gap:11px;padding:11px 14px;cursor:pointer;align-items:center}
+.ch:hover{background:var(--bg-soft)}
+.ch .rel{position:relative;flex-shrink:0}
+.ch .on{position:absolute;bottom:0;right:0;width:11px;height:11px;border-radius:50%;background:#3FB27F;border:2px solid var(--bg)}
+.ch .mm{flex:1;min-width:0}
+.ch .r1{display:flex;align-items:baseline;gap:6px}
+.ch .n{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ch .tm{margin-left:auto;font-size:10px;color:var(--ink-3);flex-shrink:0}
+.ch .pv{font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.ch .pv.u{color:var(--ink);font-weight:600}
+.ch .bdg{min-width:18px;height:18px;padding:0 5px;border-radius:var(--r-full);background:var(--accent);color:#fff;font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ch .mut{color:var(--ink-3);flex-shrink:0}
+.ch .mut svg{width:14px;height:14px}
+
+/* bubbles */
+.bbs{display:flex;flex-direction:column;gap:3px;padding:14px 14px 8px}
+.bb-r{display:flex}
+.bb-r.me{justify-content:flex-end}
+.bb{max-width:76%;padding:8px 13px;font-size:13.5px;line-height:1.42;border-radius:18px;letter-spacing:-.005em}
+.bb.them{background:var(--bg-soft);border-bottom-left-radius:5px}
+.bb.me{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
+.bb .bbt{display:block;font-size:9px;opacity:.6;margin-top:2px;text-align:right}
+.bb.zp{background:var(--zap-soft);border:1px solid var(--zap);border-bottom-left-radius:5px;color:var(--ink)}
+.bb.zp .zamt{color:var(--zap);font-weight:700;display:flex;align-items:center;gap:5px}
+.bb.zp .zamt svg{width:13px;height:13px}
+
+/* composer bar */
+.cmp{flex-shrink:0;display:flex;align-items:center;gap:9px;padding:9px 13px 14px;background:var(--bg)}
+.cmp .fld{flex:1;display:flex;align-items:center;gap:8px;background:var(--bg-soft);border:1px solid var(--line);border-radius:var(--r-full);padding:8px 14px;font-size:13px;color:var(--ink-3)}
+.cmp .send{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.cmp .send svg{width:15px;height:15px}
+.cmp .att{color:var(--ink-3);cursor:pointer;display:flex;align-items:center}
+.cmp .att svg{width:19px;height:19px}
+
+/* wallet */
+.w-card{margin:12px 14px 0;border-radius:var(--r-lg);background:var(--ink);color:#fff;padding:17px 18px;position:relative;overflow:hidden}
+[data-mode="dark"] .w-card{background:#181B22;border:1px solid var(--line)}
+.w-card .lb{font-size:10px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;opacity:.55;display:flex;align-items:center;gap:6px}
+.w-card .lb svg{width:11px;height:11px}
+.w-card .amt{font-size:31px;font-weight:700;letter-spacing:-.03em;margin-top:5px;font-variant-numeric:tabular-nums}
+.w-card .amt small{font-size:14px;font-weight:600;opacity:.5}
+.w-card .ft{font-size:11px;opacity:.55;margin-top:1px;display:flex;gap:5px;align-items:center}
+.w-card .ft svg{width:11px;height:11px}
+.w-card .up{color:#5FD39A}
+.w-card .acts{display:flex;gap:8px;margin-top:15px}
+.w-card .wa{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border-radius:var(--r-full);font-size:12px;font-weight:600;cursor:pointer}
+.w-card .wa svg{width:13px;height:13px}
+.w-card .wa.a{background:rgba(255,255,255,.13);color:#fff}
+.w-card .wa.b{background:#fff;color:#14171E}
+.w-card .wa.c{background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff;flex:0 0 auto;padding:9px 14px}
+.w-card .wlt{position:absolute;top:15px;right:16px;font-size:9.5px;font-weight:600;background:rgba(255,255,255,.12);padding:4px 10px;border-radius:var(--r-full);display:flex;align-items:center;gap:5px;cursor:pointer}
+.w-card .wlt svg{width:9px;height:9px}
+
+.sec-h{display:flex;align-items:center;gap:8px;padding:14px 16px 7px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.sec-h .more{margin-left:auto;font-size:11px;font-weight:600;color:var(--accent);text-transform:none;letter-spacing:0;cursor:pointer}
+
+.qr{display:flex;gap:8px;padding:2px 14px;overflow-x:auto;scrollbar-width:none}
+.qr::-webkit-scrollbar{display:none}
+.qc{min-width:96px;border:1px solid var(--line);border-radius:var(--r-md);padding:11px;cursor:pointer;background:var(--bg-raised);transition:border-color .15s}
+.qc:hover{border-color:var(--accent)}
+.qc .qi{width:28px;height:28px;border-radius:8px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+.qc .qi svg{width:15px;height:15px}
+.qc .qt2{font-size:11px;font-weight:700;margin-top:8px}
+.qc .qs{font-size:9.5px;color:var(--ink-3);margin-top:1px}
+
+.txr{display:flex;align-items:center;gap:11px;padding:9px 16px}
+.txr .ti{width:33px;height:33px;border-radius:10px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;color:var(--ink-2);flex-shrink:0}
+.txr .ti svg{width:15px;height:15px}
+.txr .tt{font-size:12.5px;font-weight:600}
+.txr .ts{font-size:10px;color:var(--ink-3);margin-top:1px}
+.txr .ta{margin-left:auto;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.txr .ta.p{color:var(--repost)}
+
+/* zap sheet */
+.z-sh{background:var(--bg-raised);border-radius:22px 22px 0 0;border-top:1px solid var(--line);padding:11px 17px 20px}
+.z-hd{display:flex;align-items:center;gap:10px;padding-bottom:11px}
+.z-hd .who{flex:1}
+.z-hd .n{font-size:13.5px;font-weight:700}
+.z-hd .h{font-size:10.5px;color:var(--ink-3)}
+.z-gr{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.z-cl{aspect-ratio:.92;border:1px solid var(--line);border-radius:var(--r-md);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:var(--bg-raised);transition:all .15s}
+.z-cl:hover{border-color:var(--zap)}
+.z-cl.sel{border-color:var(--zap);background:var(--zap-soft)}
+.z-cl .em{font-size:17px}
+.z-cl .am{font-size:9.5px;font-weight:700;color:var(--ink-2)}
+.z-cl.sel .am{color:var(--zap)}
+.z-custom{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:var(--r-md);padding:9px 13px;margin-top:9px;background:var(--bg-raised)}
+.z-custom input{border:0;outline:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;font-weight:600;width:100%}
+.z-custom .cur{font-size:11px;color:var(--ink-3);font-weight:600}
+
+/* profile */
+.pf-cov{height:104px;background:linear-gradient(120deg,#2B3A55,#1E2A40);flex-shrink:0;position:relative}
+[data-mode="dark"] .pf-cov{background:linear-gradient(120deg,#1B2233,#141A28)}
+.pf-hd{padding:0 14px;position:relative}
+.pf-av{width:68px;height:68px;border-radius:50%;border:3px solid var(--bg);margin-top:-34px;position:relative;z-index:2;background:var(--bg-soft)}
+.pf-nm{font-size:17px;font-weight:700;letter-spacing:-.02em;display:flex;align-items:center;gap:5px;margin-top:7px}
+.pf-nm .vf{color:var(--accent)}
+.pf-nm .vf svg{width:15px;height:15px}
+.pf-h5{font-size:12px;color:var(--accent);font-weight:600;margin-top:1px;display:flex;align-items:center;gap:4px}
+.pf-h5 svg{width:11px;height:11px}
+.pf-bio{font-size:12.5px;line-height:1.5;margin-top:7px;color:var(--ink)}
+.pf-meta{display:flex;gap:12px;margin-top:8px;font-size:11px;color:var(--ink-3)}
+.pf-meta span{display:flex;align-items:center;gap:4px}
+.pf-meta svg{width:11px;height:11px}
+.pf-stats{display:flex;gap:14px;margin-top:9px;font-size:12px}
+.pf-stats b{font-weight:700}
+.pf-stats span{color:var(--ink-3);cursor:pointer}
+.pf-stats .zv{color:var(--zap)}
+.pf-acts{position:absolute;right:14px;top:0;display:flex;gap:7px}
+.pf-acts .btn{padding:6px 13px;font-size:11.5px}
+.pf-acts .zicon{width:30px;height:30px;border-radius:50%;padding:0}
+
+/* notif */
+.nt{display:flex;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line-soft);cursor:pointer}
+.nt:hover{background:var(--bg-soft)}
+.nt.un{background:var(--accent-soft)}
+.nt .ni{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.nt .ni svg{width:14px;height:14px}
+.nt .nx{flex:1;min-width:0}
+.nt .t1{font-size:12.5px;line-height:1.4}
+.nt .t1 b{font-weight:700}
+.nt .t2{font-size:11.5px;color:var(--ink-2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nt .tm{font-size:10px;color:var(--ink-3);margin-top:3px}
+.nt .avst{display:flex;margin-bottom:5px}
+.nt .avst .av{width:21px;height:21px;font-size:8.5px;border:2px solid var(--bg);margin-left:-7px}
+.nt .avst .av:first-child{margin-left:0}
+
+/* explore grid — small tasteful */
+.x-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 14px}
+.x-card{border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;cursor:pointer;background:var(--bg-raised)}
+.x-card .xi{aspect-ratio:1.4;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;color:var(--ink-3);position:relative}
+.x-card .xi svg{width:22px;height:22px;opacity:.5}
+.x-card .xb{padding:8px 10px}
+.x-card .xt{font-size:11px;font-weight:600;line-height:1.3}
+.x-card .xm{font-size:9.5px;color:var(--ink-3);margin-top:2px;display:flex;align-items:center;gap:4px}
+.x-card .xm svg{width:9px;height:9px}
+
+/* list rows */
+.lr{display:flex;align-items:center;gap:11px;padding:11px 16px;cursor:pointer}
+.lr:hover{background:var(--bg-soft)}
+.lr .li{width:34px;height:34px;border-radius:10px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;color:var(--ink-2);flex-shrink:0}
+.lr .li svg{width:16px;height:16px}
+.lr .lb{flex:1;min-width:0}
+.lr .lt{font-size:13px;font-weight:600}
+.lr .ls{font-size:10.5px;color:var(--ink-3);margin-top:1px}
+.lr .lx{margin-left:auto;color:var(--ink-3);flex-shrink:0;display:flex;align-items:center;gap:6px;font-size:11px}
+.lr .lx svg{width:14px;height:14px}
+
+/* toggle */
+.tg{width:34px;height:20px;border-radius:10px;background:var(--line);position:relative;cursor:pointer;flex-shrink:0;transition:background .2s}
+.tg::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:left .2s var(--ease)}
+.tg.on{background:var(--accent)}
+.tg.on::after{left:16px}
+
+/* chips */
+.chips{display:flex;gap:7px;padding:10px 14px;overflow-x:auto;scrollbar-width:none;flex-shrink:0}
+.chips::-webkit-scrollbar{display:none}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border-radius:var(--r-full);border:1px solid var(--line);font-size:11.5px;font-weight:600;color:var(--ink-2);white-space:nowrap;cursor:pointer;background:var(--bg-raised)}
+.chip svg{width:11px;height:11px}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+[data-mode="dark"] .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* status pill */
+.st{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:var(--r-full);font-size:8.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.st svg{width:8px;height:8px}
+.st.live{background:#FEE2E2;color:#DC2626}
+[data-mode="dark"] .st.live{background:rgba(220,38,38,.18);color:#F87171}
+.st.ok{background:rgba(46,158,99,.12);color:var(--repost)}
+.st.inf{background:var(--accent-soft);color:var(--accent)}
+
+/* FAB */
+.fab{position:absolute;right:14px;bottom:76px;width:46px;height:46px;border-radius:var(--r-lg);background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 18px rgba(47,107,255,.35);z-index:10}
+.fab svg{width:20px;height:20px}
+
+/* sheet handle */
+.sh-h{width:34px;height:4px;border-radius:2px;background:var(--line);margin:3px auto 12px}
+
+/* principle cards */
+.pr{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px}
+@media(max-width:900px){.pr{grid-template-columns:1fr}}
+.pr .c{border:1px solid var(--line);border-radius:var(--r-lg);padding:20px;background:var(--bg-raised);transition:border-color .2s}
+.pr .c:hover{border-color:var(--accent)}
+.pr .c .pi{width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center}
+.pr .c .pi svg{width:17px;height:17px}
+.pr .c h4{font-size:15px;font-weight:700;letter-spacing:-.015em;margin:12px 0 5px}
+.pr .c p{font-size:12.5px;color:var(--ink-2);line-height:1.6}
+
+/* compare table */
+.cmp-t{width:100%;border-collapse:collapse;font-size:13px;margin-top:18px}
+.cmp-t th{text-align:left;padding:9px 14px;background:var(--bg-soft);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.cmp-t td{padding:10px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.cmp-t td.k{font-weight:700;white-space:nowrap}
+.cmp-t td.bad{color:var(--ink-3)}
+.cmp-t td.good{color:var(--ink)}
+.cmp-t td.good b{color:var(--accent)}
+
+.note{display:flex;gap:10px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:var(--r-md);padding:13px 15px;margin-top:16px;font-size:12.5px;color:var(--ink-2);line-height:1.6;background:var(--bg-raised)}
+.note svg{width:15px;height:15px;color:var(--accent);flex-shrink:0;margin-top:1px}
+.note b{color:var(--ink)}
+
+.footer{padding:52px 0 70px;text-align:center;color:var(--ink-3);font-size:12px;line-height:1.8}
+</style>
+</head>
+<body>
+
+<!-- shared SVG defs: the icon set (Lucide-style, 20px grid, 1.75 stroke) -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.5 0-3-.4-4.2-1.1L3 20l1.1-5.3A8.5 8.5 0 1 1 21 11.5z"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="3"/><path d="M3 10h18"/><path d="M16.5 15h.01"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M10.3 21a2 2 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.3 4.8 13a4.9 4.9 0 0 1 0-7 4.7 4.7 0 0 1 6.7 0l.5.6.5-.6a4.7 4.7 0 0 1 6.7 0 4.9 4.9 0 0 1 0 7z"/></symbol>
+    <symbol id="i-repost" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-comment" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.6L3 20l1-5.6A8.5 8.5 0 1 1 21 11.5z"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4.5L6 21z"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-verified" viewBox="0 0 24 24"><path d="M12 2 14.5 4.5 18 4l.5 3.5L21 10l-1.5 3L21 16l-2.5 2.5L18 22l-3.5-.5L12 24l-2.5-2.5L6 22l-.5-3.5L3 16l1.5-3L3 10l2.5-2.5L6 4l3.5.5z"/><path d="m8.5 12 2.5 2.5 4.5-4.5"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="m4.5 18 5-5 3.5 3.5 3-3L20.5 18"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></symbol>
+    <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></symbol>
+    <symbol id="i-trending" viewBox="0 0 24 24"><path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M17.94 17.94A10.5 10.5 0 0 1 12 19c-6.5 0-10-7-10-7a17.6 17.6 0 0 1 4.06-4.94"/><path d="M9.9 4.24A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17.7 17.7 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="m2 2 20 20"/></symbol>
+    <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 13a10 10 0 0 1 5.2-2.8"/><path d="M19 13a10 10 0 0 0-5.2-2.8"/><path d="M2 8.8a15 15 0 0 1 6-3.6"/><path d="M22 8.8a15 15 0 0 0-3.2-2.1"/><circle cx="12" cy="20" r="1" fill="currentColor"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h0a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></symbol>
+    <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4"/><path d="M12 8v13M5 12v9h14v-9"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v3M12 10v8M17 6v12"/></symbol>
+    <symbol id="i-shopping" viewBox="0 0 24 24"><path d="M6 7h12l1.5 13.5a1 1 0 0 1-1 1.1H5.5a1 1 0 0 1-1-1.1z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+    <symbol id="i-chevron-r" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="3"/><path d="m16 10 6-3v10l-6-3"/></symbol>
+    <symbol id="i-article" viewBox="0 0 24 24"><path d="M4 4h16v16H4z" rx="2"/><path d="M4 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 7h8M8 11h8M8 15h5"/></symbol>
+    <symbol id="i-live" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><path d="M7.5 7.5a6.4 6.4 0 0 0 0 9M16.5 7.5a6.4 6.4 0 0 1 0 9"/><path d="M4.6 4.6a10.5 10.5 0 0 0 0 14.8M19.4 4.6a10.5 10.5 0 0 1 0 14.8"/></symbol>
+    <symbol id="i-group" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="5"/><path d="m11.5 11.5 8.5-8.5"/><path d="m17 6 2.5 2.5M14.5 8.5 17 11"/></symbol>
+    <symbol id="i-bookmark-filled" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4.5L6 21z" fill="currentColor"/></symbol>
+    <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.5 7.1"/></symbol>
+    <symbol id="i-hash" viewBox="0 0 24 24"><path d="M9 3 7 21M17 3l-2 18M4 8h17M3 16h17"/></symbol>
+    <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14h1M14 20h1M20 18v3h-3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12"/><path d="m6 10 6 6 6-6"/><path d="M4 20h16"/></symbol>
+  </defs>
+</svg>
+
+<header class="hdr">
+  <div class="logo"><span class="mk"><svg class="ic" style="stroke:#fff"><use href="#i-zap"/></svg></span>NostrFeed <em>Refined</em></div>
+  <div class="sp"></div>
+  <div class="modes" id="modes">
+    <button data-m="light" class="on"><svg class="ic"><use href="#i-eye"/></svg>Light</button>
+    <button data-m="dark"><svg class="ic"><use href="#i-sparkle"/></svg>Dark</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ── INTRO ── -->
+<div class="intro">
+  <div class="sec-k"><svg class="ic"><use href="#i-edit"/></svg>Refined direction — v2.1</div>
+  <h1>Quiet UI.<br>Loud <span class="a">content.</span></h1>
+  <p>The last pass was too loud. Refined goes the other way: small dense type, hairline dividers, one restrained accent, and a real SVG icon system — so the posts people write become the loudest thing on screen. Nothing competes with the content.</p>
+  <div class="points">
+    <span class="pt"><svg class="ic"><use href="#i-article"/></svg>13.5px reading type</span>
+    <span class="pt"><svg class="ic"><use href="#i-check"/></svg>One accent, used sparingly</span>
+    <span class="pt"><svg class="ic"><use href="#i-plus"/></svg>20px stroke icons, no emoji</span>
+    <span class="pt"><svg class="ic"><use href="#i-eye"/></svg>Hairlines over shadows</span>
+  </div>
+</div>
+
+<!-- ── PRINCIPLES ── -->
+<section>
+  <div class="sec-k"><svg class="ic"><use href="#i-target"/></svg>01 — Principles</div>
+  <h2 class="sec-t">Four rules of the Refined system</h2>
+  <div class="pr">
+    <div class="c"><span class="pi"><svg class="ic"><use href="#i-article"/></svg></span><h4>Text is the hero</h4><p>Post body is 13.5px with a 1.5 line-height and tight −0.005em tracking — dense enough to scan, comfortable enough to read 200 posts deep. Headlines exist only where screens need titles; the feed itself is whisper-quiet.</p></div>
+    <div class="c"><span class="pi"><svg class="ic"><use href="#i-eye"/></svg></span><h4>Hairlines, not shadows</h4><p>Structure comes from 1px #E8EAEF dividers, not elevation. Shadows appear on exactly two things: the FAB and the new-posts pill. Everything else is flat, calm, printable.</p></div>
+    <div class="c"><span class="pi"><svg class="ic"><use href="#i-check"/></svg></span><h4>One accent, one job</h4><p>#2F6BFF marks interactive identity: links, the active tab, verified badges, primary buttons. It never decorates. Zap keeps its amber — but muted to #E8860B so it stops shouting.</p></div>
+    <div class="c"><span class="pi"><svg class="ic"><use href="#i-hash"/></svg></span><h4>Icons are a language</h4><p>One SVG set, 24-viewBox, 1.75px stroke, round caps — drawn for meaning at 16–21px. Emoji survive ONLY in the zap preset grid, where they're cultural shorthand for amounts.</p></div>
+  </div>
+</section>
+
+<!-- ── ICON SYSTEM ── -->
+<section>
+  <div class="sec-k"><svg class="ic"><use href="#i-hash"/></svg>02 — Icon system</div>
+  <h2 class="sec-t">The Refined icon set</h2>
+  <p class="sec-s">Consistent stroke weight is what makes an app feel "designed" vs "assembled". Every icon below ships as a Flutter <code style="font-size:11px;background:var(--bg-soft);padding:1px 5px;border-radius:4px">SvgPicture.asset</code> — same 24-viewBox, 1.75 stroke, round joins. Navigation, actions, states, wallet — one family.</p>
+  <div class="icon-table">
+    <div class="icon-cell"><svg class="ic"><use href="#i-home"/></svg><span class="nm">home</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-compass"/></svg><span class="nm">explore</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-chat"/></svg><span class="nm">chat</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-wallet"/></svg><span class="nm">wallet</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-plus"/></svg><span class="nm">create</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-search"/></svg><span class="nm">search</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-bell"/></svg><span class="nm">notifications</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-comment"/></svg><span class="nm">reply</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-repost"/></svg><span class="nm">repost</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-heart"/></svg><span class="nm">like</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-zap"/></svg><span class="nm">zap</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-bookmark"/></svg><span class="nm">bookmark</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-share"/></svg><span class="nm">share</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-verified"/></svg><span class="nm">verified (NIP-05)</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-more"/></svg><span class="nm">more</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-back"/></svg><span class="nm">back</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-image"/></svg><span class="nm">media</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-link"/></svg><span class="nm">link</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-clock"/></svg><span class="nm">time / expiry</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-users"/></svg><span class="nm">people</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-send"/></svg><span class="nm">send</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-paperclip"/></svg><span class="nm">attach</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-trending"/></svg><span class="nm">trending</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-eye"/></svg><span class="nm">show</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-eye-off"/></svg><span class="nm">hide / CW</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-wifi-off"/></svg><span class="nm">offline</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-globe"/></svg><span class="nm">relay / web</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-calendar"/></svg><span class="nm">calendar</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-settings"/></svg><span class="nm">settings</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-edit"/></svg><span class="nm">compose</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-sparkle"/></svg><span class="nm">AI assistant</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-gift"/></svg><span class="nm">sats drops</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-target"/></svg><span class="nm">bounties</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-chart"/></svg><span class="nm">studio</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-shopping"/></svg><span class="nm">market</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-key"/></svg><span class="nm">identity</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-video"/></svg><span class="nm">reels / live</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-article"/></svg><span class="nm">article</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-at"/></svg><span class="nm">mention</span></div>
+    <div class="icon-cell"><svg class="ic"><use href="#i-qr"/></svg><span class="nm">scan QR</span></div>
+  </div>
+  <div class="note"><svg class="ic"><use href="#i-check"/></svg><span><b>Flutter handoff:</b> export as <code style="font-size:11px">assets/icons/*.svg</code>, render with <code style="font-size:11px">flutter_svg</code> (already in pubspec). One <code style="font-size:11px">AppIcon</code> widget wraps color + size (16/18/21) so a stroke-weight fix lands everywhere at once. Replaces ~40 Material icons + inline emoji in UI chrome today.</span></div>
+</section>
+
+<!-- ── FEED ── -->
+<section>
+  <div class="sec-k"><svg class="ic"><use href="#i-home"/></svg>03 — The feed</div>
+  <h2 class="sec-t">Built for reading, first</h2>
+  <p class="sec-s">13.5px body, hairline separators, compact actions with stroke icons. Media is tasteful and constrained — never full-bleed. The chrome disappears; the words remain.</p>
+  <div class="phones">
+
+    <!-- FEED: text-first -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar">
+        <div class="t"><span class="mk"><svg class="ic" style="stroke:#fff"><use href="#i-zap"/></svg></span>nostrfeed</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-search"/></svg></span>
+        <span class="m-ic"><svg class="ic"><use href="#i-bell"/></svg><span class="dot"></span></span>
+      </div>
+      <div class="m-tabs">
+        <span class="m-tab on">For You</span><span class="m-tab">Following</span>
+        <span style="flex:1"></span>
+        <span class="m-tab" style="padding:10px 8px" title="AI"><svg class="ic sm" style="color:var(--ink-3)"><use href="#i-sparkle"/></svg></span>
+      </div>
+      <div class="np-pill"><svg class="ic"><use href="#i-arrow-up"/></svg>5 new posts</div>
+      <div class="m-body"><div class="m-scroll">
+        <!-- text post -->
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">S</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Satoshi's Ghost</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">@satoshi · 2m</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">Your identity is a key, not an account. No platform can deplatform mathematics. <span class="m">#nostr</span></div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>24</span>
+              <span class="a on rp"><svg class="ic"><use href="#i-repost"/></svg>12</span>
+              <span class="a on lk"><svg class="ic"><use href="#i-heart"/></svg>186</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>2.1k</span>
+              <span class="sp"></span>
+              <span class="a"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <!-- longer text post — the reading case -->
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">L</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Lyn Alden</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">@lynalden · 14m</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">The interesting thing about neutral protocols is that value accrues to the edges — clients compete on craft, relays compete on reliability, and nobody can tax the middle. This is how email worked before the platforms walled it off.</div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>89</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>234</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>1.2k</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>21k</span>
+              <span class="sp"></span>
+              <span class="a bm on"><svg class="ic"><use href="#i-bookmark-filled"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <!-- link post -->
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">F</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">fiatjaf</span><span class="hd2">@fiatjaf.com · 1h</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">NIP-17 gift wraps, explained without the math:</div>
+            <div class="lk-card">
+              <span class="th"><svg class="ic"><use href="#i-article"/></svg></span>
+              <div class="mt"><div class="t1">NIP-17: Private Direct Messages — nostr-protocol/nips</div><div class="t2"><svg class="ic"><use href="#i-link"/></svg>github.com</div></div>
+            </div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>156</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>412</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>890</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>8.4k</span>
+              <span class="sp"></span>
+              <span class="a"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <!-- image post, constrained -->
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">A</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Alice</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">@alice · 2h</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">Sunset over the citadel. This is why we build. 🧡</div>
+            <div class="md g1"><div class="c"><svg class="ic"><use href="#i-image"/></svg></div></div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>8</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>3</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>94</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>420</span>
+              <span class="sp"></span>
+              <span class="a"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="m-nav">
+        <div class="m-ni on"><svg class="ic"><use href="#i-home"/></svg><span class="lb">Home</span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-compass"/></svg><span class="lb">Explore</span></div>
+        <div class="m-ni create"><span class="cb"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-chat"/></svg><span class="lb">Chat</span><span class="bdg">7</span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-wallet"/></svg><span class="lb">Wallet</span></div>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Home — the reading feed</b><span>13.5px type · hairlines · stroke icons · media constrained</span></div></div>
+
+    <!-- FEED: states -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar">
+        <div class="t"><span class="mk"><svg class="ic" style="stroke:#fff"><use href="#i-zap"/></svg></span>nostrfeed</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-search"/></svg></span>
+        <span class="m-ic"><svg class="ic"><use href="#i-bell"/></svg></span>
+      </div>
+      <div class="off-strip"><svg class="ic"><use href="#i-wifi-off"/></svg>Offline — showing cached posts</div>
+      <div class="m-body"><div class="m-scroll">
+        <!-- poll -->
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">N</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Nostr News</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">· 44m</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">Which layer matters most for Nostr adoption?</div>
+            <div class="pl">
+              <div class="o"><div class="f" style="width:58%"></div><div class="r"><span>Zaps & payments</span><span class="pc">58%</span></div></div>
+              <div class="o"><div class="f" style="width:42%"></div><div class="r"><span>Key management</span><span class="pc">42%</span></div></div>
+              <div class="mta"><svg class="ic"><use href="#i-users"/></svg>891 votes<svg class="ic"><use href="#i-clock"/></svg>1 day left</div>
+            </div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>41</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>19</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>203</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>5k</span>
+              <span class="sp"></span>
+              <span class="a"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <!-- CW -->
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">E</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Edgy Poster</span><span class="hd2">@edgy · 1h</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">New photo set just dropped 👀</div>
+            <div class="cw">
+              <span class="icn"><svg class="ic"><use href="#i-eye-off"/></svg></span>
+              <div><div class="t1">Sensitive content</div><div class="t2">Author-tagged #nsfw · tap to reveal</div></div>
+            </div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>3</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg></span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>12</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg></span>
+              <span class="sp"></span>
+              <span class="a"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <!-- repost -->
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">B</span></div>
+          <div class="col-r">
+            <div class="rp-line"><svg class="ic"><use href="#i-repost"/></svg>Bob reposted</div>
+            <div class="hd"><span class="nm">ODELL</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">@odell · 3h</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">Zaps are the killer feature. Value-for-value changes creator economics forever.</div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>156</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>890</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>2.1k</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>89k</span>
+              <span class="sp"></span>
+              <span class="a"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <!-- quote -->
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">K</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Kimi</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">· 5h</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">This. Clients are the new browsers. 🎯</div>
+            <div class="qt">
+              <div class="hd"><span class="nm" style="font-size:12px">Jack</span><span class="hd2" style="font-size:11px">@jack · 1d</span></div>
+              <div class="tx" style="font-size:12.5px">nostr is the base layer for social the way bitcoin is the base layer for money</div>
+            </div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>12</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>8</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>89</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>1k</span>
+              <span class="sp"></span>
+              <span class="a"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="m-nav">
+        <div class="m-ni on"><svg class="ic"><use href="#i-home"/></svg><span class="lb">Home</span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-compass"/></svg><span class="lb">Explore</span></div>
+        <div class="m-ni create"><span class="cb"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-chat"/></svg><span class="lb">Chat</span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-wallet"/></svg><span class="lb">Wallet</span></div>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Feed states — poll, CW, repost, quote</b><span>every content type stays quiet & scannable</span></div></div>
+
+    <!-- THREAD -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Thread</div>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <!-- root, slightly larger -->
+        <div class="post" style="border-bottom:0;padding-bottom:4px">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">S</span>
+            <div style="width:2px;flex:1;min-height:12px;background:var(--line);margin:4px auto 0;border-radius:1px"></div>
+          </div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Satoshi's Ghost</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">· 5h</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx" style="font-size:15px;line-height:1.55">Unpopular opinion: most "decentralized" social apps are just centralized apps with extra steps. Nostr is different because the KEY is the identity. 🧵</div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>89</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>156</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>1.2k</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>21k</span>
+              <span class="sp"></span>
+              <span class="a"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <div class="post" style="border-bottom:0;padding-top:2px;padding-bottom:4px">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">A</span>
+            <div style="width:2px;flex:1;min-height:12px;background:var(--line);margin:4px auto 0;border-radius:1px"></div>
+          </div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Alice</span><span class="hd2">Replying to @satoshi · 4h</span></div>
+            <div class="tx">This. Also the relay model means clients compete on UX, not on who owns your graph.</div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>4</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>2</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>89</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>420</span>
+            </div>
+          </div>
+        </div>
+        <div class="post" style="border-bottom:0;padding-top:2px">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">B</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Bob</span><span class="hd2">Replying to @alice · 3h</span></div>
+            <div class="tx">Clients are the new browsers. Relays are the new ISPs. Keys are the new accounts.</div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>1</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>8</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>156</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>1k</span>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="cmp" style="border-top:1px solid var(--line)">
+        <span class="av" style="width:28px;height:28px;font-size:11px">K</span>
+        <div class="fld">Post your reply…</div>
+        <span class="send"><svg class="ic"><use href="#i-arrow-up"/></svg></span>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Thread — calm hierarchy</b><span>root at 15px, replies at 13.5px · hairline chain</span></div></div>
+  </div>
+</section>
+
+<!-- ── CHAT + WALLET ── -->
+<section>
+  <div class="sec-k"><svg class="ic"><use href="#i-chat"/></svg>04 — Chat & money</div>
+  <h2 class="sec-t">Conversation and value</h2>
+  <p class="sec-s">Chat list with presence dots and quiet badges; thread bubbles flat with a single-radius tail. The wallet is a statement card — dark ink, tabular numbers, stroke icons — with money features as restrained quick-rails, not confetti.</p>
+  <div class="phones">
+
+    <!-- CHAT LIST -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar">
+        <div class="t">Messages</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-edit"/></svg></span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <!-- AI pinned -->
+        <div class="ch" style="background:var(--bg-soft)">
+          <span class="av" style="width:44px;height:44px;background:var(--accent);border-color:var(--accent)"><svg class="ic" style="stroke:#fff;width:19px;height:19px"><use href="#i-sparkle"/></svg></span>
+          <div class="mm">
+            <div class="r1"><span class="n">AI Assistant</span><span class="st inf" style="margin-left:2px">AI</span></div>
+            <div class="pv">Draft, summarize, translate — 8.2k credits</div>
+          </div>
+          <span class="lx" style="color:var(--ink-3)"><svg class="ic"><use href="#i-chevron-r"/></svg></span>
+        </div>
+        <div class="ch">
+          <span class="rel"><span class="av" style="width:44px;height:44px;font-size:15px">A</span><span class="on"></span></span>
+          <div class="mm">
+            <div class="r1"><span class="n">Alice</span><span class="vf" style="color:var(--accent)"><svg class="ic xs"><use href="#i-verified"/></svg></span><span class="tm">2m</span></div>
+            <div class="pv u">zapped you 420 sats "for the idea" ⚡</div>
+          </div>
+          <span class="bdg">2</span>
+        </div>
+        <div class="ch">
+          <span class="rel"><span class="av" style="width:44px;height:44px;font-size:15px">⚡</span></span>
+          <div class="mm">
+            <div class="r1"><span class="n">Nostr Devs</span><span class="st inf">Group</span><span class="tm">1h</span></div>
+            <div class="pv u">fiatjaf: NIP-17 gift wraps ship next week</div>
+          </div>
+          <span class="bdg">5</span>
+        </div>
+        <div class="ch">
+          <span class="rel"><span class="av" style="width:44px;height:44px;font-size:15px">B</span><span class="on"></span></span>
+          <div class="mm">
+            <div class="r1"><span class="n">Bob</span><span class="tm">3h</span></div>
+            <div class="pv">You: sent the ecash — claim it 🥜</div>
+          </div>
+          <span class="mut"><svg class="ic"><use href="#i-check"/></svg></span>
+        </div>
+        <div class="ch">
+          <span class="rel"><span class="av" style="width:44px;height:44px;font-size:15px">C</span></span>
+          <div class="mm">
+            <div class="r1"><span class="n">Carol</span><span class="tm">1d</span></div>
+            <div class="pv"><svg class="ic xs" style="vertical-align:-2px"><use href="#i-image"/></svg> Photo</div>
+          </div>
+        </div>
+        <div class="ch">
+          <span class="rel"><span class="av" style="width:44px;height:44px;font-size:15px">🎅</span></span>
+          <div class="mm">
+            <div class="r1"><span class="n">Secret Santa</span><span class="st" style="background:var(--zap-soft);color:var(--zap)"><svg class="ic"><use href="#i-clock"/></svg>24h</span><span class="tm">2d</span></div>
+            <div class="pv">This message disappears…</div>
+          </div>
+        </div>
+      </div></div>
+      <div class="m-nav">
+        <div class="m-ni"><svg class="ic"><use href="#i-home"/></svg><span class="lb">Home</span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-compass"/></svg><span class="lb">Explore</span></div>
+        <div class="m-ni create"><span class="cb"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+        <div class="m-ni on"><svg class="ic"><use href="#i-chat"/></svg><span class="lb">Chat</span><span class="bdg">7</span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-wallet"/></svg><span class="lb">Wallet</span></div>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Messages — quiet list</b><span>presence dots · pill badges for group/disappearing · AI pinned</span></div></div>
+
+    <!-- CHAT THREAD -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <span class="av" style="width:29px;height:29px;font-size:11px">A</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:4px">Alice <span style="color:var(--accent)"><svg class="ic xs"><use href="#i-verified"/></svg></span></div>
+          <div style="font-size:9.5px;color:#3FB27F;font-weight:600">online · NIP-17 🔒</div>
+        </div>
+        <span class="m-ic"><svg class="ic"><use href="#i-more"/></svg></span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="bbs">
+          <div style="text-align:center;font-size:9px;color:var(--ink-3);padding:2px 0 10px">Today · end-to-end encrypted</div>
+          <div class="bb-r"><div class="bb them">gm! did you see the zap goals? ⚡</div></div>
+          <div class="bb-r me"><div class="bb me">gm! shipping it today 🛠️<span class="bbt">09:41 ✓✓</span></div></div>
+          <div class="bb-r me"><div class="bb me">zapping you 420 for the idea 🚀<span class="bbt">09:41 ✓✓</span></div></div>
+          <div class="bb-r"><div class="bb zp"><span class="zamt"><svg class="ic"><use href="#i-zap"/></svg>420 sats received</span><span style="font-size:10.5px;opacity:.7;display:block;margin-top:2px">"for the idea 🚀"</span></div></div>
+          <div class="bb-r"><div class="bb them">you're the best 🧡</div></div>
+          <div class="bb-r"><div class="bb them" style="opacity:.6;font-size:11px;padding:9px 14px">typing…</div></div>
+        </div>
+      </div></div>
+      <div class="cmp">
+        <span class="att"><svg class="ic"><use href="#i-paperclip"/></svg></span>
+        <div class="fld">Message Alice…</div>
+        <span class="att" style="color:var(--zap)"><svg class="ic"><use href="#i-zap"/></svg></span>
+        <span class="send"><svg class="ic"><use href="#i-send"/></svg></span>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Thread — flat bubbles, real icons</b><span>zap receipts as amber-bordered value cards</span></div></div>
+
+    <!-- WALLET -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar">
+        <div class="t">Wallet</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-chart"/></svg></span>
+        <span class="m-ic"><svg class="ic"><use href="#i-settings"/></svg></span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="w-card">
+          <span class="wlt">LNbits · Spending<svg class="ic"><use href="#i-chevron-r"/></svg></span>
+          <div class="lb"><svg class="ic"><use href="#i-wallet"/></svg>Total balance</div>
+          <div class="amt">142,857 <small>sats</small></div>
+          <div class="ft">≈ $142.86 ·<span class="up"><svg class="ic"><use href="#i-trending"/></svg>2.4%</span>today</div>
+          <div class="acts">
+            <span class="wa b"><svg class="ic"><use href="#i-arrow-up"/></svg>Send</span>
+            <span class="wa a"><svg class="ic"><use href="#i-arrow-down"/></svg>Receive</span>
+            <span class="wa c"><svg class="ic"><use href="#i-zap"/></svg></span>
+          </div>
+        </div>
+        <div class="chips" style="padding-top:12px">
+          <span class="chip on"><svg class="ic"><use href="#i-wallet"/></svg>LNbits</span>
+          <span class="chip"><svg class="ic"><use href="#i-link"/></svg>NWC</span>
+          <span class="chip"><svg class="ic"><use href="#i-gift"/></svg>Cashu</span>
+          <span class="chip"><svg class="ic"><use href="#i-globe"/></svg>LndHub</span>
+        </div>
+        <div class="sec-h">Earn & create<span class="more">See all</span></div>
+        <div class="qr">
+          <div class="qc"><span class="qi"><svg class="ic"><use href="#i-gift"/></svg></span><div class="qt2">Drops</div><div class="qs">+21 ready</div></div>
+          <div class="qc"><span class="qi"><svg class="ic"><use href="#i-target"/></svg></span><div class="qt2">Bounties</div><div class="qs">3 open · 5.2k</div></div>
+          <div class="qc"><span class="qi"><svg class="ic"><use href="#i-chart"/></svg></span><div class="qt2">Studio</div><div class="qs">21.4k / wk</div></div>
+          <div class="qc"><span class="qi"><svg class="ic"><use href="#i-shopping"/></svg></span><div class="qt2">Market</div><div class="qs">12 listings</div></div>
+        </div>
+        <div class="sec-h">Activity</div>
+        <div class="txr"><span class="ti" style="color:var(--zap)"><svg class="ic"><use href="#i-zap"/></svg></span><div><div class="tt">Zap from @alice</div><div class="ts">"for the idea 🚀" · 2m</div></div><span class="ta p">+420</span></div>
+        <div class="txr"><span class="ti"><svg class="ic"><use href="#i-sparkle"/></svg></span><div><div class="tt">AI credits top-up</div><div class="ts">8,000 tokens · 1h</div></div><span class="ta">−2,100</span></div>
+        <div class="txr"><span class="ti"><svg class="ic"><use href="#i-gift"/></svg></span><div><div class="tt">Daily drop claimed</div><div class="ts">streak · 6 days</div></div><span class="ta p">+21</span></div>
+        <div class="txr"><span class="ti"><svg class="ic"><use href="#i-users"/></svg></span><div><div class="tt">Membership · @diana</div><div class="ts">Pro tier · 5h</div></div><span class="ta p">+21,000</span></div>
+      </div></div>
+      <div class="m-nav">
+        <div class="m-ni"><svg class="ic"><use href="#i-home"/></svg><span class="lb">Home</span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-compass"/></svg><span class="lb">Explore</span></div>
+        <div class="m-ni create"><span class="cb"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-chat"/></svg><span class="lb">Chat</span></div>
+        <div class="m-ni on"><svg class="ic"><use href="#i-wallet"/></svg><span class="lb">Wallet</span></div>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Wallet — the statement card</b><span>dark ink card · tabular numbers · restrained rails</span></div></div>
+
+    <!-- ZAP SHEET -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr" style="background:rgba(15,17,23,.45)">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-body"></div>
+      <div class="z-sh">
+        <div class="sh-h"></div>
+        <div class="z-hd">
+          <span class="av" style="width:38px;height:38px;font-size:14px">S</span>
+          <div class="who"><div class="n">Zap Satoshi's Ghost</div><div class="h">satoshi@ln.nostrfeed.com</div></div>
+          <svg class="ic lg" style="color:var(--zap)"><use href="#i-zap"/></svg>
+        </div>
+        <div class="z-gr">
+          <div class="z-cl"><span class="em">👍</span><span class="am">21</span></div>
+          <div class="z-cl sel"><span class="em">🚀</span><span class="am">420</span></div>
+          <div class="z-cl"><span class="em">☕</span><span class="am">1k</span></div>
+          <div class="z-cl"><span class="em">🍻</span><span class="am">5k</span></div>
+          <div class="z-cl"><span class="em">🍷</span><span class="am">10k</span></div>
+          <div class="z-cl"><span class="em">👑</span><span class="am">100k</span></div>
+        </div>
+        <div class="z-custom">
+          <svg class="ic sm" style="color:var(--ink-3)"><use href="#i-zap"/></svg>
+          <input value="420" readonly>
+          <span class="cur">sats ≈ $0.42</span>
+        </div>
+        <div class="z-custom" style="margin-top:8px">
+          <svg class="ic sm" style="color:var(--ink-3)"><use href="#i-edit"/></svg>
+          <span style="font-size:13px;color:var(--ink-3)">Add a comment… (on the receipt)</span>
+        </div>
+        <button class="btn zap" style="width:100%;margin-top:12px;padding:12px;font-size:14px;border-radius:var(--r-full)"><svg class="ic"><use href="#i-zap"/></svg>Zap 420 sats</button>
+        <div style="text-align:center;font-size:10px;color:var(--ink-3);margin-top:9px">Balance 142,857 sats · pays with LNbits</div>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Zap sheet — compact 6-up grid</b><span>emoji stay (cultural) · amber goes soft, not neon</span></div></div>
+  </div>
+</section>
+
+<!-- ── PROFILE + ACTIVITY + EXPLORE ── -->
+<section>
+  <div class="sec-k"><svg class="ic"><use href="#i-users"/></svg>05 — Identity & discovery</div>
+  <h2 class="sec-t">People, softly presented</h2>
+  <div class="phones">
+
+    <!-- PROFILE -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="m-body"><div class="m-scroll">
+        <div class="pf-cov">
+          <span class="m-ic" style="position:absolute;top:40px;left:6px;color:#fff"><svg class="ic"><use href="#i-back"/></svg></span>
+          <span class="m-ic" style="position:absolute;top:40px;right:6px;color:#fff"><svg class="ic"><use href="#i-more"/></svg></span>
+        </div>
+        <div class="pf-hd">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div class="pf-av"><span class="av" style="width:100%;height:100%;font-size:24px">K</span></div>
+            <div class="pf-acts" style="position:static;margin-top:6px">
+              <button class="btn soft sm">Edit profile</button>
+              <button class="btn zap sm zicon"><svg class="ic"><use href="#i-zap"/></svg></button>
+            </div>
+          </div>
+          <div class="pf-nm">Kimi Nakamoto <span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span></div>
+          <div class="pf-h5"><svg class="ic"><use href="#i-at"/></svg>kimi@nostrfeed.com</div>
+          <div class="pf-bio">Building the Nostr OS. Designer × developer. Zaps fund open source.</div>
+          <div class="pf-meta">
+            <span><svg class="ic"><use href="#i-link"/></svg>kimi.dev</span>
+            <span><svg class="ic"><use href="#i-calendar"/></svg>Joined Mar 2024</span>
+          </div>
+          <div class="pf-stats">
+            <span><b>1,247</b> Following</span>
+            <span><b>8,391</b> Followers</span>
+            <span class="zv"><svg class="ic xs" style="vertical-align:-2px"><use href="#i-zap"/></svg><b>42k</b></span>
+          </div>
+        </div>
+        <div class="m-tabs" style="margin-top:11px">
+          <span class="m-tab on">Posts</span><span class="m-tab">Replies</span><span class="m-tab">Media</span><span class="m-tab">Likes</span>
+        </div>
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">K</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Kimi Nakamoto</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">· 4h</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">Shipping the new wallet hub today. Every money feature, one screen.</div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>31</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>14</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>287</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>4.2k</span>
+              <span class="sp"></span>
+              <span class="a"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">K</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Kimi Nakamoto</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">· 1d</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">Design is how it works. Nostr works because keys, not platforms.</div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>12</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>45</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>402</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>8.9k</span>
+              <span class="sp"></span>
+              <span class="a bm on"><svg class="ic"><use href="#i-bookmark-filled"/></svg></span>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Profile — editorial, not flashy</b><span>compact cover · stroke verified · zaps as a stat</span></div></div>
+
+    <!-- NOTIFICATIONS -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Activity</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-settings"/></svg></span>
+      </div>
+      <div class="chips">
+        <span class="chip on">All</span>
+        <span class="chip"><svg class="ic"><use href="#i-zap"/></svg>Zaps</span>
+        <span class="chip"><svg class="ic"><use href="#i-comment"/></svg>Replies</span>
+        <span class="chip"><svg class="ic"><use href="#i-users"/></svg>Follows</span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="nt un">
+          <span class="ni" style="background:var(--zap-soft);color:var(--zap)"><svg class="ic"><use href="#i-zap"/></svg></span>
+          <div class="nx">
+            <div class="avst"><span class="av">A</span><span class="av">B</span><span class="av">C</span><span class="av">+9</span></div>
+            <div class="t1"><b>Alice</b> and 11 others zapped your post <b style="color:var(--zap)">4,200 sats</b></div>
+            <div class="t2">"gm nostr ☕ what's everyone building…"</div>
+            <div class="tm">2 minutes ago</div>
+          </div>
+        </div>
+        <div class="nt un">
+          <span class="ni" style="background:var(--accent-soft);color:var(--accent)"><svg class="ic"><use href="#i-comment"/></svg></span>
+          <div class="nx">
+            <div class="avst"><span class="av">B</span></div>
+            <div class="t1"><b>Bob</b> replied to your thread</div>
+            <div class="t2">"Clients are the new browsers…"</div>
+            <div class="tm">18 minutes ago</div>
+          </div>
+        </div>
+        <div class="nt">
+          <span class="ni" style="background:rgba(46,158,99,.12);color:var(--repost)"><svg class="ic"><use href="#i-repost"/></svg></span>
+          <div class="nx">
+            <div class="avst"><span class="av">D</span><span class="av">E</span></div>
+            <div class="t1"><b>Diana</b> and 7 others reposted your note</div>
+            <div class="tm">1 hour ago</div>
+          </div>
+        </div>
+        <div class="nt">
+          <span class="ni" style="background:rgba(214,75,127,.1);color:var(--like)"><svg class="ic"><use href="#i-heart"/></svg></span>
+          <div class="nx">
+            <div class="avst"><span class="av">F</span><span class="av">G</span><span class="av">H</span></div>
+            <div class="t1"><b>Fred</b> and 42 others liked your post</div>
+            <div class="tm">2 hours ago</div>
+          </div>
+        </div>
+        <div class="nt">
+          <span class="ni" style="background:var(--bg-soft);color:var(--ink-2)"><svg class="ic"><use href="#i-users"/></svg></span>
+          <div class="nx">
+            <div class="avst"><span class="av">I</span></div>
+            <div class="t1"><b>Iris</b> started following you</div>
+            <div class="tm">5 hours ago</div>
+          </div>
+          <button class="btn soft sm">Follow</button>
+        </div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Activity — grouped & quiet</b><span>icon-coded rows · avatar stacks · unread tint</span></div></div>
+
+    <!-- EXPLORE -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar">
+        <div class="t">Explore</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-trending"/></svg></span>
+      </div>
+      <div style="padding:2px 14px 10px">
+        <div style="display:flex;align-items:center;gap:8px;background:var(--bg-soft);border:1px solid var(--line);border-radius:var(--r-full);padding:9px 15px">
+          <svg class="ic sm" style="color:var(--ink-3)"><use href="#i-search"/></svg>
+          <span style="font-size:12.5px;color:var(--ink-3)">Search posts, people, #tags…</span>
+        </div>
+      </div>
+      <div class="chips" style="padding-top:0">
+        <span class="chip on"><svg class="ic"><use href="#i-trending"/></svg>Trending</span>
+        <span class="chip"><svg class="ic"><use href="#i-video"/></svg>Live</span>
+        <span class="chip"><svg class="ic"><use href="#i-image"/></svg>Art</span>
+        <span class="chip"><svg class="ic"><use href="#i-shopping"/></svg>Market</span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="sec-h" style="padding-top:4px">Trending hashtags</div>
+        <div style="display:flex;flex-wrap:wrap;gap:7px;padding:2px 14px 6px">
+          <span class="chip"><svg class="ic xs"><use href="#i-hash"/></svg>bitcoin<span style="color:var(--ink-3);font-weight:500">2.1k</span></span>
+          <span class="chip"><svg class="ic xs"><use href="#i-hash"/></svg>grownostr<span style="color:var(--ink-3);font-weight:500">1.8k</span></span>
+          <span class="chip"><svg class="ic xs"><use href="#i-hash"/></svg>zapathon<span style="color:var(--ink-3);font-weight:500">941</span></span>
+          <span class="chip"><svg class="ic xs"><use href="#i-hash"/></svg>artstr<span style="color:var(--ink-3);font-weight:500">512</span></span>
+        </div>
+        <div class="sec-h">People to follow</div>
+        <div style="display:flex;gap:9px;padding:2px 14px 4px;overflow-x:auto;scrollbar-width:none">
+          <div style="min-width:96px;border:1px solid var(--line);border-radius:var(--r-md);padding:11px 9px;text-align:center;background:var(--bg-raised)">
+            <span class="av" style="width:38px;height:38px;font-size:14px;margin:0 auto">F</span>
+            <div style="font-size:11px;font-weight:700;margin-top:7px">fiatjaf <span style="color:var(--accent)"><svg class="ic xs" style="vertical-align:-2px"><use href="#i-verified"/></svg></span></div>
+            <div style="font-size:9px;color:var(--ink-3)">@fiatjaf.com</div>
+            <button class="btn primary sm" style="margin-top:7px;font-size:10px;padding:5px 12px">Follow</button>
+          </div>
+          <div style="min-width:96px;border:1px solid var(--line);border-radius:var(--r-md);padding:11px 9px;text-align:center;background:var(--bg-raised)">
+            <span class="av" style="width:38px;height:38px;font-size:14px;margin:0 auto">O</span>
+            <div style="font-size:11px;font-weight:700;margin-top:7px">ODELL <span style="color:var(--accent)"><svg class="ic xs" style="vertical-align:-2px"><use href="#i-verified"/></svg></span></div>
+            <div style="font-size:9px;color:var(--ink-3)">@odell.xyz</div>
+            <button class="btn primary sm" style="margin-top:7px;font-size:10px;padding:5px 12px">Follow</button>
+          </div>
+          <div style="min-width:96px;border:1px solid var(--line);border-radius:var(--r-md);padding:11px 9px;text-align:center;background:var(--bg-raised)">
+            <span class="av" style="width:38px;height:38px;font-size:14px;margin:0 auto">L</span>
+            <div style="font-size:11px;font-weight:700;margin-top:7px">Lyn</div>
+            <div style="font-size:9px;color:var(--ink-3)">@lynalden</div>
+            <button class="btn primary sm" style="margin-top:7px;font-size:10px;padding:5px 12px">Follow</button>
+          </div>
+        </div>
+        <div class="sec-h">Trending posts</div>
+        <div class="x-grid" style="padding-top:0">
+          <div class="x-card"><div class="xi"><svg class="ic"><use href="#i-image"/></svg><span class="st live" style="position:absolute;top:7px;left:7px"><svg class="ic"><use href="#i-live"/></svg>Live</span></div><div class="xb"><div class="xt">Zap art auction #12 — highest zap wins</div><div class="xm"><svg class="ic"><use href="#i-zap"/></svg>89k · @artbot</div></div></div>
+          <div class="x-card"><div class="xi"><svg class="ic"><use href="#i-video"/></svg></div><div class="xb"><div class="xt">Beach sunrise run — training log 21</div><div class="xm"><svg class="ic"><use href="#i-zap"/></svg>8.4k · @vida</div></div></div>
+        </div>
+      </div></div>
+      <div class="m-nav">
+        <div class="m-ni"><svg class="ic"><use href="#i-home"/></svg><span class="lb">Home</span></div>
+        <div class="m-ni on"><svg class="ic"><use href="#i-compass"/></svg><span class="lb">Explore</span></div>
+        <div class="m-ni create"><span class="cb"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-chat"/></svg><span class="lb">Chat</span></div>
+        <div class="m-ni"><svg class="ic"><use href="#i-wallet"/></svg><span class="lb">Wallet</span></div>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Explore — curated, not crowded</b><span>search pill · hashtag chips · small tasteful cards</span></div></div>
+
+    <!-- SEARCH -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="gap:7px;border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div style="flex:1;display:flex;align-items:center;gap:8px;background:var(--bg-soft);border:1px solid var(--line);border-radius:var(--r-full);padding:8px 14px">
+          <svg class="ic sm" style="color:var(--ink-3)"><use href="#i-search"/></svg>
+          <span style="font-size:13px">alice</span>
+          <span style="margin-left:auto;color:var(--ink-3);cursor:pointer;font-size:13px">✕</span>
+        </div>
+      </div>
+      <div class="m-tabs">
+        <span class="m-tab on">Top</span><span class="m-tab">People</span><span class="m-tab">Posts</span><span class="m-tab">Tags</span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="sec-h" style="padding-top:8px">People</div>
+        <div class="ch" style="padding:9px 14px">
+          <span class="rel"><span class="av" style="width:38px;height:38px;font-size:14px">A</span></span>
+          <div class="mm"><div class="r1"><span class="n">Alice</span><span class="vf" style="color:var(--accent)"><svg class="ic xs"><use href="#i-verified"/></svg></span></div><div class="pv">alice@getzap.me · 12k followers</div></div>
+          <button class="btn primary sm">Follow</button>
+        </div>
+        <div class="ch" style="padding:9px 14px">
+          <span class="rel"><span class="av" style="width:38px;height:38px;font-size:14px">🐰</span></span>
+          <div class="mm"><div class="r1"><span class="n">Alice in Wallets</span></div><div class="pv">@alicewallets · 891 followers</div></div>
+          <button class="btn soft sm">Follow</button>
+        </div>
+        <div class="sec-h">Posts</div>
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">A</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Alice</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">· 2d</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">Sunset over the citadel 🧡 <span class="m">#photography</span></div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>8</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>3</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>94</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>420</span>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Search — local-first results</b><span>Top/People/Posts/Tags · filter applied</span></div></div>
+
+    <!-- COMPOSE -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line);gap:10px">
+        <span style="font-size:13px;color:var(--ink-3);cursor:pointer">Cancel</span>
+        <span style="flex:1"></span>
+        <span style="display:inline-flex;background:var(--bg-soft);border:1px solid var(--line);border-radius:var(--r-full);padding:2px">
+          <span style="padding:5px 13px;border-radius:var(--r-full);font-size:11.5px;font-weight:700;background:var(--bg-raised);box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer">Post</span>
+          <span style="padding:5px 13px;border-radius:var(--r-full);font-size:11.5px;font-weight:600;color:var(--ink-3);cursor:pointer">Poll</span>
+        </span>
+        <button class="btn primary sm" style="border-radius:var(--r-full)">Post</button>
+      </div>
+      <div class="m-body"><div class="m-scroll" style="padding:13px 14px">
+        <div style="display:flex;gap:10px">
+          <span class="av" style="width:36px;height:36px;font-size:13px">K</span>
+          <div style="flex:1;font-size:14px;line-height:1.5;min-height:80px">gm nostr ☕ what's everyone building this week? <span style="color:var(--accent)">#grownostr</span></div>
+        </div>
+        <div style="display:flex;gap:8px;margin:10px 0 0 46px">
+          <div style="width:60px;height:60px;border-radius:var(--r-sm);background:var(--bg-soft);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink-3);position:relative"><svg class="ic"><use href="#i-image"/></svg><span style="position:absolute;top:-6px;right:-6px;width:17px;height:17px;border-radius:50%;background:var(--ink);color:var(--bg);font-size:9px;display:flex;align-items:center;justify-content:center;cursor:pointer">✕</span></div>
+          <div style="width:60px;height:60px;border-radius:var(--r-sm);background:var(--bg-raised);border:1.5px dashed var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink-3);cursor:pointer"><svg class="ic"><use href="#i-plus"/></svg></div>
+        </div>
+        <div class="qt" style="margin-left:46px">
+          <div class="hd"><span class="nm" style="font-size:11.5px">Jack</span><span class="hd2" style="font-size:10px">@jack · 2d</span></div>
+          <div class="tx" style="font-size:12px">gm is a state of mind</div>
+        </div>
+      </div></div>
+      <div style="border-top:1px solid var(--line);padding:9px 14px;display:flex;align-items:center;gap:15px;color:var(--accent)">
+        <svg class="ic" style="cursor:pointer"><use href="#i-image"/></svg>
+        <svg class="ic" style="cursor:pointer"><use href="#i-video"/></svg>
+        <svg class="ic" style="cursor:pointer;color:var(--ink-3)"><use href="#i-chart"/></svg>
+        <svg class="ic" style="cursor:pointer;color:var(--ink-3)"><use href="#i-at"/></svg>
+        <span style="flex:1"></span>
+        <span style="font-size:10.5px;color:var(--ink-3)">280</span>
+      </div>
+      <div style="height:190px;background:var(--bg-soft);border-top:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-size:11px">⌨️ keyboard</div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Compose — Post/Poll segmented</b><span>media row · quote preview · stroke toolbar</span></div></div>
+
+    <!-- CREATE SHEET -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr" style="background:rgba(15,17,23,.45)">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-body"></div>
+      <div class="z-sh">
+        <div class="sh-h"></div>
+        <div style="font-size:13.5px;font-weight:700;padding-bottom:9px">Create</div>
+        <div class="lr" style="padding:9px 2px;border-radius:var(--r-md)">
+          <span class="li" style="background:var(--accent);color:#fff"><svg class="ic"><use href="#i-sparkle"/></svg></span>
+          <div class="lb"><div class="lt">Ask AI</div><div class="ls">Draft, summarize, generate</div></div>
+          <span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span>
+        </div>
+        <div class="lr" style="padding:9px 2px;border-radius:var(--r-md)">
+          <span class="li"><svg class="ic"><use href="#i-edit"/></svg></span>
+          <div class="lb"><div class="lt">Post</div><div class="ls">Share a note</div></div>
+          <span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:11px 2px 2px">
+          <div style="text-align:center;cursor:pointer"><span class="li" style="width:46px;height:46px;margin:0 auto;border-radius:var(--r-md)"><svg class="ic"><use href="#i-article"/></svg></span><div style="font-size:10px;font-weight:600;margin-top:5px">Article</div></div>
+          <div style="text-align:center;cursor:pointer"><span class="li" style="width:46px;height:46px;margin:0 auto;border-radius:var(--r-md)"><svg class="ic"><use href="#i-video"/></svg></span><div style="font-size:10px;font-weight:600;margin-top:5px">Reel</div></div>
+          <div style="text-align:center;cursor:pointer"><span class="li" style="width:46px;height:46px;margin:0 auto;border-radius:var(--r-md)"><svg class="ic"><use href="#i-live"/></svg></span><div style="font-size:10px;font-weight:600;margin-top:5px">Go Live</div></div>
+          <div style="text-align:center;cursor:pointer"><span class="li" style="width:46px;height:46px;margin:0 auto;border-radius:var(--r-md)"><svg class="ic"><use href="#i-group"/></svg></span><div style="font-size:10px;font-weight:600;margin-top:5px">Group</div></div>
+        </div>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Create sheet — Post & AI lead</b><span>4-icon grid for the rest · stroke icons</span></div></div>
+
+    <!-- REELS -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr" style="background:#000">
+      <div style="position:absolute;inset:0;background:linear-gradient(165deg,#1b1e28,#0d0f16);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.18)"><svg class="ic" style="width:52px;height:52px;stroke-width:1.25"><use href="#i-play"/></svg></div>
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.3),transparent 26%,transparent 58%,rgba(0,0,0,.72))"></div>
+      <div style="position:absolute;top:44px;left:14px;right:14px;display:flex;align-items:center;z-index:6">
+        <span style="color:#fff;font-size:15px;font-weight:700">Reels</span>
+        <span style="flex:1"></span>
+        <span style="color:#fff;opacity:.8"><svg class="ic" style="width:19px;height:19px"><use href="#i-search"/></svg></span>
+      </div>
+      <div style="position:absolute;right:9px;bottom:120px;display:flex;flex-direction:column;gap:15px;z-index:6">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff;cursor:pointer"><svg class="ic lg"><use href="#i-heart"/></svg><span style="font-size:9px;font-weight:700">1.2k</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff;cursor:pointer"><svg class="ic lg"><use href="#i-comment"/></svg><span style="font-size:9px;font-weight:700">89</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff;cursor:pointer"><svg class="ic lg"><use href="#i-repost"/></svg><span style="font-size:9px;font-weight:700">45</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;color:#F0A03C;cursor:pointer"><svg class="ic lg"><use href="#i-zap"/></svg><span style="font-size:9px;font-weight:700">8.4k</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff;cursor:pointer"><svg class="ic lg"><use href="#i-bookmark"/></svg></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff;cursor:pointer"><svg class="ic lg"><use href="#i-share"/></svg></div>
+      </div>
+      <div style="position:absolute;left:13px;right:66px;bottom:100px;color:#fff;z-index:6">
+        <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700">
+          <span class="av" style="width:27px;height:27px;font-size:10px;border:1.5px solid rgba(255,255,255,.6);color:#fff;background:rgba(255,255,255,.15)">V</span>
+          @vida_pura
+          <span style="border:1px solid rgba(255,255,255,.5);border-radius:var(--r-full);padding:3px 10px;font-size:9.5px;font-weight:700;cursor:pointer">Follow</span>
+        </div>
+        <div style="font-size:11.5px;margin-top:7px;line-height:1.4;opacity:.95">Beach sunrise run 🏃‍♀️ zaps fund my marathon training</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:9.5px;opacity:.8"><svg class="ic xs"><use href="#i-video"/></svg>original audio</div>
+      </div>
+      <div style="position:absolute;bottom:84px;left:13px;right:13px;height:2.5px;background:rgba(255,255,255,.22);border-radius:2px;z-index:6"><div style="width:38%;height:100%;background:#fff;border-radius:2px"></div></div>
+      <div class="m-nav" style="background:rgba(10,11,16,.7);border-top-color:rgba(255,255,255,.1)">
+        <div class="m-ni" style="color:rgba(255,255,255,.5)"><svg class="ic"><use href="#i-home"/></svg><span class="lb">Home</span></div>
+        <div class="m-ni" style="color:rgba(255,255,255,.5)"><svg class="ic"><use href="#i-compass"/></svg><span class="lb">Explore</span></div>
+        <div class="m-ni create"><span class="cb" style="border-color:rgba(255,255,255,.4);color:#fff"><svg class="ic"><use href="#i-plus"/></svg></span></div>
+        <div class="m-ni" style="color:rgba(255,255,255,.5)"><svg class="ic"><use href="#i-chat"/></svg><span class="lb">Chat</span></div>
+        <div class="m-ni" style="color:rgba(255,255,255,.5)"><svg class="ic"><use href="#i-wallet"/></svg><span class="lb">Wallet</span></div>
+      </div>
+      <div class="ph-hi" style="background:#fff"></div>
+    </div></div>
+    <div class="ph-label"><b>Reels — minimal chrome</b><span>stroke rail · zap amber · thin progress</span></div></div>
+  </div>
+</section>
+
+<!-- ── ARTICLES / COMMUNITIES / LIVE / CALENDAR ── -->
+<section>
+  <div class="sec-k"><svg class="ic"><use href="#i-article"/></svg>06 — Long-form & communities</div>
+  <h2 class="sec-t">Content beyond the feed</h2>
+  <div class="phones">
+
+    <!-- ARTICLES -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Articles</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-search"/></svg></span>
+      </div>
+      <div class="m-body"><div class="m-scroll" style="padding:11px 14px;display:flex;flex-direction:column;gap:11px">
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;cursor:pointer;background:var(--bg-raised)">
+          <div style="height:88px;background:linear-gradient(120deg,#2B3A55,#1E2A40);display:flex;align-items:flex-end;padding:9px 12px;color:rgba(255,255,255,.85);font-size:10px;font-weight:700"><svg class="ic sm" style="margin-right:5px"><use href="#i-article"/></svg>8 min read</div>
+          <div style="padding:10px 12px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px"><span class="av" style="width:18px;height:18px;font-size:8px">F</span><span style="font-size:10px;color:var(--ink-3)">@fiatjaf · 2d ago</span></div>
+            <div style="font-size:13.5px;font-weight:700;letter-spacing:-.015em;line-height:1.3">Why relays are the new ISPs</div>
+            <div style="font-size:11px;color:var(--ink-2);margin-top:4px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">The outbox model explained for humans — and why it changes everything about how social networks compete…</div>
+            <div style="display:flex;gap:12px;margin-top:8px;font-size:10px;color:var(--ink-3);align-items:center">
+              <span style="display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-comment"/></svg>67</span>
+              <span style="display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-heart"/></svg>512</span>
+              <span style="display:flex;align-items:center;gap:4px;color:var(--zap)"><svg class="ic xs"><use href="#i-zap"/></svg>21k</span>
+              <span style="display:flex;align-items:center;gap:4px;margin-left:auto"><svg class="ic xs"><use href="#i-bookmark"/></svg>89</span>
+            </div>
+          </div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;cursor:pointer;background:var(--bg-raised)">
+          <div style="height:88px;background:linear-gradient(120deg,#1E3A2E,#142820);display:flex;align-items:flex-end;padding:9px 12px;color:rgba(255,255,255,.85);font-size:10px;font-weight:700"><svg class="ic sm" style="margin-right:5px"><use href="#i-key"/></svg>12 min read</div>
+          <div style="padding:10px 12px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px"><span class="av" style="width:18px;height:18px;font-size:8px">K</span><span style="font-size:10px;color:var(--ink-3)">@kimi · 5d ago</span></div>
+            <div style="font-size:13.5px;font-weight:700;letter-spacing:-.015em;line-height:1.3">Key management UX: the hardest problem in Nostr</div>
+            <div style="font-size:11px;color:var(--ink-2);margin-top:4px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">nsec in secure enclaves, NIP-46 bunkers, ncryptsec — a field guide to not losing your identity…</div>
+            <div style="display:flex;gap:12px;margin-top:8px;font-size:10px;color:var(--ink-3);align-items:center">
+              <span style="display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-comment"/></svg>89</span>
+              <span style="display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-heart"/></svg>1.2k</span>
+              <span style="display:flex;align-items:center;gap:4px;color:var(--zap)"><svg class="ic xs"><use href="#i-zap"/></svg>42k</span>
+              <span style="display:flex;align-items:center;gap:4px;margin-left:auto"><svg class="ic xs"><use href="#i-bookmark"/></svg>234</span>
+            </div>
+          </div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;cursor:pointer;background:var(--bg-raised)">
+          <div style="height:88px;background:linear-gradient(120deg,#3A2B1E,#28200F);display:flex;align-items:flex-end;padding:9px 12px;color:rgba(255,255,255,.85);font-size:10px;font-weight:700"><svg class="ic sm" style="margin-right:5px"><use href="#i-zap"/></svg>6 min read</div>
+          <div style="padding:10px 12px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px"><span class="av" style="width:18px;height:18px;font-size:8px">O</span><span style="font-size:10px;color:var(--ink-3)">@odell · 1w ago</span></div>
+            <div style="font-size:13.5px;font-weight:700;letter-spacing:-.015em;line-height:1.3">Zaps are the killer feature</div>
+            <div style="font-size:11px;color:var(--ink-2);margin-top:4px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Value-for-value changes creator economics forever. The data from 6 months of zapathon…</div>
+            <div style="display:flex;gap:12px;margin-top:8px;font-size:10px;color:var(--ink-3);align-items:center">
+              <span style="display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-comment"/></svg>156</span>
+              <span style="display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-heart"/></svg>2.1k</span>
+              <span style="display:flex;align-items:center;gap:4px;color:var(--zap)"><svg class="ic xs"><use href="#i-zap"/></svg>89k</span>
+              <span style="display:flex;align-items:center;gap:4px;margin-left:auto"><svg class="ic xs"><use href="#i-bookmark"/></svg>412</span>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="fab" style="border-radius:var(--r-md)"><svg class="ic"><use href="#i-edit"/></svg></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Articles — editorial cards</b><span>cover + read-time · engagement row · write FAB</span></div></div>
+
+    <!-- ARTICLE READER -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="m-body"><div class="m-scroll">
+        <div style="height:110px;background:linear-gradient(120deg,#2B3A55,#1E2A40);position:relative;flex-shrink:0">
+          <span class="m-ic" style="position:absolute;top:40px;left:6px;color:#fff"><svg class="ic"><use href="#i-back"/></svg></span>
+          <span class="m-ic" style="position:absolute;top:40px;right:42px;color:#fff"><svg class="ic"><use href="#i-bookmark"/></svg></span>
+          <span class="m-ic" style="position:absolute;top:40px;right:6px;color:#fff"><svg class="ic"><use href="#i-share"/></svg></span>
+        </div>
+        <div style="padding:16px 20px">
+          <div style="font-size:21px;font-weight:800;letter-spacing:-.03em;line-height:1.2">Why relays are the new ISPs</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:11px">
+            <span class="av" style="width:30px;height:30px;font-size:11px">F</span>
+            <div><div style="font-size:12px;font-weight:700">fiatjaf</div><div style="font-size:10px;color:var(--ink-3)">Mar 12 · 8 min read</div></div>
+            <button class="btn primary sm" style="margin-left:auto;font-size:10.5px">Follow</button>
+          </div>
+          <div style="font-size:14px;line-height:1.75;margin-top:16px;color:var(--ink)">
+            <p>For thirty years, your internet provider decided what you could see. Then your platform did. Nostr's outbox model flips this: you publish to the relays YOU choose, and readers fetch from the relays THEY choose…</p>
+            <p style="margin-top:13px">No single relay can deplatform you, because your followers read from a dozen. This is the property email had and social media lost…</p>
+          </div>
+        </div>
+      </div></div>
+      <div style="flex-shrink:0;border-top:1px solid var(--line);padding:8px 16px;display:flex;align-items:center;gap:4px">
+        <span class="a" style="display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:11.5px;padding:5px 9px;cursor:pointer"><svg class="ic sm"><use href="#i-comment"/></svg>67</span>
+        <span class="a" style="display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:11.5px;padding:5px 9px;cursor:pointer"><svg class="ic sm"><use href="#i-repost"/></svg>88</span>
+        <span class="a" style="display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:11.5px;padding:5px 9px;cursor:pointer"><svg class="ic sm"><use href="#i-heart"/></svg>512</span>
+        <span style="flex:1"></span>
+        <button class="btn zap sm" style="border-radius:var(--r-full)"><svg class="ic sm"><use href="#i-zap"/></svg>Zap</button>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Article reader — book-grade typography</b><span>14px/1.75 body · bottom action bar</span></div></div>
+
+    <!-- COMMUNITIES -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Communities</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-search"/></svg></span>
+      </div>
+      <div class="m-tabs"><span class="m-tab on">Joined</span><span class="m-tab">Discover</span><span class="m-tab">Created</span></div>
+      <div class="m-body"><div class="m-scroll" style="padding:11px 14px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;gap:11px;border:1px solid var(--line);border-radius:var(--r-md);padding:11px;cursor:pointer;background:var(--bg-raised)">
+          <span class="av" style="width:44px;height:44px;border-radius:var(--r-sm);font-size:16px;background:var(--accent-soft);color:var(--accent)"><svg class="ic"><use href="#i-zap"/></svg></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700">Nostr Devs</div>
+            <div style="font-size:10.5px;color:var(--ink-3);margin-top:2px">12.4k members · 89 posts today · public</div>
+          </div>
+          <span class="st ok" style="align-self:center">Joined</span>
+        </div>
+        <div style="display:flex;gap:11px;border:1px solid var(--line);border-radius:var(--r-md);padding:11px;cursor:pointer;background:var(--bg-raised)">
+          <span class="av" style="width:44px;height:44px;border-radius:var(--r-sm);font-size:16px;background:var(--zap-soft);color:var(--zap)"><svg class="ic"><use href="#i-heart"/></svg></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700">Bitcoin Citadels</div>
+            <div style="font-size:10.5px;color:var(--ink-3);margin-top:2px">8.1k members · 34 posts today · public</div>
+          </div>
+          <span class="st ok" style="align-self:center">Joined</span>
+        </div>
+        <div style="display:flex;gap:11px;border:1px solid var(--line);border-radius:var(--r-md);padding:11px;cursor:pointer;background:var(--bg-raised)">
+          <span class="av" style="width:44px;height:44px;border-radius:var(--r-sm);font-size:16px;background:rgba(46,158,99,.12);color:var(--repost)"><svg class="ic"><use href="#i-image"/></svg></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700">Artstr Gallery</div>
+            <div style="font-size:10.5px;color:var(--ink-3);margin-top:2px">5.6k members · approval required</div>
+          </div>
+          <button class="btn soft sm" style="align-self:center">Join</button>
+        </div>
+        <div style="display:flex;gap:11px;border:1px solid var(--line);border-radius:var(--r-md);padding:11px;cursor:pointer;background:var(--bg-raised)">
+          <span class="av" style="width:44px;height:44px;border-radius:var(--r-sm);font-size:16px;background:var(--bg-soft);color:var(--ink-2)"><svg class="ic"><use href="#i-key"/></svg></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700">OpSec & Privacy</div>
+            <div style="font-size:10.5px;color:var(--ink-3);margin-top:2px">3.2k members · closed</div>
+          </div>
+          <button class="btn soft sm" style="align-self:center">Request</button>
+        </div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Communities — clean rows</b><span>icon avatars · join state · member counts</span></div></div>
+
+    <!-- LIVE -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Live</div>
+      </div>
+      <div class="m-body"><div class="m-scroll" style="padding:11px 14px;display:flex;flex-direction:column;gap:10px">
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;cursor:pointer;background:var(--bg-raised)">
+          <div style="height:112px;background:linear-gradient(135deg,#1B1E28,#0D0F16);position:relative;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.25)">
+            <svg class="ic" style="width:34px;height:34px;stroke-width:1.25"><use href="#i-live"/></svg>
+            <span class="st live" style="position:absolute;top:8px;left:8px"><svg class="ic"><use href="#i-live"/></svg>Live</span>
+            <span style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.5);color:#fff;font-size:9px;font-weight:700;padding:3px 9px;border-radius:var(--r-full);display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-eye"/></svg>1.2k</span>
+          </div>
+          <div style="padding:10px 12px">
+            <div style="font-size:12.5px;font-weight:700">Zapathon Finals — live art auction</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span class="av" style="width:17px;height:17px;font-size:7px">O</span><span style="font-size:10px;color:var(--ink-3)">@odell · #zapathon</span></div>
+          </div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;cursor:pointer;background:var(--bg-raised)">
+          <div style="height:112px;background:linear-gradient(135deg,#281B2E,#160D1A);position:relative;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.25)">
+            <svg class="ic" style="width:34px;height:34px;stroke-width:1.25"><use href="#i-video"/></svg>
+            <span class="st live" style="position:absolute;top:8px;left:8px"><svg class="ic"><use href="#i-live"/></svg>Live</span>
+            <span style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.5);color:#fff;font-size:9px;font-weight:700;padding:3px 9px;border-radius:var(--r-full);display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-eye"/></svg>342</span>
+          </div>
+          <div style="padding:10px 12px">
+            <div style="font-size:12.5px;font-weight:700">Wavlake Wednesday — zap requests open</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span class="av" style="width:17px;height:17px;font-size:7px">W</span><span style="font-size:10px;color:var(--ink-3)">@wavlake · #music</span></div>
+          </div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;cursor:pointer;background:var(--bg-raised);opacity:.6">
+          <div style="height:80px;background:var(--bg-soft);position:relative;display:flex;align-items:center;justify-content:center;color:var(--ink-3)">
+            <svg class="ic" style="width:26px;height:26px"><use href="#i-clock"/></svg>
+            <span class="st inf" style="position:absolute;top:8px;left:8px">Ended</span>
+          </div>
+          <div style="padding:10px 12px">
+            <div style="font-size:12.5px;font-weight:700">Nostriga recap stream</div>
+            <div style="font-size:10px;color:var(--ink-3);margin-top:3px">@nostrnews · ended 2h ago · replay</div>
+          </div>
+        </div>
+      </div></div>
+      <div class="fab" style="border-radius:var(--r-md)"><svg class="ic"><use href="#i-live"/></svg></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Live — status-first cards</b><span>LIVE pill + viewers · ended dimmed · go-live FAB</span></div></div>
+  </div>
+
+  <div class="phones">
+    <!-- CALENDAR -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Calendar</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-plus"/></svg></span>
+      </div>
+      <div class="m-tabs"><span class="m-tab on">Upcoming</span><span class="m-tab">My events</span><span class="m-tab">Past</span></div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="sec-h">October 2026</div>
+        <div class="post" style="cursor:pointer">
+          <div class="col-l" style="width:42px">
+            <div style="width:42px;height:46px;border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center">
+              <span style="font-size:16px;font-weight:800;line-height:1">28</span><span style="font-size:8px;font-weight:700;letter-spacing:.05em">OCT</span>
+            </div>
+          </div>
+          <div class="col-r">
+            <div style="font-size:13px;font-weight:700">Nostr Halloween Zap Party</div>
+            <div style="font-size:10.5px;color:var(--ink-3);margin-top:2px;display:flex;align-items:center;gap:5px"><svg class="ic xs"><use href="#i-clock"/></svg>6:00 PM UTC · virtual · @nostrfeed</div>
+            <div style="display:flex;gap:6px;margin-top:7px;align-items:center">
+              <div style="display:flex"><span class="av" style="width:18px;height:18px;font-size:7px">A</span><span class="av" style="width:18px;height:18px;font-size:7px;margin-left:-6px">B</span><span class="av" style="width:18px;height:18px;font-size:7px;margin-left:-6px">C</span></div>
+              <span style="font-size:9.5px;color:var(--ink-3)">89 going · 34 maybe</span>
+              <button class="btn primary sm" style="margin-left:auto;font-size:10px;padding:4px 11px">RSVP</button>
+            </div>
+          </div>
+        </div>
+        <div class="post" style="cursor:pointer">
+          <div class="col-l" style="width:42px">
+            <div style="width:42px;height:46px;border-radius:var(--r-sm);background:var(--bg-soft);color:var(--ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center">
+              <span style="font-size:16px;font-weight:800;line-height:1">02</span><span style="font-size:8px;font-weight:700;letter-spacing:.05em">NOV</span>
+            </div>
+          </div>
+          <div class="col-r">
+            <div style="font-size:13px;font-weight:700">Lightning Dev Call #42</div>
+            <div style="font-size:10.5px;color:var(--ink-3);margin-top:2px;display:flex;align-items:center;gap:5px"><svg class="ic xs"><use href="#i-clock"/></svg>2:00 PM UTC · weekly · @nostrdev</div>
+            <div style="display:flex;gap:6px;margin-top:7px;align-items:center">
+              <div style="display:flex"><span class="av" style="width:18px;height:18px;font-size:7px">D</span><span class="av" style="width:18px;height:18px;font-size:7px;margin-left:-6px">E</span></div>
+              <span style="font-size:9.5px;color:var(--ink-3)">42 going</span>
+              <span class="st ok" style="margin-left:auto">Going ✓</span>
+            </div>
+          </div>
+        </div>
+        <div class="post" style="cursor:pointer">
+          <div class="col-l" style="width:42px">
+            <div style="width:42px;height:46px;border-radius:var(--r-sm);background:var(--bg-soft);color:var(--ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center">
+              <span style="font-size:16px;font-weight:800;line-height:1">15</span><span style="font-size:8px;font-weight:700;letter-spacing:.05em">NOV</span>
+            </div>
+          </div>
+          <div class="col-r">
+            <div style="font-size:13px;font-weight:700">Baltic Honeybadger 2026</div>
+            <div style="font-size:10.5px;color:var(--ink-3);margin-top:2px;display:flex;align-items:center;gap:5px"><svg class="ic xs"><use href="#i-globe"/></svg>Riga, Latvia 🇱🇻 · @hodlonaut</div>
+            <div style="display:flex;gap:6px;margin-top:7px;align-items:center">
+              <div style="display:flex"><span class="av" style="width:18px;height:18px;font-size:7px">F</span><span class="av" style="width:18px;height:18px;font-size:7px;margin-left:-6px">G</span><span class="av" style="width:18px;height:18px;font-size:7px;margin-left:-6px">H</span></div>
+              <span style="font-size:9.5px;color:var(--ink-3)">1.2k going</span>
+              <button class="btn soft sm" style="margin-left:auto;font-size:10px;padding:4px 11px">RSVP</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Calendar — date-block rows</b><span>RSVP states · attendee stacks · NIP-52</span></div></div>
+
+    <!-- LISTS & BOOKMARKS -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Lists</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-plus"/></svg></span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="lr"><span class="li"><svg class="ic"><use href="#i-bookmark"/></svg></span><div class="lb"><div class="lt">Bookmarks</div><div class="ls">89 saved posts · private</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div style="height:1px;background:var(--line-soft);margin:0 16px"></div>
+        <div class="lr"><span class="li"><svg class="ic"><use href="#i-zap"/></svg></span><div class="lb"><div class="lt">Core devs</div><div class="ls">24 people · updates daily</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr"><span class="li"><svg class="ic"><use href="#i-image"/></svg></span><div class="lb"><div class="lt">Art & design</div><div class="ls">56 people</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr"><span class="li"><svg class="ic"><use href="#i-trending"/></svg></span><div class="lb"><div class="lt">Bitcoin macro</div><div class="ls">18 people · pinned</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr"><span class="li"><svg class="ic"><use href="#i-eye-off"/></svg></span><div class="lb"><div class="lt">Muted words</div><div class="ls">"giveaway", "airdrop" · NIP-51 sync</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="sec-h">Pinned feed · Bitcoin macro</div>
+        <div class="post">
+          <div class="col-l"><span class="av" style="width:38px;height:38px;font-size:14px">L</span></div>
+          <div class="col-r">
+            <div class="hd"><span class="nm">Lyn</span><span class="vf"><svg class="ic"><use href="#i-verified"/></svg></span><span class="hd2">· 3h</span><span class="more"><svg class="ic"><use href="#i-more"/></svg></span></div>
+            <div class="tx">New report: nation-state accumulation is the story of this cycle. Thread 🧵</div>
+            <div class="ax">
+              <span class="a"><svg class="ic"><use href="#i-comment"/></svg>234</span>
+              <span class="a"><svg class="ic"><use href="#i-repost"/></svg>890</span>
+              <span class="a"><svg class="ic"><use href="#i-heart"/></svg>4.2k</span>
+              <span class="a zp"><svg class="ic"><use href="#i-zap"/></svg>156k</span>
+              <span class="sp"></span>
+              <span class="a bm on"><svg class="ic"><use href="#i-bookmark-filled"/></svg></span>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Lists & Bookmarks — NIP-51</b><span>icon-coded rows · pinned list feed inline</span></div></div>
+
+    <!-- AI CHAT -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <span class="av" style="width:29px;height:29px;background:var(--accent);border-color:var(--accent)"><svg class="ic" style="stroke:#fff;width:15px;height:15px"><use href="#i-sparkle"/></svg></span>
+        <div style="flex:1"><div style="font-size:13px;font-weight:700">AI Assistant</div><div style="font-size:9.5px;color:var(--ink-3)">llama-3.3-70b · 8,240 credits</div></div>
+        <span class="m-ic" style="color:var(--zap)"><svg class="ic"><use href="#i-zap"/></svg></span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="bbs">
+          <div class="bb-r me"><div class="bb me">summarize note1abc…xyz</div></div>
+          <div class="bb-r"><div class="bb them" style="display:flex;gap:7px;align-items:center;font-size:11px"><svg class="ic sm" style="color:var(--ink-3)"><use href="#i-globe"/></svg>Fetching from your relays…</div></div>
+          <div class="bb-r"><div class="bb them">That note is fiatjaf announcing NIP-17 gift-wrapped DMs. TL;DR: the sender can't decrypt their own copy, timestamps randomize ±2 days for metadata privacy, and rumor kinds 14/15/7 cover chat, files and reactions.<span class="bbt" style="color:var(--zap);opacity:1;font-weight:600">⚡ 12 credits</span></div></div>
+          <div style="align-self:center;display:flex;align-items:center;gap:5px;font-size:9.5px;color:var(--ink-3);background:var(--bg-soft);border:1px solid var(--line);border-radius:var(--r-full);padding:4px 11px;margin:7px 0"><svg class="ic xs"><use href="#i-clock"/></svg>4 older messages out of context · clear to reset</div>
+          <div class="bb-r me"><div class="bb me">draft a reply as a haiku 🌸</div></div>
+          <div class="bb-r"><div class="bb them">keys whisper through the wire<br>no server holds your secrets<br>wrapped gifts fly at dawn 🎁<span class="bbt" style="color:var(--zap);opacity:1;font-weight:600">⚡ 18 credits</span></div></div>
+        </div>
+      </div></div>
+      <div class="cmp">
+        <span class="att"><svg class="ic"><use href="#i-image"/></svg></span>
+        <div class="fld">Ask anything… (12 credits/msg)</div>
+        <span class="send"><svg class="ic"><use href="#i-send"/></svg></span>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>AI Assistant — credit-aware</b><span>relay-context fetch · per-message credit cost</span></div></div>
+  </div>
+</section>
+
+<!-- ── MONEY: MEMBERSHIPS / STUDIO / MARKET / P2P / EARN / PREMIUM ── -->
+<section>
+  <div class="sec-k"><svg class="ic"><use href="#i-zap"/></svg>07 — Money features</div>
+  <h2 class="sec-t">Monetization, understated</h2>
+  <div class="phones">
+
+    <!-- MEMBERSHIPS -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Memberships</div>
+      </div>
+      <div class="m-body"><div class="m-scroll" style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:11.5px;color:var(--ink-2);line-height:1.55">Support <b style="color:var(--ink)">@kimi</b> monthly. Paid with a single zap — no card, no auto-renew. The receipt is the proof.</div>
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);padding:14px;background:var(--bg-raised)">
+          <div style="display:flex;align-items:center;gap:9px"><span style="font-size:15px">🥉</span><div style="font-size:14px;font-weight:700">Supporter</div><span style="margin-left:auto;font-size:13px;font-weight:800;color:var(--zap)">1k <small style="font-size:9px;color:var(--ink-3);font-weight:500">sats/mo</small></span></div>
+          <div style="font-size:11px;color:var(--ink-2);margin-top:8px;line-height:1.55;display:flex;flex-direction:column;gap:3px">
+            <span style="display:flex;gap:6px;align-items:center"><svg class="ic xs" style="color:var(--repost)"><use href="#i-check"/></svg>Supporter badge on comments</span>
+            <span style="display:flex;gap:6px;align-items:center"><svg class="ic xs" style="color:var(--repost)"><use href="#i-check"/></svg>Monthly update posts</span>
+          </div>
+          <button class="btn soft" style="width:100%;margin-top:11px;border-radius:var(--r-full)"><svg class="ic sm"><use href="#i-zap"/></svg>Subscribe with a zap</button>
+        </div>
+        <div style="border:1.5px solid var(--accent);border-radius:var(--r-md);padding:14px;background:var(--bg-raised);position:relative">
+          <span class="st inf" style="position:absolute;top:-8px;left:13px;background:var(--accent);color:#fff">Popular</span>
+          <div style="display:flex;align-items:center;gap:9px"><span style="font-size:15px">🥈</span><div style="font-size:14px;font-weight:700">Pro</div><span style="margin-left:auto;font-size:13px;font-weight:800;color:var(--zap)">21k <small style="font-size:9px;color:var(--ink-3);font-weight:500">sats/mo</small></span></div>
+          <div style="font-size:11px;color:var(--ink-2);margin-top:8px;line-height:1.55;display:flex;flex-direction:column;gap:3px">
+            <span style="display:flex;gap:6px;align-items:center"><svg class="ic xs" style="color:var(--repost)"><use href="#i-check"/></svg>Everything in Supporter</span>
+            <span style="display:flex;gap:6px;align-items:center"><svg class="ic xs" style="color:var(--repost)"><use href="#i-check"/></svg>Early access to articles</span>
+            <span style="display:flex;gap:6px;align-items:center"><svg class="ic xs" style="color:var(--repost)"><use href="#i-check"/></svg>Members-only group chat</span>
+          </div>
+          <button class="btn accent" style="width:100%;margin-top:11px;border-radius:var(--r-full)"><svg class="ic sm"><use href="#i-zap"/></svg>Subscribe with a zap</button>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);padding:14px;background:var(--bg-raised)">
+          <div style="display:flex;align-items:center;gap:9px"><span style="font-size:15px">🥇</span><div style="font-size:14px;font-weight:700">Whale</div><span style="margin-left:auto;font-size:13px;font-weight:800;color:var(--zap)">100k <small style="font-size:9px;color:var(--ink-3);font-weight:500">sats/mo</small></span></div>
+          <div style="font-size:11px;color:var(--ink-2);margin-top:8px;line-height:1.55;display:flex;flex-direction:column;gap:3px">
+            <span style="display:flex;gap:6px;align-items:center"><svg class="ic xs" style="color:var(--repost)"><use href="#i-check"/></svg>Everything in Pro</span>
+            <span style="display:flex;gap:6px;align-items:center"><svg class="ic xs" style="color:var(--repost)"><use href="#i-check"/></svg>1:1 monthly call</span>
+          </div>
+          <button class="btn soft" style="width:100%;margin-top:11px;border-radius:var(--r-full)"><svg class="ic sm"><use href="#i-zap"/></svg>Subscribe with a zap</button>
+        </div>
+        <div class="sec-h" style="padding-left:2px">Your active memberships</div>
+        <div class="lr" style="padding:9px 2px"><span class="av" style="width:30px;height:30px;font-size:11px">F</span><div class="lb"><div class="lt" style="font-size:12.5px">@fiatjaf · Pro</div><div class="ls">Renews in 18 days · paid via zap</div></div><span class="st ok">Active</span></div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Memberships — tier cards</b><span>zap-as-subscription · Popular accent ring</span></div></div>
+
+    <!-- STUDIO -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Studio</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-calendar"/></svg></span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div style="margin:12px 14px 0;border:1px solid var(--line);border-radius:var(--r-md);padding:14px;background:var(--bg-raised)">
+          <div style="font-size:10px;color:var(--ink-3);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Earnings · 7 days</div>
+          <div style="font-size:24px;font-weight:800;letter-spacing:-.03em;margin-top:3px;font-variant-numeric:tabular-nums">21,400 <span style="font-size:11px;font-weight:600;color:var(--ink-3)">sats ≈ $21.40</span></div>
+          <div style="font-size:10.5px;color:var(--repost);font-weight:700;margin-top:1px;display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-trending"/></svg>+34% vs last week</div>
+          <div style="display:flex;align-items:flex-end;gap:4px;height:56px;margin-top:11px">
+            <div style="flex:1;height:30%;background:var(--accent-soft);border-radius:3px 3px 0 0"></div>
+            <div style="flex:1;height:45%;background:var(--accent-soft);border-radius:3px 3px 0 0"></div>
+            <div style="flex:1;height:38%;background:var(--accent-soft);border-radius:3px 3px 0 0"></div>
+            <div style="flex:1;height:66%;background:var(--accent-soft);border-radius:3px 3px 0 0"></div>
+            <div style="flex:1;height:52%;background:var(--accent-soft);border-radius:3px 3px 0 0"></div>
+            <div style="flex:1;height:88%;background:var(--accent);border-radius:3px 3px 0 0;opacity:.65"></div>
+            <div style="flex:1;height:100%;background:var(--accent);border-radius:3px 3px 0 0"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--ink-3);margin-top:4px"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+        </div>
+        <div style="display:flex;gap:9px;padding:10px 14px 0">
+          <div style="flex:1;border:1px solid var(--line);border-radius:var(--r-md);padding:10px;text-align:center;background:var(--bg-raised)"><div style="font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:4px;color:var(--zap)"><svg class="ic sm"><use href="#i-zap"/></svg>156</div><div style="font-size:9px;color:var(--ink-3);margin-top:2px">zaps</div></div>
+          <div style="flex:1;border:1px solid var(--line);border-radius:var(--r-md);padding:10px;text-align:center;background:var(--bg-raised)"><div style="font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:4px"><svg class="ic sm"><use href="#i-users"/></svg>12</div><div style="font-size:9px;color:var(--ink-3);margin-top:2px">members</div></div>
+          <div style="flex:1;border:1px solid var(--line);border-radius:var(--r-md);padding:10px;text-align:center;background:var(--bg-raised)"><div style="font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:4px"><svg class="ic sm"><use href="#i-target"/></svg>2</div><div style="font-size:9px;color:var(--ink-3);margin-top:2px">goals</div></div>
+        </div>
+        <div class="sec-h">Zap goal · NIP-75</div>
+        <div style="margin:0 14px;border:1px solid var(--line);border-radius:var(--r-md);padding:12px;background:var(--bg-raised)">
+          <div style="display:flex;align-items:center;gap:8px"><svg class="ic sm" style="color:var(--zap)"><use href="#i-target"/></svg><div style="font-size:12.5px;font-weight:700;flex:1">New camera lens 📷</div><span style="font-size:11px;font-weight:800;color:var(--zap)">68%</span></div>
+          <div style="height:5px;border-radius:3px;background:var(--bg-soft);margin-top:8px;overflow:hidden"><div style="width:68%;height:100%;background:var(--zap);border-radius:3px"></div></div>
+          <div style="font-size:10px;color:var(--ink-3);margin-top:6px">680k / 1M sats · 47 zappers · 12 days left</div>
+        </div>
+        <div class="sec-h">Recent zaps</div>
+        <div class="txr"><span class="av" style="width:28px;height:28px;font-size:10px">A</span><div><div class="tt">@alice · "for the tutorial! 🙏"</div><div class="ts">2h ago</div></div><span class="ta p">+1,000</span></div>
+        <div class="txr"><span class="av" style="width:28px;height:28px;font-size:10px">D</span><div><div class="tt">@diana · Pro membership</div><div class="ts">5h ago · tier receipt</div></div><span class="ta p">+21,000</span></div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Studio — quiet dashboard</b><span>accent bar chart · stat cards · zap goal progress</span></div></div>
+
+    <!-- MARKET -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Market</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-search"/></svg></span>
+      </div>
+      <div class="chips">
+        <span class="chip on">All</span><span class="chip"><svg class="ic"><use href="#i-image"/></svg>Art</span><span class="chip"><svg class="ic"><use href="#i-edit"/></svg>Digital</span><span class="chip"><svg class="ic"><use href="#i-shopping"/></svg>Physical</span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="x-grid" style="padding-top:2px">
+          <div class="x-card"><div class="xi"><svg class="ic"><use href="#i-image"/></svg></div><div class="xb"><div class="xt">Zap Art #12 — "Lightning Sunrise" 1/1</div><div class="xm" style="color:var(--zap);font-weight:700"><svg class="ic"><use href="#i-zap"/></svg>21,000 sats</div><div class="xm">@artbot · ★ 4.9</div></div></div>
+          <div class="x-card"><div class="xi"><svg class="ic"><use href="#i-shopping"/></svg></div><div class="xb"><div class="xt">Nostr OS tee — organic cotton</div><div class="xm" style="color:var(--zap);font-weight:700"><svg class="ic"><use href="#i-zap"/></svg>42,000 sats</div><div class="xm">@nostrgear · ★ 4.7</div></div></div>
+          <div class="x-card"><div class="xi"><svg class="ic"><use href="#i-users"/></svg></div><div class="xb"><div class="xt">1:1 Nostr app UX review — 60 min</div><div class="xm" style="color:var(--zap);font-weight:700"><svg class="ic"><use href="#i-zap"/></svg>100,000 sats</div><div class="xm">@kimi · ★ 5.0</div></div></div>
+          <div class="x-card"><div class="xi"><svg class="ic"><use href="#i-video"/></svg></div><div class="xb"><div class="xt">"Keys & Relays" stem pack</div><div class="xm" style="color:var(--zap);font-weight:700"><svg class="ic"><use href="#i-zap"/></svg>5,000 sats</div><div class="xm">@wavlake · ★ 4.8</div></div></div>
+        </div>
+      </div></div>
+      <div class="fab" style="border-radius:var(--r-md)"><svg class="ic"><use href="#i-plus"/></svg></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Market — product grid</b><span>zap-priced cards · sell FAB · category chips</span></div></div>
+
+    <!-- P2P -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">P2P Trade</div>
+      </div>
+      <div class="m-tabs"><span class="m-tab on">Buy sats</span><span class="m-tab">Sell sats</span><span style="flex:1"></span><span style="align-self:center;font-size:11px;color:var(--ink-3);padding-right:13px">USD ▾</span></div>
+      <div class="m-body"><div class="m-scroll">
+        <div style="padding:8px 16px;font-size:9.5px;color:var(--ink-3);display:flex;justify-content:space-between;border-bottom:1px solid var(--line-soft);text-transform:uppercase;letter-spacing:.06em;font-weight:700"><span>Trader · methods</span><span>Limits · price</span></div>
+        <div class="lr" style="padding:11px 16px;border-bottom:1px solid var(--line-soft)">
+          <span class="av" style="width:32px;height:32px;font-size:12px">🦉</span>
+          <div class="lb"><div class="lt" style="font-size:12.5px">@hodl_owl <span style="color:var(--accent)"><svg class="ic xs" style="vertical-align:-2px"><use href="#i-verified"/></svg></span></div><div class="ls" style="display:flex;align-items:center;gap:5px"><span style="color:var(--repost)">● 98% · 412 trades</span>· Zelle · Wise</div></div>
+          <div style="text-align:right"><div style="font-size:12px;font-weight:800">$0.00102<small style="font-size:8.5px;color:var(--ink-3);font-weight:500">/sat</small></div><div style="font-size:9px;color:var(--ink-3)">$20–500</div></div>
+        </div>
+        <div class="lr" style="padding:11px 16px;border-bottom:1px solid var(--line-soft)">
+          <span class="av" style="width:32px;height:32px;font-size:12px">⚡</span>
+          <div class="lb"><div class="lt" style="font-size:12.5px">@zaptrader</div><div class="ls" style="display:flex;align-items:center;gap:5px"><span style="color:var(--repost)">● 96% · 1.2k trades</span>· CashApp · Strike</div></div>
+          <div style="text-align:right"><div style="font-size:12px;font-weight:800">$0.00104<small style="font-size:8.5px;color:var(--ink-3);font-weight:500">/sat</small></div><div style="font-size:9px;color:var(--ink-3)">$10–1k</div></div>
+        </div>
+        <div class="lr" style="padding:11px 16px;border-bottom:1px solid var(--line-soft)">
+          <span class="av" style="width:32px;height:32px;font-size:12px">🌊</span>
+          <div class="lb"><div class="lt" style="font-size:12.5px">@liquidity</div><div class="ls" style="display:flex;align-items:center;gap:5px"><span style="color:var(--zap)">● 91% · 88 trades</span>· SEPA · bank</div></div>
+          <div style="text-align:right"><div style="font-size:12px;font-weight:800">$0.00106<small style="font-size:8.5px;color:var(--ink-3);font-weight:500">/sat</small></div><div style="font-size:9px;color:var(--ink-3)">$50–5k</div></div>
+        </div>
+        <div class="note" style="margin:12px 14px 0;font-size:11px"><svg class="ic sm"><use href="#i-key"/></svg><span><b>Escrow protected.</b> Sats lock 2-of-3 until fiat confirms. Disputes go to community arbitrators.</span></div>
+      </div></div>
+      <div class="fab" style="border-radius:var(--r-md);width:auto;padding:0 16px;font-size:12px;font-weight:700;gap:6px"><svg class="ic sm"><use href="#i-plus"/></svg>Ad</div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>P2P — order-book rows</b><span>reputation dots · methods · escrow note</span></div></div>
+  </div>
+
+  <div class="phones">
+    <!-- EARN (Bounties + Drops) -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Earn</div>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div style="margin:12px 14px 0;border-radius:var(--r-md);background:var(--ink);color:#fff;padding:15px;position:relative;overflow:hidden">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;opacity:.55;display:flex;align-items:center;gap:5px"><svg class="ic xs"><use href="#i-gift"/></svg>Daily sats drop</div>
+          <div style="font-size:21px;font-weight:800;margin-top:3px">+21 sats waiting</div>
+          <div style="font-size:10.5px;opacity:.6;margin-top:2px">Streak: 6 days 🔥 · next in 14h</div>
+          <button class="btn sm" style="background:#fff;color:#14171E;margin-top:11px;border-radius:var(--r-full);font-weight:700">Claim 21 sats</button>
+        </div>
+        <div class="sec-h"><svg class="ic xs" style="vertical-align:-2px"><use href="#i-target"/></svg>&nbsp;Open bounties</div>
+        <div style="margin:0 14px 9px;border:1px solid var(--line);border-radius:var(--r-md);padding:12px;background:var(--bg-raised)">
+          <div style="display:flex;align-items:center;gap:8px"><div style="font-size:12.5px;font-weight:700;flex:1">Translate the app to Portuguese 🇧🇷</div><span style="font-size:11.5px;font-weight:800;color:var(--zap);display:flex;align-items:center;gap:3px"><svg class="ic xs"><use href="#i-zap"/></svg>5k</span></div>
+          <div style="font-size:10px;color:var(--ink-3);margin-top:4px">@nostrfeed · 3 submissions · 5 days left</div>
+          <div style="display:flex;gap:7px;margin-top:9px;align-items:center"><span class="st ok">Open</span><span style="margin-left:auto;font-size:11px;color:var(--accent);font-weight:700;cursor:pointer">Submit work ›</span></div>
+        </div>
+        <div style="margin:0 14px 9px;border:1px solid var(--line);border-radius:var(--r-md);padding:12px;background:var(--bg-raised)">
+          <div style="display:flex;align-items:center;gap:8px"><div style="font-size:12.5px;font-weight:700;flex:1">Find a relay-routing edge case 🐛</div><span style="font-size:11.5px;font-weight:800;color:var(--zap);display:flex;align-items:center;gap:3px"><svg class="ic xs"><use href="#i-zap"/></svg>2.1k</span></div>
+          <div style="font-size:10px;color:var(--ink-3);margin-top:4px">@nostrdev · verified bug report with repro</div>
+          <div style="display:flex;gap:7px;margin-top:9px;align-items:center"><span class="st ok">Open</span><span style="margin-left:auto;font-size:11px;color:var(--accent);font-weight:700;cursor:pointer">Submit work ›</span></div>
+        </div>
+        <div style="margin:0 14px 9px;border:1px solid var(--line);border-radius:var(--r-md);padding:12px;background:var(--bg-raised);opacity:.55">
+          <div style="display:flex;align-items:center;gap:8px"><div style="font-size:12.5px;font-weight:700;flex:1">Design the splash screen</div><span style="font-size:11.5px;font-weight:800;color:var(--ink-3);display:flex;align-items:center;gap:3px"><svg class="ic xs"><use href="#i-zap"/></svg>10k</span></div>
+          <div style="font-size:10px;color:var(--ink-3);margin-top:4px">@kimi · won by @designpro · paid ✓</div>
+          <div style="display:flex;gap:7px;margin-top:9px"><span class="st inf">Completed</span></div>
+        </div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Earn — drops + bounties</b><span>dark claim card · bounty rows with zap rewards</span></div></div>
+
+    <!-- PREMIUM -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Premium</div>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div style="margin:12px 14px 0;border-radius:var(--r-md);background:var(--ink);color:#fff;padding:16px">
+          <div style="font-size:15px;font-weight:800;letter-spacing:-.02em;display:flex;align-items:center;gap:7px"><svg class="ic" style="color:var(--zap)"><use href="#i-sparkle"/></svg>NostrFeed Premium</div>
+          <div style="font-size:11px;opacity:.6;margin-top:5px;line-height:1.5">Verified identity, a faster relay, and a lightning address that pays you.</div>
+        </div>
+        <div style="padding:11px 14px 0;display:flex;flex-direction:column;gap:9px">
+          <div style="border:1px solid var(--line);border-radius:var(--r-md);padding:12px;background:var(--bg-raised);display:flex;gap:10px;align-items:flex-start">
+            <span class="li" style="flex-shrink:0"><svg class="ic"><use href="#i-verified"/></svg></span>
+            <div style="flex:1"><div style="font-size:12.5px;font-weight:700">Verified name (NIP-05)</div><div style="font-size:10.5px;color:var(--ink-3);margin-top:2px">you@nostrfeed.com — the check everywhere</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:7px"><span style="font-size:11px;font-weight:800;color:var(--zap)">10k sats/yr</span><span class="st ok">Owned · kimi@</span></div></div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:var(--r-md);padding:12px;background:var(--bg-raised);display:flex;gap:10px;align-items:flex-start">
+            <span class="li" style="flex-shrink:0"><svg class="ic"><use href="#i-globe"/></svg></span>
+            <div style="flex:1"><div style="font-size:12.5px;font-weight:700">Paid relay</div><div style="font-size:10.5px;color:var(--ink-3);margin-top:2px">paid.nostrfeed.com — fast lane, shield badge</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:7px"><span style="font-size:11px;font-weight:800;color:var(--zap)">21k sats/yr</span><button class="btn primary sm" style="font-size:10px;padding:4px 11px">Connect</button></div></div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:var(--r-md);padding:12px;background:var(--bg-raised);display:flex;gap:10px;align-items:flex-start">
+            <span class="li" style="flex-shrink:0"><svg class="ic"><use href="#i-zap"/></svg></span>
+            <div style="flex:1"><div style="font-size:12.5px;font-weight:700">Lightning address</div><div style="font-size:10.5px;color:var(--ink-3);margin-top:2px">you@ln.nostrfeed.com — receive zaps directly</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:7px"><span class="st inf">Free tier: u3f9a1b…@ln…</span><span style="font-size:10.5px;color:var(--accent);font-weight:700;cursor:pointer">Claim custom ›</span></div></div>
+          </div>
+        </div>
+        <div class="sec-h">Premium features</div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-key"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Nostr Bunker</div><div class="ls">Remote signer — key off-device (NIP-46)</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-link"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">NWC Provider</div><div class="ls">Mint wallet-connect URIs with budgets</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-chart"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Studio access</div><div class="ls">Creator dashboard + sell memberships</div></div><span class="st ok">Active</span></div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Premium — three pillars</b><span>dark hero · pillar cards · feature rows</span></div></div>
+
+    <!-- SEND / RECEIVE -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr" style="background:rgba(15,17,23,.45)">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-body"></div>
+      <div class="z-sh">
+        <div class="sh-h"></div>
+        <div style="font-size:13.5px;font-weight:700;padding-bottom:11px">Send sats</div>
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r-md);padding:10px 13px;background:var(--bg-raised)">
+          <svg class="ic sm" style="color:var(--ink-3)"><use href="#i-at"/></svg>
+          <span style="font-size:12.5px;flex:1">alice@getzap.me</span>
+          <span style="font-size:10.5px;color:var(--accent);font-weight:700;cursor:pointer;display:flex;align-items:center;gap:3px"><svg class="ic xs"><use href="#i-qr"/></svg>Scan</span>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);padding:10px 13px;margin-top:9px;background:var(--bg-raised)">
+          <div style="font-size:9px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.07em;font-weight:700">Decoded · LNURL-pay</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:7px">
+            <span class="av" style="width:27px;height:27px;font-size:10px">A</span>
+            <div><div style="font-size:12px;font-weight:700">Alice</div><div style="font-size:9.5px;color:var(--ink-3)">Wallet of Satoshi</div></div>
+            <span style="margin-left:auto;color:var(--repost)"><svg class="ic"><use href="#i-check"/></svg></span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:baseline;justify-content:center;gap:6px;padding:16px 0 2px">
+          <span style="font-size:27px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums">1,000</span><span style="font-size:12px;color:var(--ink-3);font-weight:600">sats</span>
+        </div>
+        <div style="text-align:center;font-size:10.5px;color:var(--ink-3)">≈ $1.00 · balance after: 141,857</div>
+        <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r-md);padding:10px 13px;margin-top:11px;background:var(--bg-raised)">
+          <svg class="ic sm" style="color:var(--ink-3)"><use href="#i-edit"/></svg>
+          <span style="font-size:12px;color:var(--ink-3)">Comment (optional)…</span>
+        </div>
+        <button class="btn primary" style="width:100%;margin-top:12px;padding:12px;font-size:14px;border-radius:var(--r-full)"><svg class="ic sm"><use href="#i-send"/></svg>Send 1,000 sats</button>
+        <div style="text-align:center;font-size:9.5px;color:var(--ink-3);margin-top:8px">Pays with LNbits · NWC & Cashu fallback</div>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Send — decode before paying</b><span>any target in one box · review card · stroke icons</span></div></div>
+
+    <!-- BOOST -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr" style="background:rgba(15,17,23,.45)">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-body"></div>
+      <div class="z-sh">
+        <div class="sh-h"></div>
+        <div style="display:flex;align-items:center;gap:9px;padding-bottom:10px">
+          <span class="li"><svg class="ic"><use href="#i-trending"/></svg></span>
+          <div><div style="font-size:13.5px;font-weight:700">Boost this post</div><div style="font-size:10.5px;color:var(--ink-3)">Reach more people with a zap-powered push</div></div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:var(--r-md);padding:11px;background:var(--bg-soft)">
+          <div class="tx" style="font-size:12px">"Shipping the new wallet hub today. Every money feature, one screen."</div>
+          <div style="font-size:10px;color:var(--ink-3);margin-top:4px">287 ❤️ · 14 🔁 · 4h ago</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:11px">
+          <div style="border:1.5px solid var(--accent);border-radius:var(--r-md);padding:11px 13px;display:flex;align-items:center;cursor:pointer">
+            <div style="flex:1"><div style="font-size:12.5px;font-weight:700">6 hours</div><div style="font-size:10px;color:var(--ink-3)">~2× reach estimate</div></div>
+            <span style="font-size:12px;font-weight:800;color:var(--zap)">1k sats</span>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;display:flex;align-items:center;cursor:pointer">
+            <div style="flex:1"><div style="font-size:12.5px;font-weight:700">24 hours</div><div style="font-size:10px;color:var(--ink-3)">~4× reach estimate</div></div>
+            <span style="font-size:12px;font-weight:800;color:var(--zap)">3k sats</span>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;display:flex;align-items:center;cursor:pointer">
+            <div style="flex:1"><div style="font-size:12.5px;font-weight:700">3 days</div><div style="font-size:10px;color:var(--ink-3)">~8× reach estimate</div></div>
+            <span style="font-size:12px;font-weight:800;color:var(--zap)">8k sats</span>
+          </div>
+        </div>
+        <button class="btn zap" style="width:100%;margin-top:12px;padding:12px;font-size:14px;border-radius:var(--r-full)"><svg class="ic sm"><use href="#i-zap"/></svg>Boost for 1,000 sats</button>
+        <div style="text-align:center;font-size:9.5px;color:var(--ink-3);margin-top:8px">Boosts are transparent — marked "boosted" in feeds</div>
+      </div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Boost — honest reach</b><span>duration tiers · transparent labeling · zap-paid</span></div></div>
+  </div>
+</section>
+
+<!-- ── SYSTEM: LOGIN / IDENTITY / SETTINGS / YOU / DOCS ── -->
+<section>
+  <div class="sec-k"><svg class="ic"><use href="#i-settings"/></svg>08 — System & identity</div>
+  <h2 class="sec-t">The quiet infrastructure</h2>
+  <div class="phones">
+
+    <!-- LOGIN -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-body"><div class="m-scroll" style="padding:38px 22px;display:flex;flex-direction:column;align-items:center">
+        <div style="width:64px;height:64px;border-radius:18px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff"><svg class="ic" style="width:30px;height:30px;stroke:#fff"><use href="#i-zap"/></svg></div>
+        <div style="font-size:21px;font-weight:800;letter-spacing:-.03em;margin-top:16px">NostrFeed</div>
+        <div style="font-size:11.5px;color:var(--ink-2);margin-top:5px;text-align:center;line-height:1.55">The Nostr Operating System for<br>People, Creators & Communities</div>
+        <div style="width:100%;margin-top:26px">
+          <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r-md);padding:11px 14px;background:var(--bg-raised)">
+            <svg class="ic sm" style="color:var(--ink-3)"><use href="#i-key"/></svg>
+            <span style="font-size:12.5px;color:var(--ink-3)">nsec1… or npub1…</span>
+          </div>
+          <button class="btn primary" style="width:100%;margin-top:10px;padding:12px;border-radius:var(--r-full)">Sign in with key</button>
+          <div style="display:flex;align-items:center;gap:10px;margin:15px 0"><div style="flex:1;height:1px;background:var(--line)"></div><span style="font-size:10px;color:var(--ink-3)">or</span><div style="flex:1;height:1px;background:var(--line)"></div></div>
+          <button class="btn soft" style="width:100%;padding:12px;border-radius:var(--r-full)"><svg class="ic sm"><use href="#i-sparkle"/></svg>Create a new account</button>
+          <button class="btn ghost" style="width:100%;margin-top:6px;font-size:12px"><svg class="ic sm"><use href="#i-eye"/></svg>Browse read-only with npub</button>
+        </div>
+        <div class="note" style="margin-top:20px;font-size:10.5px"><svg class="ic sm"><use href="#i-key"/></svg><span>Your key never leaves this device — hardware-backed secure storage. No reset, no support desk.</span></div>
+        <div style="display:flex;gap:12px;margin-top:16px;font-size:9.5px;color:var(--ink-3)">
+          <span style="display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-globe"/></svg>9 relays</span>·
+          <span style="display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-key"/></svg>NIP-44</span>·
+          <span style="display:flex;align-items:center;gap:4px"><svg class="ic xs"><use href="#i-zap"/></svg>zaps built-in</span>
+        </div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Login — key-first, no email</b><span>accent mark · nsec/npub/create · trust note</span></div></div>
+
+    <!-- IDENTITY -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Identity</div>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div style="display:flex;flex-direction:column;align-items:center;padding:16px 14px 6px">
+          <span class="av" style="width:56px;height:56px;font-size:21px">K</span>
+          <div style="font-size:15px;font-weight:800;margin-top:8px;display:flex;align-items:center;gap:5px">Kimi Nakamoto <span style="color:var(--accent)"><svg class="ic sm"><use href="#i-verified"/></svg></span></div>
+          <div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:2px">kimi@nostrfeed.com</div>
+        </div>
+        <div style="margin:10px 14px 0;border:1px solid var(--line);border-radius:var(--r-md);padding:12px;background:var(--bg-raised)">
+          <div style="font-size:9.5px;color:var(--ink-3);font-weight:700;text-transform:uppercase;letter-spacing:.07em;display:flex;align-items:center;gap:5px"><svg class="ic xs"><use href="#i-eye"/></svg>Public key · safe to share</div>
+          <div style="font-size:11px;font-family:monospace;margin-top:5px;word-break:break-all">npub1k3m9x…q8z2v</div>
+          <div style="display:flex;gap:7px;margin-top:9px"><button class="btn soft sm" style="font-size:10.5px"><svg class="ic xs"><use href="#i-edit"/></svg>Copy</button><button class="btn soft sm" style="font-size:10.5px"><svg class="ic xs"><use href="#i-qr"/></svg>QR</button></div>
+        </div>
+        <div style="margin:10px 14px 0;border:1px solid rgba(214,75,127,.3);border-radius:var(--r-md);padding:12px;background:var(--bg-raised)">
+          <div style="font-size:9.5px;color:var(--like);font-weight:700;text-transform:uppercase;letter-spacing:.07em;display:flex;align-items:center;gap:5px"><svg class="ic xs"><use href="#i-eye-off"/></svg>Secret key · never share</div>
+          <div style="font-size:11px;font-family:monospace;margin-top:5px;color:var(--ink-3)">nsec1••••••••••••••••••••</div>
+          <div style="display:flex;gap:7px;margin-top:9px"><button class="btn soft sm" style="font-size:10.5px"><svg class="ic xs"><use href="#i-eye"/></svg>Reveal</button><button class="btn soft sm" style="font-size:10.5px"><svg class="ic xs"><use href="#i-download"/></svg>Backup to file</button></div>
+        </div>
+        <div class="sec-h">Upgrade security</div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-key"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Move to Nostr Bunker</div><div class="ls">Remote signing (NIP-46) — key off-device</div></div><span class="st inf">Premium</span></div>
+        <div class="sec-h">Accounts on this device</div>
+        <div class="lr" style="padding:10px 16px"><span class="av" style="width:30px;height:30px;font-size:11px">K</span><div class="lb"><div class="lt" style="font-size:12.5px">Kimi Nakamoto</div><div class="ls">npub1k3m9x…q8z2v</div></div><span style="color:var(--accent)"><svg class="ic"><use href="#i-check"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="av" style="width:30px;height:30px;font-size:11px">🎨</span><div class="lb"><div class="lt" style="font-size:12.5px">Art Alt</div><div class="ls">npub17rt4l…m2p9w · read-only</div></div><span class="lx">switch ›</span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li" style="background:transparent;border:1.5px dashed var(--line)"><svg class="ic"><use href="#i-plus"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Add account</div><div class="ls">Log in with another key</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Identity — the key is the account</b><span>npub/nsec cards · backup · multi-account</span></div></div>
+
+    <!-- SETTINGS -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Settings</div>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="sec-h">Appearance</div>
+        <div style="display:flex;gap:7px;padding:2px 16px 8px">
+          <div style="flex:1;text-align:center;cursor:pointer"><div style="height:44px;border-radius:var(--r-sm);background:linear-gradient(135deg,#fff 50%,#0E0F13 50%);border:1px solid var(--line)"></div><div style="font-size:9px;margin-top:4px;color:var(--ink-3)">System</div></div>
+          <div style="flex:1;text-align:center;cursor:pointer"><div style="height:44px;border-radius:var(--r-sm);background:#fff;border:1.5px solid var(--accent)"></div><div style="font-size:9px;margin-top:4px;font-weight:700;color:var(--accent)">Light ✓</div></div>
+          <div style="flex:1;text-align:center;cursor:pointer"><div style="height:44px;border-radius:var(--r-sm);background:#0E0F13;border:1px solid var(--line)"></div><div style="font-size:9px;margin-top:4px;color:var(--ink-3)">Dark</div></div>
+          <div style="flex:1;text-align:center;cursor:pointer"><div style="height:44px;border-radius:var(--r-sm);background:#000;border:1px solid var(--line)"></div><div style="font-size:9px;margin-top:4px;color:var(--ink-3)">OLED</div></div>
+        </div>
+        <div class="sec-h">Content filters</div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-eye-off"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">NSFW filter</div><div class="ls">Hide explicit content (30+ languages)</div></div><span class="tg on"></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-wifi-off"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Spam filter</div><div class="ls">Link dumps, hashtag spam, floods</div></div><span class="tg on"></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-eye"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Sensitive content</div><div class="ls">How flagged posts display</div></div><span class="chip" style="font-size:9.5px;padding:4px 10px">Blur ▾</span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-eye-off"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Blocked words & accounts</div><div class="ls">Synced via NIP-51 mute list</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="sec-h">Network</div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-globe"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Relays</div><div class="ls">9 connected · read/write + NIP-65</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-clock"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Background sync</div><div class="ls">Hourly catch-up</div></div><span class="tg on"></span></div>
+        <div class="sec-h">About</div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-article"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">App version</div><div class="ls">v1.3.0+10 · check for updates</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Settings — grouped & quiet</b><span>appearance swatches · icon rows · toggles</span></div></div>
+
+    <!-- YOU -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">You</div>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div style="display:flex;align-items:center;gap:12px;padding:15px 16px 11px;cursor:pointer">
+          <span class="av" style="width:48px;height:48px;font-size:18px">K</span>
+          <div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:800;display:flex;align-items:center;gap:5px">Kimi Nakamoto <span style="color:var(--accent)"><svg class="ic sm"><use href="#i-verified"/></svg></span></div><div style="font-size:11px;color:var(--ink-3)">kimi@nostrfeed.com · view profile</div></div>
+          <span class="m-ic"><svg class="ic"><use href="#i-chevron-r"/></svg></span>
+        </div>
+        <div style="display:flex;gap:8px;padding:0 16px 4px">
+          <div style="flex:1;border:1px solid var(--line);border-radius:var(--r-md);padding:9px 4px;text-align:center;background:var(--bg-raised)"><div style="font-size:14px;font-weight:800">8,391</div><div style="font-size:8.5px;color:var(--ink-3)">Followers</div></div>
+          <div style="flex:1;border:1px solid var(--line);border-radius:var(--r-md);padding:9px 4px;text-align:center;background:var(--bg-raised)"><div style="font-size:14px;font-weight:800;color:var(--zap);display:flex;align-items:center;justify-content:center;gap:3px"><svg class="ic sm"><use href="#i-zap"/></svg>42k</div><div style="font-size:8.5px;color:var(--ink-3)">Zapped</div></div>
+          <div style="flex:1;border:1px solid var(--line);border-radius:var(--r-md);padding:9px 4px;text-align:center;background:var(--bg-raised)"><div style="font-size:14px;font-weight:800">89</div><div style="font-size:8.5px;color:var(--ink-3)">Saved</div></div>
+        </div>
+        <div class="sec-h">Create & earn</div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-chart"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Studio</div><div class="ls">21.4k sats this week</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-sparkle"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Premium</div><div class="ls">kimi@ · paid relay · lightning address</div></div><span class="st ok">Active</span></div>
+        <div class="sec-h">Library</div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-bookmark"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Bookmarks</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-users"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Lists</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-article"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">My articles</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="sec-h">Account</div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-key"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Identity & keys</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-settings"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Settings</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li"><svg class="ic"><use href="#i-article"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Docs & help</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:10px 16px"><span class="li" style="color:var(--like)"><svg class="ic"><use href="#i-back"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px;color:var(--like)">Sign out</div></div></div>
+        <div style="text-align:center;font-size:9px;color:var(--ink-3);padding:13px">NostrFeed v1.3.0+10 · npub1k3m9x…q8z2v</div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>You — drawer replacement</b><span>profile hub · stat cards · grouped library</span></div></div>
+
+    <!-- DOCS -->
+    <div class="ph"><div class="ph-frame"><div class="ph-notch"></div><div class="ph-scr">
+      <div class="ph-status"><span>9:41</span><span>•••</span></div>
+      <div class="m-bar" style="border-bottom:1px solid var(--line)">
+        <span class="m-ic" style="margin-left:-8px"><svg class="ic"><use href="#i-back"/></svg></span>
+        <div class="t" style="font-size:14.5px">Docs & Help</div>
+        <span class="m-ic"><svg class="ic"><use href="#i-search"/></svg></span>
+      </div>
+      <div class="chips">
+        <span class="chip on">All</span><span class="chip"><svg class="ic"><use href="#i-zap"/></svg>Zaps</span><span class="chip"><svg class="ic"><use href="#i-key"/></svg>Keys</span><span class="chip"><svg class="ic"><use href="#i-wallet"/></svg>Wallet</span>
+      </div>
+      <div class="m-body"><div class="m-scroll">
+        <div class="lr" style="padding:11px 16px"><span class="li"><svg class="ic"><use href="#i-zap"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">What are zaps?</div><div class="ls">Value-for-value, explained · 2 min</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:11px 16px"><span class="li"><svg class="ic"><use href="#i-key"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Your keys, your identity</div><div class="ls">nsec, npub & never losing access · 4 min</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:11px 16px"><span class="li"><svg class="ic"><use href="#i-globe"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Relays & the outbox model</div><div class="ls">Why no one can deplatform you · 5 min</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:11px 16px"><span class="li"><svg class="ic"><use href="#i-wallet"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Wallets: LNbits, NWC, Cashu</div><div class="ls">Pick your setup · 6 min</div></div><span class="st inf">Route ↗</span></div>
+        <div class="lr" style="padding:11px 16px"><span class="li"><svg class="ic"><use href="#i-sparkle"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">The AI Assistant & credits</div><div class="ls">Tokens vs sats · 3 min</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+        <div class="lr" style="padding:11px 16px"><span class="li"><svg class="ic"><use href="#i-eye-off"/></svg></span><div class="lb"><div class="lt" style="font-size:12.5px">Content filters & reporting</div><div class="ls">NSFW, spam, NIP-56 · 3 min</div></div><span class="lx"><svg class="ic"><use href="#i-chevron-r"/></svg></span></div>
+      </div></div>
+      <div class="ph-hi"></div>
+    </div></div>
+    <div class="ph-label"><b>Docs — in-app guides</b><span>category chips · read-time · deep-link routes</span></div></div>
+  </div>
+</section>
+
+<!-- ── COMPARISON ── -->
+<section>
+  <div class="sec-k"><svg class="ic"><use href="#i-chart"/></svg>09 — The delta</div>
+  <h2 class="sec-t">NOVA → Refined: what changed and why</h2>
+  <table class="cmp-t">
+    <tr><th>Element</th><th>NOVA (too loud)</th><th>Refined (this doc)</th></tr>
+    <tr><td class="k">Brand</td><td class="bad">Aurora gradient everywhere</td><td class="good">One ink + one accent <b>#2F6BFF</b>; gradient retired to logo only</td></tr>
+    <tr><td class="k">Post text</td><td class="bad">Standard sizes, hero media cards</td><td class="good"><b>13.5px / 1.5</b> reading type; media constrained to 16:9 tiles</td></tr>
+    <tr><td class="k">Icons</td><td class="bad">Emoji + Material mix</td><td class="good"><b>40-icon SVG set</b> — 24-viewBox, 1.75 stroke, one family</td></tr>
+    <tr><td class="k">Depth</td><td class="bad">Glass blur, glows, colored shadows</td><td class="good"><b>Hairlines</b>; shadow only on FAB + new-posts pill</td></tr>
+    <tr><td class="k">Nav</td><td class="bad">Floating glass dock + spring anims</td><td class="good"><b>Simple top-accent bar</b> — flat, icon-first, tiny labels</td></tr>
+    <tr><td class="k">Zap</td><td class="bad">Neon orange + glow shadow</td><td class="good"><b>Muted amber #E8860B</b>, soft tint bg — present, not shouting</td></tr>
+    <tr><td class="k">Verified</td><td class="bad">Gradient check</td><td class="good"><b>Stroke badge-check</b> in accent, 13–15px</td></tr>
+    <tr><td class="k">Wallet</td><td class="bad">Nebula gradient + sparkline</td><td class="good"><b>Dark ink statement card</b>, tabular numbers, 2 actions + zap</td></tr>
+  </table>
+  <div class="note"><svg class="ic"><use href="#i-check"/></svg><span><b>What survives from NOVA:</b> Explore as a tab (replaces the drawer for discovery), wallet quick-rails for the money features, zap receipts as value cards in chat, and the ⌘K idea (kept as a simple search-first palette, low priority). What dies: gradients as identity, glass, hero media, glow, springs-as-personality. Motion returns to quiet 150–200ms fades.</span></div>
+  <div class="note" style="border-left-color:var(--zap)"><svg class="ic" style="color:var(--zap)"><use href="#i-zap"/></svg><span><b>Implementation cost:</b> lowest of all three directions. It's a new <code style="font-size:11px">AppTheme</code> pair + an <code style="font-size:11px">AppIcon</code> widget + PostCard padding/typography tweaks. No layout surgery. Could ship screen-by-screen behind the existing token system in days, not weeks.</span></div>
+</section>
+
+<div class="footer">
+  <b style="color:var(--ink)">NostrFeed Refined</b> · v2.1 · content-first, icons-consistent, quiet by default<br>
+  Sister docs: <code>index.html</code> (v1.3 reference) · <code>nova.html</code> (the loud dream — now tamed)<br>
+  13.5px reading type · hairlines · one accent · 40 stroke icons · emoji only in zap presets.
+</div>
+
+</div>
+
+<script>
+document.getElementById('modes').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.documentElement.setAttribute('data-mode', b.dataset.m);
+  document.querySelectorAll('#modes button').forEach(x => x.classList.toggle('on', x === b));
+});
+</script>
+</body>
+</html>

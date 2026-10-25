@@ -9,9 +9,12 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/utils/encrypted_content.dart';
 import 'package:nostrfeed_mobile/core/utils/media.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/ecash_token_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/link_preview_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/quote_card.dart';
@@ -50,7 +53,7 @@ class NoteContent extends ConsumerWidget {
   /// just the body) — a card with author + action bar but no content reads
   /// as a bug ("name, no post"), so it disappears from the feed instead.
   static bool hasRenderableContent(NostrEvent event) {
-    final parsed = _NoteParseCache.of(event);
+    final parsed = NoteParseCache.of(event);
     // Encrypted/token payloads render as a card (ecash claim / "encrypted"),
     // so they count as renderable.
     if (parsed.encryptedKind != null) return true;
@@ -77,8 +80,8 @@ class NoteContent extends ConsumerWidget {
     // The heavy pure parsing (regex segmentation, media split, imeta) is
     // memoized per event — a feed card rebuilds whenever ANY provider it
     // watches updates, and re-running the parser each time is what janks the
-    // scroll as the feed grows. See _NoteParseCache.
-    final parsed = _NoteParseCache.of(event);
+    // scroll as the feed grows. See NoteParseCache.
+    final parsed = NoteParseCache.of(event);
 
     // Encrypted / token payload: render as a proper card (ecash claim or
     // "encrypted content"), never as a base64 text wall.
@@ -101,9 +104,16 @@ class NoteContent extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
+    // Refined reading type: 13.5px post body with a 1.5 line-height — dense
+    // enough to scan, comfortable for long reading sessions. (The M3 ramp's
+    // bodyMedium stays 14 for sheets/cards; this is the feed-only style.)
     final defaultStyle =
         textStyle ??
-        Theme.of(context).textTheme.bodyMedium!.copyWith(height: 1.45);
+        Theme.of(context).textTheme.bodyMedium!.copyWith(
+              fontSize: 13.5,
+              height: 1.5,
+              letterSpacing: -0.05,
+            );
 
     final render = parsed.render;
     final imeta = parsed.imeta;
@@ -207,13 +217,32 @@ class _MentionLabel extends ConsumerWidget {
 /// Keyed on event id; validity is guarded by content length + tag count (an
 /// edit that changes either re-parses). Bounded LRU so a long session's
 /// scrolled-past posts don't accumulate.
-class _NoteParseCache {
-  _NoteParseCache._();
+class NoteParseCache {
+  NoteParseCache._();
+
+  /// The image URLs an event will render (content media + imeta media),
+  /// for the feed's scroll-driven prefetch (R7): warms the exact URLs the
+  /// `_NetworkImageTile`s are about to request so they decode off-screen
+  /// instead of mid-frame during a fast scroll. Bounded LRU like the parse
+  /// cache itself — cheap, and a miss just means the tile loads normally.
+  static List<String> imagesFor(NostrEvent event) => of(event).render.images;
+
+  /// The exact display URL a feed tile requests for [url] (CDN-resized
+  /// `?w=1080` on supported hosts). The scroll-driven prefetch MUST warm
+  /// this exact string — CachedNetworkImage keys its cache on the URL, so
+  /// prefetching the raw URL would be a cache miss when the tile asks for
+  /// the resized one.
+  static String feedTileUrl(String url) =>
+      MediaUtils.optimizedImageUrl(url, width: 1080);
 
   static const int _maxEntries = 400;
   static final Map<String, _ParsedNote> _map = {};
 
   /// The parsed form of [event]: extracted text, the render split, imeta.
+  // The cache is public (the feed prefetches image URLs through it) but the
+  // parsed model stays file-private by design — callers only need
+  // [imagesFor]/[feedTileUrl], never the parse tree itself.
+  // ignore: library_private_types_in_public_api
   static _ParsedNote of(NostrEvent event) {
     final key = event.id;
     final cached = _map[key];
@@ -1144,12 +1173,7 @@ class _CodeBlock extends StatelessWidget {
                 InkWell(
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: code));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Code copied to clipboard'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
+                    AppToast.success(context, 'Code copied to clipboard');
                   },
                   child: Icon(
                     Icons.copy,
@@ -1264,10 +1288,53 @@ class _ListItem extends StatelessWidget {
 
 // ─── Image Gallery ───────────────────────────────────────────────────
 
+/// Primal-style media gallery (`NoteMediaAttachmentsHorizontalPager` +
+/// `MaxDisplayImages = 4`): per-count layouts — 1 image fills the width
+/// keeping its aspect (imeta dims, never upscaled), 2 = two squares,
+/// 3 = one wide banner + two squares, 4+ = a 2×2 grid with a "+N" overlay
+/// on the last cell. Tight 2 dp gaps; the 12 dp corner radius lives on
+/// each tile (`_NetworkImageTile`).
 class _ImageGallery extends StatelessWidget {
   final List<String> urls;
   final Map<String, ImetaInfo> imeta;
   const _ImageGallery({required this.urls, this.imeta = const {}});
+
+  static const double _gap = 2;
+
+  Widget _tile(String url, {double height = double.infinity, int? extra}) {
+    final tile = _NetworkImageTile(
+      url: url,
+      height: height,
+      alt: imeta[url]?.alt,
+      fallbackUrls: imeta[url]?.fallbackUrls ?? const [],
+    );
+    if (extra == null) return tile;
+    // "+N" overlay on the last cell of a 4+ gallery (Primal caps display
+    // at 4 and badges the remainder).
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        tile,
+        IgnorePointer(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '+$extra',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1283,22 +1350,64 @@ class _ImageGallery extends StatelessWidget {
         fallbackUrls: imeta[url]?.fallbackUrls ?? const [],
       );
     }
-    final crossCount = urls.length == 2 ? 2 : (urls.length == 3 ? 3 : 2);
-    return GridView.count(
-      crossAxisCount: crossCount,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 4,
-      crossAxisSpacing: 4,
-      childAspectRatio: 1,
-      children: urls.take(4).map((url) {
-        return _NetworkImageTile(
-          url: url,
-          height: double.infinity,
-          alt: imeta[url]?.alt,
-          fallbackUrls: imeta[url]?.fallbackUrls ?? const [],
-        );
-      }).toList(),
+
+    if (urls.length == 2) {
+      return Row(
+        children: [
+          Expanded(child: AspectRatio(aspectRatio: 1, child: _tile(urls[0]))),
+          const SizedBox(width: _gap),
+          Expanded(child: AspectRatio(aspectRatio: 1, child: _tile(urls[1]))),
+        ],
+      );
+    }
+
+    if (urls.length == 3) {
+      // Primal's 3-up: one 2:1 banner on top, two squares below.
+      return Column(
+        children: [
+          AspectRatio(aspectRatio: 2, child: _tile(urls[0])),
+          const SizedBox(height: _gap),
+          Row(
+            children: [
+              Expanded(
+                child: AspectRatio(aspectRatio: 1, child: _tile(urls[1])),
+              ),
+              const SizedBox(width: _gap),
+              Expanded(
+                child: AspectRatio(aspectRatio: 1, child: _tile(urls[2])),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    // 4+ : 2×2 grid of squares, "+N" badge on the last cell.
+    final shown = urls.take(4).toList();
+    final extra = urls.length - shown.length;
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: AspectRatio(aspectRatio: 1, child: _tile(shown[0]))),
+            const SizedBox(width: _gap),
+            Expanded(child: AspectRatio(aspectRatio: 1, child: _tile(shown[1]))),
+          ],
+        ),
+        const SizedBox(height: _gap),
+        Row(
+          children: [
+            Expanded(child: AspectRatio(aspectRatio: 1, child: _tile(shown[2]))),
+            const SizedBox(width: _gap),
+            Expanded(
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: _tile(shown[3], extra: extra > 0 ? extra : null),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -1367,6 +1476,10 @@ class _NetworkImageTileState extends State<_NetworkImageTile> {
   @override
   Widget build(BuildContext context) {
     // SVGs can't Hero (they render via a different pipeline) — plain tile.
+    // A tile asked to fill (height == infinity, inside the gallery's
+    // AspectRatio cells) wraps in SizedBox.expand so the image covers the
+    // cell instead of collapsing to its intrinsic height.
+    final fill = widget.height == double.infinity;
     final tile = ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: GestureDetector(
@@ -1375,9 +1488,10 @@ class _NetworkImageTileState extends State<_NetworkImageTile> {
       ),
     );
 
-    if (_isSvg) return tile;
+    final sized = fill ? SizedBox.expand(child: tile) : tile;
+    if (_isSvg) return sized;
 
-    return Hero(tag: _heroTag, child: tile);
+    return Hero(tag: _heroTag, child: sized);
   }
 
   Widget _buildSvgImage(BuildContext context) {
@@ -1436,8 +1550,8 @@ class _NetworkImageTileState extends State<_NetworkImageTile> {
             'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
       },
       // Fade in animation for smooth loading
-      fadeInDuration: const Duration(milliseconds: 300),
-      fadeOutDuration: const Duration(milliseconds: 100),
+      fadeInDuration: AppMotion.normal,
+      fadeOutDuration: AppMotion.fast,
     );
   }
 
@@ -1457,10 +1571,7 @@ class _NetworkImageTileState extends State<_NetworkImageTile> {
           borderRadius: BorderRadius.circular(12),
         ),
         child: Center(
-          child: Icon(
-            Icons.image_outlined,
-            size: 40,
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          child: AppIcon('image', size: 40, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
         ),
       ),

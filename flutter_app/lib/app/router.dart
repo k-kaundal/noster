@@ -37,6 +37,7 @@ import 'package:nostrfeed_mobile/features/notifications/presentation/notificatio
 import 'package:nostrfeed_mobile/features/p2p/presentation/p2p_screen.dart';
 import 'package:nostrfeed_mobile/features/premium/presentation/premium_screen.dart';
 import 'package:nostrfeed_mobile/features/profile/presentation/profile_screen.dart';
+import 'package:nostrfeed_mobile/features/profile/presentation/you_screen.dart';
 import 'package:nostrfeed_mobile/features/reels/presentation/reels_screen.dart';
 import 'package:nostrfeed_mobile/features/sats_drops/presentation/sats_drops_screen.dart';
 import 'package:nostrfeed_mobile/features/search/presentation/search_screen.dart';
@@ -109,8 +110,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
         routes: [
-          // Primary bottom-nav tabs
+          // Primary bottom-nav tabs (Explore is tab 2 — Refined v2.1)
           GoRoute(path: '/feed', builder: (_, _) => const FeedScreen()),
+          GoRoute(path: '/explore', builder: (_, _) => const ExploreScreen()),
           GoRoute(path: '/chat', builder: (_, _) => const ChatScreen()),
           GoRoute(path: '/wallet', builder: (_, _) => const WalletScreen()),
         ],
@@ -148,6 +150,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => ProfileScreen(pubkey: state.pathParameters['pubkey']),
       ),
 
+      // You — the profile hub (Refined drawer-replacement surface)
+      GoRoute(
+        path: '/you',
+        builder: (_, state) => const YouScreen(),
+      ),
+
       // Compose
       GoRoute(
         path: '/compose',
@@ -167,7 +175,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       // Discover
-      GoRoute(path: '/explore', builder: (_, _) => const ExploreScreen()),
       GoRoute(path: '/trending', builder: (_, _) => const TrendingScreen()),
       GoRoute(path: '/hashtag/:tag', builder: (_, state) => HashtagScreen(tag: Uri.decodeComponent(state.pathParameters['tag']!))),
       GoRoute(path: '/articles', builder: (_, _) => const ArticlesScreen()),

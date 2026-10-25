@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -70,7 +73,6 @@ class _ProfileCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -79,8 +81,7 @@ class _ProfileCard extends ConsumerWidget {
               imageUrl: auth.profile?.picture,
               radius: 30,
               backgroundColor: scheme.primaryContainer,
-              fallback: Icon(Icons.person,
-                  size: 30, color: scheme.onPrimaryContainer),
+              fallback: AppIcon('users', size: 30, color: scheme.onPrimaryContainer),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -89,16 +90,17 @@ class _ProfileCard extends ConsumerWidget {
                 children: [
                   Text(
                     auth.profile?.displayNameOrName ?? 'Not logged in',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     auth.pubkey != null
                         ? '${auth.pubkey!.substring(0, 16)}…'
                         : 'Sign in to manage your identity',
-                    style: TextStyle(
-                        fontSize: 12,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                         fontFamily: 'monospace'),
                   ),
@@ -109,13 +111,14 @@ class _ProfileCard extends ConsumerWidget {
                           horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: scheme.tertiaryContainer,
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: AppShapes.radiusXs,
                       ),
                       child: Text(
                         'Read-only',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: scheme.onTertiaryContainer),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: scheme.onTertiaryContainer),
                       ),
                     ),
                   ],
@@ -141,7 +144,6 @@ class _SignerStatusCard extends ConsumerWidget {
     final hasKeys = auth.isLoggedIn && !auth.isReadOnly;
 
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
           ListTile(
@@ -151,16 +153,22 @@ class _SignerStatusCard extends ConsumerWidget {
                 color: hasKeys
                     ? scheme.tertiaryContainer
                     : scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: AppShapes.radiusMd,
               ),
-              child: Icon(
-                hasKeys ? Icons.key : Icons.key_off,
-                color: hasKeys ? scheme.onTertiaryContainer : scheme.onSurfaceVariant,
+              child: AppIcon(
+                hasKeys ? 'key' : 'eye_off',
+                size: AppIconSize.md,
+                color: hasKeys
+                    ? scheme.onTertiaryContainer
+                    : scheme.onSurfaceVariant,
               ),
             ),
             title: Text(
               hasKeys ? 'Private key signer active' : 'No signer connected',
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
             subtitle: Text(
               hasKeys
@@ -177,16 +185,16 @@ class _SignerStatusCard extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.shield_outlined,
-                          size: 16, color: scheme.error),
+                      AppIcon('verified',
+                          size: AppIconSize.sm, color: scheme.error),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Back up your key — there is no password reset.',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: scheme.onSurfaceVariant,
-                          ),
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                         ),
                       ),
                     ],
@@ -197,12 +205,13 @@ class _SignerStatusCard extends ConsumerWidget {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () => _exportKey(context, ref),
-                          icon: const Icon(Icons.download_outlined, size: 18),
+                          icon:
+                              const AppIcon('download', size: AppIconSize.md),
                           label: const Text('Download key file'),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: AppShapes.radiusMd,
                             ),
                           ),
                         ),
@@ -211,12 +220,12 @@ class _SignerStatusCard extends ConsumerWidget {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () => _copyKey(context, ref),
-                          icon: const Icon(Icons.copy_outlined, size: 18),
+                          icon: const AppIcon('edit', size: AppIconSize.md),
                           label: const Text('Copy nsec'),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: AppShapes.radiusMd,
                             ),
                           ),
                         ),
@@ -278,21 +287,24 @@ class _LightningAddressCard extends ConsumerWidget {
 
     if (!lnbits.isConnected) {
       return Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ListTile(
           leading: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: AppShapes.radiusMd,
             ),
-            child: Icon(Icons.bolt_outlined, color: scheme.onSurfaceVariant),
+            child: AppIcon('zap',
+                size: AppIconSize.md, color: scheme.onSurfaceVariant),
           ),
-          title: const Text('No wallet connected',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+          title: Text('No wallet connected',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600)),
           subtitle: const Text(
               'Connect your wallet to get a lightning address'),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const AppIcon('chevron_r'),
           onTap: () => context.push('/wallet/lnbits'),
         ),
       );
@@ -310,7 +322,6 @@ class _LightningAddressCard extends ConsumerWidget {
     final address = lightning.primaryAddress;
 
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
           if (address != null) ...[
@@ -318,17 +329,16 @@ class _LightningAddressCard extends ConsumerWidget {
               leading: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
+                  color: AppActionColors.zap.withValues(alpha: 0.15),
+                  borderRadius: AppShapes.radiusMd,
                 ),
-                child: const Icon(Icons.bolt, color: Colors.amber),
+                child: const AppIcon('zap',
+                    size: AppIconSize.md, color: AppActionColors.zap),
               ),
               title: Text(
                 address,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'monospace',
-                    fontSize: 14),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600, fontFamily: 'monospace'),
               ),
               subtitle: Text(
                 hasAddress
@@ -336,13 +346,11 @@ class _LightningAddressCard extends ConsumerWidget {
                     : 'Not on your profile yet — publish it to receive zaps',
               ),
               trailing: IconButton(
-                icon: const Icon(Icons.copy, size: 18),
+                icon: const AppIcon('edit', size: AppIconSize.md),
                 tooltip: 'Copy address',
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: address));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Address copied')),
-                  );
+                  AppToast.success(context, 'Address copied');
                 },
               ),
             ),
@@ -358,20 +366,15 @@ class _LightningAddressCard extends ConsumerWidget {
                             .read(lightningAddressProvider.notifier)
                             .publishToProfile();
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Profile updated — zaps enabled!')),
-                          );
+                          AppToast.success(context, 'Profile updated — zaps enabled!');
                         }
                       } catch (e) {
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed: $e')),
-                          );
+                          AppToast.error(context, 'Failed: $e');
                         }
                       }
                     },
-                    icon: const Icon(Icons.publish, size: 18),
+                    icon: const AppIcon('share', size: 18),
                     label: const Text('Publish to Profile'),
                   ),
                 ),
@@ -382,12 +385,16 @@ class _LightningAddressCard extends ConsumerWidget {
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: AppShapes.radiusMd,
                 ),
-                child: Icon(Icons.bolt_outlined, color: scheme.onSurfaceVariant),
+                child: AppIcon('zap',
+                    size: AppIconSize.md, color: scheme.onSurfaceVariant),
               ),
-              title: const Text('No lightning address',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              title: Text('No lightning address',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600)),
               subtitle: const Text(
                   'Claim a lightning address to receive zaps'),
             ),
@@ -398,7 +405,7 @@ class _LightningAddressCard extends ConsumerWidget {
                   width: double.infinity,
                   child: FilledButton.icon(
                     onPressed: () => _showClaimDialog(context, ref),
-                    icon: const Icon(Icons.add, size: 18),
+                    icon: const AppIcon('plus', size: 18),
                     label: const Text('Claim Address'),
                   ),
                 ),
@@ -414,11 +421,10 @@ class _LightningAddressCard extends ConsumerWidget {
                 children: [
                   Text(
                     'All addresses (${lightning.addresses.length})',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurfaceVariant,
+                        ),
                   ),
                   const SizedBox(height: 8),
                   for (final addr in lightning.addresses)
@@ -426,26 +432,26 @@ class _LightningAddressCard extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Row(
                         children: [
-                          Icon(
-                            addr == address
-                                ? Icons.check_circle
-                                : Icons.circle_outlined,
-                            size: 14,
+                          AppIcon(
+                            addr == address ? 'check' : 'eye',
+                            size: AppIconSize.xs,
                             color: addr == address
-                                ? Colors.green
+                                ? AppStatusColors.success
                                 : scheme.onSurfaceVariant,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               addr,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: 'monospace',
-                                color: addr == address
-                                    ? scheme.onSurface
-                                    : scheme.onSurfaceVariant,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    fontFamily: 'monospace',
+                                    color: addr == address
+                                        ? scheme.onSurface
+                                        : scheme.onSurfaceVariant,
+                                  ),
                             ),
                           ),
                         ],
@@ -462,22 +468,23 @@ class _LightningAddressCard extends ConsumerWidget {
               padding: const EdgeInsets.all(12),
               child: Row(
                 children: [
-                  Icon(Icons.warning_amber,
-                      size: 16, color: Colors.orange.shade700),
+                  const AppIcon('eye_off',
+                      size: AppIconSize.sm, color: AppStatusColors.warning),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       '${lightning.silentAddresses.length} address(es) receive money but don\'t publish zap receipts on Nostr.',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.orange.shade700,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: AppStatusColors.warning),
                     ),
                   ),
                   TextButton(
                     onPressed: () =>
                         ref.read(lightningAddressProvider.notifier).enableZaps(),
-                    child: const Text('Fix', style: TextStyle(fontSize: 12)),
+                    child: Text('Fix',
+                        style: Theme.of(context).textTheme.labelSmall),
                   ),
                 ],
               ),
@@ -522,7 +529,7 @@ class _LightningAddressCard extends ConsumerWidget {
                   decoration: InputDecoration(
                     labelText: 'Username',
                     hintText: freeName ?? 'u…',
-                    prefixIcon: const Icon(Icons.alternate_email),
+                    prefixIcon: const AppIcon('at', size: AppIconSize.md),
                     suffixText: '@$selectedDomain',
                   ),
                   onChanged: (_) => setState(() {}),
@@ -552,16 +559,15 @@ class _LightningAddressCard extends ConsumerWidget {
                       : 'Custom names are paid. Get them from the Verified Name section above — it comes with an invoice to pay first.',
                   style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                         color: isFreeName
-                            ? Colors.green.shade700
+                            ? AppStatusColors.success
                             : Theme.of(ctx).colorScheme.onSurfaceVariant,
                       ),
                 ),
                 if (errorMsg != null) ...[
                   const SizedBox(height: 12),
                   Text(errorMsg!,
-                      style: TextStyle(
-                          color: Theme.of(ctx).colorScheme.error,
-                          fontSize: 12)),
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(ctx).colorScheme.error)),
                 ],
               ],
             ),
@@ -584,11 +590,7 @@ class _LightningAddressCard extends ConsumerWidget {
                               .claim(username: typed, domain: selectedDomain);
                           if (ctx.mounted) Navigator.pop(ctx);
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text(
-                                      '$typed@$selectedDomain is yours!')),
-                            );
+                            AppToast.success(context, '$typed@$selectedDomain is yours!');
                           }
                         } catch (e) {
                           setState(() {
@@ -624,18 +626,21 @@ class _Nip5Card extends ConsumerWidget {
 
     if (!lnbits.isConnected) {
       return Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ListTile(
           leading: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: AppShapes.radiusMd,
             ),
-            child: Icon(Icons.verified_outlined, color: scheme.onSurfaceVariant),
+            child: AppIcon('verified',
+                size: AppIconSize.md, color: scheme.onSurfaceVariant),
           ),
-          title: const Text('No wallet connected',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+          title: Text('No wallet connected',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600)),
           subtitle: const Text(
               'Connect your wallet to get a verified NIP-05 name'),
         ),
@@ -653,18 +658,21 @@ class _Nip5Card extends ConsumerWidget {
 
     if (!nip5.isAvailable) {
       return Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ListTile(
           leading: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: AppShapes.radiusMd,
             ),
-            child: Icon(Icons.verified_outlined, color: scheme.onSurfaceVariant),
+            child: AppIcon('verified',
+                size: AppIconSize.md, color: scheme.onSurfaceVariant),
           ),
-          title: const Text('Not available',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+          title: Text('Not available',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600)),
           subtitle: const Text(
               'Verified names are not enabled on this LNbits instance'),
         ),
@@ -674,7 +682,6 @@ class _Nip5Card extends ConsumerWidget {
     final addresses = nip5.addresses;
 
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
           // Every name the account holds — names are not interchangeable:
@@ -703,7 +710,7 @@ class _Nip5Card extends ConsumerWidget {
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: () => _showNip5ClaimDialog(context, ref),
-                    icon: const Icon(Icons.add, size: 18),
+                    icon: const AppIcon('plus', size: 18),
                     label: const Text('Buy another name'),
                   ),
                 ),
@@ -714,12 +721,16 @@ class _Nip5Card extends ConsumerWidget {
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: AppShapes.radiusMd,
                 ),
-                child: Icon(Icons.verified_outlined, color: scheme.onSurfaceVariant),
+                child: AppIcon('verified',
+                    size: AppIconSize.md, color: scheme.onSurfaceVariant),
               ),
-              title: const Text('No verified name',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              title: Text('No verified name',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600)),
               subtitle: const Text(
                   'Buy a NIP-05 verified name to show the ✓ badge'),
             ),
@@ -730,7 +741,7 @@ class _Nip5Card extends ConsumerWidget {
                   width: double.infinity,
                   child: FilledButton.icon(
                     onPressed: () => _showNip5ClaimDialog(context, ref),
-                    icon: const Icon(Icons.add, size: 18),
+                    icon: const AppIcon('plus', size: 18),
                     label: const Text('Get Verified Name'),
                   ),
                 ),
@@ -793,7 +804,7 @@ class _Nip5Card extends ConsumerWidget {
                     decoration: InputDecoration(
                       labelText: 'Choose a name',
                       hintText: 'alice',
-                      prefixIcon: const Icon(Icons.verified_outlined),
+                      prefixIcon: const AppIcon('verified', size: AppIconSize.md),
                       suffixText: selectedDomain != null
                           ? '@${selectedDomain!.domain}'
                           : null,
@@ -843,21 +854,19 @@ class _Nip5Card extends ConsumerWidget {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: searchResult!.available
-                            ? Colors.green.withValues(alpha: 0.1)
-                            : Colors.red.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
+                            ? AppStatusColors.success.withValues(alpha: 0.1)
+                            : AppStatusColors.error.withValues(alpha: 0.1),
+                        borderRadius: AppShapes.radiusSm,
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            searchResult!.available
-                                ? Icons.check_circle
-                                : Icons.cancel,
+                          AppIcon(
+                            searchResult!.available ? 'check' : 'eye_off',
+                            size: AppIconSize.md,
                             color: searchResult!.available
-                                ? Colors.green
-                                : Colors.red,
-                            size: 18,
+                                ? AppStatusColors.success
+                                : AppStatusColors.error,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -870,13 +879,15 @@ class _Nip5Card extends ConsumerWidget {
                                       ? 'Available! ${searchResult!.describePrice()}'
                                       : searchResult!.reason ??
                                           'Not available',
-                                  style: TextStyle(
-                                    color: searchResult!.available
-                                        ? Colors.green.shade700
-                                        : Colors.red.shade700,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  style: Theme.of(ctx)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: searchResult!.available
+                                            ? AppStatusColors.success
+                                            : AppStatusColors.error,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
                                 if (searchResult!.available &&
                                     searchResult!.priceReason != null &&
@@ -886,10 +897,12 @@ class _Nip5Card extends ConsumerWidget {
                                         const EdgeInsets.only(top: 4),
                                     child: Text(
                                       searchResult!.priceReason!,
-                                      style: TextStyle(
-                                        color: Colors.green.shade700,
-                                        fontSize: 11,
-                                      ),
+                                      style: Theme.of(ctx)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: AppStatusColors.success,
+                                          ),
                                     ),
                                   ),
                               ],
@@ -901,9 +914,8 @@ class _Nip5Card extends ConsumerWidget {
                   if (errorMsg != null) ...[
                     const SizedBox(height: 12),
                     Text(errorMsg!,
-                        style: TextStyle(
-                            color: Theme.of(ctx).colorScheme.error,
-                            fontSize: 12)),
+                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(ctx).colorScheme.error)),
                   ],
                 ],
               ),
@@ -1021,18 +1033,21 @@ class _FreeAddressCard extends ConsumerWidget {
 
     if (freeName == null) {
       return Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ListTile(
           leading: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: AppShapes.radiusMd,
             ),
-            child: Icon(Icons.card_giftcard, color: scheme.onSurfaceVariant),
+            child: AppIcon('gift',
+                size: AppIconSize.md, color: scheme.onSurfaceVariant),
           ),
-          title: const Text('No free address',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+          title: Text('No free address',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600)),
           subtitle: const Text('Log in to get your free address'),
         ),
       );
@@ -1043,24 +1058,22 @@ class _FreeAddressCard extends ConsumerWidget {
     final isOnProfile = auth.profile?.lud16 == fullAddress;
 
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
           ListTile(
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(10),
+                color: AppStatusColors.success.withValues(alpha: 0.15),
+                borderRadius: AppShapes.radiusMd,
               ),
-              child: const Icon(Icons.card_giftcard, color: Colors.green),
+              child: const AppIcon('gift',
+                  size: AppIconSize.md, color: AppStatusColors.success),
             ),
             title: Text(
               fullAddress,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'monospace',
-                  fontSize: 13),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600, fontFamily: 'monospace'),
             ),
             subtitle: Text(
               isOnProfile
@@ -1070,13 +1083,11 @@ class _FreeAddressCard extends ConsumerWidget {
                       : 'Free forever — derived from your pubkey',
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.copy, size: 18),
+              icon: const AppIcon('edit', size: 18),
               tooltip: 'Copy address',
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: fullAddress));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Address copied')),
-                );
+                AppToast.success(context, 'Address copied');
               },
             ),
           ),
@@ -1097,20 +1108,15 @@ class _FreeAddressCard extends ConsumerWidget {
                           .read(lightningAddressProvider.notifier)
                           .publishToProfile(address: fullAddress);
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Free address published!')),
-                        );
+                        AppToast.success(context, 'Free address published!');
                       }
                     } catch (e) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Failed: $e')),
-                        );
+                        AppToast.error(context, 'Failed: $e');
                       }
                     }
                   },
-                  icon: const Icon(Icons.publish, size: 18),
+                  icon: const AppIcon('share', size: 18),
                   label: Text(isClaimed
                       ? 'Publish to Profile'
                       : 'Claim & Publish'),
@@ -1142,26 +1148,25 @@ class _ReservationNotice extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+        color: AppStatusColors.warning.withValues(alpha: 0.08),
+        borderRadius: AppShapes.radiusSm,
+        border: Border.all(color: AppStatusColors.warning.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.hourglass_top_rounded,
-              size: 18, color: Colors.orange.shade700),
+          const AppIcon('clock',
+              size: AppIconSize.md, color: AppStatusColors.warning),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               atCap
                   ? 'You\'ve reserved the most unpaid names allowed on a domain. Pay for one or let it lapse before reserving another — a reserved name is held out of the pool for everyone.'
                   : '$unpaidCount name${unpaidCount == 1 ? ' is' : 's are'} reserved but unpaid. They\'re held for you, but only up to $kMaxUnpaidReservationsPerDomain per domain — pay for them to keep them.',
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: Colors.orange.shade800,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    height: 1.4,
+                    color: AppStatusColors.warning,
+                  ),
             ),
           ),
         ],
@@ -1185,24 +1190,23 @@ class _ExpiringNotice extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: scheme.errorContainer.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: AppShapes.radiusSm,
         border: Border.all(color: scheme.error.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.event_busy_rounded, size: 18, color: scheme.error),
+          AppIcon('calendar', size: AppIconSize.md, color: scheme.error),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               names.length == 1
                   ? '${first.identifier} lapses in $days day${days == 1 ? '' : 's'} and returns to the pool. Renew it to keep your ✓.'
                   : '${names.length} names lapse soon and return to the pool. Renew them to keep your ✓.',
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: scheme.onErrorContainer,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    height: 1.4,
+                    color: scheme.onErrorContainer,
+                  ),
             ),
           ),
         ],
@@ -1221,12 +1225,11 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title.toUpperCase(),
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        color: Theme.of(context).colorScheme.primary,
-        letterSpacing: 1.2,
-      ),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).colorScheme.primary,
+            letterSpacing: 1.2,
+          ),
     );
   }
 }

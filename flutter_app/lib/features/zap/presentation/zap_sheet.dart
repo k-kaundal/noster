@@ -6,6 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/services/wallet_payment.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/lnurl_service.dart';
 import 'package:nostrfeed_mobile/features/zap/application/quick_zap.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -59,7 +63,24 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
   String? _error;
   String? _lightningAddress;
 
-  static const _presets = [21, 100, 500, 1000, 5000, 10000];
+  /// Primal's zap preset grid (`ZapBottomSheet` defaults): emoji + amount,
+  /// each preset carrying Primal's exact amounts — 👍21, 🚀420, ☕1k, 🍻5k,
+  /// 🍷10k, 👑100k. The emoji is the identity of the amount in Nostr
+  /// culture (a "🚀 420" reads instantly).
+  static const _presets = [
+    (emoji: '👍', amount: 21),
+    (emoji: '🚀', amount: 420),
+    (emoji: '☕', amount: 1000),
+    (emoji: '🍻', amount: 5000),
+    (emoji: '🍷', amount: 10000),
+    (emoji: '👑', amount: 100000),
+  ];
+
+  static String _shortAmount(int sats) {
+    if (sats >= 1000000) return '${(sats / 1000000).toStringAsFixed(0)}M';
+    if (sats >= 1000) return '${(sats / 1000).toStringAsFixed(0)}k';
+    return '$sats';
+  }
 
   @override
   void initState() {
@@ -192,9 +213,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
       final wallet = await payWithAnyWallet(ref.read, invoice);
       if (!mounted) return;
       if (wallet != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('⚡ Zap of $amount sats sent!')),
-        );
+        AppToast.success(context, '⚡ Zap of $amount sats sent!');
         Navigator.pop(context);
         return;
       }
@@ -250,7 +269,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
               // Header
               Row(
                 children: [
-                  Icon(Icons.bolt, color: Colors.amber.shade700, size: 28),
+                  const AppIcon('zap', size: 28, color: AppActionColors.zap),
                   const SizedBox(width: 8),
                   Text(
                     'Send Zap',
@@ -260,7 +279,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const AppIcon('plus', size: AppIconSize.lg),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -291,7 +310,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.error_outline, size: 48, color: colorScheme.error),
+        AppIcon('eye_off', size: 48, color: colorScheme.error),
         const SizedBox(height: 16),
         Text(
           _error ?? 'Unknown error',
@@ -320,28 +339,37 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           ),
         const SizedBox(height: 16),
 
-        // Preset amount chips
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          alignment: WrapAlignment.center,
-          children: _presets.map((amount) {
-            final isSelected = _selectedPreset == amount;
-            return ChoiceChip(
-              label: Text('$amount'),
-              selected: isSelected,
-              onSelected: (_) {
-                setState(() {
-                  _selectedPreset = amount;
-                  _amountController.text = '$amount';
-                });
-                // Small presets become the new one-tap default.
-                if (amount <= quickZapMaxSats) {
-                  ref.read(quickZapAmountProvider.notifier).setAmount(amount);
-                }
-              },
-            );
-          }).toList(),
+        // Primal's preset grid: 3 columns of square emoji+amount cells.
+        // Selected = surface bg + 1 dp tertiary border; unselected =
+        // surfaceVariantAlt1 bg (here surfaceContainerHighest, the closest
+        // M3 token to Primal's alt surfaces).
+        GridView.count(
+          crossAxisCount: 3,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1.15,
+          children: [
+            for (final preset in _presets)
+              _ZapPresetCell(
+                emoji: preset.emoji,
+                label: _shortAmount(preset.amount),
+                selected: _selectedPreset == preset.amount,
+                onTap: () {
+                  setState(() {
+                    _selectedPreset = preset.amount;
+                    _amountController.text = '${preset.amount}';
+                  });
+                  // Small presets become the new one-tap default.
+                  if (preset.amount <= quickZapMaxSats) {
+                    ref
+                        .read(quickZapAmountProvider.notifier)
+                        .setAmount(preset.amount);
+                  }
+                },
+              ),
+          ],
         ),
         const SizedBox(height: 16),
 
@@ -351,9 +379,9 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
             labelText: 'Amount (sats)',
-            prefixIcon: Icon(Icons.currency_bitcoin,
-                color: Colors.amber.shade700),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            prefixIcon:
+                const AppIcon('zap', size: AppIconSize.lg, color: AppActionColors.zap),
+            border: OutlineInputBorder(borderRadius: AppShapes.radiusMd),
           ),
           onChanged: (_) => setState(() => _selectedPreset = 0),
         ),
@@ -365,8 +393,8 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           maxLines: 2,
           decoration: InputDecoration(
             labelText: 'Message (optional)',
-            prefixIcon: const Icon(Icons.message_outlined),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            prefixIcon: const AppIcon('edit', size: AppIconSize.md),
+            border: OutlineInputBorder(borderRadius: AppShapes.radiusMd),
           ),
         ),
 
@@ -378,13 +406,13 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.check_circle,
-                    size: 14, color: Colors.green.shade600),
+                const AppIcon('check',
+                    size: 14, color: AppStatusColors.success),
                 const SizedBox(width: 4),
                 Text(
                   'Will pay from your connected wallet',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.green.shade700,
+                        color: AppStatusColors.success,
                       ),
                 ),
               ],
@@ -396,7 +424,10 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           const SizedBox(height: 12),
           Text(
             _error!,
-            style: TextStyle(color: colorScheme.error, fontSize: 13),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: colorScheme.error),
             textAlign: TextAlign.center,
           ),
         ],
@@ -409,7 +440,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : Icon(Icons.bolt, color: Colors.amber.shade700),
+              : const AppIcon('zap', size: AppIconSize.lg, color: AppActionColors.zap),
           label: Builder(builder: (context) {
             return Text(
               hasPayingWallet(ref.read) ? 'Send Zap' : 'Create Invoice',
@@ -435,13 +466,13 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            color: Colors.white, // token-guard: allow — QR needs white bg
+            borderRadius: AppShapes.radiusMd,
           ),
           child: QrImageView(
             data: _invoice!.toUpperCase(),
             size: 220,
-            backgroundColor: Colors.white,
+            backgroundColor: Colors.white, // token-guard: allow — QR needs white bg
           ),
         ),
         const SizedBox(height: 16),
@@ -459,11 +490,9 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
             OutlinedButton.icon(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: _invoice!));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invoice copied')),
-                );
+                AppToast.success(context, 'Invoice copied');
               },
-              icon: const Icon(Icons.copy, size: 18),
+              icon: const AppIcon('edit', size: AppIconSize.md),
               label: const Text('Copy Invoice'),
             ),
             const SizedBox(width: 12),
@@ -474,6 +503,56 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// One cell of Primal's zap preset grid (`ZapOption`): a square tile with
+/// the preset emoji (28 sp) above the shortened amount (SemiBold) —
+/// selected gets a surface background + 1 dp tertiary border, unselected a
+/// muted container.
+class _ZapPresetCell extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ZapPresetCell({
+    required this.emoji,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? scheme.surface : scheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppShapes.radiusMd,
+        side: selected
+            ? BorderSide(color: scheme.tertiary, width: 1)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppShapes.radiusMd,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 26)), // token-guard: allow — emoji glyph metric
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

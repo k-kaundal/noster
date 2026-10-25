@@ -8,10 +8,11 @@ import 'package:nostrfeed_mobile/core/moderation/flood_detector.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_store.dart';
 
-/// The shared flood/duplicate detector — one instance observes every feed
-/// event as it arrives and judges near-duplicates, sprays, and rapid-fire.
-/// Keeps the platform from drowning in "same post every few minutes" spam.
-final floodDetectorProvider = Provider<FloodDetector>((ref) => FloodDetector());
+// engagementVersionProvider / localEngagementProvider moved to core in P3
+// (the ingest pipeline bumps them from the bus). Re-exported so existing
+// feed-side imports keep working.
+export 'package:nostrfeed_mobile/core/providers/content_providers.dart'
+    show engagementVersionProvider, localEngagementProvider;
 
 /// One feed's state: the events, plus everything the UI needs to behave
 /// like a grown-up social app rather than a relay demo.
@@ -35,6 +36,11 @@ class FeedState {
   /// that would yank the scroll position.
   final int newCount;
 
+  /// Distinct authors of the newest pending posts (max 3, newest first) —
+  /// the avatar stack on Primal's "N new posts" pill
+  /// (`AvatarThumbnailsRow`). Empty when [newCount] is 0.
+  final List<String> newPostAuthors;
+
   /// The last fetch failed; the cached/current events stay visible.
   final String? error;
 
@@ -47,6 +53,7 @@ class FeedState {
     this.hasMore = true,
     this.isLoadingMore = false,
     this.newCount = 0,
+    this.newPostAuthors = const [],
     this.error,
     this.lastSyncedAt,
   });
@@ -57,6 +64,7 @@ class FeedState {
     bool? hasMore,
     bool? isLoadingMore,
     int? newCount,
+    List<String>? newPostAuthors,
     String? error,
     DateTime? lastSyncedAt,
     bool clearError = false,
@@ -67,6 +75,7 @@ class FeedState {
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       newCount: newCount ?? this.newCount,
+      newPostAuthors: newPostAuthors ?? this.newPostAuthors,
       error: clearError ? null : (error ?? this.error),
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
     );
@@ -94,6 +103,7 @@ class FeedNotifier extends Notifier<FeedState> {
   final EventStore _events = EventStore.instance;
 
   StreamSubscription<NostrEvent>? _liveSub;
+  EventBusHandle? _liveHandle;
   static const _pageSize = 50;
 
   /// Feed display kinds (posts, reposts, pictures, articles).
@@ -110,7 +120,10 @@ class FeedNotifier extends Notifier<FeedState> {
 
   @override
   FeedState build() {
-    ref.onDispose(() => _liveSub?.cancel());
+    ref.onDispose(() {
+      _liveSub?.cancel();
+      _liveHandle?.dispose();
+    });
     // Re-fetch the follow list when the user logs in/out or follows someone.
     ref.listen(authStateProvider, (_, _) => _follows = null);
     // Show the cache immediately, then refresh behind it.
@@ -119,19 +132,51 @@ class FeedNotifier extends Notifier<FeedState> {
   }
 
   Future<void> _init() async {
-    // 1. Disk first — content on the first frame. Read from the SQLite
-    // event store (indexed, survives >300 events); fall back to the legacy
-    // JSON cache on the first run after upgrade.
-    var cached = await _events.queryEvents(kinds: _feedKinds, limit: _pageSize);
-    if (cached.isEmpty) {
-      cached = await _store.read();
-      if (cached.isNotEmpty) {
-        // Migrate the legacy cache into SQLite once, then drop it.
-        await _events.ingest(cached);
-        await _store.clear();
+    // 1. Disk first — content on the first frame. ADR-0005 L5: the feed is a
+    // SQL projection (feedPage) — reply filtering happens IN the query via
+    // thread_edges (correct for replies from ANY ingest path, not just the
+    // feed's own fetches).
+    //
+    // The Following tab NEVER waits on the network for this first paint:
+    // `_resolveFollows` does a relay fetch, and awaiting it here meant a
+    // cold start with slow relays hung the tab on a skeleton — and a thrown
+    // fetch (offline) killed the whole tab (no paint, no refresh, no live
+    // tail). Follows resolve IN PARALLEL: the disk read uses whatever is
+    // already cached (possibly none on a fresh session — a Following tab
+    // with unknown follows paints EMPTY, never the global feed), and once
+    // the refresh resolves them the feed fills in.
+    List<String>? authors;
+    if (_followingOnly) {
+      authors = _follows ?? const [];
+      if (authors.isEmpty) {
+        state = state.copyWith(events: const []);
+        // Refresh resolves follows and fills the feed; live tail starts
+        // once follows exist (its filter needs authors).
+        unawaited(refresh().then((_) => _startLive()));
+        return;
       }
     }
-    cached = cached.where(_isFeedPost).toList();
+
+    var cached = await _events.feedPage(
+      kinds: _feedKinds,
+      limit: _pageSize,
+      authors: authors,
+    );
+    if (cached.isEmpty) {
+      final legacy = await _store.read();
+      if (legacy.isNotEmpty) {
+        // Migrate the legacy cache into SQLite once, then drop it.
+        await _events.ingest(legacy);
+        await _store.clear();
+        // Apply the SAME filters as the SQL read — the migration must not
+        // leak global posts into the Following tab.
+        cached = legacy.where((e) {
+          if (!_isFeedPost(e)) return false;
+          if (authors != null && !authors.contains(e.pubkey)) return false;
+          return true;
+        }).toList();
+      }
+    }
     if (cached.isNotEmpty) {
       state = state.copyWith(events: cached);
     }
@@ -160,10 +205,18 @@ class FeedNotifier extends Notifier<FeedState> {
   /// Pull-to-refresh entry: clears a stuck `isRefreshing`/`isLoadingMore`
   /// flag from a previous hung fetch before starting, so a user pull ALWAYS
   /// gets a fresh attempt (the "pull does nothing when stuck" bug).
+  ///
+  /// ALSO folds the pill's pending posts into the list FIRST. After the P3
+  /// pipeline change, live posts land in the store + pill the moment they
+  /// arrive, so a pull-to-refresh that only re-merges the relay page could
+  /// show NO visible change (the "pull-to-refresh doesn't work" report) —
+  /// the genuinely-new posts were pending behind the pill, not in the list.
+  /// A user pull is an explicit "show me what's new" — honor it.
   Future<void> refreshFromPull() {
     if (state.isRefreshing || state.isLoadingMore) {
       state = state.copyWith(isRefreshing: false, isLoadingMore: false);
     }
+    showNewPosts();
     return refresh();
   }
 
@@ -198,6 +251,23 @@ class FeedNotifier extends Notifier<FeedState> {
         }
         final follows = await _resolveFollows();
         fresh = await nostr.fetchFollowingFeed(follows, limit: _pageSize);
+
+        // Cold-start fix: if the feed had painted EMPTY (follows unknown at
+        // _init), fill from the store NOW that follows exist — the network
+        // page can be thin/empty on quiet relays, but the store already has
+        // posts by followed authors from the shared ingest pipeline. Without
+        // this the tab stayed empty until a page arrived (the "Following
+        // blank on cold start" bug).
+        if (state.events.isEmpty && follows.isNotEmpty) {
+          final fromStore = await _events.feedPage(
+            kinds: _feedKinds,
+            limit: _pageSize,
+            authors: follows,
+          );
+          if (fromStore.isNotEmpty) {
+            fresh = _dedupe([...fresh, ...fromStore]);
+          }
+        }
       } else {
         fresh = await nostr.fetchFeed(limit: _pageSize);
       }
@@ -218,6 +288,7 @@ class FeedNotifier extends Notifier<FeedState> {
         isRefreshing: false,
         hasMore: fresh.length >= _pageSize ~/ 2,
         newCount: 0,
+        newPostAuthors: const [],
         lastSyncedAt: DateTime.now(),
       );
       // Persist the page into the SQLite store.
@@ -350,13 +421,29 @@ class FeedNotifier extends Notifier<FeedState> {
     if (pending.isEmpty) return;
     final merged = _merge(state.events, pending);
     _pending = [];
-    state = state.copyWith(events: merged, newCount: 0);
-    _store.write(merged);
+    _pendingIds.clear();
+    state = state.copyWith(
+      events: merged,
+      newCount: 0,
+      newPostAuthors: const [],
+    );
+    // NO legacy FeedStore write here — persistence is the SQLite EventStore's
+    // job (the live tail ingests via the ADR-0005 pipeline; page fetches call
+    // `_events.ingest`). The JSON FeedStore is migration-read-once-only; a
+    // full-list JSON write on every pill tap was double-write amplification.
   }
 
   // ── Live subscription ──────────────────────────────────────────────
 
+  /// Live-tail buffer for the "N new posts" pill, plus its dedup index.
+  /// Bounded at [_maxPending] (see the live listener for the drop-oldest
+  /// rule) — an uncapped buffer was a slow-scroll memory/cost creep.
   List<NostrEvent> _pending = [];
+  final Set<String> _pendingIds = {};
+
+  /// Cap on the live-tail pill buffer. 100 ≈ two busy minutes of a fast
+  /// global relay — beyond that the pill just says "100+" territory anyway.
+  static const _maxPending = 100;
 
   void _startLive() {
     final nostr = ref.read(nostrServiceProvider);
@@ -384,28 +471,54 @@ class FeedNotifier extends Notifier<FeedState> {
       );
     }
 
+    // ADR-0005: acquire on the shared EventBus + filter the union stream
+    // locally, instead of owning a raw relay subscription. The global feed
+    // tail and the social listener now share REQs when their filters match,
+    // and cross-spec events are deduped once at the bus.
+    _liveHandle?.dispose();
     _liveSub?.cancel();
-    _liveSub = nostr.relayPool.subscribe([filter]).listen((event) {
-      // Ingest live posts AND engagement events into the store as they
-      // arrive so counts stay warm.
-      _events.ingest([event]);
-      // Replies don't count toward the "N new posts" pill — they're not
-      // standalone feed posts (same rule as the page fetches).
+    final bus = ref.read(eventBusProvider);
+    final spec = [filter];
+    _liveHandle = bus.acquire(spec);
+    _liveSub = bus.stream.where(spec.matchesAny).listen((event) {
+      // ADR-0005 P3: ingestion is the ingest pipeline's job (every gated bus
+      // event lands in the store once), and flood-judgment is the bus gate's
+      // job (sprays/rapid-fire never reach this listener). The live tail is
+      // now ONLY the "N new posts" pill.
+      // Replies don't count toward the pill — they're not standalone feed
+      // posts (same rule as the page fetches).
       if (!_isFeedPost(event)) return;
-      // Flood check (same rule as the page fetches) — spray/flood spam
-      // never reaches the pill.
-      final detector = ref.read(floodDetectorProvider);
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      detector.observe(event, nowSeconds: now);
-      if (detector.verdictFor(event, nowSeconds: now) != FloodVerdict.clean) {
-        return;
-      }
       // Count, don't insert — auto-inserting yanks the scroll position.
-      if (_pending.any((e) => e.id == event.id)) return;
+      // Dedup via a Set (O(1), not an O(n) `.any()` scan per live event —
+      // a fast relay made this O(n·m) on the UI thread). And CAP the buffer:
+      // a busy tail between pill taps accumulated unboundedly, each entry a
+      // `[..._pending, event]` copy of the whole list. At the cap we drop
+      // the OLDEST pending — the user can only act on the newest anyway, and
+      // the dropped ones are still in the SQLite store.
+      if (_pendingIds.contains(event.id)) return;
       if (state.events.any((e) => e.id == event.id)) return;
-      _pending = [..._pending, event];
-      state = state.copyWith(newCount: _pending.length);
+      if (_pending.length >= _maxPending) {
+        final dropped = _pending.removeAt(0);
+        _pendingIds.remove(dropped.id);
+      }
+      _pending.add(event);
+      _pendingIds.add(event.id);
+      state = state.copyWith(
+        newCount: _pending.length,
+        newPostAuthors: _pendingAuthors(),
+      );
     });
+  }
+
+  /// Distinct authors of the newest pending posts, max 3, newest first —
+  /// the avatar stack on the pill (Primal's FeedPostsSyncStats avatars).
+  List<String> _pendingAuthors() {
+    final out = <String>[];
+    for (final e in _pending.reversed) {
+      if (!out.contains(e.pubkey)) out.add(e.pubkey);
+      if (out.length == 3) break;
+    }
+    return out;
   }
 
   /// Whether an event belongs in the main feed LIST: everything except a
@@ -464,28 +577,55 @@ class FeedNotifier extends Notifier<FeedState> {
     if (current.isEmpty) {
       final sorted = [...incoming]
         ..sort((a, b) => _orderTs(b, now).compareTo(_orderTs(a, now)));
-      return _dedupe(sorted);
+      return _capWindow(_dedupe(sorted));
     }
     final existingIds = current.map((e) => e.id).toSet();
     final newOnes =
         incoming.where((e) => !existingIds.contains(e.id)).toList();
-    if (newOnes.isEmpty) return current;
+    if (newOnes.isEmpty) return _capWindow(current);
 
     // Insert each new event at its time-sorted position (future-clamped).
     // Existing events never move relative to one another.
     final result = [...current];
     for (final e in newOnes) {
       final ts = _orderTs(e, now);
-      var insertAt = result.length;
-      for (var i = 0; i < result.length; i++) {
-        if (_orderTs(result[i], now) < ts) {
-          insertAt = i;
-          break;
+      // Binary-search the insertion point (list is sorted newest-first) —
+      // O(log n) instead of the old O(n) linear scan per event, so a page
+      // merge is O(m log n) instead of O(n·m) (quadratic jank as the feed
+      // grew).
+      var lo = 0;
+      var hi = result.length;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (_orderTs(result[mid], now) >= ts) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
         }
       }
-      result.insert(insertAt, e);
+      result.insert(lo, e);
     }
-    return result;
+    return _capWindow(result);
+  }
+
+  /// In-memory feed window cap. Without it `state.events` grew by ~50 per
+  /// page forever — after ~20 pages a 1000-event list made every merge,
+  /// scroll, and `itemCount` rebuild O(n) with growing n, and kept 1000
+  /// keyed elements alive in the ListView. THAT is the "scroll gets stuck
+  /// after a while" smoking gun.
+  ///
+  /// We drop from the TOP (newest) and keep the OLDEST events, because the
+  /// `loadMore` pagination cursor is `state.events.last.createdAt` — keeping
+  /// the tail preserves infinite scroll back through history. Dropped newest
+  /// posts are still in the SQLite store and reappear on the next refresh
+  /// (a refresh always fetches the newest page) or via the live tail's "N
+  /// new posts" pill. 400 ≈ 8 pages — plenty of scroll-back head-room while
+  /// bounding memory and rebuild cost.
+  static const _maxInMemoryEvents = 400;
+
+  static List<NostrEvent> _capWindow(List<NostrEvent> events) {
+    if (events.length <= _maxInMemoryEvents) return events;
+    return events.sublist(events.length - _maxInMemoryEvents);
   }
 
   static List<NostrEvent> _dedupe(List<NostrEvent> events) {
@@ -493,22 +633,6 @@ class FeedNotifier extends Notifier<FeedState> {
     return events.where((e) => seen.add(e.id)).toList();
   }
 }
-
-/// A monotonic counter bumped whenever engagement events land in the store.
-/// PostCards watch this to recompute their counts from the local SQL index —
-/// row-scoped rebuilds instead of every card rebuilding on every provider
-/// fan-out (the other half of the feed-jank fix).
-final engagementVersionProvider = StateProvider<int>((ref) => 0);
-
-/// Local engagement counts for one event, straight from the SQLite index.
-/// Replaces the per-event `engagementProvider` relay query in the feed.
-final localEngagementProvider =
-    FutureProvider.family<EventCounts, String>((ref, eventId) async {
-  // Recompute whenever a new engagement batch lands.
-  ref.watch(engagementVersionProvider);
-  final map = await EventStore.instance.engagementFor([eventId]);
-  return map[eventId] ?? EventCounts();
-});
 
 /// Global ("For You") feed.
 final globalFeedProvider = NotifierProvider<FeedNotifier, FeedState>(

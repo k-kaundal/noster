@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
@@ -35,9 +37,17 @@ class QuickZapAmountNotifier extends Notifier<int> {
   Future<void> setAmount(int sats) async {
     if (sats <= 0) return;
     state = sats;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_key, sats);
+    // Debounced disk write — a slider/stepper fires this per tick, and each
+    // was a full SharedPreferences round-trip. The in-memory state is always
+    // current, so the write can lag.
+    _writeTimer?.cancel();
+    _writeTimer = Timer(const Duration(milliseconds: 300), () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_key, sats);
+    });
   }
+
+  Timer? _writeTimer;
 }
 
 /// Above this, always show the full sheet — big spends deserve a decision.

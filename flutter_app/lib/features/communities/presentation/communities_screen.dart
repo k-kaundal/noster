@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
@@ -36,7 +39,7 @@ class _CommunitiesScreenState extends ConsumerState<CommunitiesScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: SearchBar(
               hintText: 'Search communities…',
-              leading: const Icon(Icons.search),
+              leading: const AppIcon('search'),
               elevation: const WidgetStatePropertyAll(0),
               backgroundColor: WidgetStatePropertyAll(
                 Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -73,7 +76,7 @@ class _CommunitiesScreenState extends ConsumerState<CommunitiesScreen> {
       floatingActionButton: auth.isLoggedIn
           ? FloatingActionButton.extended(
               onPressed: () => _showCreateSheet(context, ref),
-              icon: const Icon(Icons.add),
+              icon: const AppIcon('plus'),
               label: const Text('Create'),
             )
           : null,
@@ -239,7 +242,7 @@ class _CreateCommunitySheetState extends ConsumerState<_CreateCommunitySheet> {
                         ),
                       )
                     : IconButton(
-                        icon: const Icon(Icons.add_photo_alternate_outlined),
+                        icon: const AppIcon('image'),
                         tooltip: 'Upload cover image',
                         onPressed: _pickImage,
                       ),
@@ -249,7 +252,7 @@ class _CreateCommunitySheetState extends ConsumerState<_CreateCommunitySheet> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: AppShapes.radiusMd,
                   child: Image.network(
                     _imageCtrl.text.trim(),
                     height: 100,
@@ -273,7 +276,7 @@ class _CreateCommunitySheetState extends ConsumerState<_CreateCommunitySheet> {
                           color: colorScheme.onPrimary,
                         ),
                       )
-                    : const Icon(Icons.check_rounded),
+                    : const AppIcon('check'),
                 label: const Text('Create'),
               ),
             ),
@@ -302,9 +305,13 @@ class _CommunityCard extends ConsumerWidget {
         .where((t) => true)
         .length; // p tags = moderators in NIP-72
 
-    return Card(
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: () => context.push('/communities/detail', extra: event),
         child: Column(
@@ -327,44 +334,48 @@ class _CommunityCard extends ConsumerWidget {
                   : _BannerFallback(scheme: scheme),
             ),
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: AppSpacing.paddingSm,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     name,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xxs),
                   Text(
                     description.isEmpty ? 'A Nostr community' : description,
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.xs),
                   // Member/mod count + open hint — no fake "Join" button.
                   Row(
                     children: [
-                      Icon(Icons.shield_outlined,
-                          size: 14, color: scheme.onSurfaceVariant),
-                      const SizedBox(width: 4),
+                      AppIcon('users', size: AppIconSize.sm, color: scheme.onSurfaceVariant),
+                      const SizedBox(width: AppSpacing.xxs),
                       Expanded(
                         child: Text(
                           '$moderators moderator${moderators == 1 ? '' : 's'}',
-                          style: TextStyle(
-                              fontSize: 12, color: scheme.onSurfaceVariant),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      Icon(Icons.chevron_right_rounded,
-                          size: 18, color: scheme.onSurfaceVariant),
+                      AppIcon('chevron_r', size: AppIconSize.md, color: scheme.onSurfaceVariant),
                     ],
                   ),
                 ],
@@ -384,18 +395,10 @@ class _BannerFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [scheme.primary, scheme.tertiary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
+      color: scheme.surfaceContainerHigh,
       child: Center(
-        child: Icon(
-          Icons.groups_rounded,
-          color: Colors.white.withValues(alpha: 0.6),
-          size: 36,
+        child: AppIcon('group', color: scheme.onSurfaceVariant,
+          size: AppIconSize.xl,
         ),
       ),
     );

@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/boost/application/boost_providers.dart';
+import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 
 class TrendingScreen extends ConsumerStatefulWidget {
@@ -63,11 +69,21 @@ class _TrendingScreenState extends ConsumerState<TrendingScreen> {
               subtitle: 'Trending posts will appear here.',
             );
           }
+          // Drop posts the content filter hides and posts with nothing
+          // renderable BEFORE ranking — a PostCard collapses to
+          // SizedBox.shrink() for those, and ranking the pre-collapse list
+          // left orphan rank badges beside empty rows and gaps in the
+          // numbering (the "serial number without a post" bug).
+          final visible = events.where((e) {
+            if (!NoteContent.hasRenderableContent(e)) return false;
+            final verdict = filteredEventVerdict(ref, e);
+            return verdict.action != FilterAction.hide;
+          }).toList();
           // Paid boosts slot into the organic ranking per the placement
           // rules (10% cap, 1-per-8 spacing, labeled "Boosted" on the card).
           // Rank badges count ORGANIC items only — a paid slot has no rank.
-          final placed = ref.watch(boostedFeedProvider(events)).valueOrNull;
-          final items = placed?.items ?? events;
+          final placed = ref.watch(boostedFeedProvider(visible)).valueOrNull;
+          final items = placed?.items ?? visible;
           final promoted = placed?.promoted ?? const <String>{};
 
           var organicRank = 0;
@@ -122,22 +138,23 @@ class _TrendingPostCard extends StatelessWidget {
               color: rank != null && rank <= 3
                   ? scheme.primary.withValues(alpha: 0.15)
                   : scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: AppShapes.radiusSm,
             ),
             child: Center(
               child: rank != null
                   ? Text(
                       '$rank',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        color: rank <= 3
-                            ? scheme.primary
-                            : scheme.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: rank <= 3
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
                     )
-                  : const Icon(Icons.bolt_rounded,
-                      size: 14, color: Colors.amber),
+                  : const AppIcon('zap', size: 14, color: AppActionColors.zap),
             ),
           ),
         ),

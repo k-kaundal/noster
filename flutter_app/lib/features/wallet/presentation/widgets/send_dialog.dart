@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/qr_scan_sheet.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
@@ -188,7 +188,7 @@ class _SendDialogState extends ConsumerState<SendDialog> {
               color: scheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.arrow_upward, size: 16),
+            child: const AppIcon('arrow_up', size: 16),
           ),
           const SizedBox(width: 10),
           const Text('Send sats'),
@@ -207,12 +207,12 @@ class _SendDialogState extends ConsumerState<SendDialog> {
                 decoration: InputDecoration(
                   labelText: 'Recipient',
                   hintText: 'name@domain.com · lnbc… · lnurl…',
-                  prefixIcon: const Icon(Icons.bolt),
+                  prefixIcon: const AppIcon('zap', size: AppIconSize.md),
                   suffixIcon: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.content_paste_rounded, size: 18),
+                        icon: const AppIcon('edit', size: 18),
                         tooltip: 'Paste',
                         onPressed: _paste,
                       ),
@@ -249,7 +249,7 @@ class _SendDialogState extends ConsumerState<SendDialog> {
                   controller: _amountController,
                   decoration: const InputDecoration(
                     labelText: 'Amount (sats)',
-                    prefixIcon: Icon(Icons.currency_bitcoin),
+                    prefixIcon: AppIcon('zap', size: AppIconSize.md),
                   ),
                   keyboardType: TextInputType.number,
                   onChanged: (_) => setState(() {}),
@@ -264,7 +264,7 @@ class _SendDialogState extends ConsumerState<SendDialog> {
                   controller: _commentController,
                   decoration: const InputDecoration(
                     labelText: 'Message (optional)',
-                    prefixIcon: Icon(Icons.chat_bubble_outline),
+                    prefixIcon: AppIcon('comment', size: AppIconSize.md),
                   ),
                 ),
               ],
@@ -357,7 +357,7 @@ class _SendDialogState extends ConsumerState<SendDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.send_rounded, size: 18),
+              : const AppIcon('send', size: 18),
           label: Text(
             _sending
                 ? 'Sending…'
@@ -408,7 +408,7 @@ class _DecodedInvoiceCard extends ConsumerWidget {
         padding: const EdgeInsets.only(top: 8),
         child: Row(
           children: [
-            Icon(Icons.error_outline, size: 14, color: scheme.error),
+            AppIcon('eye_off', size: 14, color: scheme.error),
             const SizedBox(width: 6),
             Expanded(
               child: Text(

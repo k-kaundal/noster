@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/studio/application/studio_providers.dart';
 import 'package:nostrfeed_mobile/features/studio/domain/zap_goal.dart';
@@ -26,9 +29,12 @@ class ZapGoalCard extends ConsumerWidget {
     final raisedSats = (progress.raisedMsat / 1000).round();
     final targetSats = (progress.targetMsat / 1000).round();
 
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Padding(
         padding: AppSpacing.paddingMd,
         child: Column(
@@ -36,8 +42,7 @@ class ZapGoalCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.track_changes_rounded,
-                    size: 18, color: scheme.primary),
+                AppIcon('target', size: 18, color: scheme.primary),
                 AppSpacing.gapXs,
                 Expanded(
                   child: Text(
@@ -47,21 +52,24 @@ class ZapGoalCard extends ConsumerWidget {
                             : 'Fundraising goal'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
                 if (progress.isReached)
-                  const _Chip(label: 'Reached', color: Colors.green)
+                  const _Chip(label: 'Reached', color: AppStatusColors.success)
                 else if (progress.isClosed)
                   _Chip(label: 'Closed', color: scheme.onSurfaceVariant),
                 if (isOwn) ...[
                   IconButton(
-                    icon: const Icon(Icons.campaign_rounded, size: 20),
+                    icon: const AppIcon('bell', size: 20),
                     tooltip: 'Announce in a post',
                     onPressed: () => _announce(context, ref),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                    icon: const AppIcon('eye_off', size: 20),
                     tooltip: 'Retire goal',
                     onPressed: () => _confirmRetire(context, ref),
                   ),
@@ -74,16 +82,20 @@ class ZapGoalCard extends ConsumerWidget {
                 goal.description,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ],
             AppSpacing.gapMd,
             ClipRRect(
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: AppShapes.radiusXs,
               child: LinearProgressIndicator(
                 value: progress.fraction,
                 minHeight: 8,
+                backgroundColor: scheme.surfaceContainerHighest,
+                color: AppActionColors.zapFor(scheme.brightness),
               ),
             ),
             AppSpacing.gapXs,
@@ -92,13 +104,18 @@ class ZapGoalCard extends ConsumerWidget {
               children: [
                 Text(
                   '${_format(raisedSats)} of ${_format(targetSats)} sats',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600, fontSize: 13),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppActionColors.zapFor(scheme.brightness),
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
                 ),
                 Text(
                   '${progress.percent}%',
-                  style:
-                      TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
               ],
             ),
@@ -108,8 +125,10 @@ class ZapGoalCard extends ConsumerWidget {
                 progress.contributorCount == 1
                     ? '1 contributor'
                     : '${progress.contributorCount} contributors',
-                style:
-                    TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ],
           ],
@@ -204,12 +223,15 @@ class _Chip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: AppShapes.radiusSm,
       ),
       child: Text(
         label.toUpperCase(),
-        style:
-            TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
       ),
     );
   }

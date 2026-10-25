@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
@@ -118,8 +121,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+          duration: AppMotion.normal,
+          curve: AppMotion.curve,
         );
       }
     } catch (e) {
@@ -144,8 +147,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
             SafeAvatar(
               imageUrl: picture,
               radius: 18,
-              fallback: Icon(Icons.group_rounded,
-                  size: 20, color: colorScheme.primary),
+              fallback: AppIcon('group', size: 20, color: colorScheme.primary),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -156,20 +158,20 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                     _groupName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   if (about.isNotEmpty)
                     Text(
                       about,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                 ],
               ),
@@ -178,7 +180,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline_rounded),
+            icon: const AppIcon('eye'),
             tooltip: 'Group info',
             onPressed: () => showModalBottomSheet(
               context: context,
@@ -188,7 +190,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
                   borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
+                      const BorderRadius.vertical(top: Radius.circular(AppShapes.xl)),
                 ),
                 child: GroupInfoSheet(groupEvent: widget.groupEvent),
               ),
@@ -206,15 +208,16 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.forum_outlined,
-                                size: 48,
-                                color: colorScheme.onSurfaceVariant),
+                            AppIcon('chat', size: AppIconSize.xl, color: colorScheme.onSurfaceVariant),
                             const SizedBox(height: 12),
                             Text(
                               'No messages yet',
-                              style: TextStyle(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -275,9 +278,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(22),
+                      color: colorScheme.surfaceContainerHighest,
+                      borderRadius: AppShapes.radiusPill,
                     ),
                     child: TextField(
                       controller: _messageController,
@@ -299,9 +301,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                 const SizedBox(width: 8),
                 Container(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [colorScheme.primary, colorScheme.tertiary],
-                    ),
+                    color: colorScheme.primary,
                     shape: BoxShape.circle,
                   ),
                   child: IconButton(
@@ -312,13 +312,13 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                             height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: Colors.white, // token-guard: allow — on flat accent send button
                             ),
                           )
-                        : const Icon(
-                            Icons.send_rounded,
-                            color: Colors.white,
-                            size: 20,
+                        : const AppIcon(
+                            'send',
+                            color: Colors.white, // token-guard: allow — on flat accent send button
+                            size: AppIconSize.md,
                           ),
                   ),
                 ),
@@ -366,7 +366,7 @@ class _ChatBubble extends ConsumerWidget {
               radius: 14,
               fallback: Text(
                 firstGrapheme(name),
-                style: const TextStyle(fontSize: 11),
+                style: Theme.of(context).textTheme.labelSmall,
               ),
             ),
             const SizedBox(width: 8),
@@ -381,11 +381,10 @@ class _ChatBubble extends ConsumerWidget {
                     padding: const EdgeInsets.only(left: 4, bottom: 2),
                     child: Text(
                       name,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.primary,
-                      ),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.primary,
+                          ),
                     ),
                   ),
                 Container(
@@ -395,35 +394,35 @@ class _ChatBubble extends ConsumerWidget {
                   ),
                   decoration: BoxDecoration(
                     color: isMine
-                        ? colorScheme.primaryContainer
+                        ? colorScheme.tertiary
                         : colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(14),
-                      topRight: const Radius.circular(14),
-                      bottomLeft: Radius.circular(isMine ? 14 : 4),
-                      bottomRight: Radius.circular(isMine ? 4 : 14),
+                      topLeft: const Radius.circular(AppShapes.lg),
+                      topRight: const Radius.circular(AppShapes.lg),
+                      bottomLeft:
+                          Radius.circular(isMine ? AppShapes.lg : AppShapes.xs),
+                      bottomRight:
+                          Radius.circular(isMine ? AppShapes.xs : AppShapes.lg),
                     ),
                   ),
                   child: NoteContent(
                     event: event,
-                    textStyle: TextStyle(
-                      fontSize: 14,
-                      height: 1.35,
-                      color: isMine
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.onSurface,
-                    ),
+                    textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          height: 1.35,
+                          color: isMine
+                              ? colorScheme.onTertiary
+                              : colorScheme.onSurface,
+                        ),
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
                   child: Text(
                     timeago.format(time, locale: 'en_short'),
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: colorScheme.onSurfaceVariant
-                          .withValues(alpha: 0.6),
-                    ),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.6),
+                        ),
                   ),
                 ),
               ],

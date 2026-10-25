@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/app/router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart' show DecryptedDm;
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/services/local_notification_service.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
 
 /// A pending "someone sent you a message" banner.
@@ -39,11 +41,18 @@ class DmNotifier extends Notifier<DmAlert?> {
   final Map<String, int> _alerted = {};
   bool _primed = false;
 
+  /// Auto-dismiss timer for the CURRENT alert — owned by the notifier, not
+  /// the banner widget (the banner re-armed a 4s `Future.delayed` on EVERY
+  /// rebuild — each profile resolution stacked another callback).
+  Timer? _dismissTimer;
+  static const _autoDismissAfter = Duration(seconds: 4);
+
   @override
   DmAlert? build() {
     ref.listen(conversationListProvider, (prev, next) {
       next.whenData(_onConversations);
     });
+    ref.onDispose(() => _dismissTimer?.cancel());
     return null;
   }
 
@@ -80,7 +89,7 @@ class DmNotifier extends Notifier<DmAlert?> {
       // opening chat re-fires a "new message" notification for messages you
       // already read. A message only notifies when it arrives AFTER the
       // peer's last-read watermark AND after any prior alert for it.
-      final store = ref.read(dmStoreProvider);
+      final store = ref.read(dmStoreProvider.notifier);
       final created = d.createdAt;
       if (!store.isUnreadFrom(c.peer, c.lastEvent, created)) {
         // Keep the dedupe watermark ahead so this event never alerts later.
@@ -113,6 +122,12 @@ class DmNotifier extends Notifier<DmAlert?> {
 
       _alerted[c.peer] = ts;
       state = DmAlert(peerPubkey: c.peer, preview: d.plaintext, latestTs: ts);
+      // Auto-dismiss: one timer per alert, re-armed only when a NEW alert
+      // replaces the current one (never on widget rebuilds).
+      _dismissTimer?.cancel();
+      _dismissTimer = Timer(_autoDismissAfter, () {
+        if (state?.latestTs == ts) state = null;
+      });
       // Phone notification (works backgrounded, like FB/Insta). The sender's
       // name resolves async — fire with the short key, upgrade when loaded.
       final name = ref
@@ -135,12 +150,15 @@ class DmNotifier extends Notifier<DmAlert?> {
   int _effectiveTs(
     ({String peer, NostrEvent lastEvent, DecryptedDm? decrypted}) c,
   ) {
-    final arrival = ref.read(dmStoreProvider).arrivalTsOf(c.lastEvent.id);
+    final arrival = ref.read(dmStoreProvider.notifier).arrivalTsOf(c.lastEvent.id);
     final created = c.decrypted?.createdAt ?? c.lastEvent.createdAt;
     return arrival != null && arrival > created ? arrival : created;
   }
 
-  void dismiss() => state = null;
+  void dismiss() {
+    _dismissTimer?.cancel();
+    state = null;
+  }
 }
 
 final dmNotifierProvider = NotifierProvider<DmNotifier, DmAlert?>(
@@ -162,12 +180,8 @@ class DmAlertBanner extends ConsumerWidget {
     final name = profileAsync.valueOrNull?.displayNameOrName ??
         '${alert.peerPubkey.substring(0, 8)}…';
 
-    // Auto-dismiss after a few seconds.
-    Future.delayed(const Duration(seconds: 4), () {
-      if (ref.read(dmNotifierProvider)?.latestTs == alert.latestTs) {
-        ref.read(dmNotifierProvider.notifier).dismiss();
-      }
-    });
+    // Auto-dismiss lives in DmNotifier (a Timer per alert) — NOT here:
+    // a `Future.delayed` in build re-armed on EVERY rebuild.
 
     return SafeArea(
       child: Padding(
@@ -200,8 +214,7 @@ class DmAlertBanner extends ConsumerWidget {
                             : null,
                     child: profileAsync.valueOrNull?.picture == null ||
                             profileAsync.valueOrNull!.picture!.isEmpty
-                        ? Icon(Icons.lock_rounded,
-                            size: 18, color: colorScheme.primary)
+                        ? AppIcon('key', size: 18, color: colorScheme.primary)
                         : null,
                   ),
                   const SizedBox(width: 12),

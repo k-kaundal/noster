@@ -1,18 +1,23 @@
 
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/connectivity_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
+import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
@@ -60,15 +65,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                     ],
                   ),
                 ),
-                // Home AI shortcut — a compact ✨ chip right on the tab row,
-                // next to the avatar (the shell AppBar button covers it too,
-                // but this one sits inside the feed itself).
+                // Home AI shortcut — a compact ✨ chip on the tab row. The
+                // avatar lives in the shell AppBar now (→/you), so it's
+                // removed here — just the AI icon remains.
                 if (aiAvailable)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
                     child: IconButton(
-                      icon: Icon(
-                        Icons.auto_awesome_rounded,
+                      icon: AppIcon(
+                        'sparkle',
+                        size: AppIconSize.lg,
                         color: colorScheme.primary,
                       ),
                       tooltip: 'AI Assistant',
@@ -79,29 +85,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                       },
                     ),
                   ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      if (auth.isLoggedIn && auth.pubkey != null) {
-                        context.push('/profile/${auth.pubkey}');
-                      } else {
-                        context.push('/login');
-                      }
-                    },
-                    child: SafeAvatar(
-                      imageUrl: auth.profile?.picture,
-                      radius: 16,
-                      backgroundColor: colorScheme.primaryContainer,
-                      fallback: Icon(
-                        Icons.person_rounded,
-                        size: 18,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -124,7 +107,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                   HapticFeedback.mediumImpact();
                   context.push('/compose');
                 },
-                icon: const Icon(Icons.edit_rounded),
+                icon: const AppIcon('edit'),
                 label: const Text('Post'),
                 elevation: 4,
               ),
@@ -149,6 +132,13 @@ class _FeedTabState extends ConsumerState<_FeedTab>
     with AutomaticKeepAliveClientMixin {
   final _scrollController = ScrollController();
 
+  /// Scroll-driven image prefetch (R7, Amethyst PR #3325 pattern): warm the
+  /// next few items' images OFF-SCREEN so they decode before scrolling in,
+  /// instead of mid-frame during a fast fling. Debounced 150 ms, triggers
+  /// every ~5 items of movement, bounded to a small lookahead window.
+  Timer? _prefetchDebounce;
+  int _lastPrefetchIndex = -1;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -160,6 +150,7 @@ class _FeedTabState extends ConsumerState<_FeedTab>
 
   @override
   void dispose() {
+    _prefetchDebounce?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -181,6 +172,60 @@ class _FeedTabState extends ConsumerState<_FeedTab>
           : ref.read(globalFeedProvider.notifier);
       notifier.loadMore();
     }
+    _schedulePrefetch();
+  }
+
+  /// Estimate the first visible item from the scroll offset and prefetch the
+  /// images of the next [_prefetchAhead] items. Debounced so a fling warms
+  /// once at the end instead of 60× during it.
+  void _schedulePrefetch() {
+    _prefetchDebounce?.cancel();
+    _prefetchDebounce = Timer(const Duration(milliseconds: 150), _prefetch);
+  }
+
+  /// Average feed card height used to estimate the visible index from the
+  /// scroll offset. Cards are variable-height, so this is approximate —
+  /// prefetch is a warm-up, not a correctness path, so an off-by-a-few
+  /// window is fine.
+  static const _avgCardExtent = 320.0;
+
+  /// How many items past the (estimated) first visible one to warm.
+  static const _prefetchAhead = 6;
+
+  void _prefetch() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final events = ref.read(_provider).events;
+    if (events.isEmpty) return;
+    final firstVisible =
+        (_scrollController.offset / _avgCardExtent).floor().clamp(0, events.length - 1);
+    // Only do the work when we've moved ~5+ items since the last warm —
+    // avoids re-walking the same window on small scrolls.
+    if ((firstVisible - _lastPrefetchIndex).abs() < 5) return;
+    _lastPrefetchIndex = firstVisible;
+
+    final urls = <String>[];
+    final end = (firstVisible + _prefetchAhead).clamp(0, events.length);
+    for (var i = firstVisible; i < end; i++) {
+      for (final url in NoteParseCache.imagesFor(events[i])) {
+        urls.add(NoteParseCache.feedTileUrl(url));
+        if (urls.length >= 12) break; // bound per warm (see header note)
+      }
+      if (urls.length >= 12) break;
+    }
+    for (final url in urls) {
+      // precacheImage puts the decoded bitmap in the image cache keyed by
+      // the URL — the SAME resized URL the feed tile requests, so the tile
+      // hits a warm cache instead of decoding mid-frame. Errors are
+      // swallowed: a failed warm just means the tile loads (and self-heals)
+      // normally.
+      unawaited(
+        precacheImage(
+          CachedNetworkImageProvider(url, headers: kImageHttpHeaders),
+          context,
+          onError: (_, _) {},
+        ),
+      );
+    }
   }
 
   NotifierProvider<FeedNotifier, FeedState> get _provider => widget.following
@@ -196,24 +241,13 @@ class _FeedTabState extends ConsumerState<_FeedTab>
     // Following tab needs login.
     if (widget.following && !auth.isLoggedIn) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.people_outline, size: 64, color: Colors.grey),
-              const SizedBox(height: 16),
-              Text(
-                'Log in to see posts from people you follow',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: () => context.push('/login'),
-                child: const Text('Log in'),
-              ),
-            ],
+        child: EmptyState(
+          icon: Icons.people_outline,
+          title: 'Log in to see posts from people you follow',
+          iconColor: Colors.grey,
+          action: FilledButton(
+            onPressed: () => context.push('/login'),
+            child: const Text('Log in'),
           ),
         ),
       );
@@ -254,7 +288,7 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                           action: FilledButton.tonalIcon(
                             onPressed: () =>
                                 ref.read(_provider.notifier).refresh(),
-                            icon: const Icon(Icons.refresh),
+                            icon: const AppIcon('repost'),
                             label: const Text('Refresh'),
                           ),
                         ),
@@ -326,14 +360,15 @@ class _FeedTabState extends ConsumerState<_FeedTab>
               child: Center(
                 child: _NewPostsPill(
                   count: feed.newCount,
+                  authorPubkeys: feed.newPostAuthors,
                   onTap: () {
                     ref.read(_provider.notifier).showNewPosts();
                     // Return to the top so the new posts are visible.
                     if (_scrollController.hasClients) {
                       _scrollController.animateTo(
                         0,
-                        duration: const Duration(milliseconds: 350),
-                        curve: Curves.easeOut,
+                        duration: AppMotion.normal,
+                        curve: AppMotion.curve,
                       );
                     }
                   },
@@ -363,9 +398,9 @@ class _OfflineBanner extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              Icon(
-                offline ? Icons.cloud_off_rounded : Icons.sync_problem_rounded,
-                size: 16,
+              AppIcon(
+                offline ? 'wifi_off' : 'repost',
+                size: AppIconSize.sm,
                 color: scheme.onErrorContainer,
               ),
               const SizedBox(width: 8),
@@ -383,8 +418,7 @@ class _OfflineBanner extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(Icons.refresh_rounded,
-                  size: 16, color: scheme.onErrorContainer),
+              AppIcon('repost', size: 16, color: scheme.onErrorContainer),
             ],
           ),
         ),
@@ -394,10 +428,17 @@ class _OfflineBanner extends StatelessWidget {
 }
 
 /// The "N new posts" pill — tap to fold the live arrivals into the feed.
+/// Primal's NewPostsButton: a primary-colored pill with up to 3 stacked
+/// author avatars (`AvatarThumbnailsRow`) + a bold count capped at "20+".
 class _NewPostsPill extends StatelessWidget {
   final int count;
+  final List<String> authorPubkeys;
   final VoidCallback onTap;
-  const _NewPostsPill({required this.count, required this.onTap});
+  const _NewPostsPill({
+    required this.count,
+    required this.authorPubkeys,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -410,15 +451,21 @@ class _NewPostsPill extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.arrow_upward_rounded,
-                  size: 16, color: Colors.white),
-              const SizedBox(width: 6),
+              if (authorPubkeys.isNotEmpty) ...[
+                _AvatarStack(pubkeys: authorPubkeys),
+                const SizedBox(width: 8),
+              ] else ...[
+                const AppIcon('arrow_up', size: 16, color: Colors.white),
+                const SizedBox(width: 6),
+              ],
               Text(
-                '$count new post${count == 1 ? '' : 's'}',
+                count > 20
+                    ? '20+ new posts'
+                    : '$count new post${count == 1 ? '' : 's'}',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -428,6 +475,52 @@ class _NewPostsPill extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Up to 3 overlapping author avatars (Primal's AvatarThumbnailsRow) —
+/// each resolves its picture from the shared profile cache.
+class _AvatarStack extends ConsumerWidget {
+  final List<String> pubkeys;
+  const _AvatarStack({required this.pubkeys});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    const size = 22.0;
+    const overlap = 14.0;
+    final shown = pubkeys.take(3).toList();
+    return SizedBox(
+      width: size + (shown.length - 1) * overlap,
+      height: size,
+      child: Stack(
+        children: [
+          for (var i = 0; i < shown.length; i++)
+            Positioned(
+              left: i * overlap,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: scheme.primary, width: 1.5),
+                ),
+                child: SafeAvatar(
+                  imageUrl: ref
+                      .watch(profileProvider(shown[i]))
+                      .valueOrNull
+                      ?.picture,
+                  radius: size / 2 - 1.5,
+                  backgroundColor: scheme.primaryContainer,
+                  fallback: Icon(
+                    Icons.person_rounded,
+                    size: 12,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

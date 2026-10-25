@@ -3,11 +3,24 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/nwc_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/nwc_service.dart';
 
-/// NWC Wallet Connect screen: paste URI, scan QR, or select from stored
-/// connections. Shows active connection status and lets user disconnect.
+/// NWC Wallet Connect screen: paste URI, scan QR, or pick a saved
+/// connection. Redesigned for attractiveness + every device:
+///
+/// - **Adaptive**: content centers with a 560dp max width on tablets /
+///   desktop (mobile uses full width) — never a stretched-out form on a
+///   12" screen.
+/// - **Larger**: hero header, comfortable type, 48dp touch targets (the
+///   "make it bigger" ask) — still token-based, never magic numbers.
+/// - **Attractive**: a brand-gradient hero card + wallet-brand chips +
+///   clearer visual hierarchy (connect → scan → saved → about).
 class NwcScreen extends ConsumerStatefulWidget {
   const NwcScreen({super.key});
 
@@ -19,6 +32,10 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
   final _uriController = TextEditingController();
   final _aliasController = TextEditingController();
   bool _showScanner = false;
+
+  /// Content max width on large screens (tablet/desktop) — the form reads
+  /// at a comfortable measure instead of stretching edge-to-edge.
+  static const double _contentMaxWidth = 560;
 
   @override
   void dispose() {
@@ -34,245 +51,267 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nostr Wallet Connect'),
+        title: const Text('Wallet Connect'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // ── Active connection card ─────────────────────────────────
-          if (nwcState.isConnected && nwcState.activeConnection != null)
-            _activeConnectionCard(context, nwcState, colorScheme),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth > _contentMaxWidth + 2 * 32;
+          return Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
+              child: ListView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isWide ? AppSpacing.lg : AppSpacing.md,
+                  vertical: AppSpacing.md,
+                ),
+                children: [
+                  _heroCard(colorScheme: colorScheme),
 
-          // ── Error display ───────────────────────────────────────────
-          if (nwcState.error != null) ...[
-            Card(
-              color: colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Icon(Icons.error_outline, color: colorScheme.error),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        nwcState.error!,
-                        style: TextStyle(color: colorScheme.onErrorContainer),
+                  // ── Active connection ───────────────────────────────
+                  if (nwcState.isConnected &&
+                      nwcState.activeConnection != null) ...[
+                    AppSpacing.gapMd,
+                    _activeConnectionCard(context, nwcState, colorScheme),
+                  ],
+
+                  // ── Error ───────────────────────────────────────────
+                  if (nwcState.error != null) ...[
+                    AppSpacing.gapMd,
+                    _errorCard(context, nwcState, colorScheme),
+                  ],
+
+                  AppSpacing.gapMd,
+                  _connectCard(context, nwcState, colorScheme),
+
+                  // ── QR Scanner ──────────────────────────────────────
+                  if (_showScanner) ...[
+                    AppSpacing.gapMd,
+                    Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: SizedBox(
+                        height: 300,
+                        child: _QrScannerView(
+                          onScanned: (value) {
+                            _uriController.text = value;
+                            setState(() => _showScanner = false);
+                            _connect(context);
+                          },
+                        ),
                       ),
                     ),
                   ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
 
-          // ── Connect new wallet ──────────────────────────────────────
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.link, color: colorScheme.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Connect Wallet',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _uriController,
-                    decoration: InputDecoration(
-                      labelText: 'NWC Connection URI',
-                      hintText: 'nostr+walletconnect://…',
-                      prefixIcon: const Icon(Icons.bolt),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.paste),
-                        tooltip: 'Paste',
-                        onPressed: () async {
-                          final data = await Clipboard.getData('text/plain');
-                          if (data?.text != null) {
-                            _uriController.text = data!.text!;
-                          }
-                        },
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    maxLines: 2,
-                    minLines: 1,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _aliasController,
-                    decoration: InputDecoration(
-                      labelText: 'Alias (optional)',
-                      hintText: 'My Alby Wallet',
-                      prefixIcon: const Icon(Icons.label_outline),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Supported external wallets hint — users know what to paste.
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.info_outline_rounded,
-                                size: 15, color: colorScheme.primary),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Works with any NWC wallet',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Alby · Zeus · Wallet of Satoshi · Mutiny · Phoenix · Breez · Alby Hub\n'
-                          'In your wallet: find "Nostr Wallet Connect" → copy the connection URI or QR.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            height: 1.4,
+                  // ── Saved connections ───────────────────────────────
+                  if (nwcState.connections.isNotEmpty) ...[
+                    AppSpacing.gapLg,
+                    Text(
+                      'Saved connections',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.bold,
                           ),
-                        ),
-                      ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () =>
-                              setState(() => _showScanner = !_showScanner),
-                          icon: Icon(
-                              _showScanner ? Icons.close : Icons.qr_code_scanner),
-                          label:
-                              Text(_showScanner ? 'Hide Scanner' : 'Scan QR'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: nwcState.isLoading
-                              ? null
-                              : () => _connect(context),
-                          icon: nwcState.isLoading
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
-                                )
-                              : const Icon(Icons.link),
-                          label: const Text('Connect'),
-                        ),
-                      ),
-                    ],
-                  ),
+                    AppSpacing.gapSm,
+                    ...nwcState.connections.map(
+                      (conn) =>
+                          _connectionTile(context, conn, nwcState, colorScheme),
+                    ),
+                  ],
+
+                  AppSpacing.gapLg,
+                  _aboutCard(context, colorScheme),
+                  AppSpacing.gapMd,
                 ],
               ),
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Sections ─────────────────────────────────────────────────────────
+
+  /// The brand-gradient hero: what this screen IS, at a glance.
+  Widget _heroCard({required ColorScheme colorScheme}) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: AppTheme.brandGradient,
+        borderRadius: AppShapes.radiusLg,
+      ),
+      padding: AppSpacing.paddingLg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: AppSpacing.paddingSm,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: AppShapes.radiusMd,
+            ),
+            child: const AppIcon('link', size: AppIconSize.xl, color: Colors.white),
           ),
-
-          // ── QR Scanner ──────────────────────────────────────────────
-          if (_showScanner) ...[
-            const SizedBox(height: 16),
-            Card(
-              clipBehavior: Clip.antiAlias,
-              child: SizedBox(
-                height: 280,
-                child: _QrScannerView(
-                  onScanned: (value) {
-                    _uriController.text = value;
-                    setState(() => _showScanner = false);
-                    // Connect straight away — the scan IS the intent. Filling
-                    // the field and stopping made the flow look broken: the QR
-                    // scanned and then nothing happened.
-                    _connect(context);
-                  },
+          AppSpacing.gapMd,
+          Text(
+            'Connect your wallet',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
                 ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 24),
-
-          // ── Stored connections ──────────────────────────────────────
-          if (nwcState.connections.isNotEmpty) ...[
-            Text(
-              'Saved Connections',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            ...nwcState.connections.map(
-              (conn) => _connectionTile(context, conn, nwcState, colorScheme),
-            ),
-          ],
-
-          // ── Help section ────────────────────────────────────────────
-          const SizedBox(height: 24),
-          Card(
-            color: colorScheme.surfaceContainerHighest,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.info_outline,
-                          size: 18, color: colorScheme.onSurfaceVariant),
-                      const SizedBox(width: 8),
-                      Text(
-                        'What is NWC?',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Nostr Wallet Connect (NIP-47) lets you connect a remote '
-                    'Lightning wallet (Alby, Mutiny, Umbrel, etc.) and pay '
-                    'invoices or receive zaps without leaving the app.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-            ),
+          ),
+          AppSpacing.gapXs,
+          Text(
+            'Pay invoices and receive zaps straight from NostrFeed with any NWC wallet.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  height: 1.35,
+                ),
           ),
         ],
       ),
     );
   }
 
-  // ── Widgets ──────────────────────────────────────────────────────────
+  Widget _errorCard(
+    BuildContext context,
+    NwcState state,
+    ColorScheme colorScheme,
+  ) {
+    return Card(
+      color: colorScheme.errorContainer,
+      child: Padding(
+        padding: AppSpacing.paddingMd,
+        child: Row(
+          children: [
+            AppIcon('eye_off', color: colorScheme.error),
+            AppSpacing.gapSm,
+            Expanded(
+              child: Text(
+                state.error!,
+                style: TextStyle(color: colorScheme.onErrorContainer),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _connectCard(
+    BuildContext context,
+    NwcState state,
+    ColorScheme colorScheme,
+  ) {
+    return Card(
+      child: Padding(
+        padding: AppSpacing.paddingLg,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'New connection',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            AppSpacing.gapMd,
+            TextField(
+              controller: _uriController,
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: InputDecoration(
+                labelText: 'Connection URI',
+                hintText: 'nostr+walletconnect://…',
+                prefixIcon: const AppIcon('zap', size: AppIconSize.md),
+                suffixIcon: IconButton(
+                  icon: const AppIcon('edit', size: AppIconSize.md),
+                  tooltip: 'Paste',
+                  onPressed: () async {
+                    final data = await Clipboard.getData('text/plain');
+                    if (data?.text != null) {
+                      _uriController.text = data!.text!;
+                    }
+                  },
+                ),
+                border: OutlineInputBorder(borderRadius: AppShapes.radiusMd),
+              ),
+              maxLines: 2,
+              minLines: 1,
+            ),
+            AppSpacing.gapMd,
+            TextField(
+              controller: _aliasController,
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: InputDecoration(
+                labelText: 'Name it (optional)',
+                hintText: 'My Alby wallet',
+                prefixIcon: const AppIcon('hash', size: AppIconSize.md),
+                border: OutlineInputBorder(borderRadius: AppShapes.radiusMd),
+              ),
+            ),
+            AppSpacing.gapMd,
+            _WalletChips(colorScheme: colorScheme),
+            AppSpacing.gapLg,
+            // Bigger, clearer actions — scan is the PRIMARY happy path.
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: () => setState(() => _showScanner = !_showScanner),
+              icon: AppIcon(
+                _showScanner ? 'eye_off' : 'qr',
+                size: AppIconSize.md,
+                color: colorScheme.onPrimary,
+              ),
+              label: Text(_showScanner ? 'Hide scanner' : 'Scan QR code'),
+            ),
+            AppSpacing.gapSm,
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: state.isLoading ? null : () => _connect(context),
+              icon: state.isLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : AppIcon('link', size: AppIconSize.md, color: colorScheme.primary),
+              label: const Text('Connect with URI'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _aboutCard(BuildContext context, ColorScheme colorScheme) {
+    return Card(
+      color: colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: AppSpacing.paddingMd,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppIcon('eye', size: AppIconSize.md, color: colorScheme.onSurfaceVariant),
+            AppSpacing.gapSm,
+            Expanded(
+              child: Text(
+                'Nostr Wallet Connect (NIP-47) links a remote Lightning wallet '
+                'so you can pay and receive without leaving the app. Your '
+                'keys stay in the wallet — NostrFeed never sees them.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _activeConnectionCard(
     BuildContext context,
@@ -284,51 +323,54 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
     return Card(
       color: colorScheme.primaryContainer,
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: AppSpacing.paddingMd,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Icon(Icons.check_circle, color: colorScheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
+            Container(
+              padding: AppSpacing.paddingSm,
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: AppIcon('check', color: colorScheme.primary),
+            ),
+            AppSpacing.gapMd,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
                     conn.alias,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colorScheme.onPrimaryContainer,
                         ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Disconnect',
-                  onPressed: () => _disconnect(conn.id),
-                ),
-              ],
+                  if (service?.info != null)
+                    Text(
+                      '${service!.info!.network ?? "unknown"} · '
+                      '${service.info!.methods.length} methods',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onPrimaryContainer
+                                .withValues(alpha: 0.7),
+                          ),
+                    ),
+                  if (state.balanceSats != null)
+                    Text(
+                      '${state.balanceSats} sats',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                ],
+              ),
             ),
-            if (service?.info != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Network: ${service!.info!.network ?? "unknown"} • '
-                '${service.info!.methods.length} methods',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onPrimaryContainer
-                          .withValues(alpha: 0.7),
-                    ),
-              ),
-            ],
-            if (state.balanceSats != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Balance: ${state.balanceSats} sats',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-            ],
+            IconButton(
+              icon: AppIcon('eye_off', color: colorScheme.onPrimaryContainer),
+              tooltip: 'Disconnect',
+              onPressed: () => _disconnect(conn.id),
+            ),
           ],
         ),
       ),
@@ -343,16 +385,20 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
   ) {
     final isActive = state.activeId == conn.id;
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs,
+        ),
         leading: CircleAvatar(
           backgroundColor: isActive
               ? colorScheme.primaryContainer
               : colorScheme.surfaceContainerHighest,
-          child: Icon(
-            isActive ? Icons.check : Icons.account_balance_wallet_outlined,
+          child: AppIcon(
+            isActive ? 'check' : 'wallet',
+            size: AppIconSize.md,
             color: isActive ? colorScheme.primary : colorScheme.onSurfaceVariant,
-            size: 20,
           ),
         ),
         title: Text(
@@ -365,25 +411,17 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
           '${conn.walletPubkey.substring(0, 8)}…${conn.walletPubkey.substring(conn.walletPubkey.length - 4)}',
           style: Theme.of(context).textTheme.bodySmall,
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!isActive)
-              TextButton(
+        trailing: isActive
+            ? null
+            : TextButton(
                 onPressed: () =>
                     ref.read(nwcNotifierProvider.notifier).setActive(conn.id),
                 child: const Text('Switch'),
               ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20),
-              tooltip: 'Remove',
-              onPressed: () => _remove(conn.id),
-            ),
-          ],
-        ),
         onTap: isActive
             ? null
             : () => ref.read(nwcNotifierProvider.notifier).setActive(conn.id),
+        onLongPress: () => _remove(conn.id),
       ),
     );
   }
@@ -393,22 +431,14 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
   Future<void> _connect(BuildContext context) async {
     final uri = _uriController.text.trim();
     if (uri.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a NWC URI')),
-      );
+      AppToast.warning(context, 'Please enter a NWC URI');
       return;
     }
-
-    // Validate format before calling the service
     if (NwcService.parseUri(uri) == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('Invalid NWC URI format. Expected nostr+walletconnect://…')),
-      );
+      AppToast.error(
+          context, 'Invalid NWC URI format. Expected nostr+walletconnect://…');
       return;
     }
-
     final alias = _aliasController.text.trim().isEmpty
         ? null
         : _aliasController.text.trim();
@@ -420,18 +450,14 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
     if (ok && context.mounted) {
       _uriController.clear();
       _aliasController.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wallet connected')),
-      );
+      AppToast.success(context, 'Wallet connected');
     }
   }
 
   Future<void> _disconnect(String id) async {
     await ref.read(nwcNotifierProvider.notifier).removeConnection(id);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wallet disconnected')),
-      );
+      AppToast.success(context, 'Wallet disconnected');
     }
   }
 
@@ -439,7 +465,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Remove Connection'),
+        title: const Text('Remove connection'),
         content: const Text(
             'Remove this wallet connection? This does not affect the wallet itself.'),
         actions: [
@@ -457,11 +483,53 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
     if (confirmed == true) {
       await ref.read(nwcNotifierProvider.notifier).removeConnection(id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Connection removed')),
-        );
+        AppToast.success(context, 'Connection removed');
       }
     }
+  }
+}
+
+/// The supported-wallet chips — users instantly see which wallets work.
+class _WalletChips extends StatelessWidget {
+  const _WalletChips({required this.colorScheme});
+
+  final ColorScheme colorScheme;
+
+  static const _wallets = [
+    'Alby',
+    'Zeus',
+    'WoS',
+    'Phoenix',
+    'Breez',
+    'Alby Hub',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xs,
+      children: [
+        for (final w in _wallets)
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+              borderRadius: AppShapes.radiusPill,
+            ),
+            child: Text(
+              w,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+      ],
+    );
   }
 }
 
@@ -488,12 +556,10 @@ class _QrScannerViewState extends State<_QrScannerView> {
 
   @override
   Widget build(BuildContext context) {
-    // NO scanWindow. The old one was built from the SCREEN's centre
-    // (MediaQuery.size.center), but this scanner lives in a 280px card part
-    // way down a ListView — so the detection rect sat offset from the camera
-    // view and any QR outside that offset never scanned. Scanning the full
-    // frame and letting the overlay just *look* like a window is both simpler
-    // and correct; the overlay is cosmetic, the detection is not.
+    // NO scanWindow — the old one was built from the SCREEN's centre while
+    // the scanner lives in a card part-way down a ListView, so the detection
+    // rect sat offset from the camera view. Full-frame detection + a cosmetic
+    // overlay is both simpler and correct.
     return MobileScanner(
       controller: _controller,
       onDetect: (capture) {
@@ -576,7 +642,7 @@ class QrScannerOverlayShape extends ShapeBorder {
 
     // Dim background outside cut-out.
     final backgroundPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.5)
+      ..color = Colors.black.withValues(alpha: 0.5) // token-guard: allow — QR scrim
       ..style = PaintingStyle.fill;
     final backgroundPath = Path.combine(
       PathOperation.difference,

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/memberships/application/membership_providers.dart';
 import 'package:nostrfeed_mobile/features/studio/domain/subscription.dart';
@@ -197,7 +197,7 @@ class _TierEditorSheetState extends ConsumerState<TierEditorSheet> {
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: InputDecoration(
                       labelText: 'Price (sats)',
-                      prefixIcon: Icon(Icons.bolt, color: scheme.primary),
+                      prefixIcon: AppIcon('zap', size: AppIconSize.md, color: scheme.primary),
                     ),
                   ),
                 ),
@@ -257,7 +257,7 @@ class _TierEditorSheetState extends ConsumerState<TierEditorSheet> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.publish_rounded),
+                  : const AppIcon('share'),
               label: Text(editing ? 'Save changes' : 'Publish tier'),
             ),
             AppSpacing.gapSm,

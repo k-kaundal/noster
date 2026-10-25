@@ -11,6 +11,8 @@ import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
 import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -18,7 +20,6 @@ import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/boost/application/boost_providers.dart';
 import 'package:nostrfeed_mobile/features/boost/presentation/boost_sheet.dart';
-import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
 import 'package:nostrfeed_mobile/features/feed/application/post_actions.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/article_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
@@ -34,8 +35,10 @@ import 'package:timeago/timeago.dart' as timeago;
 /// "this account's posts are all empty" bug for repost-heavy accounts.
 /// Store-first (no relay hit when we've already ingested the target), then
 /// a bounded relay fetch.
-final repostTargetProvider =
-    FutureProvider.family<NostrEvent?, NostrEvent>((ref, repost) async {
+final repostTargetProvider = FutureProvider.family<NostrEvent?, NostrEvent>((
+  ref,
+  repost,
+) async {
   // The reposted event id is the LAST e-tag (NIP-18: the first e-tag is the
   // reposted note for kind 6; kind 16 may carry several).
   final eTags = repost.getTags('e');
@@ -65,7 +68,21 @@ class PostCard extends ConsumerStatefulWidget {
   final NostrEvent event;
   final bool isThreadView;
 
-  const PostCard({super.key, required this.event, this.isThreadView = false});
+  /// Primal-style thread connector lines drawn behind the avatar column —
+  /// the conversation-chain visual. The thread screen computes these from
+  /// index adjacency: a reply that's part of a continuous chain draws a line
+  /// up to the previous avatar and/or down to the next one. Ignored outside
+  /// the thread view.
+  final bool drawLineAboveAvatar;
+  final bool drawLineBelowAvatar;
+
+  const PostCard({
+    super.key,
+    required this.event,
+    this.isThreadView = false,
+    this.drawLineAboveAvatar = false,
+    this.drawLineBelowAvatar = false,
+  });
 
   @override
   ConsumerState<PostCard> createState() => _PostCardState();
@@ -171,7 +188,7 @@ class _PostCardState extends ConsumerState<PostCard> {
     // The user's own like/repost state still comes from the relay (it's a
     // per-user query the local index doesn't store).
     final interactionsAsync = ref.watch(
-      userInteractionsProvider([displayEvent.id]),
+      userInteractionsProvider(displayEvent.id),
     );
 
     final followsAsync = ref.watch(followsProvider);
@@ -225,6 +242,14 @@ class _PostCardState extends ConsumerState<PostCard> {
     final isOwnPost = auth.pubkey == displayEvent.pubkey;
     final bookmarkedIds = bookmarkedIdsAsync.valueOrNull ?? <String>{};
     final isBookmarked = bookmarkedIds.contains(displayEvent.id);
+    final brightness = Theme.of(context).brightness;
+
+    // Primal-style card grid: a fixed-width avatar column on the LEFT, and
+    // the header + content + actions in a column to its RIGHT (indented by
+    // the avatar width + gap). The repost notice aligns with the content
+    // column, not the card edge — the signature Primal/X feed look.
+    const avatarRadius = 20.0;
+    const contentIndent = avatarRadius * 2 + 10; // avatar column + gap = 50
 
     // The entrance fade only runs in a thread view (one card, one moment).
     // In a feed it must NOT run: the fade spawns an AnimationController per
@@ -245,201 +270,265 @@ class _PostCardState extends ConsumerState<PostCard> {
             ? null
             : () => context.push('/thread', extra: displayEvent),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ─── Repost header ─────────────────────────────────
+              // ─── Repost header — indented to the content column ──
               if (isRepost) ...[
-                Row(
-                  children: [
-                    Icon(
-                      Icons.repeat,
-                      size: 16,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        '$reposterName reposted',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                Padding(
+                  padding: const EdgeInsets.only(left: contentIndent),
+                  child: Row(
+                    children: [
+                      AppIcon(
+                        'repost',
+                        size: AppIconSize.xs,
+                        color: colorScheme.onSurfaceVariant,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '$reposterName reposted',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w500,
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
               ],
 
-              // ─── Author row ────────────────────────────────────
+              // ─── Avatar column + content column ─────────────────
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Avatar
+                  // LEFT: avatar column (tappable → profile)
                   GestureDetector(
                     onTap: () =>
                         context.push('/profile/${displayEvent.pubkey}'),
                     child: SafeAvatar(
                       imageUrl: authorPicture,
-                      radius: 22,
+                      radius: avatarRadius,
                       backgroundColor: colorScheme.primaryContainer,
                       fallback: Text(
                         firstGrapheme(authorName),
                         style: TextStyle(
                           color: colorScheme.onPrimaryContainer,
                           fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                          fontSize: 14,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  // Name / npub / timestamp
+                  const SizedBox(width: 10),
+
+                  // RIGHT: header + content + actions, all in one column
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // ─── Header: name / npub·time + follow + menu ──
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Flexible(
-                              child: Text(
-                                authorName,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          authorName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (profile?.nip05 != null &&
+                                          profile!.nip05!.isNotEmpty) ...[
+                                        const SizedBox(width: 4),
+                                        AppIcon(
+                                          'verified',
+                                          size: AppIconSize.xs,
+                                          color: colorScheme.primary,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 1),
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          '${_truncatedNpub(displayEvent.pubkey)} · $timeAgo',
+                                          style: TextStyle(
+                                            color: colorScheme.onSurfaceVariant,
+                                            fontSize: 13,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      // Paid placement is labeled, always — an
+                                      // unlabeled ad is how a feed loses its readers.
+                                      if (ref.watch(
+                                        isBoostedProvider(displayEvent.id),
+                                      ))
+                                        const _BoostedChip(),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
-                            if (profile?.nip05 != null &&
-                                profile!.nip05!.isNotEmpty) ...[
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.verified,
-                                size: 15,
-                                color: colorScheme.primary,
+                            // Follow button + options menu share ONE optical
+                            // line: both sit in a 30 dp-tall slot nudged
+                            // 3 dp down so they center against the two-line
+                            // name/handle header, with a real gap between
+                            // them (the shrink-wrapped menu alone sat flush
+                            // against Follow at the very top).
+                            if (auth.isLoggedIn && !isOwnPost)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 3),
+                                child: _FollowButton(
+                                  pubkey: displayEvent.pubkey,
+                                  isFollowing: isFollowing,
+                                ),
                               ),
-                            ],
+                            // Post options (report, etc.) — required for
+                            // Play review.
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4, top: 3),
+                              child: SizedBox(
+                                height: 30,
+                                child: Center(
+                                  child: _PostOptionsMenu(event: displayEvent),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 1),
+                        const SizedBox(height: 6),
+
+                        // ─── Content (indented under the header) ───
+                        // Articles (kind 30023) render as a compact preview
+                        // card that opens the full reader — never the full
+                        // markdown inline. Sensitive-content display mode
+                        // (user preference): hide / blur-until-tapped /
+                        // allow. Default blur.
+                        if (verdict.action == FilterAction.warn &&
+                            ref.watch(sensitiveModeProvider) ==
+                                SensitiveContentMode.hide)
+                          const SizedBox.shrink()
+                        else if (verdict.action == FilterAction.warn &&
+                            ref.watch(sensitiveModeProvider) ==
+                                SensitiveContentMode.blur)
+                          _ContentWarningCover(
+                            reason: verdict.reason,
+                            child: displayEvent.kind == 30023
+                                ? ArticleCard(event: displayEvent)
+                                : NoteContent(event: displayEvent),
+                          )
+                        else if (displayEvent.kind == 30023)
+                          ArticleCard(event: displayEvent)
+                        else ...[
+                          NoteContent(event: displayEvent),
+                          // NIP-88 polls (kind 1068 embedded in feeds or
+                          // referenced).
+                          if (displayEvent.kind == 1068)
+                            PollCard(event: displayEvent),
+                        ],
+                        const SizedBox(height: 8),
+
+                        // ─── Action bar (Primal palette) ───────────
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Flexible(
-                              child: Text(
-                                '${_truncatedNpub(displayEvent.pubkey)} · $timeAgo',
-                                style: TextStyle(
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontSize: 13,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            _ActionButton(
+                              icon: 'comment',
+                              count: replyCount,
+                              onTap: widget.isThreadView
+                                  ? null
+                                  : () => context.push(
+                                      '/thread',
+                                      extra: displayEvent,
+                                    ),
+                            ),
+                            _ActionButton(
+                              icon: 'repost',
+                              count: repostCount,
+                              color: isReposted
+                                  ? AppActionColors.repost(brightness)
+                                  : null,
+                              onTap: () => _handleRepost(
+                                context,
+                                ref,
+                                auth,
+                                displayEvent,
                               ),
                             ),
-                            // Paid placement is labeled, always — an
-                            // unlabeled ad is how a feed loses its readers.
-                            if (ref.watch(isBoostedProvider(displayEvent.id)))
-                              const _BoostedChip(),
+                            _ActionButton(
+                              icon: isLiked ? 'heart_filled' : 'heart',
+                              count: reactionCount,
+                              color: isLiked
+                                  ? AppActionColors.like(brightness)
+                                  : null,
+                              onTap: () =>
+                                  _handleLike(context, ref, auth, displayEvent),
+                            ),
+                            _ActionButton(
+                              icon: 'zap',
+                              count: zapCount,
+                              label: zapSats > 0
+                                  ? '${_formatSats(zapSats)} sats'
+                                  : null,
+                              // Zap keeps its signature amber as an invite,
+                              // active or not (Refined muted, AA per mode).
+                              color: AppActionColors.zapFor(brightness),
+                              tooltip: 'Tap: zap options · Hold: quick zap',
+                              onTap: () =>
+                                  _handleZap(context, ref, auth, displayEvent),
+                              onLongPress: () => _handleQuickZap(
+                                context,
+                                ref,
+                                auth,
+                                displayEvent,
+                              ),
+                            ),
+                            _ActionButton(
+                              icon: isBookmarked
+                                  ? 'bookmark_filled'
+                                  : 'bookmark',
+                              count: 0,
+                              color: isBookmarked
+                                  ? AppActionColors.bookmark
+                                  : null,
+                              onTap: () => _handleBookmark(
+                                context,
+                                ref,
+                                auth,
+                                isBookmarked,
+                                displayEvent,
+                              ),
+                            ),
+                            _ActionButton(
+                              icon: 'share',
+                              count: 0,
+                              onTap: () =>
+                                  _handleShare(context, ref, displayEvent),
+                            ),
                           ],
                         ),
                       ],
                     ),
-                  ),
-                  // Follow button
-                  if (auth.isLoggedIn && !isOwnPost)
-                    _FollowButton(
-                      pubkey: displayEvent.pubkey,
-                      isFollowing: isFollowing,
-                    ),
-                  // Post options (report, etc.) — required for Play review.
-                  _PostOptionsMenu(event: displayEvent),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              // ─── Content ───────────────────────────────────────
-              // Articles (kind 30023) render as a compact preview card that
-              // opens the full reader — never the full markdown inline.
-              // Sensitive-content display mode (user preference): hide /
-              // blur-until-tapped / allow. Default blur.
-              if (verdict.action == FilterAction.warn &&
-                  ref.watch(sensitiveModeProvider) ==
-                      SensitiveContentMode.hide)
-                const SizedBox.shrink()
-              else if (verdict.action == FilterAction.warn &&
-                  ref.watch(sensitiveModeProvider) ==
-                      SensitiveContentMode.blur)
-                _ContentWarningCover(
-                  reason: verdict.reason,
-                  child: displayEvent.kind == 30023
-                      ? ArticleCard(event: displayEvent)
-                      : NoteContent(event: displayEvent),
-                )
-              else if (displayEvent.kind == 30023)
-                ArticleCard(event: displayEvent)
-              else ...[
-                NoteContent(event: displayEvent),
-                // NIP-88 polls (kind 1068 embedded in feeds or referenced).
-                if (displayEvent.kind == 1068) PollCard(event: displayEvent),
-              ],
-              const SizedBox(height: 12),
-
-              // ─── Action bar ────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _ActionButton(
-                    icon: Icons.chat_bubble_outline,
-                    count: replyCount,
-                    onTap: widget.isThreadView
-                        ? null
-                        : () => context.push('/thread', extra: displayEvent),
-                  ),
-                  _ActionButton(
-                    icon: isReposted ? Icons.repeat : Icons.repeat_outlined,
-                    count: repostCount,
-                    color: isReposted ? Colors.green : colorScheme.secondary,
-                    onTap: () =>
-                        _handleRepost(context, ref, auth, displayEvent),
-                  ),
-                  _ActionButton(
-                    icon: isLiked ? Icons.favorite : Icons.favorite_border,
-                    count: reactionCount,
-                    color: isLiked ? Colors.red : null,
-                    onTap: () => _handleLike(context, ref, auth, displayEvent),
-                  ),
-                  _ActionButton(
-                    icon: Icons.bolt,
-                    count: zapCount,
-                    label: zapSats > 0 ? '${_formatSats(zapSats)} sats' : null,
-                    color: Colors.amber.shade700,
-                    tooltip: 'Tap: zap options · Hold: quick zap',
-                    onTap: () => _handleZap(context, ref, auth, displayEvent),
-                    onLongPress: () =>
-                        _handleQuickZap(context, ref, auth, displayEvent),
-                  ),
-                  _ActionButton(
-                    icon: isBookmarked ? Icons.bookmark : Icons.bookmark_border,
-                    count: 0,
-                    color: isBookmarked ? colorScheme.primary : null,
-                    onTap: () => _handleBookmark(
-                      context,
-                      ref,
-                      auth,
-                      isBookmarked,
-                      displayEvent,
-                    ),
-                  ),
-                  _ActionButton(
-                    icon: Icons.share_outlined,
-                    count: 0,
-                    onTap: () => _handleShare(context, ref, displayEvent),
                   ),
                 ],
               ),
@@ -449,8 +538,30 @@ class _PostCardState extends ConsumerState<PostCard> {
       ),
     );
 
-    if (!widget.isThreadView) return card;
-    return card.animate().fadeIn(duration: AppMotion.normal, curve: AppMotion.curve);
+    // Thread connector lines (Primal's drawLineAbove/BelowAvatar): one
+    // CustomPaint behind the whole card draws the vertical chain segments at
+    // the avatar's center-x — from the card's top edge down to the avatar
+    // (line above) and/or from the avatar down to the bottom edge (line
+    // below). Only the thread screen passes these flags; feeds never do.
+    Widget result = card;
+    if (widget.drawLineAboveAvatar || widget.drawLineBelowAvatar) {
+      result = CustomPaint(
+        painter: _ThreadConnectorPainter(
+          lineX: 12 + avatarRadius, // card padding + avatar center
+          avatarCenterY: 10 + avatarRadius, // card top padding + avatar center
+          drawAbove: widget.drawLineAboveAvatar,
+          drawBelow: widget.drawLineBelowAvatar,
+          color: colorScheme.outlineVariant,
+        ),
+        child: result,
+      );
+    }
+
+    if (!widget.isThreadView) return result;
+    return result.animate().fadeIn(
+      duration: AppMotion.normal,
+      curve: AppMotion.curve,
+    );
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────
@@ -472,7 +583,7 @@ class _PostCardState extends ConsumerState<PostCard> {
     }
 
     final interactionsAsync = ref.read(
-      userInteractionsProvider([displayEvent.id]),
+      userInteractionsProvider(displayEvent.id),
     );
     final currentlyReposted =
         _optimisticReposted ??
@@ -481,14 +592,15 @@ class _PostCardState extends ConsumerState<PostCard> {
     // Optimistic UI update; the actual publish/delete + provider refresh
     // is handled by the PostActions controller.
     setState(() => _optimisticReposted = !currentlyReposted);
-    ref.read(postActionsProvider).toggleRepost(
+    ref
+        .read(postActionsProvider)
+        .toggleRepost(
           event: displayEvent,
           currentlyReposted: currentlyReposted,
         );
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(currentlyReposted ? 'Repost removed' : 'Reposted!'),
-      ),
+    AppToast.success(
+      context,
+      currentlyReposted ? 'Repost removed' : 'Reposted!',
     );
   }
 
@@ -504,17 +616,16 @@ class _PostCardState extends ConsumerState<PostCard> {
     }
 
     final interactionsAsync = ref.read(
-      userInteractionsProvider([displayEvent.id]),
+      userInteractionsProvider(displayEvent.id),
     );
     final currentlyLiked =
         _optimisticLiked ??
         (interactionsAsync.valueOrNull?.likes[displayEvent.id] ?? false);
 
     setState(() => _optimisticLiked = !currentlyLiked);
-    ref.read(postActionsProvider).toggleLike(
-          event: displayEvent,
-          currentlyLiked: currentlyLiked,
-        );
+    ref
+        .read(postActionsProvider)
+        .toggleLike(event: displayEvent, currentlyLiked: currentlyLiked);
   }
 
   void _handleZap(
@@ -556,12 +667,7 @@ class _PostCardState extends ConsumerState<PostCard> {
     }
 
     // Immediate feedback — the zap feels instant while it settles.
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Zapping $amount sats…'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    AppToast.info(context, 'Zapping $amount sats…');
 
     final result = await sendQuickZap(
       ref.read,
@@ -573,36 +679,24 @@ class _PostCardState extends ConsumerState<PostCard> {
     switch (result) {
       case QuickZapResult.sent:
         HapticFeedback.heavyImpact();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('⚡ Zapped $amount sats!'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        AppToast.success(context, '⚡ Zapped $amount sats!');
         ref.read(postActionsProvider).refreshZaps(displayEvent.id);
       case QuickZapResult.noWallet:
         // No in-app wallet can pay — the sheet shows the QR fallback.
         _handleZap(context, ref, auth, displayEvent);
       case QuickZapResult.noAddress:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('This user has no lightning address set'),
-          ),
-        );
+        AppToast.warning(context, 'This user has no lightning address set');
       case QuickZapResult.amountOutOfBounds:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Amount outside this recipient's limits — adjust "
-                'your quick-zap amount in the zap sheet'),
-          ),
+        AppToast.warning(
+          context,
+          "Amount outside this recipient's limits — adjust "
+          'your quick-zap amount in the zap sheet',
         );
         _handleZap(context, ref, auth, displayEvent);
       case QuickZapResult.loginRequired:
         _showLoginPrompt(context);
       case QuickZapResult.failed:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Zap failed — try the zap sheet')),
-        );
+        AppToast.error(context, 'Zap failed — try the zap sheet');
         _handleZap(context, ref, auth, displayEvent);
     }
   }
@@ -619,22 +713,21 @@ class _PostCardState extends ConsumerState<PostCard> {
       return;
     }
     try {
-      await ref.read(postActionsProvider).toggleBookmark(
+      await ref
+          .read(postActionsProvider)
+          .toggleBookmark(
             event: displayEvent,
             isCurrentlyBookmarked: isBookmarked,
           );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isBookmarked ? 'Bookmark removed' : 'Bookmarked!'),
-            duration: const Duration(seconds: 1),
-          ),
+        AppToast.success(
+          context,
+          isBookmarked ? 'Bookmark removed' : 'Bookmarked!',
         );
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to bookmark: $e')));
+        AppToast.error(context, 'Failed to bookmark: $e');
       }
     }
   }
@@ -657,9 +750,7 @@ class _PostCardState extends ConsumerState<PostCard> {
   }
 
   void _showLoginPrompt(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Log in to interact with posts')),
-    );
+    AppToast.info(context, 'Log in to interact with posts');
   }
 
   String _formatSats(int n) {
@@ -713,17 +804,23 @@ class _PostOptionsMenu extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isBlocked =
-        ref.watch(blockedAuthorsProvider).contains(event.pubkey);
+    final isBlocked = ref.watch(blockedAuthorsProvider).contains(event.pubkey);
 
     return PopupMenuButton<String>(
-      icon: Icon(
-        Icons.more_vert_rounded,
-        size: 18,
+      icon: AppIcon(
+        'more',
+        size: AppIconSize.md,
         color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
       tooltip: 'Post options',
       padding: EdgeInsets.zero,
+      // Shrink the tap target to the icon (18 dp) instead of Material's
+      // default 48 dp box — the card header top-aligns accessories with the
+      // name line, and the big box centered the icon ~14 px below it.
+      style: IconButton.styleFrom(
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       onSelected: (value) async {
         switch (value) {
           case 'quote':
@@ -741,11 +838,7 @@ class _PostOptionsMenu extends ConsumerWidget {
             }
             showBoostSheet(context, event);
           case 'report':
-            showReportDialog(
-              context,
-              eventId: event.id,
-              pubkey: event.pubkey,
-            );
+            showReportDialog(context, eventId: event.id, pubkey: event.pubkey);
           case 'copy_text':
             Clipboard.setData(ClipboardData(text: event.content));
             AppToast.success(context, 'Text copied');
@@ -772,7 +865,7 @@ class _PostOptionsMenu extends ConsumerWidget {
           value: 'quote',
           child: Row(
             children: [
-              Icon(Icons.format_quote_rounded, size: 18),
+              AppIcon('article', size: 18),
               SizedBox(width: 10),
               Text('Quote post'),
             ],
@@ -783,8 +876,11 @@ class _PostOptionsMenu extends ConsumerWidget {
             value: 'boost',
             child: Row(
               children: [
-                Icon(Icons.rocket_launch_outlined,
-                    size: 18, color: Colors.amber),
+                Icon(
+                  Icons.rocket_launch_outlined,
+                  size: 18,
+                  color: Colors.amber,
+                ),
                 SizedBox(width: 10),
                 Text('Boost post'),
               ],
@@ -794,10 +890,7 @@ class _PostOptionsMenu extends ConsumerWidget {
           value: 'report',
           child: Row(
             children: [
-              Icon(
-                Icons.flag_outlined,
-                size: 18,
-                color: Theme.of(context).colorScheme.error,
+              AppIcon('target', size: 18, color: Theme.of(context).colorScheme.error,
               ),
               const SizedBox(width: 10),
               Text(
@@ -826,7 +919,7 @@ class _PostOptionsMenu extends ConsumerWidget {
           value: 'copy_text',
           child: Row(
             children: [
-              Icon(Icons.copy_outlined, size: 18),
+              AppIcon('edit', size: 18),
               SizedBox(width: 10),
               Text('Copy text'),
             ],
@@ -858,7 +951,7 @@ class _BoostedChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.bolt_rounded, size: 11, color: Colors.amber),
+            const AppIcon('zap', size: 11, color: Colors.amber),
             const SizedBox(width: 2),
             Text(
               'Boosted',
@@ -887,11 +980,14 @@ class _FollowButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
 
+    // Primal's FollowUnfollowButton treatment: a quiet pill that doesn't
+    // compete with the content — follow = onSurface bg / surface fg
+    // (inverted, not primary-filled); following = muted container.
     return SizedBox(
       height: 30,
       child: isFollowing
           ? OutlinedButton(
-              onPressed: () => _toggleFollow(ref),
+              onPressed: () => _toggleFollow(context, ref),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 side: BorderSide(color: colorScheme.outline),
@@ -908,21 +1004,31 @@ class _FollowButton extends ConsumerWidget {
               ),
             )
           : FilledButton(
-              onPressed: () => _toggleFollow(ref),
+              onPressed: () => _toggleFollow(context, ref),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
+                backgroundColor: colorScheme.onSurface,
+                foregroundColor: colorScheme.surface,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Text('Follow', style: TextStyle(fontSize: 12)),
+              child: const Text(
+                'Follow',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
             ),
     );
   }
 
-  Future<void> _toggleFollow(WidgetRef ref) async {
+  Future<void> _toggleFollow(BuildContext context, WidgetRef ref) async {
     final auth = ref.read(authStateProvider);
-    if (!auth.isLoggedIn || auth.isReadOnly) return;
+    // Silent no-op on a dead tap reads as a broken button — tell the user
+    // WHY nothing happened and where to go (Primal prompts sign-in too).
+    if (!auth.isLoggedIn || auth.isReadOnly) {
+      AppToast.info(context, 'Log in to follow people');
+      return;
+    }
 
     final nostr = ref.read(nostrServiceProvider);
     final follows = ref.read(followsProvider).valueOrNull ?? [];
@@ -934,13 +1040,23 @@ class _FollowButton extends ConsumerWidget {
     final event = nostr.updateFollows(updated);
     nostr.publish(event);
     ref.invalidate(followsProvider);
+
+    // Confirmation — a follow/unfollow that only flips a label is easy to
+    // miss; the toast carries the result (Primal toasts too).
+    if (context.mounted) {
+      AppToast.success(
+        context,
+        isFollowing ? 'Unfollowed' : 'Following — their posts join your feed',
+      );
+    }
   }
 }
 
 // ─── Action Button ─────────────────────────────────────────────────
 
-class _ActionButton extends StatefulWidget {
-  final IconData icon;
+class _ActionButton extends StatelessWidget {
+  /// Refined stroke-icon asset name (assets/icons/<icon>.svg).
+  final String icon;
   final int count;
   final String? label;
   final VoidCallback? onTap;
@@ -961,43 +1077,27 @@ class _ActionButton extends StatefulWidget {
   });
 
   @override
-  State<_ActionButton> createState() => _ActionButtonState();
-}
-
-class _ActionButtonState extends State<_ActionButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pop;
-
-  @override
-  void initState() {
-    super.initState();
-    _pop = AnimationController(vsync: this, duration: AppMotion.fast);
-  }
-
-  @override
-  void dispose() {
-    _pop.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final effectiveColor = widget.color ?? colorScheme.onSurfaceVariant;
+    final effectiveColor = color ?? colorScheme.onSurfaceVariant;
 
+    // FEED-PERF RULE: no per-card AnimationController — 6 of these buttons
+    // per PostCard × ~15 cards in viewport+cache = ~90 live tickers vsyncing
+    // every frame (battery + frame pressure, worse as the keep-alive tab
+    // grows). The tap "pop" is a fire-and-forget implicit animation instead:
+    // the only per-button State object exists for AppMotion.fast (150 ms)
+    // during an actual tap, not for the card's whole lifetime.
     final child = InkWell(
-      onTap: widget.onTap != null
+      onTap: onTap != null
           ? () {
               HapticFeedback.lightImpact();
-              _pop.forward(from: 0);
-              widget.onTap!();
+              onTap!();
             }
           : null,
-      onLongPress: widget.onLongPress != null
+      onLongPress: onLongPress != null
           ? () {
               HapticFeedback.mediumImpact();
-              _pop.forward(from: 0);
-              widget.onLongPress!();
+              onLongPress!();
             }
           : null,
       borderRadius: BorderRadius.circular(20),
@@ -1006,37 +1106,73 @@ class _ActionButtonState extends State<_ActionButton>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ScaleTransition(
-              scale: Tween<double>(begin: 1.0, end: 1.25).animate(
-                CurvedAnimation(parent: _pop, curve: AppMotion.curveEmphasis),
-              ),
-              child: Icon(widget.icon, size: 19, color: effectiveColor),
-            ),
-            if (widget.count > 0) ...[
+            _PopIcon(icon: icon, color: effectiveColor),
+            if (count > 0) ...[
               const SizedBox(width: 5),
               Text(
-                widget.label ?? _formatCount(widget.count),
-                style: TextStyle(
-                  color: effectiveColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
+                label ?? _formatCount(count),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: effectiveColor,
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
             ],
           ],
         ),
       ),
     );
-    if (widget.tooltip != null) {
-      return Tooltip(message: widget.tooltip!, child: child);
+    if (tooltip != null) {
+      return Tooltip(message: tooltip!, child: child);
     }
     return child;
   }
 
-  String _formatCount(int count) {
+  static String _formatCount(int count) {
     if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
     return count.toString();
+  }
+}
+
+/// The action icon with a tap "pop" scale — a self-contained implicit
+/// animation (restarts on every tap down) so the button needs no
+/// AnimationController of its own. The [State] object only lives in the
+/// element tree while the parent does, but the animation is driven by
+/// [TweenAnimationBuilder]'s shared ticker machinery rather than a
+/// dedicated per-button vsync callback.
+class _PopIcon extends StatefulWidget {
+  /// Refined stroke-icon asset name (assets/icons/<icon>.svg).
+  final String icon;
+  final Color color;
+
+  const _PopIcon({required this.icon, required this.color});
+
+  @override
+  State<_PopIcon> createState() => _PopIconState();
+}
+
+class _PopIconState extends State<_PopIcon> {
+  /// Monotonic counter bumped on every tap-down — restarting the tween.
+  int _pops = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      // Translucent so the tap still falls through to the parent's InkWell
+      // (this only observes the press to fire the pop; it never claims it).
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => setState(() => _pops++),
+      child: TweenAnimationBuilder<double>(
+        // A new key per tap-down restarts the tween from 1.25 → 1.0.
+        key: ValueKey(_pops),
+        tween: Tween(begin: 1.25, end: 1.0),
+        duration: AppMotion.fast,
+        curve: AppMotion.curveEmphasis,
+        builder: (context, value, child) =>
+            Transform.scale(scale: value, child: child),
+        child: AppIcon(widget.icon, size: AppIconSize.md, color: widget.color),
+      ),
+    );
   }
 }
 
@@ -1191,8 +1327,11 @@ class _ContentWarningCoverState extends State<_ContentWarningCover> {
         ),
         child: Column(
           children: [
-            Icon(Icons.visibility_off_outlined,
-                size: 28, color: scheme.onSurfaceVariant),
+            Icon(
+              Icons.visibility_off_outlined,
+              size: 28,
+              color: scheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 8),
             Text(
               'Sensitive content',
@@ -1281,4 +1420,61 @@ class _RepostCache {
     }
     return extracted;
   }
+}
+
+/// Draws the Primal-style thread connector segments behind the avatar
+/// column: a 2 dp vertical line at the avatar's center-x, running from the
+/// card's top edge to the avatar (chain continues upward) and/or from the
+/// avatar to the card's bottom edge (chain continues downward). The line
+/// stops at the avatar's edge so it never crosses the avatar image —
+/// Primal's `shareableGraphics` does exactly this with `drawWithCache`.
+class _ThreadConnectorPainter extends CustomPainter {
+  final double lineX;
+  final double avatarCenterY;
+  final bool drawAbove;
+  final bool drawBelow;
+  final Color color;
+
+  _ThreadConnectorPainter({
+    required this.lineX,
+    required this.avatarCenterY,
+    required this.drawAbove,
+    required this.drawBelow,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.butt;
+
+    // The line stops a couple px clear of the avatar so it reads as
+    // "connected to" the avatar, not "drawn under" it.
+    const avatarRadius = 20.0;
+    const clearance = 2.0;
+    final avatarTop = avatarCenterY - avatarRadius - clearance;
+    final avatarBottom = avatarCenterY + avatarRadius + clearance;
+
+    if (drawAbove) {
+      canvas.drawLine(Offset(lineX, 0), Offset(lineX, avatarTop), paint);
+    }
+    if (drawBelow) {
+      canvas.drawLine(
+        Offset(lineX, avatarBottom),
+        Offset(lineX, size.height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ThreadConnectorPainter old) =>
+      old.lineX != lineX ||
+      old.avatarCenterY != avatarCenterY ||
+      old.drawAbove != drawAbove ||
+      old.drawBelow != drawBelow ||
+      old.color != color;
 }

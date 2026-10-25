@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_badge.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 import 'package:nostrfeed_mobile/features/live/application/live_providers.dart';
@@ -126,21 +128,7 @@ class _GoLiveSheetState extends ConsumerState<GoLiveSheet> {
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'GO LIVE',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+                const StatusBadge.error('GO LIVE'),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -152,7 +140,7 @@ class _GoLiveSheetState extends ConsumerState<GoLiveSheet> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded),
+                  icon: const AppIcon('plus'),
                   tooltip: 'Close',
                   onPressed: () => Navigator.pop(context),
                 ),
@@ -211,7 +199,7 @@ class _GoLiveSheetState extends ConsumerState<GoLiveSheet> {
                         ),
                       )
                     : IconButton(
-                        icon: const Icon(Icons.add_photo_alternate_outlined),
+                        icon: const AppIcon('image'),
                         tooltip: 'Upload cover',
                         onPressed: _pickImage,
                       ),
@@ -221,7 +209,7 @@ class _GoLiveSheetState extends ConsumerState<GoLiveSheet> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: AppShapes.radiusMd,
                   child: Image.network(
                     _imageCtrl.text.trim(),
                     height: 90,
@@ -252,10 +240,9 @@ class _GoLiveSheetState extends ConsumerState<GoLiveSheet> {
                           color: colorScheme.onPrimary,
                         ),
                       )
-                    : const Icon(Icons.sensors_rounded),
+                    : const AppIcon('live'),
                 label: const Text('Go Live'),
                 style: FilledButton.styleFrom(
-                  backgroundColor: Colors.red,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
@@ -263,7 +250,10 @@ class _GoLiveSheetState extends ConsumerState<GoLiveSheet> {
             const SizedBox(height: 6),
             Text(
               'Published as a NIP-53 live activity (kind 30311) — visible on zap.stream, Amethyst, and other Nostr live clients.',
-              style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ],
         ),

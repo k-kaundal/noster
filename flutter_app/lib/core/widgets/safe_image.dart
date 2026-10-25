@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:octo_image/octo_image.dart';
 
 /// Avatar image that never crashes on HTTP errors (404/403/CDN outages) and
@@ -87,7 +88,7 @@ class SafeAvatar extends StatelessWidget {
                 // letter → image hard swap. OctoImage's placeholderBuilder +
                 // fadeInDuration does exactly this.
                 placeholderBuilder: (_) => _filled(bg, fallbackWidget),
-                fadeInDuration: const Duration(milliseconds: 250),
+                fadeInDuration: AppMotion.normal,
                 // On ANY load failure show the fallback — never propagate.
                 errorBuilder: (_, _, _) => _filled(bg, fallbackWidget),
               ),

@@ -1,5 +1,9 @@
 allprojects {
     repositories {
+        // Local mirror first: the JVM DNS resolver on this machine is broken
+        // (curl resolves fine, Java doesn't), so artifacts were pre-seeded
+        // here via curl --resolve. Gradle resolves from disk, no DNS needed.
+        maven { url = uri("file:///private/var/folders/1t/sw5y0cq10w38rtqk1njst73m0000gn/T/opencode/local-maven") }
         google()
         mavenCentral()
     }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 
@@ -72,10 +73,7 @@ class _UserTile extends ConsumerWidget {
           ),
           if (profile?.nip05 != null && profile!.nip05!.isNotEmpty) ...[
             const SizedBox(width: 4),
-            Icon(
-              Icons.verified_rounded,
-              size: 14,
-              color: Theme.of(context).colorScheme.primary,
+            AppIcon('verified', size: 14, color: Theme.of(context).colorScheme.primary,
             ),
           ],
         ],
@@ -85,22 +83,18 @@ class _UserTile extends ConsumerWidget {
               profile.nip05!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
             )
           : Text(
               '${pubkey.substring(0, 12)}…',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontFamily: 'monospace',
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontFamily: 'monospace',
+                  ),
             ),
-      trailing: Icon(
-        Icons.chevron_right_rounded,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      trailing: AppIcon('chevron_r', color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
       onTap: () => context.push('/profile/$pubkey'),
     );

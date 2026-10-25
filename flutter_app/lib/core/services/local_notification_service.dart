@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Notification categories — each gets its own Android channel so users can
 /// control them independently in system settings (like FB/Insta).
@@ -97,20 +101,128 @@ class LocalNotificationService {
 
   int _nextId = 1;
 
+  // ── Deduplication + burst collapsing (the "again and again" fix) ───────
+  //
+  // Two real problems, both standard mobile-notification practice:
+  //
+  // 1. **No persistent notified-ID set** → after an app restart, the
+  //    historical notifications fetch replays the same events and each one
+  //    fired a NEW phone notification ("I got 40 notifications for the same
+  //    likes on every launch"). Fix: a persisted set of event ids already
+  //    notified, so an event notifies EXACTLY ONCE, ever.
+  //
+  // 2. **No burst collapsing** → a viral post's 30 likes = 30 separate
+  //    notifications. Fix: Android-style grouping — same-type notifications
+  //    within a short window REPLACE the previous one with a count ("Alice
+  //    and 5 others liked your post"), like Instagram's collapsed tray.
+
+  static const _notifiedIdsPrefKey = 'notified_event_ids_v1';
+  static const _notifiedIdsCap = 500;
+
+  /// Event ids we've already shown a phone notification for (persisted).
+  Set<String>? _notifiedIds;
+
+  Future<void> _loadNotifiedIds() async {
+    if (_notifiedIds != null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_notifiedIdsPrefKey);
+      if (raw != null) {
+        _notifiedIds = (jsonDecode(raw) as List).cast<String>().toSet();
+      } else {
+        _notifiedIds = <String>{};
+      }
+    } catch (_) {
+      _notifiedIds = <String>{};
+    }
+  }
+
+  Future<void> _persistNotifiedIds() async {
+    final ids = _notifiedIds;
+    if (ids == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Keep it bounded: newest 500 ids (drop oldest by insertion order).
+      final list = ids.toList();
+      final trimmed = list.length > _notifiedIdsCap
+          ? list.sublist(list.length - _notifiedIdsCap)
+          : list;
+      await prefs.setString(_notifiedIdsPrefKey, jsonEncode(trimmed));
+    } catch (_) {}
+  }
+
+  /// Has this event id already fired a phone notification? Marks it if not.
+  /// Call this BEFORE showing — a true return means SKIP the notification.
+  Future<bool> alreadyNotified(String eventId) async {
+    await _loadNotifiedIds();
+    final ids = _notifiedIds!;
+    if (ids.contains(eventId)) return true;
+    ids.add(eventId);
+    unawaited(_persistNotifiedIds());
+    return false;
+  }
+
+  /// Test/reset hook: wipe the dedup set (logout / account switch).
+  Future<void> resetNotifiedIds() async {
+    _notifiedIds = <String>{};
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_notifiedIdsPrefKey);
+    } catch (_) {}
+  }
+
+  /// Per-type burst state: replaces the previous notification of the same
+  /// type within the window instead of stacking a new one.
+  final _burstWindow = const Duration(seconds: 30);
+  final Map<AppNotificationType, _Burst> _bursts = {};
+  // (the tuple `key` above is only used for type clarity)
+
   /// Show a notification. [route] is the in-app route to open on tap.
+  ///
+  /// [eventId] — when provided, the dedup set guarantees this event fires
+  /// EXACTLY ONCE across app launches (the historical-fetch replay fix).
+  /// [collapseKey] — when provided (e.g. the author pubkey), repeats within
+  /// the burst window UPDATE the existing notification with a count instead
+  /// of stacking (the Instagram-style collapsed tray).
   Future<void> show({
     required AppNotificationType type,
     required String title,
     required String body,
     required String route,
+    String? eventId,
+    String? collapseKey,
   }) async {
     if (!_initialized) return;
-    final id = _nextId = (_nextId + 1) % 100000;
+
+    // Dedup: an event notifies exactly once, ever.
+    if (eventId != null && await alreadyNotified(eventId)) return;
+
+    // Burst collapsing: same type+key within the window → update, not stack.
+    final now = DateTime.now();
+    String effectiveBody = body;
+    int id;
+    if (collapseKey != null) {
+      final burst = _bursts[type];
+      if (burst != null &&
+          burst.collapseKey == collapseKey &&
+          now.difference(burst.at) < _burstWindow) {
+        final newCount = burst.count + 1;
+        id = burst.id;
+        effectiveBody = _collapseBody(body, newCount);
+        _bursts[type] = _Burst(id, collapseKey, now, newCount);
+      } else {
+        id = _nextId = (_nextId + 1) % 100000;
+        _bursts[type] = _Burst(id, collapseKey, now, 1);
+      }
+    } else {
+      id = _nextId = (_nextId + 1) % 100000;
+    }
+
     try {
       await _plugin.show(
         id,
         title,
-        body,
+        effectiveBody,
         NotificationDetails(
           android: AndroidNotificationDetails(
             type.channelId,
@@ -137,35 +249,64 @@ class LocalNotificationService {
     }
   }
 
+  /// "Alice liked your post" + count → "Alice and 5 others liked your post".
+  static String _collapseBody(String body, int count) {
+    if (count <= 1) return body;
+    // Body shape is "<name> <action>"; fold the name into "name and N others".
+    final firstSpace = body.indexOf(' ');
+    if (firstSpace <= 0) return body;
+    final name = body.substring(0, firstSpace);
+    final rest = body.substring(firstSpace + 1);
+    return '$name and ${count - 1} others $rest';
+  }
+
+  /// Test hook for the collapse text (private logic, pinned by unit test).
+  @visibleForTesting
+  static String collapseBodyForTest(String body, int count) =>
+      _collapseBody(body, count);
+
   // ── Typed helpers ──────────────────────────────────────────────────
 
   Future<void> showMessage({
     required String senderName,
     required String preview,
     required String peerPubkey,
+    String? eventId,
   }) =>
       show(
         type: AppNotificationType.messages,
         title: senderName,
         body: preview.isEmpty ? 'Sent you an encrypted message' : preview,
         route: '/chat/$peerPubkey',
+        eventId: eventId,
+        // Each sender collapses into one conversation notification.
+        collapseKey: peerPubkey,
       );
 
-  Future<void> showSocial({required String text}) => show(
+  Future<void> showSocial({
+    required String text,
+    String? eventId,
+    String? authorPubkey,
+  }) =>
+      show(
         type: AppNotificationType.social,
         title: 'NostrFeed',
         body: text,
         route: '/notifications',
+        eventId: eventId,
+        collapseKey: authorPubkey,
       );
 
-  Future<void> showFollow({required String followerName}) => show(
+  Future<void> showFollow({required String followerName, String? eventId, String? authorPubkey}) => show(
         type: AppNotificationType.follows,
         title: 'New follower',
         body: '$followerName started following you',
         route: '/notifications',
+        eventId: eventId,
+        collapseKey: authorPubkey,
       );
 
-  Future<void> showZap({required String zapperName, required int sats}) =>
+  Future<void> showZap({required String zapperName, required int sats, String? eventId, String? authorPubkey}) =>
       show(
         type: AppNotificationType.zaps,
         title: '⚡ Zap received',
@@ -173,5 +314,17 @@ class LocalNotificationService {
             ? '$zapperName zapped you $sats sats'
             : '$zapperName zapped you',
         route: '/notifications',
+        eventId: eventId,
+        collapseKey: authorPubkey,
       );
+}
+
+/// One collapsed-notification slot: the id it last showed as, what it
+/// collapses on, when, and how many it's folded so far.
+class _Burst {
+  _Burst(this.id, this.collapseKey, this.at, this.count);
+  final int id;
+  final String collapseKey;
+  final DateTime at;
+  int count;
 }

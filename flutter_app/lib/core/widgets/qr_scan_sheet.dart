@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 
 /// One shared QR scanner for the whole app.
 ///
@@ -20,7 +21,9 @@ Future<String?> showQrScanSheet(
     isScrollControlled: true,
     backgroundColor: Colors.black,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(AppShapes.xl),
+      ),
     ),
     builder: (_) => _QrScanSheet(title: title, hint: hint),
   );
@@ -59,9 +62,8 @@ class _QrScanSheetState extends State<_QrScanSheet> {
                 Expanded(
                   child: Text(
                     widget.title,
-                    style: const TextStyle(
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: Colors.white,
-                      fontSize: 17,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -79,9 +81,8 @@ class _QrScanSheetState extends State<_QrScanSheet> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
                 widget.hint!,
-                style: TextStyle(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.white.withValues(alpha: 0.7),
-                  fontSize: 13,
                 ),
               ),
             ),

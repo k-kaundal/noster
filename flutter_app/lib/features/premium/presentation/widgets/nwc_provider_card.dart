@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/premium/application/nwc_provider_providers.dart';
 import 'package:nostrfeed_mobile/features/premium/data/nwc_provider_service.dart';
@@ -36,8 +36,7 @@ class NwcProviderCard extends ConsumerWidget {
                     color: Colors.teal.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.hub_rounded,
-                      size: 20, color: Colors.teal),
+                  child: const AppIcon('globe', size: 20, color: Colors.teal),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -268,7 +267,7 @@ class _NwcBodyState extends ConsumerState<_NwcBody> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.link_rounded, size: 16, color: Colors.teal),
+                const AppIcon('link', size: 16, color: Colors.teal),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -288,8 +287,7 @@ class _NwcBodyState extends ConsumerState<_NwcBody> {
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Icons.delete_outline_rounded,
-                      size: 18, color: scheme.error),
+                  icon: AppIcon('eye_off', size: 18, color: scheme.error),
                   tooltip: 'Revoke',
                   onPressed: _busy ? null : () => _revoke(conn),
                 ),
@@ -307,7 +305,7 @@ class _NwcBodyState extends ConsumerState<_NwcBody> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.add_link_rounded, size: 18),
+                : const AppIcon('link', size: 18),
             label: const Text('Mint an NWC link'),
           ),
         ),

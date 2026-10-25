@@ -3,6 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/lnbits_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/buy_name_section.dart';
@@ -54,7 +59,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
         actions: [
           if (lnbits.isConnected)
             IconButton(
-              icon: const Icon(Icons.refresh),
+              icon: const AppIcon('repost'),
               onPressed: () =>
                   ref.read(lnbitsAuthProvider.notifier).refresh(),
             ),
@@ -117,10 +122,9 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: AppShapes.radiusPill,
                       ),
-                      child: Icon(Icons.bolt,
-                          size: 32, color: colorScheme.primary),
+                      child: AppIcon('zap', size: 32, color: colorScheme.primary),
                     ),
                     const SizedBox(height: 24),
                     Text(
@@ -167,11 +171,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                                   .read(lnbitsAuthProvider.notifier)
                                   .connect();
                               if (ok && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text(
-                                          'Your wallet is ready!')),
-                                );
+                                AppToast.success(context, 'Your wallet is ready!');
                               }
                             },
                       icon: lnbits.isLoading
@@ -181,7 +181,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                               child: CircularProgressIndicator(
                                   strokeWidth: 2),
                             )
-                          : const Icon(Icons.account_balance_wallet),
+                          : const AppIcon('wallet'),
                       label: Text(
                         lnbits.isLoading
                             ? 'Connecting…'
@@ -202,7 +202,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: colorScheme.errorContainer,
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: AppShapes.radiusSm,
                           border: Border.all(
                               color: colorScheme.error
                                   .withValues(alpha: 0.3)),
@@ -220,11 +220,13 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                             const SizedBox(height: 4),
                             Text(
                               lnbits.error!,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: colorScheme.onErrorContainer
-                                    .withValues(alpha: 0.8),
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: colorScheme.onErrorContainer
+                                        .withValues(alpha: 0.8),
+                                  ),
                             ),
                             const SizedBox(height: 8),
                             TextButton(
@@ -243,14 +245,14 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                     // Existing wallet sign-in
                     TextButton.icon(
                       onPressed: () => _showExistingWalletDialog(context),
-                      icon: const Icon(Icons.login, size: 18),
+                      icon: const AppIcon('key', size: 18),
                       label: const Text('I already have a wallet'),
                     ),
 
                     // NWC alternative
                     TextButton.icon(
                       onPressed: () => context.push('/wallet/nwc'),
-                      icon: const Icon(Icons.link, size: 18),
+                      icon: const AppIcon('link', size: 18),
                       label: const Text('Or connect a wallet you already have'),
                       style: TextButton.styleFrom(
                         foregroundColor: colorScheme.onSurfaceVariant,
@@ -315,7 +317,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: colorScheme.primaryContainer.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: AppShapes.radiusSm,
           ),
           child: Icon(icon, size: 16, color: colorScheme.primary),
         ),
@@ -326,19 +328,18 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
             children: [
               Text(
                 title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 2),
               Text(
                 body,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurfaceVariant,
-                  height: 1.4,
-                ),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
               ),
             ],
           ),
@@ -410,18 +411,17 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
     NumberFormat formatter,
   ) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.xl),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade700, Colors.purple.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
+        gradient: AppTheme.brandGradient,
+        borderRadius: AppShapes.radiusXl,
         boxShadow: [
           BoxShadow(
-            color: Colors.blue.shade900.withValues(alpha: 0.3),
+            color: Theme.of(context)
+                .colorScheme
+                .primary
+                .withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -434,28 +434,26 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
             children: [
               Text(
                 'SPENDING BALANCE',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7),
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                ),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.7), // token-guard: allow — on brand gradient
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
               ),
               const Spacer(),
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(4),
+                  color: Colors.white.withValues(alpha: 0.15), // token-guard: allow — on brand gradient
+                  borderRadius: AppShapes.radiusXs,
                 ),
                 child: Text(
                   'ln.nostrfeed.com',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
-                    fontSize: 10,
-                    fontFamily: 'monospace',
-                  ),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.7), // token-guard: allow — on brand gradient
+                        fontFamily: 'monospace',
+                      ),
                 ),
               ),
             ],
@@ -463,19 +461,17 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
           const SizedBox(height: 12),
           Text(
             '${formatter.format(balance)} sats',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 36,
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                  color: Colors.white, // token-guard: allow — on brand gradient
+                  fontWeight: FontWeight.bold,
+                ),
           ),
           if (lnbits.account?.username != null)
             Text(
               'as ${lnbits.account!.username}',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 13,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.7), // token-guard: allow — on brand gradient
+                  ),
             ),
           const SizedBox(height: 8),
           // Wallet switcher when the account holds several — tap to pick the
@@ -483,30 +479,23 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
           if (lnbits.account != null && lnbits.account!.wallets.length > 1)
             InkWell(
               onTap: () => _showWalletSwitcher(context, lnbits),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: AppShapes.radiusSm,
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.account_balance_wallet_outlined,
-                      size: 14,
-                      color: Colors.white.withValues(alpha: 0.7),
+                    AppIcon('wallet', size: 14, color: Colors.white.withValues(alpha: 0.7), // token-guard: allow — on brand gradient
                     ),
                     const SizedBox(width: 6),
                     Text(
                       '${wallet?.name ?? 'Wallet'} · '
                       '${lnbits.account!.wallets.length} wallets — tap to switch',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 12,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.7), // token-guard: allow — on brand gradient
+                          ),
                     ),
-                    Icon(
-                      Icons.expand_more_rounded,
-                      size: 16,
-                      color: Colors.white.withValues(alpha: 0.7),
+                    AppIcon('arrow_down', size: 16, color: Colors.white.withValues(alpha: 0.7), // token-guard: allow — on brand gradient
                     ),
                   ],
                 ),
@@ -578,7 +567,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
               const Divider(),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.add_rounded),
+                leading: const AppIcon('plus'),
                 title: const Text('New wallet'),
                 subtitle: const Text(
                     'Separate spending from savings, same sign-in'),
@@ -629,17 +618,9 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
         .createAndActivateWallet(name);
     if (!context.mounted) return;
     if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Wallet "$name" created')),
-      );
+      AppToast.success(context, 'Wallet "$name" created');
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            ref.read(lnbitsAuthProvider).error ?? 'Could not create wallet',
-          ),
-        ),
-      );
+      AppToast.error(context, ref.read(lnbitsAuthProvider).error ?? 'Could not create wallet');
     }
   }
 
@@ -652,7 +633,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
           Expanded(
             child: FilledButton.icon(
               onPressed: () => showDialog(context: context, builder: (_) => const ReceiveDialog()),
-              icon: const Icon(Icons.arrow_downward),
+              icon: const AppIcon('arrow_down'),
               label: const Text('Receive'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -664,7 +645,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
             child: FilledButton.tonalIcon(
               onPressed:
                   balance > 0 ? () => _showSendDialog(context, balance) : null,
-              icon: const Icon(Icons.arrow_upward),
+              icon: const AppIcon('arrow_up'),
               label: const Text('Send'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -684,8 +665,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.account_balance_wallet_outlined,
-                size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            AppIcon('wallet', size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 12),
             Text(
               'No wallet on this account yet',
@@ -736,7 +716,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
               children: [
                 Row(
                   children: [
-                    Icon(Icons.fingerprint, color: colorScheme.primary),
+                    AppIcon('key', color: colorScheme.primary),
                     const SizedBox(width: 8),
                     Text(
                       'Nostr Key',
@@ -758,7 +738,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: () => _linkPubkey(context),
-                    icon: const Icon(Icons.link, size: 18),
+                    icon: const AppIcon('link', size: 18),
                     label: const Text('Link current Nostr key'),
                   ),
                 ],
@@ -788,7 +768,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
               children: [
                 Row(
                   children: [
-                    Icon(Icons.person, color: colorScheme.primary),
+                    AppIcon('users', color: colorScheme.primary),
                     const SizedBox(width: 8),
                     Text(
                       'Account',
@@ -817,20 +797,20 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
           child: Column(
             children: [
               ListTile(
-                leading: const Icon(Icons.edit),
+                leading: const AppIcon('edit'),
                 title: const Text('Edit Profile'),
                 subtitle: const Text('Username, notifications'),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: const AppIcon('chevron_r'),
                 onTap: () => _showEditProfileDialog(context, account),
               ),
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.lock),
+                leading: const AppIcon('key'),
                 title: const Text('Set Password'),
                 subtitle: Text(account.hasPassword
                     ? 'Change your password'
                     : 'Add a second way to sign in'),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: const AppIcon('chevron_r'),
                 onTap: () => _showSetPasswordDialog(context, account),
               ),
             ],
@@ -871,7 +851,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
         // Disconnect
         OutlinedButton.icon(
           onPressed: () => _confirmDisconnect(context),
-          icon: const Icon(Icons.logout),
+          icon: const AppIcon('back'),
           label: const Text('Disconnect account'),
           style: OutlinedButton.styleFrom(
             foregroundColor: colorScheme.error,
@@ -945,7 +925,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                   decoration: const InputDecoration(
                     labelText: 'Username',
                     hintText: 'satoshi',
-                    prefixIcon: Icon(Icons.person),
+                    prefixIcon: AppIcon('users', size: AppIconSize.md),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -953,7 +933,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                   controller: emailController,
                   decoration: const InputDecoration(
                     labelText: 'Notification email',
-                    prefixIcon: Icon(Icons.email),
+                    prefixIcon: AppIcon('at', size: AppIconSize.md),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -961,7 +941,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                   controller: telegramController,
                   decoration: const InputDecoration(
                     labelText: 'Telegram chat ID',
-                    prefixIcon: Icon(Icons.telegram),
+                    prefixIcon: AppIcon('send', size: AppIconSize.md),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -970,7 +950,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                   decoration: const InputDecoration(
                     labelText: 'Nostr NIP-05 identifier',
                     hintText: 'you@domain.com',
-                    prefixIcon: Icon(Icons.alternate_email),
+                    prefixIcon: AppIcon('at', size: AppIconSize.md),
                   ),
                 ),
               ],
@@ -996,9 +976,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                           );
                       if (ok && ctx.mounted) {
                         Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Account updated')),
-                        );
+                        AppToast.success(context, 'Account updated');
                       } else {
                         setState(() => isSaving = false);
                       }
@@ -1035,7 +1013,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                   controller: usernameController,
                   decoration: const InputDecoration(
                     labelText: 'Username',
-                    prefixIcon: Icon(Icons.person),
+                    prefixIcon: AppIcon('users', size: AppIconSize.md),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1044,7 +1022,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                     controller: currentController,
                     decoration: const InputDecoration(
                       labelText: 'Current password',
-                      prefixIcon: Icon(Icons.lock_open),
+                      prefixIcon: AppIcon('key', size: AppIconSize.md),
                     ),
                     obscureText: true,
                   ),
@@ -1054,7 +1032,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                   controller: passwordController,
                   decoration: const InputDecoration(
                     labelText: 'New password',
-                    prefixIcon: Icon(Icons.lock),
+                    prefixIcon: AppIcon('key', size: AppIconSize.md),
                   ),
                   obscureText: true,
                 ),
@@ -1063,7 +1041,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                   controller: repeatController,
                   decoration: const InputDecoration(
                     labelText: 'Repeat password',
-                    prefixIcon: Icon(Icons.lock_outline),
+                    prefixIcon: AppIcon('key', size: AppIconSize.md),
                   ),
                   obscureText: true,
                 ),
@@ -1109,9 +1087,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
                           );
                       if (ok && ctx.mounted) {
                         Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Password set')),
-                        );
+                        AppToast.success(context, 'Password set');
                       } else {
                         setState(() {
                           isSaving = false;
@@ -1156,9 +1132,7 @@ class _LnbitsScreenState extends ConsumerState<LnbitsScreen>
           .read(lnbitsAuthProvider.notifier)
           .linkPubkey(auth.pubkey!);
       if (ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nostr key linked')),
-        );
+        AppToast.success(context, 'Nostr key linked');
       }
     }
   }

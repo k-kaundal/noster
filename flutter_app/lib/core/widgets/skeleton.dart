@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:shimmer/shimmer.dart';
 
 /// Theme-aware shimmer skeleton primitives.
@@ -45,7 +46,7 @@ class SkeletonBox extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: borderRadius ?? BorderRadius.circular(4),
+        borderRadius: borderRadius ?? AppShapes.radiusXs,
       ),
     );
   }
@@ -124,7 +125,7 @@ class SkeletonListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: AppShapes.radiusLg),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(

@@ -42,7 +42,7 @@ class DmGapFill {
     final nostr = _ref.read(nostrServiceProvider);
     if (!nostr.isInitialized) return;
 
-    final store = _ref.read(dmStoreProvider);
+    final store = _ref.read(dmStoreProvider.notifier);
     var since = store.newestSeenTs;
     if (since == 0) {
       // Cold start: bounded lookback, not "everything ever".

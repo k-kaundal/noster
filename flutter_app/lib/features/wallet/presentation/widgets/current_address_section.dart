@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 
 // ── Current Address Section ───────────────────────────────────────────
@@ -29,7 +30,7 @@ class CurrentAddressSection extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.bolt, color: colorScheme.primary),
+                AppIcon('zap', color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'Lightning Address',
@@ -78,13 +79,11 @@ class CurrentAddressSection extends ConsumerWidget {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.copy, size: 18),
+                    icon: const AppIcon('edit', size: 18),
                     tooltip: 'Copy address',
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: primary));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Address copied')),
-                      );
+                      AppToast.success(context, 'Address copied');
                     },
                   ),
                 ],
@@ -93,8 +92,7 @@ class CurrentAddressSection extends ConsumerWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.check_circle,
-                        size: 16, color: Colors.green.shade600),
+                    AppIcon('check', size: 16, color: Colors.green.shade600),
                     const SizedBox(width: 4),
                     Text(
                       'Published on your Nostr profile',
@@ -120,20 +118,15 @@ class CurrentAddressSection extends ConsumerWidget {
                           .read(lightningAddressProvider.notifier)
                           .publishToProfile(address: primary);
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Published to your profile')),
-                        );
+                        AppToast.success(context, 'Published to your profile');
                       }
                     } catch (e) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('$e')),
-                        );
+                        AppToast.success(context, '$e');
                       }
                     }
                   },
-                  icon: const Icon(Icons.publish, size: 16),
+                  icon: const AppIcon('share', size: 16),
                   label: const Text('Publish to profile'),
                   style: TextButton.styleFrom(
                     foregroundColor: colorScheme.primary,
@@ -154,9 +147,7 @@ class CurrentAddressSection extends ConsumerWidget {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.notifications_off_outlined,
-                          size: 16,
-                          color: colorScheme.onSurfaceVariant),
+                      AppIcon('bell', size: 16, color: colorScheme.onSurfaceVariant),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(

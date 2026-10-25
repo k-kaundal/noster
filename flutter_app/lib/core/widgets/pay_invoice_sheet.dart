@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/services/wallet_payment.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/invoice_qr.dart';
@@ -261,7 +262,10 @@ class _PayInvoiceSheetState extends ConsumerState<_PayInvoiceSheet>
                     '${_formatSats(widget.amountSats!)} sats',
                   ?widget.memo,
                 ].join(' • '),
-                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ],
             const SizedBox(height: 16),
@@ -285,8 +289,10 @@ class _PayInvoiceSheetState extends ConsumerState<_PayInvoiceSheet>
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Text(
                       'or scan with any wallet',
-                      style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   ),
                   Expanded(child: Divider(color: scheme.outlineVariant)),
@@ -307,7 +313,7 @@ class _PayInvoiceSheetState extends ConsumerState<_PayInvoiceSheet>
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: scheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: AppShapes.radiusMd,
                 ),
                 child: Row(
                   children: [
@@ -323,8 +329,7 @@ class _PayInvoiceSheetState extends ConsumerState<_PayInvoiceSheet>
                     Expanded(
                       child: Text(
                         'Payment sent — confirming… this closes on its own.',
-                        style: TextStyle(
-                          fontSize: 13,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: scheme.onPrimaryContainer,
                           fontWeight: FontWeight.w500,
                         ),
@@ -382,9 +387,9 @@ class _WalletPayTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Material(
       color: scheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: AppShapes.radiusMd,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppShapes.radiusMd,
         onTap: busy ? null : onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -398,18 +403,15 @@ class _WalletPayTile extends StatelessWidget {
                   children: [
                     Text(
                       option.label,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                     if (option.detail != null)
                       Text(
                         option.detail!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                   ],
                 ),

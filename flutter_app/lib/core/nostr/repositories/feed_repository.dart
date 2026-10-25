@@ -224,14 +224,16 @@ class FeedRepository {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final since = now - (hours * 3600);
 
-    // Fetch candidate posts from the time window
+    // Fetch candidate posts from the time window. limit*5→*3 (250→150) and
+    // 10s→6s: ranking saturates well before 250 candidates, and the long
+    // timeout was the slowest leg of the whole explore screen.
     final candidates = await relayPool.query([
       NostrFilter(
         kinds: [1, 20, 21, 22, 30023],
         since: since,
-        limit: limit * 5, // Fetch extra to filter by engagement
+        limit: limit * 3, // Fetch extra to filter by engagement
       ),
-    ], timeout: const Duration(seconds: 10));
+    ], timeout: const Duration(seconds: 6));
 
     if (candidates.isEmpty) return [];
 
@@ -443,9 +445,11 @@ class FeedRepository {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final since = now - (hours * 3600);
 
+    // 500→250 events: tag-counting saturates well before 500, and halving
+    // the payload halves the slowest relay leg (the explore waterfall).
     final events = await relayPool.query([
-      NostrFilter(kinds: [1, 20, 21, 22, 30023], since: since, limit: 500),
-    ], timeout: const Duration(seconds: 8));
+      NostrFilter(kinds: [1, 20, 21, 22, 30023], since: since, limit: 250),
+    ], timeout: const Duration(seconds: 6));
 
     if (events.isEmpty) return [];
 

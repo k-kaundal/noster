@@ -1,3 +1,5 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 
 /// Client-side flood / duplicate-post detection — the piece that keeps a
@@ -156,3 +158,12 @@ enum FloodVerdict {
   /// One author is posting too fast regardless of content.
   rapidFire,
 }
+
+// ── Shared detector instance ────────────────────────────────────────────
+
+/// The app-wide FloodDetector. ONE instance so the rolling observation
+/// windows are consistent whether an event arrives via a page fetch
+/// (FeedNotifier._applyFlood) or the live pipeline (the EventBus gate in
+/// eventBusProviders). Lives in core (not the feed feature) because the
+/// bus gate is pipeline policy, not feed policy.
+final floodDetectorProvider = Provider<FloodDetector>((ref) => FloodDetector());
