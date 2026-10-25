@@ -707,6 +707,8 @@ final dmStoreProvider = Provider<DmStore>((ref) => DmStore(ref));
 /// (NIP-17) events p-tagged to the current user from ALL connected relays.
 /// Without this, messages only appear on manual refresh — the "message sent
 /// from Primal never shows up" bug.
+///
+/// ADR-0005: shared EventBus (acquire → local filter), not a raw sub.
 final dmLiveEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return const Stream.empty();
@@ -716,7 +718,7 @@ final dmLiveEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
   // (while relays were still connecting) aren't missed. Deduped in DmStore.
   final since =
       DateTime.now().millisecondsSinceEpoch ~/ 1000 - 6 * 3600; // 6h back
-  return nostr.relayPool.subscribe([
+  final spec = [
     NostrFilter(
       kinds: [4, 1059],
       tagFilters: {
@@ -724,7 +726,11 @@ final dmLiveEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
       },
       since: since,
     ),
-  ]);
+  ];
+  final bus = ref.watch(eventBusProvider);
+  final handle = bus.acquire(spec);
+  ref.onDispose(handle.dispose);
+  return bus.stream.where(spec.matchesAny);
 });
 
 /// Wires the live subscription into the store. Watch this once at the app

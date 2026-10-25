@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/utils/media.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
@@ -37,6 +38,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   final _imagePicker = ImagePicker();
   bool _isUploadingBanner = false;
   bool _isUploadingAvatar = false;
+
+  // Primal ProfileTopCoverBar geometry: a compact cover that collapses on
+  // scroll from `bannerHeight` to a slim app bar, with the avatar anchored
+  // to its bottom edge. Smaller than X's tall banner — the cover is a
+  // backdrop, not the content.
+  static const double bannerHeight = 140;
+  static const double avatarRadius = 36;
+  static const double avatarOverlap = 40;
 
   @override
   void initState() {
@@ -253,11 +262,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       headerSliverBuilder: (context, innerBoxIsScrolled) {
         return [
           // ── Banner with avatar inside the stack ────────────────
+          // Primal ProfileTopCoverBar: compact cover that collapses on
+          // scroll, the avatar anchored to its bottom edge, a scrim that
+          // fades in as it collapses, and the profile name fading into the
+          // collapsed title slot.
           SliverAppBar(
-            // Banner is 200 tall; avatar extends 40 below that, so we add
-            // space for the overlap inside the AppBar itself. The avatar
-            // renders as part of the banner stack so it isn't clipped.
-            expandedHeight: 200 + 44,
+            expandedHeight: bannerHeight + avatarOverlap + 8,
             pinned: true,
             stretch: true,
             backgroundColor: scheme.surface,
@@ -279,6 +289,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 },
               ),
             ),
+            // Collapsed title: the profile name fades in only once the
+            // cover has collapsed past the avatar (Primal's title fade).
+            title: innerBoxIsScrolled
+                ? Text(
+                    profile?.displayNameOrName ?? 'Profile',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  )
+                : null,
             actions: [
               if (isOwnProfile)
                 Container(
@@ -395,22 +414,43 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 StretchMode.blurBackground,
               ],
               background: Stack(
+                fit: StackFit.expand,
                 clipBehavior: Clip.none,
                 children: [
-                  // Banner image — top 200 only
+                  // Banner image with the collapse scrim on top — Primal
+                  // fades the cover to a 70% scrim as it collapses so the
+                  // collapsed bar reads as surface, not a squashed photo.
                   Positioned(
                     top: 0,
                     left: 0,
                     right: 0,
-                    height: 200,
-                    child: profile?.banner != null && profile!.banner!.isNotEmpty
-                        ? SmartNetworkImage(
-                            url: profile.banner!,
-                            fit: BoxFit.cover,
-                            // Display-size decode (ADR-0004): the banner is
-                            // 200 dp tall on every phone.
-                            placeholder: (_, _) => Container(color: scheme.surfaceContainerHighest),
-                            errorWidget: (_, _, _) => Container(color: scheme.surfaceContainerHighest),
+                    height: bannerHeight,
+                    child: _hasBanner(profile)
+                        ? Builder(
+                            builder: (context) {
+                              final bannerUrl = MediaUtils.optimizedImageUrl(
+                                profile!.banner!.trim(),
+                                width: 1200,
+                              );
+                              return SmartNetworkImage(
+                                // Keyed on the URL so a re-upload to the same
+                                // path still re-resolves (stale-pixels guard).
+                                key: ValueKey(bannerUrl),
+                                url: bannerUrl,
+                                // Display-size decode (ADR-0004): the banner
+                                // is short and screen-wide on every phone —
+                                // never decode the native bitmap.
+                                width: MediaQuery.sizeOf(context).width,
+                                height: bannerHeight,
+                                fit: BoxFit.cover,
+                                placeholder: (_, _) => Container(
+                                  color: scheme.surfaceContainerHighest,
+                                ),
+                                errorWidget: (_, _, _) => Container(
+                                  color: scheme.surfaceContainerHighest,
+                                ),
+                              );
+                            },
                           )
                         : Container(
                             decoration: BoxDecoration(
@@ -423,10 +463,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           ),
                   ),
 
+                  // Collapse scrim: black fades in over the cover as the
+                  // app bar collapses (Primal's MAX_COVER_TRANSPARENCY).
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: bannerHeight,
+                    child: IgnorePointer(
+                      child: Container(
+                        color: Colors.black.withValues(
+                          alpha: innerBoxIsScrolled ? 0.7 : 0.0,
+                        ),
+                      ),
+                    ),
+                  ),
+
                   // Surface-colored fill below the banner so the avatar's
                   // border has something to contrast against
                   Positioned(
-                    top: 200,
+                    top: bannerHeight,
                     left: 0,
                     right: 0,
                     bottom: 0,
@@ -437,7 +493,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   if (isOwnProfile)
                     Positioned(
                       right: 12,
-                      top: 164, // 200 - 12 - 24 (button height)
+                      top: bannerHeight - 12 - 24, // 12 margin + 24 button
                       child: Material(
                         color: Colors.black.withValues(alpha: 0.5),
                         shape: const CircleBorder(),
@@ -469,12 +525,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       ),
                     ),
 
-                  // Avatar — bottom of banner, overlapping 40px below.
+                  // Avatar — bottom of banner, overlapping below.
                   // Rendered inside the banner's Stack so it doesn't get
                   // clipped by sliver boundaries.
                   Positioned(
                     left: 16,
-                    top: 200 - 40, // avatar center sits on banner bottom edge
+                    top: bannerHeight - avatarOverlap,
                     child: Stack(
                       children: [
                         Container(
@@ -488,7 +544,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           child: ProfileAvatar(
                             profile: profile,
                             pubkey: pubkey,
-                            radius: 36,
+                            radius: avatarRadius,
                           ),
                         ),
                         if (isOwnProfile)
@@ -536,7 +592,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   // in the overlap zone like X
                   Positioned(
                     right: 16,
-                    top: 200 + 8,
+                    top: bannerHeight + 8,
                     child: isOwnProfile
                         ? OutlinedButton(
                             onPressed: () {
@@ -930,9 +986,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         highlightColor: highlightColor,
         child: CustomScrollView(
           slivers: [
-            // Banner skeleton — X height with avatar overlap
+            // Banner skeleton — Primal compact cover with avatar overlap
             SliverAppBar(
-              expandedHeight: 200 + 44,
+              expandedHeight: bannerHeight + avatarOverlap + 8,
               pinned: true,
               flexibleSpace: Stack(
                 children: [
@@ -940,11 +996,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     top: 0,
                     left: 0,
                     right: 0,
-                    height: 200,
+                    height: bannerHeight,
                     child: Container(color: baseColor),
                   ),
                   Positioned(
-                    top: 200,
+                    top: bannerHeight,
                     left: 0,
                     right: 0,
                     bottom: 0,
@@ -952,12 +1008,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   ),
                   Positioned(
                     left: 16,
-                    top: 200 - 40,
-                    child: CircleAvatar(radius: 36, backgroundColor: baseColor),
+                    top: bannerHeight - avatarOverlap,
+                    child: CircleAvatar(
+                      radius: avatarRadius,
+                      backgroundColor: baseColor,
+                    ),
                   ),
                   Positioned(
                     right: 16,
-                    top: 200 + 8,
+                    top: bannerHeight + 8,
                     child: Container(
                       width: 100,
                       height: 32,
@@ -1231,6 +1290,16 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_TabBarDelegate oldDelegate) =>
       tabBar != oldDelegate.tabBar || color != oldDelegate.color;
+}
+
+/// Whether the profile has a usable banner URL (non-empty after trim and a
+/// parseable http(s) URI) — guards against whitespace/garbage URLs that
+/// would hand the loader a raw invalid string.
+bool _hasBanner(NostrProfile? profile) {
+  final banner = profile?.banner?.trim();
+  if (banner == null || banner.isEmpty) return false;
+  final uri = Uri.tryParse(banner);
+  return uri != null && (uri.isScheme('http') || uri.isScheme('https'));
 }
 
 /// Communities tab: communities the user JOINED + communities they CREATED.

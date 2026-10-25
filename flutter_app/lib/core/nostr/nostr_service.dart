@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
+import 'package:nostrfeed_mobile/core/nostr/profile_cache.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/dm_delivery.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_router.dart';
@@ -47,6 +48,28 @@ class NostrService {
   /// shared with [SocialRepository] via constructor injection.
   final Map<String, ({NostrProfile profile, int createdAt, int fetchedAt})>
   profileCache = {};
+
+  /// Bound on [profileCache] — see [kProfileCacheCap] (declared at the
+  /// bottom of this file, shared with the bounded-write extension).
+  /// Without it the map grew by every prefetched author forever — a long
+  /// session scrolling past thousands of unique authors accumulated
+  /// thousands of entries (memory creep).
+
+  /// The ONLY correct way to write [profileCache]: keeps insertion order
+  /// fresh (re-insert on update) and evicts the oldest entry past the cap.
+  /// Direct `profileCache[pk] = …` writes bypass the bound (memory creep).
+  void cacheProfile(
+    String pubkey, {
+    required NostrProfile profile,
+    required int createdAt,
+    required int fetchedAt,
+  }) =>
+      profileCache.cacheProfileBounded(
+        pubkey,
+        profile: profile,
+        createdAt: createdAt,
+        fetchedAt: fetchedAt,
+      );
 
   /// In-memory cache of the latest known follow list per pubkey, with the
   /// `created_at` timestamp of the kind-3 event it came from. Same purpose
@@ -180,6 +203,8 @@ class NostrService {
     String caption = '',
     String? posterUrl,
     double? durationSec,
+    String? sha256,
+    int? sizeBytes,
     List<String>? hashtags,
     bool isShortForm = true,
   }) {
@@ -195,6 +220,11 @@ class NostrService {
           'imeta',
           'url $url',
           'm $mimeType',
+          // x + size (NIP-92/NIP-94): lets clients verify the media and
+          // BUD-03 re-hosting prove the bytes. The upload already computed
+          // them — the old flow threw them away.
+          if (sha256 != null) 'x $sha256',
+          if (sizeBytes != null) 'size $sizeBytes',
           if (posterUrl != null) 'image $posterUrl',
           if (durationSec != null)
             'duration ${durationSec.toStringAsFixed(2)}',
@@ -1006,3 +1036,4 @@ class NostrService {
   /// failure.
   Future<DecryptedDm?> decryptDm(NostrEvent event) => dms.decryptDm(event);
 }
+

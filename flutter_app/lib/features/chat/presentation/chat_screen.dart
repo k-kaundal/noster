@@ -7,6 +7,7 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart' show DecryptedDm;
 import 'package:nostrfeed_mobile/core/nostr/relay/dm_delivery.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
@@ -547,6 +548,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           thread[index].createdAt,
                           thread[index + 1].createdAt,
                         );
+                    // Primal grouped bubbles: this message CONTINUES a group
+                    // when the next (older) message is from the same sender
+                    // (the list is reversed — index+1 is older in time).
+                    final continuesGroup = index < thread.length - 1 &&
+                        thread[index + 1].senderPubkey == msg.senderPubkey;
                     return Column(
                       children: [
                         if (showDateSeparator)
@@ -564,6 +570,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             key: ValueKey(msg.id),
                             message: msg,
                             isSent: isSent,
+                            isGroupContinuation: continuesGroup,
                             onRetry: msg.status == MessageStatus.failed
                                 ? () => _retryMessage(peerPubkey, msg)
                                 : null,
@@ -780,8 +787,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+          duration: AppMotion.normal,
+          curve: AppMotion.curve,
         );
       }
 
@@ -886,8 +893,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+          duration: AppMotion.normal,
+          curve: AppMotion.curve,
         );
       }
 

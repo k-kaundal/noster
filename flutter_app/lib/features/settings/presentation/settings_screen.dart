@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/providers/app_info_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/services/background_sync.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/settings/presentation/relay_settings_screen.dart';
@@ -160,22 +161,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             leading: const Icon(Icons.palette),
             title: const Text('Theme'),
             subtitle: Text(_themeLabel(ref)),
-            trailing: SegmentedButton<ThemeMode>(
-              segments: const [
-                ButtonSegment(
-                    value: ThemeMode.light,
-                    icon: Icon(Icons.light_mode, size: 18)),
-                ButtonSegment(
-                    value: ThemeMode.dark,
-                    icon: Icon(Icons.dark_mode, size: 18)),
-                ButtonSegment(
-                    value: ThemeMode.system,
-                    icon: Icon(Icons.settings_brightness, size: 18)),
-              ],
-              selected: {_currentThemeMode(ref)},
-              onSelectionChanged: (modes) {
-                ref.read(themeModeProvider.notifier).state = modes.first;
-              },
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<AppAppearance>(
+                segments: const [
+                  ButtonSegment(
+                      value: AppAppearance.light,
+                      icon: Icon(Icons.light_mode, size: 18),
+                      tooltip: 'Light'),
+                  ButtonSegment(
+                      value: AppAppearance.dark,
+                      icon: Icon(Icons.dark_mode, size: 18),
+                      tooltip: 'Dark'),
+                  ButtonSegment(
+                      value: AppAppearance.oled,
+                      icon: Icon(Icons.contrast, size: 18),
+                      tooltip: 'OLED black'),
+                  ButtonSegment(
+                      value: AppAppearance.system,
+                      icon: Icon(Icons.settings_brightness, size: 18),
+                      tooltip: 'System'),
+                ],
+                selected: {_currentAppearance(ref)},
+                onSelectionChanged: (selected) {
+                  ref
+                      .read(appAppearanceProvider.notifier)
+                      .setAppearance(selected.first);
+                },
+              ),
             ),
           ),
           const Divider(),
@@ -195,6 +211,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               MaterialPageRoute(
                   builder: (_) => const RelaySettingsScreen()),
             ),
+          ),
+          const Divider(),
+
+          // -------------------------------------------------------------------
+          // Background updates (ADR-0005 P5)
+          // -------------------------------------------------------------------
+          _sectionHeader('Background updates'),
+          SwitchListTile(
+            secondary: const Icon(Icons.sync_rounded),
+            title: const Text('Background catch-up'),
+            subtitle: const Text(
+                'Periodically fetch new messages and activity while the app is closed. Battery-friendly — no persistent connection.'),
+            value: ref.watch(backgroundSyncEnabledProvider).value ?? true,
+            onChanged: (val) => ref
+                .read(backgroundSyncEnabledProvider.notifier)
+                .toggle(val),
           ),
           const Divider(),
 
@@ -397,18 +429,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  ThemeMode _currentThemeMode(WidgetRef ref) {
-    return ref.watch(themeModeProvider);
+  AppAppearance _currentAppearance(WidgetRef ref) {
+    return ref.watch(appAppearanceProvider);
   }
 
-  String _themeLabel(WidgetRef ref) {
-    final mode = _currentThemeMode(ref);
-    return switch (mode) {
-      ThemeMode.light => 'Light',
-      ThemeMode.dark => 'Dark',
-      ThemeMode.system => 'System',
-    };
-  }
+  String _themeLabel(WidgetRef ref) => _currentAppearance(ref).label;
 
   void _confirmLogout(BuildContext context) {
     showDialog(

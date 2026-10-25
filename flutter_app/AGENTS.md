@@ -51,7 +51,8 @@ lib/
 │   │   └── app_info_providers.dart      # package_info (version from pubspec)
 │   ├── moderation/           # content_filter (NSFW/spam) + providers
 │   ├── services/             # app-level services (wallet_payment, http…)
-│   ├── theme/                # app_theme, app_spacing, app_durations, app_motion
+│   ├── theme/                # app_theme, app_typography, app_shapes,
+│   │                         # app_spacing, app_durations, app_motion
 │   ├── utils/                # nip19, markdown, event_debugger, media, text_sanitize
 │   └── widgets/              # shared UI kit: ErrorView, EmptyState, Skeleton*,
 │                             # AsyncFeedList, AppSheet/AppDialog, app_shell,
@@ -94,6 +95,18 @@ over ~100 lines.
 - **State**: Riverpod. All `FutureProvider`s use `.autoDispose`. All state
   notifiers use `Notifier`/`AsyncNotifier` (legacy `StateNotifier` is fully
   migrated — do not reintroduce it).
+  - **Family keys must have VALUE equality** — key a `.family` on a
+    `String`/record/value type, NEVER a `List` (identity equality: every
+    literal is a new cache key, so invalidations silently miss and entries
+    multiply — the `userInteractionsProvider([id])` bug).
+  - **Per-entity families are `.autoDispose`** (replies/reactions/reposts/
+    zapReceipts/articleComments/localEngagement…) — without it, entries
+    accumulate for every entity seen and re-fire on every version tick.
+    keepAlive is reserved for cross-screen caches every card reads
+    (`profileProvider`, `bookmarkedIdsProvider`) and needs a comment.
+  - **Feeds live ONLY on the Notifiers** (`globalFeedProvider`,
+    `followingFeedNotifierProvider`) — never add a plain feed
+    FutureProvider (it diverges from the store-backed state).
 - **Post interactions** (like/repost/bookmark/zap refresh): go through
   `postActionsProvider` (`features/feed/providers/post_actions.dart`) — never
   inside widgets.
@@ -200,15 +213,22 @@ over ~100 lines.
 - **Navigation architecture**: bottom nav = **Home · Reels · Create (center) ·
   Chat (badge) · Wallet**. The center CREATE button opens a create sheet
   (Ask AI / post / article / reel / live / group) — Instagram pattern. The
+  bar is a floating 64 dp pill (28 dp radius) with Primal's **sliding
+  indicator pill** behind the active tab (`AnimatedPositioned`, 300 ms
+  easeOutCubic ≈ Primal's spring-0.75, neutral `surfaceContainerHighest`
+  fill) — the Create slot never gets a pill (it's an action, not a
+  destination). The
   shell AppBar + bottom nav are **hidden on immersive routes** (chat threads,
   reels player) which render their own headers. Drawer is grouped by intent
   (Discover / People / Money / You) — never a flat 20+ item list. Detail
   routes use `DetailScaffold` (back button + title). Never hand-roll a drawer
   button inside a screen (it resolves to the inner drawer-less Scaffold).
 - **AI Assistant visibility** (gated on `aiAvailableProvider` so keyless
-  builds never tease it): the shell AppBar has a ✨ button next to Search,
-  the create sheet leads with "Ask AI", and the Home feed's tab row has a
-  compact ✨ shortcut button next to the avatar. Drawer entry lives under
+  builds never tease it): the create sheet leads with "Ask AI", and the
+  Home feed's tab row has a compact ✨ shortcut button next to the avatar
+  (the shell AppBar stays at 3 actions — search, notifications bell,
+  overflow — Primal's app bars never stack 4+ trailing icons). Drawer entry
+  lives under
   Discover → AI Assistant; the guide is in Docs (route `/ai`). The AI chat
   itself is a detail route outside the shell. **No in-feed promo card** —
   an `_AiPromoCard` used to be injected into the For You feed; it was
@@ -236,7 +256,56 @@ over ~100 lines.
   - Feed-style async lists → `AsyncFeedList<T>`
   - Bottom sheets → `AppSheet.show`; confirms/alerts → `AppDialog.confirm/info`
 - **Design tokens**: spacing → `AppSpacing`; timeouts → `AppDurations`;
-  status colors → `AppStatusColors`; brand gradient → `AppTheme.brandGradient`.
+  status colors → `AppStatusColors`; engagement action accents (zap orange,
+  like pink, repost green, bookmark blue — the exact Primal palette) →
+  `AppActionColors`; brand gradient → `AppTheme.brandGradient`;
+  typography → `Theme.of(context).textTheme.*` (the `AppTypography` ramp —
+  never a raw `TextStyle(fontSize:)` in new code); corner radii →
+  `AppShapes` (xs 4 / sm 8 / md 12 / lg 16 / xl 20 / pill 28 — never a new
+  hardcoded `BorderRadius.circular(N)`).
+- **PostCard layout (Primal grid)**: avatar in a fixed LEFT column; header,
+  content and the action row in ONE column indented right (avatar width +
+  10); the repost notice aligns with the content column. Card padding is a
+  tight 12h/10v. Action colors come from `AppActionColors` — inactive stays
+  muted grey, active gets the per-action accent; zap keeps its signature
+  orange as an invite. Don't move content back under the avatar — the
+  indent IS the look.
+- **Thread connector lines (Primal chain)**: `PostCard.drawLineAboveAvatar` /
+  `drawLineBelowAvatar` paint a 2 dp chain segment behind the avatar column
+  (`_ThreadConnectorPainter`, stops at the avatar edge, never crosses it).
+  The thread screen sets them by index adjacency — header connects down to
+  the first reply, every reply connects up, all but the last connect down.
+  Replies keep `isThreadView: false` (stay tappable, no per-card fade).
+- **Profile cover (Primal ProfileTopCoverBar)**: compact 140 dp cover +
+  40 dp avatar overlap (NOT X's tall banner — the cover is a backdrop, not
+  the content). Collapse scrim fades to black-70% over the cover, and the
+  profile name fades into the collapsed title slot only when
+  `innerBoxIsScrolled`. Geometry lives in `_ProfileScreenState` constants
+  (`bannerHeight`/`avatarRadius`/`avatarOverlap`) — the skeleton loader
+  uses the same constants so it never drifts.
+- **Media gallery (Primal attachment layouts)**: `_ImageGallery` in
+  `note_content.dart` lays out by count — 1 image keeps its aspect (imeta
+  dims), 2 = two squares, 3 = one 2:1 banner + two squares, 4+ = a 2×2 grid
+  with a "+N" overlay on the last cell (Primal's `MaxDisplayImages = 4`).
+  2 dp gaps; tiles fill their `AspectRatio` cells via `SizedBox.expand`
+  (a `CachedNetworkImage` with no height collapses to intrinsic size).
+- **"N new posts" pill (Primal NewPostsButton)**: the pill carries up to 3
+  stacked author avatars (`FeedState.newPostAuthors` — distinct, newest
+  first, capped 3) + a count capped at "20+". The avatar stack resolves
+  pictures from the shared `profileProvider` cache (no extra fetches — the
+  live tail's authors were prefetched with their page).
+- **Zap sheet preset grid (Primal ZapBottomSheet)**: `_ZapPresetCell` — a
+  3-column grid of square emoji+amount cells with Primal's exact presets
+  (👍21 🚀420 ☕1k 🍻5k 🍷10k 👑100k). Selected = surface bg + 1 dp
+  `tertiary` border; unselected = `surfaceContainerHighest`. The emoji IS
+  the amount's identity in Nostr culture — keep them paired.
+- **Chat bubbles (Primal ChatMessageListItem)**: `MessageBubble` is 8 dp
+  with a 2 dp "tail" corner nearest the sender — tail on the BOTTOM for the
+  first message of a same-sender run, on the TOP for continuations
+  (`isGroupContinuation`, computed from the NEXT item in the reversed
+  list). Mine = flat `colorScheme.tertiary` (Primal `#0C7DD8`, white text);
+  theirs = `surfaceContainerHighest`. NO gradient on the bubble — flat is
+  what makes Primal's chat read native.
 - **Brand color = ice blue** (`core/theme/app_theme.dart`), Primal-style.
   The schemes are HAND-SPECIFIED (never `ColorScheme.fromSeed` — M3's seed
   algorithm skews violet→blue and picks murky surfaces, the original
@@ -246,8 +315,27 @@ over ~100 lines.
   editing `_brand`/`_brandDark` only — the app uses `colorScheme.*` tokens
   throughout, so it re-themes at once. (History: violet seed → Lightning
   amber → ice blue; the first two were reverted on review.)
+  **The `surfaceContainer*` ladder is hand-specified too** (lowest →
+  highest) in all three schemes — left unspecified, Flutter computes them
+  with its own tint and the murk comes back. Light: lowest is pure white
+  (cards pop above the ice-white base). Dark/OLED: lowest steps DOWN to
+  near-black, highest = `#222B34` (the pill/chat-bubble tone). Monotonicity
+  + AA contrast are pinned by `test/core/theme/app_theme_test.dart` — run
+  it after ANY scheme edit.
+- **Three appearances**: System / Light / Dark / **OLED Black** (true-black
+  AMOLED variant of dark — opt-in only, some panels smear on pure-black
+  scroll). The user's choice PERSISTS via `appAppearanceProvider`
+  (`core/providers/theme_providers.dart`, SharedPreferences-backed — the
+  old in-memory provider reset to System every cold start). OLED swaps the
+  dark THEME in `app.dart` (`darkTheme: AppTheme.oledTheme`); the resolved
+  `ThemeMode` stays `dark`.
 - **Motion (ADR-0003)**: every animation uses `AppMotion` tokens (durations,
-  curves, stagger) — never magic numbers. Cheap approaches first: Hero +
+  curves, stagger) — never magic numbers. This includes scroll-to
+  animations (`animateTo`/`ensureVisible`), `AnimatedContainer`/`AnimatedPositioned`
+  durations, image fade-ins, and list stagger formulas (the sweep is DONE —
+  chat/feed/articles/groups/AI/wallet/notifications/shell all use tokens;
+  `Future.delayed`/`Timer` network debounces are NOT animations and stay
+  as-is). Cheap approaches first: Hero +
   implicit animations + go_router `appTransitionPage` (0 KB);
   `flutter_animate` for staggered entrances (`StaggeredListItem` for list
   rows; `PostCard` fades in ONLY in thread view — never in a feed, see the
@@ -561,7 +649,8 @@ over ~100 lines.
 - **Entry points**: pinned FIRST row of the chat conversation list
   (`_AiChatTile` in `features/chat/presentation/chat_screen.dart` — Telegram
   "Saved Messages" pattern, visible even with zero DMs), drawer → Discover,
-  Explore card, wallet AI-credits card, shell ✨ button, create sheet "Ask AI".
+  Explore card, wallet AI-credits card, Home feed tab-row ✨ button, create
+  sheet "Ask AI".
 - **Relay access**: `AiContextService` (note/thread links, npub/nprofile,
   64-hex ids, "#hashtag" + summarize intent) fetches live context from the
   user's relays into a second system message — the model answers FROM it,

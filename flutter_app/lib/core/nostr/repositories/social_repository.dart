@@ -5,6 +5,7 @@ import 'package:bech32/bech32.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
+import 'package:nostrfeed_mobile/core/nostr/profile_cache.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_router.dart';
 
@@ -83,7 +84,8 @@ class SocialRepository {
             final profile = NostrProfile.fromJson(
               jsonDecode(entry.value.content) as Map<String, dynamic>,
             );
-            profileCache[entry.key] = (
+            profileCache.cacheProfileBounded(
+              entry.key,
               profile: profile,
               createdAt: entry.value.createdAt,
               fetchedAt: fetchedAt,
@@ -164,7 +166,8 @@ class SocialRepository {
         // already have. Otherwise our local write is fresher — keep it.
         final fetchedAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         if (cached == null || relayEvent.createdAt >= cached.createdAt) {
-          profileCache[pubkey] = (
+          profileCache.cacheProfileBounded(
+            pubkey,
             profile: relayProfile,
             createdAt: relayEvent.createdAt,
             fetchedAt: fetchedAt,
@@ -172,7 +175,8 @@ class SocialRepository {
           return relayProfile;
         }
         // Refresh the TTL so we don't re-query for another 10 minutes.
-        profileCache[pubkey] = (
+        profileCache.cacheProfileBounded(
+          pubkey,
           profile: cached.profile,
           createdAt: cached.createdAt,
           fetchedAt: fetchedAt,

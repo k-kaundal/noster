@@ -116,7 +116,7 @@ class NotificationCenter {
     final target = event.getTag('e');
     if (target != null) {
       _ref.invalidate(engagementProvider(target));
-      _ref.invalidate(userInteractionsProvider([target]));
+      _ref.invalidate(userInteractionsProvider(target));
     }
     return true;
   }
@@ -268,13 +268,17 @@ final unreadNotificationsProvider = Provider<int>((ref) {
 
 /// Real-time engagement stream: reactions, replies, reposts, comments,
 /// zaps, and new followers p-tagged to the current user.
+///
+/// ADR-0005: goes through the shared EventBus (acquire → local filter)
+/// instead of opening a raw relay subscription — one REQ total when another
+/// feature wants the same filter-set, and cross-spec events are deduped.
 final liveSocialEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return const Stream.empty();
   final nostr = ref.watch(nostrServiceProvider);
   if (!nostr.isInitialized) return const Stream.empty();
   final since = DateTime.now().millisecondsSinceEpoch ~/ 1000 - 3600;
-  return nostr.relayPool.subscribe([
+  final spec = [
     NostrFilter(
       kinds: [1, 3, 6, 7, 16, 1111, 9735],
       tagFilters: {
@@ -282,7 +286,11 @@ final liveSocialEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
       },
       since: since,
     ),
-  ]);
+  ];
+  final bus = ref.watch(eventBusProvider);
+  final handle = bus.acquire(spec);
+  ref.onDispose(handle.dispose);
+  return bus.stream.where(spec.matchesAny);
 });
 
 /// The pending social banner (auto-dismissed by the banner widget).

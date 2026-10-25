@@ -74,7 +74,14 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
       nostr.publishEvent(replyEvent);
       _replyController.clear();
 
-      // Refresh replies
+      // OPTIMISTIC INSERT: write the reply into the local store BEFORE the
+      // relay round-trip. repliesProvider is store-first, so the reply
+      // renders immediately (kill the "posted but invisible → double-post"
+      // bug) and the parent's reply count includes it right away.
+      await EventStore.instance.ingest([replyEvent]);
+
+      // Refresh replies — store-first, so the optimistic reply shows now
+      // and the relay backfill merges in behind it.
       ref.invalidate(repliesProvider(threadRoot));
 
       if (mounted) {
@@ -104,6 +111,13 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
     final auth = ref.watch(authStateProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
+    // Sort once per build (oldest first), not per item. Root-author replies
+    // first within the same second keeps the OP's voice visible (Primal).
+    final sortedReplies = repliesAsync.valueOrNull == null
+        ? const <NostrEvent>[]
+        : (List<NostrEvent>.from(repliesAsync.value!)
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Thread'),
@@ -115,80 +129,48 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
       body: Column(
         children: [
           // ─── Thread content ─────────────────────────────────────
+          //
+          // ONE flat lazy list (Primal pattern): the header (context banner +
+          // parent post + "Replies" divider) is item 0 and each reply is its
+          // own lazily-built item. The old Column-inside-ListView built ALL
+          // reply cards eagerly — a 200-reply thread composed 200 PostCards
+          // (each with 6 action buttons + provider watches) on open and
+          // froze the screen. ListView.builder builds only what's visible.
           Expanded(
-            child: ListView(
-              children: [
-                // "In reply to @name" context when the opened post is itself
-                // a reply — so the conversation reads top-down like X.
-                if (widget.rootEvent.replyToId != null)
-                  _ReplyContextBanner(parentId: widget.rootEvent.replyToId!),
-
-                // Parent post
-                PostCard(
-                  event: widget.rootEvent,
-                  isThreadView: true,
-                ),
-
-                // Divider
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    children: [
-                      Text(
-                        'Replies',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.onSurface.withValues(alpha: 0.7),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(child: Divider(color: colorScheme.outlineVariant)),
-                    ],
-                  ),
-                ),
-
-                // Replies list
-                repliesAsync.when(
-                  loading: () => const Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                  error: (error, _) => Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Center(
-                      child: Text(
-                        'Failed to load replies',
-                        style: TextStyle(color: colorScheme.error),
-                      ),
-                    ),
-                  ),
-                  data: (replies) {
-                    if (replies.isEmpty) {
-                      return Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Center(
-                          child: Text(
-                            'No replies yet. Be the first!',
-                            style: TextStyle(
-                              color: colorScheme.onSurface.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-
-                    // Sort replies by created_at ascending (oldest first)
-                    final sorted = List<NostrEvent>.from(replies)
-                      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
-                    return Column(
-                      children: sorted
-                          .map((reply) => PostCard(event: reply))
-                          .toList(),
-                    );
-                  },
-                ),
-              ],
+            child: ListView.builder(
+              // Header + replies, or header + a single status item while
+              // loading / on error / when empty.
+              itemCount: 1 +
+                  (repliesAsync.hasValue && sortedReplies.isNotEmpty
+                      ? sortedReplies.length
+                      : 1),
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return _buildHeader(
+                    colorScheme,
+                    // The opened post connects DOWN to the first reply —
+                    // Primal's chain starts at the focused note.
+                    drawLineBelow:
+                        repliesAsync.hasValue && sortedReplies.isNotEmpty,
+                  );
+                }
+                if (repliesAsync.hasValue && sortedReplies.isNotEmpty) {
+                  final reply = sortedReplies[index - 1];
+                  return PostCard(
+                    key: ValueKey(reply.id),
+                    event: reply,
+                    // Chain lines (Primal drawLineAbove/BelowAvatar): every
+                    // reply links up to the card above it; every reply but
+                    // the last links down to the next one. Replies keep
+                    // isThreadView=false so they stay tappable (open as a
+                    // new thread) and skip the entrance fade (the feed-perf
+                    // rule — no per-card fades in a list).
+                    drawLineAboveAvatar: true,
+                    drawLineBelowAvatar: index - 1 < sortedReplies.length - 1,
+                  );
+                }
+                return _buildStatusItem(colorScheme, repliesAsync);
+              },
             ),
           ),
 
@@ -259,6 +241,73 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// The thread header: "in reply to" context + the opened post + the
+  /// "Replies" divider. Built as item 0 of the lazy list.
+  Widget _buildHeader(ColorScheme colorScheme, {bool drawLineBelow = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.rootEvent.replyToId != null)
+          _ReplyContextBanner(parentId: widget.rootEvent.replyToId!),
+        PostCard(
+          event: widget.rootEvent,
+          isThreadView: true,
+          drawLineBelowAvatar: drawLineBelow,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Text(
+                'Replies',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: Divider(color: colorScheme.outlineVariant)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The single status item shown while replies load, on error, or when the
+  /// thread has no replies yet.
+  Widget _buildStatusItem(
+    ColorScheme colorScheme,
+    AsyncValue<List<NostrEvent>> repliesAsync,
+  ) {
+    return repliesAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.all(32),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, _) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: Text(
+            'Failed to load replies',
+            style: TextStyle(color: colorScheme.error),
+          ),
+        ),
+      ),
+      data: (_) => Padding(
+        padding: const EdgeInsets.all(32),
+        child: Center(
+          child: Text(
+            'No replies yet. Be the first!',
+            style: TextStyle(
+              color: colorScheme.onSurface.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
       ),
     );
   }

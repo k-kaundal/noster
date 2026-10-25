@@ -102,6 +102,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final notifier = ref.read(authStateProvider.notifier);
       await notifier.generateKeys();
+      // Key generation is async — the user can navigate away mid-flight;
+      // an unguarded setState here crashes on a deactivated widget.
+      if (!mounted) return;
       // After generating, show the backup screen with the key
       final auth = ref.read(authStateProvider);
       if (auth.privateKey != null) {
@@ -115,7 +118,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _step = _AuthStep.backup;
         });
       } else {
-        if (mounted) context.go('/feed');
+        context.go('/feed');
       }
     } catch (e) {
       if (mounted) AppToast.error(context, 'Failed to generate keys: $e');

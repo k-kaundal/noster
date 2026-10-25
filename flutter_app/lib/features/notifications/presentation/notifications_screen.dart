@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -40,7 +41,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: AppMotion.slow,
     );
     _fadeAnimation = CurvedAnimation(
       parent: _animationController,
@@ -156,9 +157,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                         color: colorScheme.outlineVariant.withValues(alpha: 0.3),
                       ),
                       itemBuilder: (context, i) => TweenAnimationBuilder<double>(
-                        duration: Duration(milliseconds: 300 + (i * 50).clamp(0, 500)),
+                        duration: AppMotion.normal +
+                            AppMotion.stagger * i.clamp(0, 16),
                         tween: Tween(begin: 0.0, end: 1.0),
-                        curve: Curves.easeOutCubic,
+                        curve: AppMotion.curve,
                         builder: (context, value, child) {
                           return Transform.translate(
                             offset: Offset(0, 20 * (1 - value)),
@@ -219,8 +221,8 @@ class _ModernFilterChip extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
+      duration: AppMotion.fast,
+      curve: AppMotion.curve,
       decoration: BoxDecoration(
         color: selected
             ? colorScheme.primaryContainer

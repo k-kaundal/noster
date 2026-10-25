@@ -5,9 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_info_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
-import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
 import 'package:nostrfeed_mobile/features/notifications/application/notification_center.dart';
@@ -72,7 +73,7 @@ class _AppShellState extends ConsumerState<AppShell>
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: AppMotion.normal,
     );
   }
 
@@ -147,20 +148,6 @@ class _AppShellState extends ConsumerState<AppShell>
           : AppBar(
               title: Text(_titleFor(location)),
               actions: [
-                // AI Assistant — the flagship feature, always one tap away.
-                // Hidden on builds without a provider key (nothing to sell).
-                if (ref.watch(aiAvailableProvider))
-                  IconButton(
-                    icon: Icon(
-                      Icons.auto_awesome_rounded,
-                      color: colorScheme.primary,
-                    ),
-                    tooltip: 'AI Assistant',
-                    onPressed: () {
-                      HapticFeedback.lightImpact();
-                      context.push('/ai');
-                    },
-                  ),
                 // Global search
                 IconButton(
                   icon: const Icon(Icons.search_rounded),
@@ -204,69 +191,107 @@ class _AppShellState extends ConsumerState<AppShell>
               margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainer,
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: AppShapes.radiusPill,
                 border: Border.all(
                   color: colorScheme.outlineVariant.withValues(alpha: 0.2),
                   width: 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: colorScheme.shadow.withValues(alpha: 0.1),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                    spreadRadius: 0,
-                  ),
-                  BoxShadow(
-                    color: colorScheme.shadow.withValues(alpha: 0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                    spreadRadius: 0,
+                    color: colorScheme.shadow.withValues(alpha: 0.08),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Container(
-                  height: 72,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _NavItem(
-                        icon: _icons[0],
-                        selectedIcon: _selectedIcons[0],
-                        label: _labels[0],
-                        isSelected: slot == 0,
-                        onTap: () => _onDestinationSelected(0),
-                      ),
-                      _NavItem(
-                        icon: _icons[1],
-                        selectedIcon: _selectedIcons[1],
-                        label: _labels[1],
-                        isSelected: slot == 1,
-                        onTap: () => _onDestinationSelected(1),
-                      ),
-                      // Center CREATE button (Instagram-style raised action).
-                      _CreateNavButton(onTap: () => _onDestinationSelected(2)),
-                      _NavItem(
-                        icon: _icons[2],
-                        selectedIcon: _selectedIcons[2],
-                        label: _labels[2],
-                        isSelected: slot == 3,
-                        badgeCount: dmCount,
-                        onTap: () => _onDestinationSelected(3),
-                      ),
-                      _NavItem(
-                        icon: _icons[3],
-                        selectedIcon: _selectedIcons[3],
-                        label: _labels[3],
-                        isSelected: slot == 4,
-                        onTap: () => _onDestinationSelected(4),
-                      ),
-                    ],
+                borderRadius: AppShapes.radiusPill,
+                child: SizedBox(
+                  height: 64,
+                  // Sliding-pill bar (Primal's PrimalNavigationBar): a
+                  // spring-loaded pill behind the active tab, the item row
+                  // on top. The Create slot has no pill (it's an action,
+                  // not a destination).
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      const hPad = 8.0;
+                      const slotCount = 5;
+                      final slotWidth =
+                          (constraints.maxWidth - hPad * 2) / slotCount;
+                      final pillLeft = hPad + slotWidth * slot;
+                      return Stack(
+                        children: [
+                          // The pill — springs between slots. Curves +
+                          // duration approximate Primal's
+                          // spring(dampingRatio 0.75): a gentle settle with
+                          // the faintest overshoot, never a hard snap.
+                          AnimatedPositioned(
+                            left: pillLeft,
+                            top: 6,
+                            bottom: 6,
+                            width: slotWidth,
+                            duration: AppMotion.normal,
+                            curve: AppMotion.curve,
+                            child: Center(
+                              child: Container(
+                                width: slotWidth - 10,
+                                decoration: BoxDecoration(
+                                  color: colorScheme.surfaceContainerHighest,
+                                  borderRadius: AppShapes.radiusLg,
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Item row on top of the pill.
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: hPad,
+                              vertical: 6,
+                            ),
+                            child: Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceAround,
+                              children: [
+                                _NavItem(
+                                  icon: _icons[0],
+                                  selectedIcon: _selectedIcons[0],
+                                  label: _labels[0],
+                                  isSelected: slot == 0,
+                                  onTap: () => _onDestinationSelected(0),
+                                ),
+                                _NavItem(
+                                  icon: _icons[1],
+                                  selectedIcon: _selectedIcons[1],
+                                  label: _labels[1],
+                                  isSelected: slot == 1,
+                                  onTap: () => _onDestinationSelected(1),
+                                ),
+                                // Center CREATE button (Instagram-style
+                                // raised action).
+                                _CreateNavButton(
+                                  onTap: () => _onDestinationSelected(2),
+                                ),
+                                _NavItem(
+                                  icon: _icons[2],
+                                  selectedIcon: _selectedIcons[2],
+                                  label: _labels[2],
+                                  isSelected: slot == 3,
+                                  badgeCount: dmCount,
+                                  onTap: () => _onDestinationSelected(3),
+                                ),
+                                _NavItem(
+                                  icon: _icons[3],
+                                  selectedIcon: _selectedIcons[3],
+                                  label: _labels[3],
+                                  isSelected: slot == 4,
+                                  onTap: () => _onDestinationSelected(4),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
@@ -293,7 +318,7 @@ class _AppShellState extends ConsumerState<AppShell>
                 height: 4,
                 decoration: BoxDecoration(
                   color: Theme.of(ctx).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: AppShapes.radiusXs,
                 ),
               ),
               const SizedBox(height: 16),
@@ -356,7 +381,7 @@ class _ShellOverflowMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authStateProvider);
-    final themeMode = ref.watch(themeModeProvider);
+    final appearance = ref.watch(appAppearanceProvider);
 
     return PopupMenuButton<String>(
       icon: const Icon(Icons.more_vert_rounded),
@@ -373,18 +398,23 @@ class _ShellOverflowMenu extends ConsumerWidget {
         const PopupMenuDivider(),
         CheckedPopupMenuItem(
           value: 'theme_system',
-          checked: themeMode == ThemeMode.system,
+          checked: appearance == AppAppearance.system,
           child: const Text('System theme'),
         ),
         CheckedPopupMenuItem(
           value: 'theme_light',
-          checked: themeMode == ThemeMode.light,
+          checked: appearance == AppAppearance.light,
           child: const Text('Light theme'),
         ),
         CheckedPopupMenuItem(
           value: 'theme_dark',
-          checked: themeMode == ThemeMode.dark,
+          checked: appearance == AppAppearance.dark,
           child: const Text('Dark theme'),
+        ),
+        CheckedPopupMenuItem(
+          value: 'theme_oled',
+          checked: appearance == AppAppearance.oled,
+          child: const Text('OLED black theme'),
         ),
       ],
     );
@@ -419,14 +449,25 @@ class _ShellOverflowMenu extends ConsumerWidget {
       case 'docs':
         context.push('/docs');
       case 'theme_system':
-        ref.read(themeModeProvider.notifier).state = ThemeMode.system;
+        ref
+            .read(appAppearanceProvider.notifier)
+            .setAppearance(AppAppearance.system);
         AppToast.info(context, 'Theme follows your system');
       case 'theme_light':
-        ref.read(themeModeProvider.notifier).state = ThemeMode.light;
+        ref
+            .read(appAppearanceProvider.notifier)
+            .setAppearance(AppAppearance.light);
         AppToast.info(context, 'Light theme');
       case 'theme_dark':
-        ref.read(themeModeProvider.notifier).state = ThemeMode.dark;
+        ref
+            .read(appAppearanceProvider.notifier)
+            .setAppearance(AppAppearance.dark);
         AppToast.info(context, 'Dark theme');
+      case 'theme_oled':
+        ref
+            .read(appAppearanceProvider.notifier)
+            .setAppearance(AppAppearance.oled);
+        AppToast.info(context, 'OLED black theme');
     }
   }
 }
@@ -460,7 +501,7 @@ class _NavItem extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: AppShapes.radiusLg,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Column(
@@ -479,7 +520,7 @@ class _NavItem extends StatelessWidget {
                 textColor: colorScheme.onError,
                 child: Icon(
                   isSelected ? selectedIcon : icon,
-                  size: 25,
+                  size: 24,
                   color: color,
                 ),
               ),
@@ -517,27 +558,27 @@ class _CreateNavButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: 46,
+              height: 46,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [colorScheme.primary, colorScheme.tertiary],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppShapes.radiusLg,
                 boxShadow: [
                   BoxShadow(
-                    color: colorScheme.primary.withValues(alpha: 0.35),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+                    color: colorScheme.primary.withValues(alpha: 0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
                   ),
                 ],
               ),
               child: const Icon(
                 Icons.add_rounded,
                 color: Colors.white,
-                size: 28,
+                size: 27,
               ),
             ),
           ],
@@ -571,12 +612,12 @@ class _CreateAction extends StatelessWidget {
         height: 44,
         decoration: BoxDecoration(
           color: colorScheme.primaryContainer.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppShapes.radiusMd,
         ),
         child: Icon(icon, color: colorScheme.primary, size: 22),
       ),
-      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      title: Text(label, style: Theme.of(context).textTheme.titleSmall),
+      subtitle: Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
       trailing: Icon(
         Icons.arrow_forward_ios_rounded,
         size: 14,
@@ -945,9 +986,8 @@ class _DrawerHeader extends ConsumerWidget {
                   auth.isLoggedIn
                       ? (profile?.displayNameOrName ?? 'Nostr User')
                       : 'NostrFeed',
-                  style: const TextStyle(
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     color: Colors.white,
-                    fontSize: 22,
                     fontWeight: FontWeight.bold,
                     letterSpacing: -0.5,
                   ),
@@ -961,9 +1001,8 @@ class _DrawerHeader extends ConsumerWidget {
                             ? 'Read-only mode'
                             : '@${profile?.name ?? "anon"}')
                       : 'Nostr Operating System',
-                  style: TextStyle(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.white.withValues(alpha: 0.95),
-                    fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -1060,7 +1099,7 @@ void _showAccountSwitcher(BuildContext context, WidgetRef ref, AuthState auth) {
                   height: 4,
                   decoration: BoxDecoration(
                     color: scheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: AppShapes.radiusXs,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -1159,10 +1198,13 @@ class _AccountTile extends StatelessWidget {
             ? Icon(Icons.person_rounded, color: scheme.onPrimaryContainer)
             : null,
       ),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+      title: Text(name, style: Theme.of(context).textTheme.titleSmall),
       subtitle: Text(
         account.isReadOnly ? '$npub · read-only' : npub,
-        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: scheme.onSurfaceVariant),
       ),
       trailing: isActive
           ? Icon(Icons.check_circle_rounded, color: scheme.primary)
@@ -1204,17 +1246,15 @@ class _UpdateAvailableBanner extends ConsumerWidget {
                 children: [
                   Text(
                     'Update available — v${release.version}',
-                    style: TextStyle(
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w700,
-                      fontSize: 13.5,
                       color: scheme.onPrimaryContainer,
                     ),
                   ),
                   if (release.notes != null && release.notes!.isNotEmpty)
                     Text(
                       release.notes!,
-                      style: TextStyle(
-                        fontSize: 11.5,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: scheme.onPrimaryContainer
                             .withValues(alpha: 0.85),
                       ),
@@ -1260,7 +1300,7 @@ class _HeaderChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppShapes.radiusMd,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1269,10 +1309,8 @@ class _HeaderChip extends StatelessWidget {
           const SizedBox(width: 5),
           Text(
             label,
-            style: const TextStyle(
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
               color: Colors.white,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
             ),
           ),
           if (trailing != null) ...[
@@ -1300,8 +1338,7 @@ class _DrawerSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       child: Text(
         title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
           fontWeight: FontWeight.w700,
           color: colorScheme.primary,
           letterSpacing: 1.5,
@@ -1342,10 +1379,10 @@ class _DrawerItem extends StatelessWidget {
             HapticFeedback.selectionClick();
             onTap();
           },
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: AppShapes.radiusLg,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
+            decoration: BoxDecoration(borderRadius: AppShapes.radiusLg),
             child: Row(
               children: [
                 Container(
@@ -1354,7 +1391,7 @@ class _DrawerItem extends StatelessWidget {
                     color: isDestructive
                         ? Colors.red.withValues(alpha: 0.1)
                         : colorScheme.primaryContainer.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: AppShapes.radiusMd,
                   ),
                   child: Icon(
                     icon,
@@ -1369,8 +1406,7 @@ class _DrawerItem extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: TextStyle(
-                          fontSize: 15,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: color,
                           letterSpacing: -0.2,
@@ -1380,10 +1416,10 @@ class _DrawerItem extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           subtitle!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                       ],
                     ],
@@ -1454,7 +1490,7 @@ class _DrawerFooter extends ConsumerWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppShapes.radiusMd,
             ),
             child: const Icon(
               Icons.bolt_rounded,
@@ -1469,18 +1505,17 @@ class _DrawerFooter extends ConsumerWidget {
               children: [
                 Text(
                   'NostrFeed',
-                  style: TextStyle(
-                    fontSize: 14,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: colorScheme.onSurface,
                   ),
                 ),
                 Text(
                   version.isEmpty ? '…' : 'v$version',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: colorScheme.onSurfaceVariant),
                 ),
               ],
             ),

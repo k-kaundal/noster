@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
@@ -376,7 +377,7 @@ class _ReceiveDialogState extends ConsumerState<ReceiveDialog> {
         // Live status — the piece that was missing: without it the QR just
         // sat there and "the invoice didn't show" (nothing confirmed).
         AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
+          duration: AppMotion.fast,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: _isPaid

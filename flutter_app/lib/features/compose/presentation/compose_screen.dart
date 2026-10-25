@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/features/compose/data/upload_service.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/quote_card.dart';
 
@@ -41,7 +42,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   bool _isPosting = false;
   bool _isUploading = false;
-  final List<String> _imageUrls = [];
+  // Uploaded images — kept as UploadResult (not just the URL) so the post
+  // carries NIP-92 imeta metadata (m/x/size) alongside each URL. Feed
+  // clients use it to reserve layout space and verify the media.
+  final List<UploadResult> _imageUrls = [];
 
   // ── Poll state (NIP-88) ─────────────────────────────────────────────
   final List<TextEditingController> _pollOptions = [
@@ -129,10 +133,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         );
       } else {
         var content = question;
-        // Append image URLs to content.
-        for (final url in _imageUrls) {
+        // Append image URLs to content (clients render them inline).
+        for (final img in _imageUrls) {
           if (content.isNotEmpty) content += '\n';
-          content += url;
+          content += img.url;
         }
         if (_isQuote) {
           // NIP-18 quote post: the quoted event's NIP-21 ref goes inline so
@@ -145,6 +149,13 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
           event = _quoteWithHashtags(nostr, content, tags);
         } else {
           final tags = _extractHashtags(content);
+          // NIP-92 imeta tags: one per uploaded image, carrying the mime,
+          // sha256 (x), and byte size so feed tiles can reserve space and
+          // BUD-03 re-hosting can verify the content. The URL is also in
+          // the content (above) for clients that don't read imeta.
+          for (final img in _imageUrls) {
+            tags.add(['imeta', ...img.toImetaEntries()]);
+          }
           event = nostr.createPost(content, tags: tags);
         }
       }
@@ -225,11 +236,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       setState(() => _isUploading = true);
 
       final uploadService = ref.read(uploadServiceProvider);
-      final url = await uploadService.uploadImage(image);
+      final result = await uploadService.uploadImageDetailed(image);
 
       if (mounted) {
         setState(() {
-          _imageUrls.add(url);
+          _imageUrls.add(result);
           _isUploading = false;
         });
       }
@@ -436,7 +447,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: Image.network(
-                                _imageUrls[i],
+                                _imageUrls[i].url,
                                 width: 100,
                                 height: 100,
                                 fit: BoxFit.cover,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/features/settings/application/relay_settings_providers.dart'
     show readRelayUrls, writeRelayUrls;
@@ -80,7 +81,14 @@ class RelayConnection {
   Timer? _reconnectTimer;
   bool _intentionallyClosed = false;
 
-  RelayConnection(this.url);
+  RelayConnection(this.url, {bool Function(String eventId)? verifiedMarker})
+      // ignore: prefer_initializing_formals
+      : _verifiedMarker = verifiedMarker;
+
+  /// Pool-shared "already verified" marker — set when this connection is
+  /// owned by a RelayPool. Null for ad-hoc standalone connections (they
+  /// verify every copy, the old behavior).
+  final bool Function(String eventId)? _verifiedMarker;
 
   bool get isConnected => state == RelayState.connected;
 
@@ -167,7 +175,14 @@ class RelayConnection {
           // feed would render it as real. Cheap enough at feed volume
           // (Schnorr verify ~100µs) and it's the only thing standing
           // between the user and relay-served forgeries.
-          if (!event.isValid) break;
+          // C4: cross-relay verify dedup — the same event arrives on every
+          // connected relay; only the FIRST copy pays the Schnorr cost.
+          final alreadyVerified = _verifiedMarker?.call(event.id) ?? false;
+          if (!alreadyVerified && !event.isValid) break;
+          // Record provenance (ADR-0005 L4): which relay delivered this
+          // event — relay hints for thread/backfill fetches later. Buffered
+          // in the store (no per-frame I/O).
+          EventStore.instance.markSeenOn(event.id, url);
           // Advance the sliding cursor for resubscribe — this sub's
           // next re-issue only asks for events NEWER than this one.
           final persistent = _persistentSubs[subId];
@@ -336,6 +351,27 @@ class RelayPool {
   final Map<String, RelayConnection> _relays = {};
   List<String> relayUrls;
 
+  /// Bounded LRU of recently-verified event ids. The same event is delivered
+  /// by EVERY connected relay (a page of 50 posts × 9 relays = up to 450
+  /// Schnorr verifications for 50 unique events), and `_handleMessage`
+  /// verifies each copy on the UI isolate (~100µs each — a burst stalls
+  /// frames). Verifying is idempotent for a given event bytes, so copies
+  /// after the first SKIP the crypto entirely. 5k entries ≈ a few minutes
+  /// of traffic; a stale hit is impossible (id commits to exact bytes).
+  final Set<String> _verifiedIds = <String>{};
+  static const _verifiedCap = 5000;
+
+  /// Shared by every connection in the pool: has this event id already
+  /// passed signature verification (on any relay)? Records it if not.
+  bool markVerified(String eventId) {
+    if (_verifiedIds.contains(eventId)) return true;
+    _verifiedIds.add(eventId);
+    if (_verifiedIds.length > _verifiedCap) {
+      _verifiedIds.remove(_verifiedIds.first); // evict oldest (LinkedHashSet)
+    }
+    return false;
+  }
+
   /// Auth signer callback — set by auth service.
   Future<NostrEvent> Function(String relayUrl, String challenge)? authHandler;
 
@@ -376,7 +412,7 @@ class RelayPool {
   Future<void> connectAll() async {
     final futures = relayUrls.map((url) {
       if (!_relays.containsKey(url)) {
-        final conn = RelayConnection(url);
+        final conn = RelayConnection(url, verifiedMarker: markVerified);
         conn.onAuthChallenge = authHandler != null
             ? (challenge) => authHandler!(url, challenge)
             : null;
@@ -452,7 +488,7 @@ class RelayPool {
         final normalized = normalizeRelayUrl(url);
         var conn = _relays[normalized];
         if (conn == null) {
-          conn = RelayConnection(normalized);
+          conn = RelayConnection(normalized, verifiedMarker: markVerified);
           conn.onAuthChallenge = authHandler != null
               ? (challenge) => authHandler!(normalized, challenge)
               : null;
@@ -532,7 +568,7 @@ class RelayPool {
         final normalized = normalizeRelayUrl(url);
         var conn = _relays[normalized];
         if (conn == null) {
-          conn = RelayConnection(normalized);
+          conn = RelayConnection(normalized, verifiedMarker: markVerified);
           conn.onAuthChallenge = authHandler != null
               ? (challenge) => authHandler!(normalized, challenge)
               : null;
@@ -567,7 +603,7 @@ class RelayPool {
     final normalized = normalizeRelayUrl(url);
     if (!_relays.containsKey(normalized)) {
       relayUrls.add(normalized);
-      final conn = RelayConnection(normalized);
+      final conn = RelayConnection(normalized, verifiedMarker: markVerified);
       conn.onAuthChallenge = authHandler != null
           ? (challenge) => authHandler!(normalized, challenge)
           : null;
@@ -582,7 +618,7 @@ class RelayPool {
   void ensureConnection(String url) {
     final normalized = normalizeRelayUrl(url);
     if (!_relays.containsKey(normalized)) {
-      final conn = RelayConnection(normalized);
+      final conn = RelayConnection(normalized, verifiedMarker: markVerified);
       conn.onAuthChallenge = authHandler != null
           ? (challenge) => authHandler!(normalized, challenge)
           : null;
@@ -603,7 +639,7 @@ class RelayPool {
     final normalized = normalizeRelayUrl(url);
     var conn = _relays[normalized];
     if (conn == null) {
-      conn = RelayConnection(normalized);
+      conn = RelayConnection(normalized, verifiedMarker: markVerified);
       conn.onAuthChallenge = authHandler != null
           ? (challenge) => authHandler!(normalized, challenge)
           : null;
@@ -648,7 +684,7 @@ class RelayPool {
       final normalized = normalizeRelayUrl(url);
       var conn = _relays[normalized];
       if (conn == null) {
-        conn = RelayConnection(normalized);
+        conn = RelayConnection(normalized, verifiedMarker: markVerified);
         conn.onAuthChallenge = authHandler != null
             ? (challenge) => authHandler!(normalized, challenge)
             : null;

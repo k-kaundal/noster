@@ -8,9 +8,21 @@ import 'package:timeago/timeago.dart' as timeago;
 ///
 /// Outgoing messages show a delivery tick: clock (sending), single tick
 /// (delivered to a relay), error (failed — tap to retry).
+///
+/// Bubble shape + colors follow Primal's `ChatMessageListItem`: an 8 dp
+/// bubble whose corner nearest the sender drops to a 2 dp "tail" — the
+/// tail is only on the FIRST message of a group (a run of messages from
+/// the same sender); continuations get the tail on the FOLLOWING edge.
+/// Mine = `colorScheme.tertiary` (Primal `#0C7DD8`) with white text;
+/// theirs = muted surface with onSurface text.
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isSent;
+
+  /// Whether the NEXT message in the list (older in time — the list is
+  /// reversed) is from the same sender, i.e. this message continues a
+  /// group. Drives Primal's grouped-corner shape.
+  final bool isGroupContinuation;
 
   /// Called when the user taps a FAILED outgoing message (to retry).
   final VoidCallback? onRetry;
@@ -22,6 +34,7 @@ class MessageBubble extends StatelessWidget {
     super.key,
     required this.message,
     required this.isSent,
+    this.isGroupContinuation = false,
     this.onRetry,
     this.onDelete,
   });
@@ -38,6 +51,26 @@ class MessageBubble extends StatelessWidget {
     final failed = message.status == MessageStatus.failed;
     final isImageMsg = message.isImage && message.text.startsWith('http');
 
+    // Primal's grouped bubble corners (8 dp, tail corner 2 dp):
+    //  - first-in-group: tail on the BOTTOM edge near the sender
+    //    (mine: bottomEnd; theirs: bottomStart)
+    //  - continuation: tail on the TOP edge near the sender instead.
+    const r = Radius.circular(8);
+    const tail = Radius.circular(2);
+    final borderRadius = isSent
+        ? BorderRadius.only(
+            topLeft: r,
+            topRight: isGroupContinuation ? tail : r,
+            bottomLeft: r,
+            bottomRight: isGroupContinuation ? r : tail,
+          )
+        : BorderRadius.only(
+            topLeft: isGroupContinuation ? tail : r,
+            topRight: r,
+            bottomLeft: isGroupContinuation ? r : tail,
+            bottomRight: r,
+          );
+
     final bubble = Align(
       alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -47,20 +80,10 @@ class MessageBubble extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         decoration: BoxDecoration(
-          gradient: isSent
-              ? LinearGradient(
-                  colors: [colorScheme.primary, colorScheme.tertiary],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : null,
-          color: isSent ? null : colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(20),
-            topRight: const Radius.circular(20),
-            bottomLeft: Radius.circular(isSent ? 20 : 6),
-            bottomRight: Radius.circular(isSent ? 6 : 20),
-          ),
+          // Primal: mine = flat tertiary (#0C7DD8), theirs = muted surface —
+          // no gradient (flat is what makes their chat read "native").
+          color: isSent ? colorScheme.tertiary : colorScheme.surfaceContainerHighest,
+          borderRadius: borderRadius,
         ),
         child: Column(
           crossAxisAlignment: isSent

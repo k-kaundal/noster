@@ -148,7 +148,8 @@ class AuthNotifier extends Notifier<AuthState> {
     // fetchProfile during that window will get stale data — this cache
     // ensures the UI sees the update immediately.
     if (state.pubkey != null) {
-      _nostr.profileCache[state.pubkey!] = (
+      _nostr.cacheProfile(
+        state.pubkey!,
         profile: profile,
         createdAt: event.createdAt,
         fetchedAt: event.createdAt,

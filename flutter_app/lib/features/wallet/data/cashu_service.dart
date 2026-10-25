@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hex/hex.dart';
-import 'package:http/http.dart' as http;
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/services/http_helper.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -107,6 +107,32 @@ class CashuService {
 
   final String mintUrl;
 
+  /// All mint HTTP goes through ApiHttpClient (AGENTS.md: no raw
+  /// `http.get + jsonDecode` blocks). These helpers keep the service's
+  /// `CashuException` type + per-call timeouts while reusing the shared
+  /// status check, JSON decode and error shape.
+  Future<Map<String, dynamic>> _get(Uri uri, {Duration? timeout}) async {
+    try {
+      return await ApiHttpClient(timeout: timeout ?? AppDurations.http)
+          .getJson(uri);
+    } on ApiHttpException catch (e) {
+      throw CashuException(e.body);
+    }
+  }
+
+  Future<Map<String, dynamic>> _post(
+    Uri uri,
+    Object body, {
+    Duration? timeout,
+  }) async {
+    try {
+      return await ApiHttpClient(timeout: timeout ?? AppDurations.http)
+          .postJson(uri, body: body);
+    } on ApiHttpException catch (e) {
+      throw CashuException(e.body);
+    }
+  }
+
   static const _storageKey = 'cashu:state';
 
   // ── Storage ────────────────────────────────────────────────────────
@@ -157,29 +183,18 @@ class CashuService {
   /// Step 1: ask the mint for a Lightning invoice to pay (NUT-04).
   Future<MintQuote> requestMintQuote(int amountSats) async {
     final uri = Uri.parse('$mintUrl/v1/mint/quote/bolt11');
-    final res = await http
-        .post(
-          uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'amount': amountSats, 'unit': 'sat'}),
-        )
-        .timeout(AppDurations.httpLong);
-    if (res.statusCode != 200) {
-      throw CashuException('Mint quote failed: ${res.body}');
-    }
-    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final json = await _post(
+      uri,
+      {'amount': amountSats, 'unit': 'sat'},
+      timeout: AppDurations.httpLong,
+    );
     return MintQuote.fromJson(json);
   }
 
   /// Step 2: poll the quote status.
   Future<MintQuote> checkMintQuote(String quoteId) async {
     final uri = Uri.parse('$mintUrl/v1/mint/quote/bolt11/$quoteId');
-    final res = await http.get(uri).timeout(AppDurations.http);
-    if (res.statusCode != 200) {
-      throw CashuException('Check quote failed: ${res.body}');
-    }
-    return MintQuote.fromJson(
-        jsonDecode(res.body) as Map<String, dynamic>);
+    return MintQuote.fromJson(await _get(uri));
   }
 
   /// Step 3: once PAID, request proofs (NUT-04). In the full Cashu protocol
@@ -215,17 +230,11 @@ class CashuService {
     }
 
     final uri = Uri.parse('$mintUrl/v1/mint/bolt11');
-    final res = await http
-        .post(
-          uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'quote': quoteId, 'outputs': outputs}),
-        )
-        .timeout(AppDurations.httpLong);
-    if (res.statusCode != 200) {
-      throw CashuException('Mint failed: ${res.body}');
-    }
-    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final json = await _post(
+      uri,
+      {'quote': quoteId, 'outputs': outputs},
+      timeout: AppDurations.httpLong,
+    );
     final signatures = (json['signatures'] as List?) ?? [];
 
     final proofs = <CashuProof>[];
@@ -246,18 +255,12 @@ class CashuService {
   /// Melt proofs to pay a Lightning invoice (NUT-05).
   Future<MeltQuote> requestMeltQuote(String bolt11Invoice) async {
     final uri = Uri.parse('$mintUrl/v1/melt/quote/bolt11');
-    final res = await http
-        .post(
-          uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'request': bolt11Invoice, 'unit': 'sat'}),
-        )
-        .timeout(AppDurations.httpLong);
-    if (res.statusCode != 200) {
-      throw CashuException('Melt quote failed: ${res.body}');
-    }
-    return MeltQuote.fromJson(
-        jsonDecode(res.body) as Map<String, dynamic>);
+    final json = await _post(
+      uri,
+      {'request': bolt11Invoice, 'unit': 'sat'},
+      timeout: AppDurations.httpLong,
+    );
+    return MeltQuote.fromJson(json);
   }
 
   /// Execute the melt: spend proofs to pay the invoice.
@@ -266,21 +269,15 @@ class CashuService {
     required List<CashuProof> proofs,
   }) async {
     final uri = Uri.parse('$mintUrl/v1/melt/bolt11');
-    final res = await http
-        .post(
-          uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'quote': quoteId,
-            'inputs': proofs.map((p) => p.toJson()).toList(),
-          }),
-        )
-        .timeout(AppDurations.walletOp);
-    if (res.statusCode != 200) {
-      throw CashuException('Melt failed: ${res.body}');
-    }
-    return MeltResult.fromJson(
-        jsonDecode(res.body) as Map<String, dynamic>);
+    final json = await _post(
+      uri,
+      {
+        'quote': quoteId,
+        'inputs': proofs.map((p) => p.toJson()).toList(),
+      },
+      timeout: AppDurations.walletOp,
+    );
+    return MeltResult.fromJson(json);
   }
 
   // ── Sending: create a Cashu token (NUT-00) ─────────────────────────
@@ -347,20 +344,14 @@ class CashuService {
     }
 
     final uri = Uri.parse('$mintUrl/v1/swap');
-    final res = await http
-        .post(
-          uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'inputs': token.proofs.map((p) => p.toJson()).toList(),
-            'outputs': outputs,
-          }),
-        )
-        .timeout(AppDurations.httpLong);
-    if (res.statusCode != 200) {
-      throw CashuException('Swap failed: ${res.body}');
-    }
-    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final json = await _post(
+      uri,
+      {
+        'inputs': token.proofs.map((p) => p.toJson()).toList(),
+        'outputs': outputs,
+      },
+      timeout: AppDurations.httpLong,
+    );
     final signatures = (json['signatures'] as List?) ?? [];
 
     final proofs = <CashuProof>[];
@@ -408,12 +399,7 @@ class CashuService {
   /// Mint info: which NUTs does the mint support?
   Future<MintInfo> getMintInfo() async {
     final uri = Uri.parse('$mintUrl/v1/info');
-    final res = await http.get(uri).timeout(AppDurations.http);
-    if (res.statusCode != 200) {
-      throw CashuException('Mint info failed: ${res.body}');
-    }
-    return MintInfo.fromJson(
-        jsonDecode(res.body) as Map<String, dynamic>);
+    return MintInfo.fromJson(await _get(uri));
   }
 }
 

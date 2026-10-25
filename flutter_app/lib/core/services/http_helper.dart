@@ -88,6 +88,27 @@ class ApiHttpClient {
     return _decodeObject(res.body);
   }
 
+  /// POST with a caller-controlled raw body and content type — for
+  /// `application/x-www-form-urlencoded` and other non-JSON payloads
+  /// (`postJson` always JSON-encodes). Returns the parsed object or null on
+  /// non-2xx (probe-style, like [tryGetJson]) so fallback chains can try
+  /// the next shape without a try/catch per attempt.
+  Future<Map<String, dynamic>?> tryPostRaw(
+    Uri url, {
+    required Map<String, String> headers,
+    required Object body,
+  }) async {
+    try {
+      final res = await http
+          .post(url, headers: headers, body: body)
+          .timeout(timeout);
+      if (res.statusCode < 200 || res.statusCode >= 300) return null;
+      return _decodeObject(res.body);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// GET that tolerates non-2xx by returning null (for probe-style lookups
   /// like LNURL resolution where 404 simply means "doesn't exist").
   Future<Map<String, dynamic>?> tryGetJson(

@@ -71,6 +71,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # In-memory SQLite for EventStore unit tests (deterministic, no device).
+  sqflite_common_ffi: ^2.3.4+4
+
+# UNIT TESTS ONLY: sqflite_common_ffi's sqlite3 hook downloads a precompiled
+# dylib from GitHub by default — impossible offline (and pointless on-device,
+# where sqflite uses the platform SQLite). `process` resolves SQLite symbols
+# from the test process itself — no download, no bundling. Production
+# Android/iOS builds never touch this: they don't include sqflite_common_ffi.
+hooks:
+  user_defines:
+    sqlite3:
+      source: process
   flutter_launcher_icons: ^0.14.4
   flutter_native_splash: ^2.4.8
 

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
@@ -118,8 +119,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
+          duration: AppMotion.normal,
+          curve: AppMotion.curve,
         );
       }
     } catch (e) {

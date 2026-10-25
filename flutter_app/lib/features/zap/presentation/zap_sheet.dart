@@ -59,7 +59,24 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
   String? _error;
   String? _lightningAddress;
 
-  static const _presets = [21, 100, 500, 1000, 5000, 10000];
+  /// Primal's zap preset grid (`ZapBottomSheet` defaults): emoji + amount,
+  /// each preset carrying Primal's exact amounts — 👍21, 🚀420, ☕1k, 🍻5k,
+  /// 🍷10k, 👑100k. The emoji is the identity of the amount in Nostr
+  /// culture (a "🚀 420" reads instantly).
+  static const _presets = [
+    (emoji: '👍', amount: 21),
+    (emoji: '🚀', amount: 420),
+    (emoji: '☕', amount: 1000),
+    (emoji: '🍻', amount: 5000),
+    (emoji: '🍷', amount: 10000),
+    (emoji: '👑', amount: 100000),
+  ];
+
+  static String _shortAmount(int sats) {
+    if (sats >= 1000000) return '${(sats / 1000000).toStringAsFixed(0)}M';
+    if (sats >= 1000) return '${(sats / 1000).toStringAsFixed(0)}k';
+    return '$sats';
+  }
 
   @override
   void initState() {
@@ -320,28 +337,37 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           ),
         const SizedBox(height: 16),
 
-        // Preset amount chips
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          alignment: WrapAlignment.center,
-          children: _presets.map((amount) {
-            final isSelected = _selectedPreset == amount;
-            return ChoiceChip(
-              label: Text('$amount'),
-              selected: isSelected,
-              onSelected: (_) {
-                setState(() {
-                  _selectedPreset = amount;
-                  _amountController.text = '$amount';
-                });
-                // Small presets become the new one-tap default.
-                if (amount <= quickZapMaxSats) {
-                  ref.read(quickZapAmountProvider.notifier).setAmount(amount);
-                }
-              },
-            );
-          }).toList(),
+        // Primal's preset grid: 3 columns of square emoji+amount cells.
+        // Selected = surface bg + 1 dp tertiary border; unselected =
+        // surfaceVariantAlt1 bg (here surfaceContainerHighest, the closest
+        // M3 token to Primal's alt surfaces).
+        GridView.count(
+          crossAxisCount: 3,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1.15,
+          children: [
+            for (final preset in _presets)
+              _ZapPresetCell(
+                emoji: preset.emoji,
+                label: _shortAmount(preset.amount),
+                selected: _selectedPreset == preset.amount,
+                onTap: () {
+                  setState(() {
+                    _selectedPreset = preset.amount;
+                    _amountController.text = '${preset.amount}';
+                  });
+                  // Small presets become the new one-tap default.
+                  if (preset.amount <= quickZapMaxSats) {
+                    ref
+                        .read(quickZapAmountProvider.notifier)
+                        .setAmount(preset.amount);
+                  }
+                },
+              ),
+          ],
         ),
         const SizedBox(height: 16),
 
@@ -474,6 +500,57 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// One cell of Primal's zap preset grid (`ZapOption`): a square tile with
+/// the preset emoji (28 sp) above the shortened amount (SemiBold) —
+/// selected gets a surface background + 1 dp tertiary border, unselected a
+/// muted container.
+class _ZapPresetCell extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ZapPresetCell({
+    required this.emoji,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? scheme.surface : scheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: selected
+            ? BorderSide(color: scheme.tertiary, width: 1)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 26)),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

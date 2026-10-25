@@ -4,12 +4,12 @@ import 'package:nostrfeed_mobile/app/router.dart';
 import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/connectivity_providers.dart';
+import 'package:nostrfeed_mobile/core/providers/ingest_pipeline_providers.dart';
+import 'package:nostrfeed_mobile/core/services/background_sync.dart';
 import 'package:nostrfeed_mobile/core/services/local_notification_service.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
-import 'package:nostrfeed_mobile/features/chat/application/dm_gap_fill.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_notifier.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
-import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
 import 'package:nostrfeed_mobile/features/notifications/application/notification_center.dart';
 import 'package:nostrfeed_mobile/features/notifications/presentation/widgets/social_alert_banner.dart';
 import 'package:nostrfeed_mobile/features/settings/application/app_update_providers.dart';
@@ -40,35 +40,17 @@ class _NostrFeedAppState extends ConsumerState<NostrFeedApp>
   }
 
   /// When the app returns to the foreground (Android kills idle sockets
-  /// after ~20min–1hr), reconnect any dead relays — each reconnect then
-  /// re-issues its live subscriptions, so the feed/DMs/notifications resume
-  /// without an app restart.
+  /// after ~20min–1hr), run the background catch-up: reconnect dead relays
+  /// (each re-issues its live subscriptions), restart the feed tails,
+  /// resync wallets, and gap-fill DMs — so the user returns to current
+  /// content without an app restart. Centralized in BackgroundSyncService
+  /// (ADR-0005 P5) — the SAME pass a periodic scheduler will call.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      final nostr = ref.read(nostrServiceProvider);
-      if (nostr.isInitialized) {
-        nostr.relayPool.reconnectDead();
+      if (ref.read(nostrServiceProvider).isInitialized) {
+        ref.read(backgroundSyncServiceProvider).syncNow();
       }
-      // The live feed subscriptions died with the OS idle socket timeout —
-      // restart them and silently refresh both feeds so the user returns to
-      // current content, not the stale list from before the app was
-      // backgrounded (the "reopen the app and it's all old" bug).
-      ref.read(globalFeedProvider.notifier)
-        ..restartLive()
-        ..refresh();
-      ref.read(followingFeedNotifierProvider.notifier)
-        ..restartLive()
-        ..refresh();
-      // Money can move while the app is backgrounded (zaps received, credits
-      // bought on another device) — resync every wallet on return.
-      ref.read(walletSyncServiceProvider).syncNow();
-      // The LNbits live socket dies with the OS idle timeout — reopen it
-      // (the 30s poll covered the gap; this restores the realtime channel).
-      ref.read(lnbitsLiveServiceProvider).resync();
-      // DMs sent while we were dead can't be delivered retroactively by the
-      // live sub — gap-fill fetches exactly what arrived in the gap.
-      ref.read(dmGapFillProvider).fillGap();
       // A new app version may have shipped while backgrounded — re-check
       // (soft, non-blocking; shows the drawer banner only if newer).
       ref.invalidate(appUpdateProvider);
@@ -79,6 +61,9 @@ class _NostrFeedAppState extends ConsumerState<NostrFeedApp>
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeModeProvider);
+    // OLED Black swaps the dark THEME for the true-black variant — the
+    // resolved ThemeMode stays `dark` (see theme_providers.dart).
+    final isOled = ref.watch(appAppearanceProvider) == AppAppearance.oled;
 
     // Global DM notification listener: shows an in-app banner when a new
     // encrypted message arrives from someone else (see DmNotifier).
@@ -88,6 +73,10 @@ class _NostrFeedAppState extends ConsumerState<NostrFeedApp>
     ref.watch(dmLiveListenerProvider);
     // Real-time social engagement: likes, comments, reposts, zaps, follows.
     ref.watch(socialLiveListenerProvider);
+    // ADR-0005 ingest pipeline: every gated bus event lands in the local
+    // store exactly once; engagement counts tick live (debounced). This is
+    // the single write path behind store-first feeds/threads/counts.
+    ref.watch(ingestPipelineProvider);
     // NIP-51 mute list: fetch and merge the user's blocked words/authors
     // once per session, so their blocks follow them across clients.
     ref.watch(muteListSyncProvider);
@@ -110,7 +99,7 @@ class _NostrFeedAppState extends ConsumerState<NostrFeedApp>
       title: 'NostrFeed',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
+      darkTheme: isOled ? AppTheme.oledTheme : AppTheme.darkTheme,
       themeMode: themeMode,
       routerConfig: router,
       // Overlay host for the in-app "new message" banner — sits above every
