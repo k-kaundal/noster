@@ -332,6 +332,10 @@ final liveSocialEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
 /// The pending social banner (auto-dismissed by the banner widget).
 final socialAlertProvider = StateProvider<SocialAlert?>((ref) => null);
 
+/// Banner throttle state (same-author bursts collapse — see the listener).
+final _lastBannerAuthorProvider = StateProvider<String>((ref) => '');
+final _lastBannerAtProvider = StateProvider<int>((ref) => 0);
+
 /// Wires the live engagement stream into the center + banner state.
 /// Watch once at the app root (app.dart).
 final socialLiveListenerProvider = Provider<void>((ref) {
@@ -358,7 +362,20 @@ final socialLiveListenerProvider = Provider<void>((ref) {
           event: event,
           arrivedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
         );
-        ref.read(socialAlertProvider.notifier).state = SocialAlert(socialEvent);
+        // Banner throttle (the "banners over and over" half of the dupe
+        // complaint): a burst from the SAME author within 4s collapses into
+        // the first banner instead of re-firing one per event. Different
+        // authors still banner immediately (they're distinct news).
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        final lastAuthor = ref.read(_lastBannerAuthorProvider);
+        final lastAt = ref.read(_lastBannerAtProvider);
+        final isSameAuthorBurst =
+            lastAuthor == event.pubkey && nowMs - lastAt < 4000;
+        if (!isSameAuthorBurst) {
+          ref.read(socialAlertProvider.notifier).state = SocialAlert(socialEvent);
+          ref.read(_lastBannerAuthorProvider.notifier).state = event.pubkey;
+          ref.read(_lastBannerAtProvider.notifier).state = nowMs;
+        }
 
         // ── Phone notification, typed per category ──────────────────
         final name = ref
@@ -369,11 +386,24 @@ final socialLiveListenerProvider = Provider<void>((ref) {
         final notifs = LocalNotificationService.instance;
         switch (event.kind) {
           case 3:
-            notifs.showFollow(followerName: name);
+            notifs.showFollow(
+              followerName: name,
+              eventId: event.id,
+              authorPubkey: event.pubkey,
+            );
           case 9735:
-            notifs.showZap(zapperName: name, sats: socialEvent.zapSats);
+            notifs.showZap(
+              zapperName: name,
+              sats: socialEvent.zapSats,
+              eventId: event.id,
+              authorPubkey: event.pubkey,
+            );
           default:
-            notifs.showSocial(text: '$name ${NotificationCenter.actionText(event)}');
+            notifs.showSocial(
+              text: '$name ${NotificationCenter.actionText(event)}',
+              eventId: event.id,
+              authorPubkey: event.pubkey,
+            );
         }
       }
     });

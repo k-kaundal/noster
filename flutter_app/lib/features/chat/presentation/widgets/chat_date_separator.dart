@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 
 class ChatDateSeparator extends StatelessWidget {
   final int timestamp;
@@ -23,18 +24,17 @@ class ChatDateSeparator extends StatelessWidget {
         : '${date.day}/${date.month}/${date.year}';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(16),
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+            borderRadius: AppShapes.radiusFull,
           ),
           child: Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: colorScheme.onSurfaceVariant,
             ),

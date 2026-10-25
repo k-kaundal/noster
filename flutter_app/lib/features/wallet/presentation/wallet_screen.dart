@@ -1150,16 +1150,18 @@ class _QuickRail extends StatelessWidget {
             ),
           ),
         ),
-        SizedBox(
-          height: 92,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (context, i) => _RailCard(item: items[i]),
-          ),
+        // A Row of equal-width cards that FILL the available width — no
+        // left-cluster / right-gap (the old fixed-112px horizontal ListView
+        // bunched the cards on the left on wide phones).
+        Row(
+          children: [
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(child: _RailCard(item: items[i])),
+            ],
+          ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -1187,7 +1189,7 @@ class _RailCard extends StatelessWidget {
       },
       borderRadius: AppShapes.radiusMd,
       child: Container(
-        width: 112,
+        height: 96,
         padding: const EdgeInsets.all(11),
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerLowest,

@@ -208,6 +208,19 @@ over ~100 lines.
   between wraps — the sender can't decrypt it (this caused "unable to decrypt").
 - **DM banner**: `DmAlertBanner` lives ABOVE the router (MaterialApp.builder)
   — navigate via `ref.read(routerProvider).push(...)`, never `context.push`.
+- **Phone notifications never repeat (the "again and again" fix)**:
+  `LocalNotificationService.show` takes `eventId` + `collapseKey`. The
+  **notified-id set** (persisted `notified_event_ids_v1`, 500-cap) means an
+  event fires a phone notification EXACTLY ONCE ever — the historical-fetch
+  replay after a restart can NOT re-notify old likes/zaps/follows/DMs.
+  **Burst collapsing** (30s window, per type+collapseKey) replaces the
+  previous notification with a count ("Alice and 5 others liked your post")
+  instead of stacking 30 — Instagram-style. Callers pass
+  `eventId: event.id` + `authorPubkey: event.pubkey` (see
+  `notification_center.dart`); DMs pass `eventId` + `peerPubkey`. The in-app
+  social banner throttles same-author bursts to 4s. Never call `show` for a
+  relay-sourced event without its `eventId`. `resetNotifiedIds()` runs on
+  logout/account-switch.
 - **Freshness caches** (`profileCache`/`followsCache`) are instance state on
   `NostrService`, injected into `SocialRepository` — never static globals.
 - **Auth & routing**: `routerProvider` redirects to `/login` when signed out
@@ -353,6 +366,8 @@ over ~100 lines.
   - Count badges (nav/bell/unread) → `AppBadge.count` (auto "99+" cap)
   - Status pills (live/ended/active/expired) → `StatusBadge.error/info/
     success/warning` (driven by `AppStatusColors`)
+  - Brand lockup (AppBar, login hero, splash) → `BrandLogo` (gradient bolt
+    tile + two-tone "nostr"+"feed" wordmark; `compact:` for tile-only)
 - **Token guardrail**: `tool/token_guard.sh` fails CI when raw
   `Colors.*`/`BorderRadius.circular`/`TextStyle(` counts in `lib/features/`
   GROW beyond the recorded baseline (`tool/.token_guard_baseline`) — run it

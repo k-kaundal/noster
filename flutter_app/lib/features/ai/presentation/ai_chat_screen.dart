@@ -131,6 +131,14 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                             )
                           : ListView.builder(
                               controller: _scrollController,
+                              // WhatsApp-style reversed list: the newest
+                              // message renders at the BOTTOM, short
+                              // conversations bottom-anchor, and the view
+                              // stays glued to the streaming answer when the
+                              // keyboard opens. `messages` is oldest-first,
+                              // so the index maps as len-1-i (offset 0 =
+                              // the newest message).
+                              reverse: true,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                                 vertical: 8,
@@ -140,22 +148,24 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                               itemCount: chatState.messages.length +
                                   (chatState.contextDropped > 0 ? 1 : 0),
                               itemBuilder: (context, index) {
-                                if (chatState.contextDropped > 0) {
-                                  if (index == 0) {
-                                    return _ContextNote(
-                                      dropped: chatState.contextDropped,
-                                    );
-                                  }
-                                  index -= 1;
+                                final messages = chatState.messages;
+                                // The context note belongs at the VISUAL top
+                                // = the LAST index of the reversed list.
+                                if (index == messages.length) {
+                                  return _ContextNote(
+                                    dropped: chatState.contextDropped,
+                                  );
                                 }
-                                final message = chatState.messages[index];
+                                final i = messages.length - 1 - index;
+                                final message = messages[i];
                                 if (message.role == AiRole.system) {
                                   return const SizedBox.shrink();
                                 }
                                 return _MessageBubble(
+                                  key: ValueKey(message.id),
                                   message: message,
                                   isStreaming: chatState.isStreaming &&
-                                      index == chatState.messages.length - 1,
+                                      i == messages.length - 1,
                                 );
                               },
                             ),
@@ -177,15 +187,21 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     );
   }
 
+  /// Scroll to the newest message — offset 0 in the reversed list. Waits TWO
+  /// frames: the outgoing message + the assistant placeholder are inserted
+  /// async by the notifier, so the list must rebuild before the offset
+  /// exists (a single post-frame callback can fire before the insert).
   void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: AppMotion.normal,
-          curve: AppMotion.curve,
-        );
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: AppMotion.normal,
+            curve: AppMotion.curve,
+          );
+        }
+      });
     });
   }
 }
@@ -503,7 +519,11 @@ class _MessageBubble extends StatelessWidget {
   final AiMessage message;
   final bool isStreaming;
 
-  const _MessageBubble({required this.message, this.isStreaming = false});
+  const _MessageBubble({
+    super.key,
+    required this.message,
+    this.isStreaming = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -526,12 +546,13 @@ class _MessageBubble extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           // Mine = flat tertiary (the accent); theirs = surfaceContainerHighest.
+          // Same 8 dp + 2 dp tail-corner language as the DM bubbles.
           color: isUser ? scheme.tertiary : scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(AppShapes.lg),
-            topRight: const Radius.circular(AppShapes.lg),
-            bottomLeft: Radius.circular(isUser ? AppShapes.lg : AppShapes.xs),
-            bottomRight: Radius.circular(isUser ? AppShapes.xs : AppShapes.lg),
+            topLeft: const Radius.circular(AppShapes.sm),
+            topRight: const Radius.circular(AppShapes.sm),
+            bottomLeft: Radius.circular(isUser ? AppShapes.sm : 2),
+            bottomRight: Radius.circular(isUser ? 2 : AppShapes.sm),
           ),
         ),
         child: Column(

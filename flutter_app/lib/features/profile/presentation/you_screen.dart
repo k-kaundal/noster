@@ -146,6 +146,60 @@ class YouScreen extends ConsumerWidget {
             ),
           ),
 
+          const _GroupLabel('Browse'),
+          // The content surfaces that had NO entry point after the drawer
+          // was killed (they're routes without a home — Articles/Reels/
+          // Lists/Calendar/Communities/Groups/Live). Explore's chip row
+          // covers discovery; /you is the full launcher.
+          _YouRow(
+            icon: 'article',
+            title: 'Articles',
+            subtitle: 'Long-form posts',
+            onTap: () => context.push('/articles'),
+          ),
+          _YouRow(
+            icon: 'video',
+            title: 'Reels',
+            subtitle: 'Short videos',
+            onTap: () => context.push('/reels'),
+          ),
+          _YouRow(
+            icon: 'group',
+            title: 'Communities',
+            subtitle: 'Topics & moderated groups',
+            onTap: () => context.push('/communities'),
+          ),
+          _YouRow(
+            icon: 'users',
+            title: 'Groups',
+            subtitle: 'NIP-29 chat groups',
+            onTap: () => context.push('/groups'),
+          ),
+          _YouRow(
+            icon: 'calendar',
+            title: 'Calendar',
+            subtitle: 'Events & RSVPs',
+            onTap: () => context.push('/calendar'),
+          ),
+          _YouRow(
+            icon: 'live',
+            title: 'Live',
+            subtitle: 'Streams happening now',
+            onTap: () => context.push('/live'),
+          ),
+          _YouRow(
+            icon: 'shopping',
+            title: 'Market',
+            subtitle: 'Buy & sell for sats',
+            onTap: () => context.push('/market'),
+          ),
+          _YouRow(
+            icon: 'link',
+            title: 'P2P trades',
+            subtitle: 'Peer-to-peer orders',
+            onTap: () => context.push('/p2p'),
+          ),
+
           const _GroupLabel('Create & earn'),
           _YouRow(
             icon: 'chart',
@@ -167,6 +221,18 @@ class YouScreen extends ConsumerWidget {
             title: 'Memberships',
             subtitle: 'Sell tiers to your subscribers',
             onTap: () => context.push('/memberships'),
+          ),
+          _YouRow(
+            icon: 'gift',
+            title: 'Bounties',
+            subtitle: 'Earn sats for work',
+            onTap: () => context.push('/bounties'),
+          ),
+          _YouRow(
+            icon: 'zap',
+            title: 'Sats Drops',
+            subtitle: 'Claim sats rewards',
+            onTap: () => context.push('/sats-drops'),
           ),
 
           const _GroupLabel('Library'),
