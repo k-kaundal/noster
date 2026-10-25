@@ -1,7 +1,7 @@
 name: nostrfeed_mobile
 description: "NostrFeed - Nostr Operating System for People, Creators & Communities"
 publish_to: 'none'
-version: 1.2.2+9
+version: 1.3.0+10
 
 environment:
   sdk: ^3.13.5
@@ -66,6 +66,9 @@ dependencies:
   package_info_plus: ^10.2.2
   flutter_animate: ^4.5.2
   gal: ^2.3.3
+  workmanager: ^0.10.10
+  workmanager_android: ^0.10.9
+  workmanager_platform_interface: ^0.10.5
 
 dev_dependencies:
   flutter_test:
@@ -73,12 +76,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   # In-memory SQLite for EventStore unit tests (deterministic, no device).
   sqflite_common_ffi: ^2.3.4+4
-
-# UNIT TESTS ONLY: sqflite_common_ffi's sqlite3 hook downloads a precompiled
-# dylib from GitHub by default — impossible offline (and pointless on-device,
-# where sqflite uses the platform SQLite). `process` resolves SQLite symbols
-# from the test process itself — no download, no bundling. Production
-# Android/iOS builds never touch this: they don't include sqflite_common_ffi.
+  # Swap `WorkmanagerPlatform.instance` for a fake in background_sync tests
+  # (workmanager 0.10 is a federated Pigeon plugin — no MethodChannel to stub).
+  # The fake must extend `WorkmanagerAndroid` so the Workmanager constructor's
+  # `is! WorkmanagerAndroid` guard doesn't clobber it back to the real impl.
 hooks:
   user_defines:
     sqlite3:
@@ -99,6 +100,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/
+    - assets/icons/
 
 # App icon generation: dart run flutter_launcher_icons
 flutter_launcher_icons:
@@ -106,22 +108,22 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/icon/icon-1024.png"
   remove_alpha_ios: true
-  adaptive_icon_background: "#0A66C2"
+  adaptive_icon_background: "#2F6BFF"
   adaptive_icon_foreground: "assets/icon/icon-foreground.png"
   web:
     generate: true
     image_path: "assets/icon/icon-1024.png"
-    background_color: "#0A66C2"
-    theme_color: "#0A66C2"
+    background_color: "#2F6BFF"
+    theme_color: "#2F6BFF"
 
 # Native splash generation: dart run flutter_native_splash:create
 flutter_native_splash:
-  color: "#0A66C2"
+  color: "#2F6BFF"
   image: "assets/icon/splash-logo.png"
   color_dark: "#1A1025"
   image_dark: "assets/icon/splash-logo-dark.png"
   android_12:
-    color: "#0A66C2"
+    color: "#2F6BFF"
     image: "assets/icon/splash-logo.png"
     color_dark: "#1A1025"
     image_dark: "assets/icon/splash-logo-dark.png"

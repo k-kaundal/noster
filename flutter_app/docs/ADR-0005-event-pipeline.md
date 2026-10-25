@@ -192,3 +192,32 @@ coherent: the pipeline and the old consumers can coexist during migration
 1. **`EventStore.db` no longer caches a FAILED open** — one transient open error used to poison every later access forever (death spiral); now the failure clears `_opening` so the next access retries a fresh open.
 2. **`_flushSeenOn` is failure-safe** — provenance is best-effort; a DB hiccup (locked file at hot-restart, mid-migration) drops the sightings instead of throwing unhandled through the relay pipeline (the crash-spam in the device logs).
 3. **`_onUpgrade` backfill hardened** — a malformed legacy row can't brick the whole migration.
+
+---
+
+## ✅ LATENCY PASS (2026-10-25) — caches + concurrency + store-first
+
+The scroll/memory work made the app smooth; this pass attacked **time-to-content**
+(the "explore is slow" / "still stuck on multiple screens" reports). Rules
+established (see `PERFORMANCE-ANALYSIS.md`):
+
+- **Persistent profile cache (the big one).** The store's `profiles` table was
+  WRITTEN but never READ — every cold start re-fetched every avatar/banner.
+  `fetchProfile` is now read-through: memory LRU → SQLite → relays, with
+  **stale-while-revalidate** (a stale stored profile renders NOW, relay refresh
+  behind) and **write-through** on every fetch/prefetch (memory + SQLite).
+  Cold-start avatar storm is gone across ALL screens.
+- **Per-card interaction queries → local index.** Every PostCard used to fire
+  its own `fetchUserInteractions` relay query for like/repost state. Now
+  `userInteractionsProvider` reads `EventStore.userInteractionsFor` (grouped
+  SQL on `event_refs`), relay only as a pre-pipeline fallback.
+- **Browse screens never autoDispose network data.** Trending, hashtags,
+  notifications, communities, articles, bookmarks are keepAlive + TTL via
+  `AsyncNotifier` (state-reset on invalidate = forced refetch still works).
+- **Never a serial relay waterfall.** Profile legs race concurrently
+  (`_firstNonEmpty`); payloads sized for the UI (hashtags 500→250, trending
+  250→150, engagement batch 8s→5s).
+
+**Post-pass regressions fixed:** pull-to-refresh folds the pill in first;
+notification taps render the freshest root event (`_freshRootProvider`);
+empty hashtag results are NOT TTL-cached (retry on next visit).

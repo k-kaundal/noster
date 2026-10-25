@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NostrFeed NOVA — 2026 Vision</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   NOSTRFEED NOVA — 2026 design vision
+   Aurora identity · glass layers · story rings · hero media ·
+   command-K AI · spring physics. The "best of the best" direction.
+   ═══════════════════════════════════════════════════════════════ */
+:root{
+  /* Aurora brand */
+  --a1:#5B8CFF; --a2:#8A5BFF; --a3:#FF5BB0; --a4:#FFB25B;
+  --aurora:linear-gradient(120deg,#5B8CFF 0%,#8A5BFF 45%,#FF5BB0 100%);
+  --aurora-soft:linear-gradient(120deg,rgba(91,140,255,.18),rgba(138,91,255,.18),rgba(255,91,176,.16));
+  --aurora-text:linear-gradient(100deg,#7FA5FF,#C77DFF 55%,#FF8AC2);
+  --zap:#FFB25B; --zap-glow:rgba(255,178,91,.5);
+  --like:#FF5B8F; --repost:#3DDC97; --bookmark:#5B8CFF;
+
+  /* Dark (default) — deep space */
+  --bg:#08080F; --bg2:#0D0D18; --bg3:#141422;
+  --glass:rgba(255,255,255,.055); --glass2:rgba(255,255,255,.09);
+  --glass-border:rgba(255,255,255,.09); --glass-border2:rgba(255,255,255,.14);
+  --text:#F4F2FA; --text2:#A8A5BC; --text3:#6E6C85;
+  --blur:saturate(1.5) blur(22px);
+  --nav-bg:rgba(13,13,24,.72);
+  --card:#101019;
+
+  /* type */
+  --disp:800 -0.04em/1.02 "Sora",-apple-system,sans-serif;
+  --r:18px; --r-lg:24px; --r-xl:30px; --spring:cubic-bezier(.34,1.45,.44,1);
+}
+[data-mode="light"]{
+  --bg:#F4F4FA; --bg2:#FBFBFE; --bg3:#FFFFFF;
+  --glass:rgba(255,255,255,.72); --glass2:rgba(255,255,255,.9);
+  --glass-border:rgba(20,16,60,.07); --glass-border2:rgba(20,16,60,.12);
+  --text:#14121F; --text2:#57546E; --text3:#8B88A0;
+  --nav-bg:rgba(251,251,254,.78);
+  --card:#FFFFFF;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--text);font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+  transition:background .4s;
+}
+body::before{ /* ambient aurora wash */
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(600px 400px at 12% -5%,rgba(91,140,255,.14),transparent 60%),
+    radial-gradient(700px 500px at 95% 10%,rgba(255,91,176,.10),transparent 60%),
+    radial-gradient(500px 500px at 50% 110%,rgba(138,91,255,.12),transparent 60%);
+}
+[data-mode="light"] body::before{opacity:.5}
+
+.hdr{
+  position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:14px;
+  padding:14px 26px;background:var(--nav-bg);backdrop-filter:var(--blur);
+  border-bottom:1px solid var(--glass-border);
+}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-.03em}
+.logo .mark{
+  width:32px;height:32px;border-radius:10px;background:var(--aurora);position:relative;
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;
+  box-shadow:0 4px 18px rgba(138,91,255,.45),inset 0 1px 0 rgba(255,255,255,.35);
+}
+.logo em{font-style:normal;background:var(--aurora-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.tag{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text3);border:1px solid var(--glass-border2);padding:4px 10px;border-radius:99px}
+.sp{flex:1}
+.modes{display:flex;background:var(--glass);border:1px solid var(--glass-border);border-radius:99px;padding:3px}
+.modes button{border:0;background:transparent;color:var(--text2);padding:6px 15px;border-radius:99px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.modes button.on{background:var(--glass2);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.18)}
+
+.wrap{position:relative;z-index:1;max-width:1420px;margin:0 auto;padding:0 28px}
+
+/* ── HERO ── */
+.hero{padding:74px 0 46px;text-align:center;position:relative}
+.hero .kicker{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--text2);border:1px solid var(--glass-border2);background:var(--glass);padding:8px 16px;border-radius:99px;backdrop-filter:var(--blur)}
+.hero h1{
+  font:var(--disp);font-size:clamp(44px,7vw,84px);margin:22px auto 0;max-width:820px;
+  background:linear-gradient(180deg,var(--text) 30%,var(--text2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+}
+.hero h1 .aura{background:var(--aurora-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{color:var(--text2);font-size:17px;max-width:560px;margin:18px auto 0;line-height:1.6}
+.hero .cta-row{display:flex;gap:12px;justify-content:center;margin-top:28px}
+
+/* ── Buttons (nova) ── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;cursor:pointer;
+  font-family:inherit;font-size:14px;font-weight:700;letter-spacing:-.01em;
+  padding:13px 24px;border-radius:16px;transition:transform .25s var(--spring),box-shadow .25s;
+}
+.btn:active{transform:scale(.96)}
+.btn.aura{background:var(--aurora);color:#fff;box-shadow:0 8px 26px rgba(138,91,255,.42),inset 0 1px 0 rgba(255,255,255,.35)}
+.btn.aura:hover{transform:translateY(-2px);box-shadow:0 12px 34px rgba(138,91,255,.55)}
+.btn.glass{background:var(--glass);color:var(--text);border:1px solid var(--glass-border2);backdrop-filter:var(--blur)}
+.btn.glass:hover{background:var(--glass2)}
+.btn.ghost{background:transparent;color:var(--text2)}
+.btn.sm{padding:8px 16px;font-size:12.5px;border-radius:12px}
+.btn.zapbtn{background:linear-gradient(120deg,#FFB25B,#FF8A3D);color:#231300;box-shadow:0 8px 24px var(--zap-glow)}
+
+/* ── Sections ── */
+section{padding:56px 0 8px}
+.sec-kicker{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;background:var(--aurora-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sec-title{font-size:clamp(28px,3.6vw,42px);font-weight:800;letter-spacing:-.035em;margin:8px 0 6px}
+.sec-sub{color:var(--text2);font-size:15px;max-width:640px;line-height:1.65}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:26px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:26px}
+@media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}}
+
+.gcard{
+  background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--r-lg);
+  padding:24px;backdrop-filter:var(--blur);position:relative;overflow:hidden;
+}
+.gcard h4{font-size:16px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px}
+.gcard p{font-size:13px;color:var(--text2);line-height:1.6}
+.gcard .glow{position:absolute;width:180px;height:180px;border-radius:50%;filter:blur(60px);opacity:.35;pointer-events:none}
+
+/* ── PHONES ── */
+.phones{display:flex;gap:30px;flex-wrap:wrap;justify-content:center;padding:34px 0 12px}
+.phone{
+  width:316px;height:650px;border-radius:48px;flex-shrink:0;position:relative;
+  background:#000;padding:10px;
+  box-shadow:0 0 0 1.5px rgba(255,255,255,.14),0 30px 70px rgba(0,0,0,.55),0 0 90px rgba(138,91,255,.12);
+  transition:transform .5s var(--spring);
+}
+.phone:hover{transform:translateY(-8px) rotate(-.4deg)}
+.p-scr{width:100%;height:100%;border-radius:38px;overflow:hidden;background:var(--bg2);position:relative;display:flex;flex-direction:column}
+.p-notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:104px;height:25px;background:#000;border-radius:20px;z-index:30}
+.p-status{height:40px;flex-shrink:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 24px 3px;font-size:11px;font-weight:700;color:var(--text)}
+.p-hi{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);width:110px;height:4px;border-radius:2px;background:var(--text);opacity:.3;z-index:40}
+.p-label{text-align:center;margin-top:16px}
+.p-label b{display:block;font-size:14px;font-weight:800;letter-spacing:-.02em}
+.p-label span{font-size:11.5px;color:var(--text3)}
+
+/* live activity island */
+.island{
+  position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:35;
+  background:rgba(8,8,16,.85);backdrop-filter:blur(14px);border:1px solid var(--glass-border2);
+  border-radius:99px;padding:5px 13px 5px 7px;display:flex;align-items:center;gap:7px;
+  box-shadow:0 6px 20px rgba(0,0,0,.4);white-space:nowrap;
+}
+.island .rec{width:6px;height:6px;border-radius:50%;background:#FF4D5E;animation:pulse 1.4s infinite}
+.island span{font-size:9.5px;font-weight:700;color:#fff}
+@keyframes pulse{50%{opacity:.3}}
+
+/* glass app bar */
+.n-bar{flex-shrink:0;display:flex;align-items:center;gap:9px;padding:8px 14px;background:transparent}
+.n-bar .t{font-size:17px;font-weight:800;letter-spacing:-.03em;flex:1}
+.n-bar .t em{font-style:normal;background:var(--aurora-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.n-ico{
+  width:33px;height:33px;border-radius:12px;background:var(--glass);border:1px solid var(--glass-border);
+  display:inline-flex;align-items:center;justify-content:center;font-size:14px;color:var(--text);cursor:pointer;
+  backdrop-filter:var(--blur);position:relative;transition:transform .2s var(--spring);
+}
+.n-ico:active{transform:scale(.9)}
+.n-ico .dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--a3);box-shadow:0 0 8px var(--a3)}
+.n-body{flex:1;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.n-scroll{flex:1;overflow-y:auto;scrollbar-width:none}
+.n-scroll::-webkit-scrollbar{display:none}
+
+/* stories */
+.stories{display:flex;gap:13px;padding:10px 16px 14px;overflow-x:auto;scrollbar-width:none;flex-shrink:0}
+.stories::-webkit-scrollbar{display:none}
+.story{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;flex-shrink:0}
+.story .ring{
+  width:62px;height:62px;border-radius:50%;padding:2.5px;background:var(--aurora);
+  display:flex;align-items:center;justify-content:center;transition:transform .3s var(--spring);
+}
+.story:hover .ring{transform:scale(1.06)}
+.story .ring .inner{width:100%;height:100%;border-radius:50%;border:2.5px solid var(--bg2);overflow:hidden;background:var(--bg3)}
+.story .ring .inner img,.story .ring .inner .ph{width:100%;height:100%;object-fit:cover;display:flex;align-items:center;justify-content:center;font-size:20px}
+.story .nm{font-size:10px;color:var(--text2);font-weight:600;max-width:62px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.story.add .ring{background:var(--glass-border2)}
+.story.live .ring{background:conic-gradient(#FF4D5E,#FF8A3D,#FF4D5E)}
+
+/* floating tab dock */
+.dock{
+  position:absolute;left:16px;right:16px;bottom:14px;height:64px;z-index:25;
+  background:var(--nav-bg);backdrop-filter:var(--blur);
+  border:1px solid var(--glass-border2);border-radius:24px;
+  display:flex;align-items:center;padding:0 8px;
+  box-shadow:0 12px 34px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.07);
+}
+.d-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:19px;cursor:pointer;position:relative;padding:7px 0;border-radius:16px}
+.d-item .l{font-size:8.5px;font-weight:700;color:var(--text3);letter-spacing:.02em}
+.d-item.on .l{color:var(--text)}
+.d-item.on::after{content:"";position:absolute;bottom:3px;width:12px;height:3px;border-radius:2px;background:var(--aurora)}
+.d-item .g{filter:grayscale(1) opacity(.55);transition:filter .3s}
+.d-item.on .g{filter:none}
+.d-fab{
+  flex:1;display:flex;justify-content:center;cursor:pointer;
+}
+.d-fab .b{
+  width:47px;height:47px;border-radius:17px;background:var(--aurora);display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:23px;margin-top:-24px;
+  box-shadow:0 10px 26px rgba(138,91,255,.55),inset 0 1px 0 rgba(255,255,255,.4);
+  border:2.5px solid var(--bg2);transition:transform .3s var(--spring);
+}
+.d-fab:active .b{transform:scale(.88) rotate(90deg)}
+.d-badge{position:absolute;top:2px;right:calc(50% - 17px);min-width:16px;height:16px;border-radius:8px;background:#FF4D5E;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px}
+
+/* NOVA post card */
+.post{padding:14px 16px;border-bottom:1px solid var(--glass-border)}
+.p-head{display:flex;align-items:center;gap:10px}
+.p-head .av{width:41px;height:41px;border-radius:50%;position:relative;flex-shrink:0}
+.p-head .av .img{width:100%;height:100%;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;overflow:hidden}
+.p-head .av.ring::before{content:"";position:absolute;inset:-3px;border-radius:50%;background:var(--aurora);z-index:-1}
+.p-head .who{flex:1;min-width:0}
+.p-head .n{display:flex;align-items:center;gap:4px;font-size:13.5px;font-weight:800;letter-spacing:-.015em}
+.p-head .n .v{background:var(--aurora);-webkit-background-clip:text;background-clip:text;color:transparent;font-size:12px}
+.p-head .h{font-size:11px;color:var(--text3)}
+.p-head .more{color:var(--text3);font-size:16px;cursor:pointer}
+.p-text{font-size:13.5px;line-height:1.5;margin-top:8px;letter-spacing:-.008em}
+.p-text .tg{color:#8FA8FF;font-weight:600}
+.p-acts{display:flex;align-items:center;gap:4px;margin-top:10px}
+.p-act{
+  display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--text3);
+  padding:6px 11px;border-radius:99px;cursor:pointer;transition:all .2s var(--spring);border:1px solid transparent;
+}
+.p-act:hover{background:var(--glass);color:var(--text)}
+.p-act.on{color:var(--like)}
+.p-act.on.rp{color:var(--repost)}
+.p-act.zap{color:var(--zap)}
+.p-act.zap:hover{background:rgba(255,178,91,.12);box-shadow:0 0 16px rgba(255,178,91,.15)}
+.p-act .i{font-size:15px}
+.p-act .cnt{font-variant-numeric:tabular-nums}
+.p-acts .sp{flex:1}
+.p-media{border-radius:18px;overflow:hidden;margin-top:9px;position:relative;border:1px solid var(--glass-border)}
+.p-media .hero{width:100%;aspect-ratio:4/5;object-fit:cover;display:flex;align-items:center;justify-content:center;font-size:44px;background:linear-gradient(140deg,var(--bg3),var(--bg2))}
+.p-media .hero.wide{aspect-ratio:16/10}
+.p-media .mgrad{position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(0,0,0,.45));pointer-events:none}
+.p-media .mtag{position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);color:#fff;font-size:9.5px;font-weight:700;padding:4px 10px;border-radius:99px;border:1px solid rgba(255,255,255,.15)}
+
+/* hero card (media-first) */
+.hero-post{position:relative;margin:12px 12px;border-radius:26px;overflow:hidden;border:1px solid var(--glass-border)}
+.hero-post .bg{height:390px;display:flex;align-items:center;justify-content:center;font-size:52px;background:linear-gradient(160deg,#1c1c33,#0e0e1c)}
+.hero-post .scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.25),transparent 30%,transparent 45%,rgba(4,4,10,.82))}
+.hero-post .top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:9px;padding:13px}
+.hero-post .top .av{width:34px;height:34px;border-radius:50%;border:1.5px solid rgba(255,255,255,.5);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+.hero-post .top .nm{color:#fff;font-size:12.5px;font-weight:800;text-shadow:0 1px 8px rgba(0,0,0,.5)}
+.hero-post .top .flw{margin-left:auto;background:rgba(255,255,255,.16);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25);color:#fff;font-size:10px;font-weight:800;padding:5px 12px;border-radius:99px;cursor:pointer}
+.hero-post .bot{position:absolute;bottom:0;left:0;right:0;padding:14px;color:#fff}
+.hero-post .bot .tx{font-size:13.5px;font-weight:600;line-height:1.45;text-shadow:0 1px 10px rgba(0,0,0,.6)}
+.hero-post .bot .acts{display:flex;gap:9px;margin-top:11px}
+.hact{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.13);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:11px;font-weight:800;padding:7px 13px;border-radius:99px;cursor:pointer}
+.hact.zap{background:linear-gradient(120deg,rgba(255,178,91,.9),rgba(255,138,61,.9));border-color:transparent;color:#231300}
+
+/* aurora name */
+.aura-txt{background:var(--aurora-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+
+/* chat */
+.ch-row{display:flex;gap:11px;padding:11px 16px;cursor:pointer;align-items:center;transition:background .2s}
+.ch-row:hover{background:var(--glass)}
+.ch-row .av{position:relative;width:47px;height:47px;flex-shrink:0}
+.ch-row .av .img{width:100%;height:100%;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px}
+.ch-row .av .on{position:absolute;bottom:0;right:0;width:12px;height:12px;border-radius:50%;background:#3DDC97;border:2.5px solid var(--bg2)}
+.ch-row .m{flex:1;min-width:0}
+.ch-row .r1{display:flex;align-items:baseline;gap:7px}
+.ch-row .n{font-size:13.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ch-row .tm{margin-left:auto;font-size:10px;color:var(--text3);flex-shrink:0}
+.ch-row .pv{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.ch-row .pv.ur{color:var(--text);font-weight:700}
+.ch-row .bdg{min-width:19px;height:19px;border-radius:99px;background:var(--aurora);color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0;box-shadow:0 3px 10px rgba(138,91,255,.4)}
+.ai-row{
+  margin:10px 12px 4px;border-radius:20px;padding:12px 14px;display:flex;gap:11px;align-items:center;cursor:pointer;
+  background:var(--aurora-soft);border:1px solid rgba(138,91,255,.3);position:relative;overflow:hidden;
+}
+.ai-row::before{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.09) 50%,transparent 70%);animation:sheen 3.2s infinite}
+@keyframes sheen{to{transform:translateX(100%)}}
+.ai-row .spark{width:40px;height:40px;border-radius:14px;background:var(--aurora);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;box-shadow:0 4px 16px rgba(138,91,255,.5)}
+.ai-row .t1{font-size:13.5px;font-weight:800}
+.ai-row .t2{font-size:11px;color:var(--text2);margin-top:1px}
+
+/* bubbles */
+.bb-thread{display:flex;flex-direction:column;gap:2px;padding:14px 15px}
+.bb-row{display:flex;margin-bottom:2px}
+.bb-row.me{justify-content:flex-end}
+.bb{max-width:76%;padding:9px 14px;font-size:13.5px;line-height:1.42;border-radius:20px;letter-spacing:-.008em}
+.bb.them{background:var(--glass2);border:1px solid var(--glass-border);border-bottom-left-radius:6px}
+.bb.me{background:var(--aurora);color:#fff;border-bottom-right-radius:6px;box-shadow:0 3px 14px rgba(138,91,255,.35)}
+.bb .tm{display:block;font-size:9px;opacity:.6;margin-top:3px;text-align:right}
+.bb.zap{background:linear-gradient(120deg,rgba(255,178,91,.18),rgba(255,138,61,.14));border:1px solid rgba(255,178,91,.4);border-bottom-left-radius:6px}
+
+/* wallet */
+.w-hero{
+  margin:12px 14px 0;border-radius:26px;padding:20px;position:relative;overflow:hidden;color:#fff;
+  background:linear-gradient(130deg,#171731 0%,#1e1440 55%,#331345 100%);
+  border:1px solid rgba(255,255,255,.12);
+}
+.w-hero::before{content:"";position:absolute;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(138,91,255,.5),transparent 70%);top:-110px;right:-70px;filter:blur(10px)}
+.w-hero::after{content:"";position:absolute;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(91,140,255,.4),transparent 70%);bottom:-100px;left:-50px}
+.w-hero .lb{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;opacity:.65}
+.w-hero .amt{font-size:37px;font-weight:800;letter-spacing:-.04em;margin-top:4px;position:relative;z-index:2}
+.w-hero .amt small{font-size:15px;font-weight:700;opacity:.6}
+.w-hero .fiat{font-size:11.5px;opacity:.65;position:relative;z-index:2}
+.w-hero .sparkline{position:absolute;right:16px;bottom:44px;opacity:.9;z-index:2}
+.w-hero .acts{display:flex;gap:9px;margin-top:16px;position:relative;z-index:2}
+.w-act{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:14px;font-size:12px;font-weight:800;cursor:pointer;backdrop-filter:blur(8px)}
+.w-act.recv{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);color:#fff}
+.w-act.send{background:#fff;color:#1b1440}
+.w-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:99px;background:var(--glass);border:1px solid var(--glass-border);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+.w-chip.on{background:var(--aurora-soft);border-color:rgba(138,91,255,.45)}
+.tx-row{display:flex;align-items:center;gap:12px;padding:10px 16px}
+.tx-row .ic{width:37px;height:37px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.tx-row .tt{font-size:12.5px;font-weight:700}
+.tx-row .ts{font-size:10.5px;color:var(--text3)}
+.tx-row .amt{margin-left:auto;font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums}
+.tx-row .amt.plus{color:#3DDC97}
+
+/* zap sheet */
+.z-sheet{
+  margin:0;border-radius:30px 30px 0 0;padding:12px 18px 22px;position:relative;
+  background:var(--bg3);border-top:1px solid var(--glass-border2);
+}
+.z-sheet::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:var(--aurora);opacity:.7}
+.z-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.z-cell{
+  aspect-ratio:1.05;border-radius:20px;background:var(--glass);border:1px solid var(--glass-border);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;
+  font-size:23px;transition:all .25s var(--spring);
+}
+.z-cell:hover{transform:translateY(-2px)}
+.z-cell .a{font-size:11px;font-weight:800;color:var(--text2)}
+.z-cell.sel{
+  background:linear-gradient(140deg,rgba(255,178,91,.16),rgba(255,138,61,.1));
+  border-color:rgba(255,178,91,.6);box-shadow:0 6px 22px rgba(255,178,91,.22);
+}
+.z-cell.sel .a{color:var(--zap)}
+.z-slider{padding:16px 4px 4px}
+.z-slider .track{height:7px;border-radius:4px;background:var(--glass2);position:relative;cursor:pointer}
+.z-slider .fill{position:absolute;left:0;top:0;bottom:0;width:38%;border-radius:4px;background:linear-gradient(90deg,#FFB25B,#FF8A3D);box-shadow:0 0 14px var(--zap-glow)}
+.z-slider .thumb{position:absolute;left:38%;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.4),0 0 0 5px rgba(255,178,91,.25)}
+
+/* reels */
+.reel-rail2{position:absolute;right:10px;bottom:130px;display:flex;flex-direction:column;gap:15px;z-index:6}
+.rr{display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff;font-size:22px;cursor:pointer;text-shadow:0 2px 10px rgba(0,0,0,.5)}
+.rr .c{font-size:9.5px;font-weight:800}
+.rr.zap{color:var(--zap)}
+
+/* command-K */
+.cmdk{
+  margin:20px auto;max-width:560px;background:var(--bg3);border:1px solid var(--glass-border2);border-radius:22px;
+  overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5),0 0 60px rgba(138,91,255,.12);
+}
+.cmdk .inp{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid var(--glass-border);font-size:14px;color:var(--text2)}
+.cmdk .inp .k{color:var(--text3);font-size:15px}
+.cmdk .row{display:flex;align-items:center;gap:11px;padding:10px 18px;font-size:13px;cursor:pointer}
+.cmdk .row:hover,.cmdk .row.sel{background:var(--glass)}
+.cmdk .row .ic{width:30px;height:30px;border-radius:10px;background:var(--glass2);display:flex;align-items:center;justify-content:center;font-size:13px}
+.cmdk .row .hint{margin-left:auto;font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.05em}
+.cmdk .grp{font-size:9.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--text3);padding:10px 18px 4px}
+
+/* spec table */
+.spec{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:14px}
+.spec th{text-align:left;padding:8px 12px;background:var(--glass);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3)}
+.spec td{padding:9px 12px;border-bottom:1px solid var(--glass-border);color:var(--text2)}
+.spec td:first-child{color:var(--text);font-weight:700}
+
+/* before/after */
+.ba{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}
+@media(max-width:800px){.ba{grid-template-columns:1fr}}
+.ba .col{border-radius:var(--r-lg);padding:20px;border:1px solid var(--glass-border)}
+.ba .old{background:var(--glass);opacity:.75}
+.ba .new{background:var(--aurora-soft);border-color:rgba(138,91,255,.35)}
+.ba h5{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px}
+.ba .old h5{color:var(--text3)}
+.ba .new h5{background:var(--aurora-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.ba ul{list-style:none;font-size:13px;color:var(--text2);line-height:1.55}
+.ba li{padding:5px 0 5px 22px;position:relative}
+.ba .old li::before{content:"✕";position:absolute;left:0;color:var(--text3);font-size:11px}
+.ba .new li::before{content:"✦";position:absolute;left:0;color:var(--a2);font-size:11px}
+
+/* principles */
+.princ{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}
+@media(max-width:900px){.princ{grid-template-columns:1fr}}
+.princ .p{
+  background:var(--glass);border:1px solid var(--glass-border);border-radius:var(--r-lg);padding:22px;
+  transition:transform .35s var(--spring),border-color .3s;
+}
+.princ .p:hover{transform:translateY(-4px);border-color:rgba(138,91,255,.4)}
+.princ .num{font-size:12px;font-weight:800;background:var(--aurora-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.princ h4{font-size:16px;font-weight:800;letter-spacing:-.02em;margin:8px 0 6px}
+.princ p{font-size:12.5px;color:var(--text2);line-height:1.6}
+
+.footer{padding:60px 0 80px;text-align:center;color:var(--text3);font-size:12px;line-height:1.8}
+.footer .mark{width:44px;height:44px;border-radius:14px;background:var(--aurora);display:inline-flex;align-items:center;justify-content:center;font-size:22px;color:#fff;margin-bottom:14px;box-shadow:0 8px 26px rgba(138,91,255,.45)}
+
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-top:18px}
+.sw{border-radius:16px;overflow:hidden;border:1px solid var(--glass-border)}
+.sw .c{height:64px}
+.sw .m{padding:8px 11px;background:var(--glass)}
+.sw .n{font-size:11.5px;font-weight:700}
+.sw .h{font-size:10px;color:var(--text3);font-family:monospace}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="logo"><span class="mark">⚡</span>NostrFeed <em>NOVA</em></div>
+  <span class="tag">2026 Vision · v2.0</span>
+  <div class="sp"></div>
+  <div class="modes" id="modes">
+    <button data-m="dark" class="on">🌌 Dark</button>
+    <button data-m="light">☀️ Light</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ── HERO ── -->
+<div class="hero">
+  <span class="kicker">✦ The redesign direction — not a reskin, a re-feeling</span>
+  <h1>Social that feels<br><span class="aura">alive.</span></h1>
+  <p>NOVA takes NostrFeed from "a very good Nostr client" to the most beautiful social app on any platform — aurora identity, glass layers, hero media, spring physics, and AI woven into everything.</p>
+  <div class="cta-row">
+    <button class="btn aura">✦ See the screens</button>
+    <button class="btn glass" onclick="document.getElementById('principles').scrollIntoView()">Design principles</button>
+  </div>
+</div>
+
+<!-- ── PRINCIPLES ── -->
+<section id="principles">
+  <div class="sec-kicker">01 — Principles</div>
+  <h2 class="sec-title">Five rules that make it feel expensive</h2>
+  <p class="sec-sub">Every screen, component and animation in NOVA obeys these. If a design choice violates one, it's wrong.</p>
+  <div class="princ">
+    <div class="p"><div class="num">✦ 01</div><h4>Aurora is the brand</h4><p>One signature gradient (blue → violet → pink) used sparingly on moments that matter: verified marks, the create button, zap glow, AI. Everything else stays quiet so the aurora SINGS when it appears.</p></div>
+    <div class="p"><div class="num">✦ 02</div><h4>Glass over chrome</h4><p>Bars, docks and sheets float as frosted layers over content — the app feels like one continuous surface, not stacked rectangles. Content scrolls UNDER navigation with a 22px saturate blur.</p></div>
+    <div class="p"><div class="num">✦ 03</div><h4>Media is the hero</h4><p>Photos and video break out of the timeline grid into full-bleed cards. Text posts stay compact; visual posts get cinematic. The feed becomes a gallery, not a spreadsheet.</p></div>
+    <div class="p"><div class="num">✦ 04</div><h4>Physics, not fades</h4><p>Spring curves (cubic-bezier .34,1.45,.44,1) on every tap, a dock that breathes, buttons that compress and rebound. Motion is the #1 thing users FEEL but can't name.</p></div>
+    <div class="p"><div class="num">✦ 05</div><h4>AI is a companion, not a feature</h4><p>The aurora-sparkle ✦ appears wherever AI can help — composing, summarizing threads, translating, searching with natural language (⌘K). One assistant, everywhere, never a promo card.</p></div>
+  </div>
+</section>
+
+<!-- ── IDENTITY ── -->
+<section id="identity">
+  <div class="sec-kicker">02 — Identity</div>
+  <h2 class="sec-title">The aurora system</h2>
+  <p class="sec-sub">Ice-blue served us well but reads "enterprise SaaS". NOVA's aurora is ownable — no major social app uses a blue→violet→pink spectrum as identity. It's optimistic, electric, and uniquely Nostr (it literally looks like a zap ⚡).</p>
+  <div class="swatches">
+    <div class="sw"><div class="c" style="background:linear-gradient(120deg,#5B8CFF,#8A5BFF 45%,#FF5BB0)"></div><div class="m"><div class="n">Aurora (signature)</div><div class="h">#5B8CFF→#8A5BFF→#FF5BB0</div></div></div>
+    <div class="sw"><div class="c" style="background:#5B8CFF"></div><div class="m"><div class="n">Nova Blue</div><div class="h">#5B8CFF</div></div></div>
+    <div class="sw"><div class="c" style="background:#8A5BFF"></div><div class="m"><div class="n">Nova Violet</div><div class="h">#8A5BFF</div></div></div>
+    <div class="sw"><div class="c" style="background:#FF5BB0"></div><div class="m"><div class="n">Nova Pink</div><div class="h">#FF5BB0</div></div></div>
+    <div class="sw"><div class="c" style="background:linear-gradient(120deg,#FFB25B,#FF8A3D)"></div><div class="m"><div class="n">Zap (untouched)</div><div class="h">#FFB25B→#FF8A3D</div></div></div>
+    <div class="sw"><div class="c" style="background:#FF5B8F"></div><div class="m"><div class="n">Like</div><div class="h">#FF5B8F</div></div></div>
+    <div class="sw"><div class="c" style="background:#3DDC97"></div><div class="m"><div class="n">Repost</div><div class="h">#3DDC97</div></div></div>
+    <div class="sw"><div class="c" style="background:#08080F"></div><div class="m"><div class="n">Space (dark bg)</div><div class="h">#08080F</div></div></div>
+    <div class="sw"><div class="c" style="background:#141422"></div><div class="m"><div class="n">Nebula (dark card)</div><div class="h">#141422</div></div></div>
+    <div class="sw"><div class="c" style="background:linear-gradient(120deg,rgba(91,140,255,.18),rgba(255,91,176,.16))"></div><div class="m"><div class="n">Aurora soft (AI tint)</div><div class="h">18% spectrum</div></div></div>
+  </div>
+  <div class="grid2" style="margin-top:22px">
+    <div class="gcard">
+      <h4>⚡ Zap stays gold — and now it glows</h4>
+      <p>Zap orange is sacred in Nostr culture and keeps its own ramp (#FFB25B→#FF8A3D) with a signature GLOW on interactive states. The zap button is the only element with a colored shadow — tipping feels physical.</p>
+    </div>
+    <div class="gcard">
+      <h4>✓ The verified check becomes aurora</h4>
+      <p>NIP-05 verification renders as an aurora gradient check — instantly distinguishable from every other platform's blue check, and impossible to fake with an emoji. Your identity, your spectrum.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOME ── -->
+<section id="home">
+  <div class="sec-kicker">03 — Core screens</div>
+  <h2 class="sec-title">Home, reborn as a gallery</h2>
+  <p class="sec-sub">Stories row with aurora rings (live rings pulse red), a live-activity island for what's happening NOW, text posts kept compact and visual posts elevated to full-bleed hero cards. The floating dock replaces the pill — it breathes with springs and the create button lifts above it.</p>
+  <div class="phones">
+
+    <!-- HOME FEED -->
+    <div>
+      <div class="phone"><div class="p-notch"></div>
+        <div class="p-scr">
+          <div class="island"><span class="rec"></span><span>🔥 12 zaps on your post · 2m</span></div>
+          <div class="p-status"><span>9:41</span><span>●●●</span></div>
+          <div class="n-bar" style="margin-top:2px">
+            <div class="t">nostr<em>feed</em></div>
+            <span class="n-ico">⌘</span><span class="n-ico">🔔<span class="dot"></span></span>
+          </div>
+          <div class="stories">
+            <div class="story add"><div class="ring"><div class="inner"><div class="ph" style="font-size:22px;color:var(--text3)">＋</div></div></div><span class="nm">You</span></div>
+            <div class="story live"><div class="ring"><div class="inner"><div class="ph">🎨</div></div></div><span class="nm">artbot</span></div>
+            <div class="story"><div class="ring"><div class="inner"><div class="ph">⚡</div></div></div><span class="nm">alice</span></div>
+            <div class="story"><div class="ring"><div class="inner"><div class="ph">🧡</div></div></div><span class="nm">odell</span></div>
+            <div class="story"><div class="ring"><div class="inner"><div class="ph">🌊</div></div></div><span class="nm">wavlake</span></div>
+            <div class="story"><div class="ring"><div class="inner"><div class="ph">🔑</div></div></div><span class="nm">fiatjaf</span></div>
+          </div>
+          <div class="n-body"><div class="n-scroll">
+            <!-- text post: compact -->
+            <div class="post">
+              <div class="p-head">
+                <span class="av ring"><span class="img">S</span></span>
+                <div class="who"><div class="n">Satoshi's Ghost <span class="v">✓</span></div><div class="h">@satoshi · 2m</div></div>
+                <span class="more">⋯</span>
+              </div>
+              <div class="p-text">Your identity is a key, not an account. No platform can deplatform mathematics. <span class="tg">#nostr</span></div>
+              <div class="p-acts">
+                <span class="p-act"><span class="i">💬</span><span class="cnt">24</span></span>
+                <span class="p-act on rp"><span class="i">🔁</span><span class="cnt">12</span></span>
+                <span class="p-act on"><span class="i">❤️</span><span class="cnt">186</span></span>
+                <span class="p-act zap"><span class="i">⚡</span><span class="cnt">2.1k</span></span>
+                <span class="sp"></span><span class="p-act"><span class="i">🔖</span></span>
+              </div>
+            </div>
+            <!-- hero media post -->
+            <div class="hero-post">
+              <div class="bg">🌅</div>
+              <div class="scrim"></div>
+              <div class="top">
+                <span class="av">A</span><span class="nm">alice <span style="opacity:.7;font-weight:500">· 18m</span></span>
+                <span class="flw">Follow</span>
+              </div>
+              <div class="bot">
+                <div class="tx">Sunset over the citadel 🧡 this is why we build</div>
+                <div class="acts">
+                  <span class="hact">❤️ 94</span><span class="hact">💬 8</span><span class="hact zap">⚡ 420</span>
+                </div>
+              </div>
+            </div>
+            <!-- another compact -->
+            <div class="post">
+              <div class="p-head">
+                <span class="av"><span class="img">N</span></span>
+                <div class="who"><div class="n">Nostr News <span class="v">✓</span></div><div class="h">@nostrnews · 1h</div></div>
+                <span class="more">⋯</span>
+              </div>
+              <div class="p-text">NOVA design vision just dropped — aurora everything ✦ <span class="tg">#grownostr</span></div>
+              <div class="p-acts">
+                <span class="p-act"><span class="i">💬</span><span class="cnt">67</span></span>
+                <span class="p-act"><span class="i">🔁</span><span class="cnt">89</span></span>
+                <span class="p-act"><span class="i">❤️</span><span class="cnt">512</span></span>
+                <span class="p-act zap"><span class="i">⚡</span><span class="cnt">21k</span></span>
+                <span class="sp"></span><span class="p-act"><span class="i">🔖</span></span>
+              </div>
+            </div>
+          </div></div>
+          <div class="dock">
+            <div class="d-item on"><span class="g">🏠</span><span class="l">Home</span></div>
+            <div class="d-item"><span class="g">🧭</span><span class="l">Explore</span></div>
+            <div class="d-fab"><span class="b">✦</span></div>
+            <div class="d-item"><span class="g">💬</span><span class="l">Chat</span><span class="d-badge">7</span></div>
+            <div class="d-item"><span class="g">👛</span><span class="l">Wallet</span></div>
+          </div>
+          <div class="p-hi"></div>
+        </div>
+      </div>
+      <div class="p-label"><b>Home — story rings + hero media</b><span>live island · aurora verified · floating dock</span></div>
+    </div>
+
+    <!-- EXPLORE (new tab!) -->
+    <div>
+      <div class="phone"><div class="p-notch"></div>
+        <div class="p-scr">
+          <div class="p-status"><span>9:41</span><span>●●●</span></div>
+          <div class="n-bar">
+            <div class="t">Explore</div>
+            <span class="n-ico">🎛️</span>
+          </div>
+          <div style="padding:2px 14px 12px">
+            <div style="display:flex;align-items:center;gap:9px;background:var(--glass);border:1px solid var(--glass-border);border-radius:16px;padding:11px 15px;backdrop-filter:var(--blur)">
+              <span style="font-size:14px">✦</span>
+              <span style="font-size:12.5px;color:var(--text3)">Ask anything… "zap art under 5k sats"</span>
+              <span style="margin-left:auto;font-size:10px;font-weight:800;color:var(--text3);border:1px solid var(--glass-border2);padding:3px 7px;border-radius:6px">⌘K</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;padding:0 14px 12px;overflow-x:auto;scrollbar-width:none">
+            <span class="w-chip on">✦ For You</span><span class="w-chip">🔥 Trending</span><span class="w-chip">🎨 Art</span><span class="w-chip">📡 Live</span><span class="w-chip">🛍️ Market</span>
+          </div>
+          <div class="n-body"><div class="n-scroll" style="padding:0 12px">
+            <!-- masonry -->
+            <div style="columns:2;column-gap:10px">
+              <div style="break-inside:avoid;margin-bottom:10px;border-radius:18px;overflow:hidden;position:relative;height:170px;background:linear-gradient(150deg,#2a2a4a,#14142a);display:flex;align-items:center;justify-content:center;font-size:34px;border:1px solid var(--glass-border)">🌅<span style="position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);color:#fff;font-size:9px;font-weight:700;padding:3px 8px;border-radius:99px">⚡ 420</span></div>
+              <div style="break-inside:avoid;margin-bottom:10px;border-radius:18px;overflow:hidden;position:relative;height:120px;background:linear-gradient(150deg,#3a2a4a,#1a142a);display:flex;align-items:center;justify-content:center;font-size:28px;border:1px solid var(--glass-border)">🎨</div>
+              <div style="break-inside:avoid;margin-bottom:10px;border-radius:18px;overflow:hidden;position:relative;height:110px;background:linear-gradient(150deg,#1a3a4a,#0e1a2a);display:flex;align-items:center;justify-content:center;font-size:28px;border:1px solid var(--glass-border)">🏔️</div>
+              <div style="break-inside:avoid;margin-bottom:10px;border-radius:18px;overflow:hidden;position:relative;height:160px;background:linear-gradient(150deg,#4a2a3a,#2a141e);display:flex;align-items:center;justify-content:center;font-size:34px;border:1px solid var(--glass-border)">🌸<span style="position:absolute;top:8px;left:8px;background:rgba(255,77,94,.9);color:#fff;font-size:8px;font-weight:800;padding:3px 8px;border-radius:99px">● LIVE</span></div>
+              <div style="break-inside:avoid;margin-bottom:10px;border-radius:18px;overflow:hidden;position:relative;height:125px;background:linear-gradient(150deg,#2a4a3a,#142a1e);display:flex;align-items:center;justify-content:center;font-size:28px;border:1px solid var(--glass-border)">🌿</div>
+              <div style="break-inside:avoid;margin-bottom:10px;border-radius:18px;overflow:hidden;position:relative;height:135px;background:linear-gradient(150deg,#4a3a2a,#2a1e14);display:flex;align-items:center;justify-content:center;font-size:28px;border:1px solid var(--glass-border)">🌇<span style="position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);color:#fff;font-size:9px;font-weight:700;padding:3px 8px;border-radius:99px">⚡ 1.2k</span></div>
+            </div>
+          </div></div>
+          <div class="dock">
+            <div class="d-item"><span class="g">🏠</span><span class="l">Home</span></div>
+            <div class="d-item on"><span class="g">🧭</span><span class="l">Explore</span></div>
+            <div class="d-fab"><span class="b">✦</span></div>
+            <div class="d-item"><span class="g">💬</span><span class="l">Chat</span></div>
+            <div class="d-item"><span class="g">👛</span><span class="l">Wallet</span></div>
+          </div>
+          <div class="p-hi"></div>
+        </div>
+      </div>
+      <div class="p-label"><b>Explore — masonry + AI search</b><span>Pinterest-grade discovery, ⌘K natural language</span></div>
+    </div>
+
+    <!-- REELS -->
+    <div>
+      <div class="phone"><div class="p-notch"></div>
+        <div class="p-scr" style="background:#000">
+          <div style="position:absolute;inset:0;background:linear-gradient(165deg,#1c1c33 0%,#0e0e1c 100%);display:flex;align-items:center;justify-content:center;font-size:64px;color:rgba(255,255,255,.2)">▶️</div>
+          <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.35),transparent 26%,transparent 55%,rgba(0,0,0,.75))"></div>
+          <div style="position:absolute;top:44px;left:0;right:0;display:flex;justify-content:center;gap:22px;z-index:6">
+            <span style="color:rgba(255,255,255,.6);font-size:13px;font-weight:700">Following</span>
+            <span style="color:#fff;font-size:13px;font-weight:800;border-bottom:2px solid #fff;padding-bottom:3px">For You</span>
+          </div>
+          <div class="reel-rail2">
+            <div class="rr"><span style="width:44px;height:44px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:15px;background:var(--bg3)">V</span></div>
+            <div class="rr">❤️<span class="c">1.2k</span></div>
+            <div class="rr">💬<span class="c">89</span></div>
+            <div class="rr">🔁<span class="c">45</span></div>
+            <div class="rr zap">⚡<span class="c">8.4k</span></div>
+            <div class="rr">🔖</div>
+          </div>
+          <div style="position:absolute;left:14px;right:70px;bottom:104px;color:#fff;z-index:6">
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800">@vida_pura <span style="background:var(--aurora);font-size:9px;padding:3px 9px;border-radius:99px">Following</span></div>
+            <div style="font-size:12px;margin-top:7px;opacity:.95;line-height:1.4">Beach sunrise run 🏃‍♀️ zaps fund my marathon training 🥅 68% there!</div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:9px;font-size:10px;opacity:.8">🎵 original audio <span style="display:inline-block;width:60px;height:3px;border-radius:2px;background:rgba(255,255,255,.3)"><span style="display:block;width:60%;height:100%;background:#fff;border-radius:2px"></span></span></div>
+          </div>
+          <div style="position:absolute;bottom:90px;left:14px;right:14px;height:3px;background:rgba(255,255,255,.2);border-radius:2px;z-index:6"><div style="width:38%;height:100%;background:var(--aurora);border-radius:2px"></div></div>
+          <div class="dock" style="background:rgba(10,10,18,.7)">
+            <div class="d-item"><span class="g">🏠</span><span class="l">Home</span></div>
+            <div class="d-item"><span class="g">🧭</span><span class="l">Explore</span></div>
+            <div class="d-fab"><span class="b">✦</span></div>
+            <div class="d-item on"><span class="g">🎬</span><span class="l">Reels</span></div>
+            <div class="d-item"><span class="g">👛</span><span class="l">Wallet</span></div>
+          </div>
+          <div class="p-hi" style="background:#fff"></div>
+        </div>
+      </div>
+      <div class="p-label"><b>Reels — cinematic player</b><span>aurora progress · zap-goal captions · glass dock</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CHAT + WALLET ── -->
+<section id="chat-wallet">
+  <div class="sec-kicker">04 — Connection & money</div>
+  <h2 class="sec-title">Where relationships happen</h2>
+  <p class="sec-sub">Chat gets the shimmering AI companion row and aurora gradient bubbles (mine) with spring physics. The wallet becomes a constellation of value — a nebula hero card with a sparkline, wallet-orbit chips, and money that moves with physics.</p>
+  <div class="phones">
+
+    <!-- CHAT LIST -->
+    <div>
+      <div class="phone"><div class="p-notch"></div>
+        <div class="p-scr">
+          <div class="p-status"><span>9:41</span><span>●●●</span></div>
+          <div class="n-bar"><div class="t">Messages</div><span class="n-ico">✏️</span></div>
+          <div class="n-body"><div class="n-scroll">
+            <div class="ai-row">
+              <span class="spark">✦</span>
+              <div style="flex:1"><div class="t1">Nova AI</div><div class="t2">"Summarize my unread threads" ✦</div></div>
+              <span style="font-size:10px;font-weight:800;color:var(--text3);border:1px solid var(--glass-border2);padding:4px 9px;border-radius:8px">8.2k ✦</span>
+            </div>
+            <div style="display:flex;gap:11px;padding:12px 16px 6px;overflow-x:auto;scrollbar-width:none">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:46px;height:46px;border-radius:50%;border:2px solid #3DDC97;padding:2px"><span style="width:100%;height:100%;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:15px">A</span></span><span style="font-size:9px;color:var(--text2)">Alice</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:46px;height:46px;border-radius:50%;border:2px solid #3DDC97;padding:2px"><span style="width:100%;height:100%;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:15px">B</span></span><span style="font-size:9px;color:var(--text2)">Bob</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="width:46px;height:46px;border-radius:50%;border:2px solid var(--glass-border2);padding:2px"><span style="width:100%;height:100%;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:15px">C</span></span><span style="font-size:9px;color:var(--text3)">Carol</span></div>
+            </div>
+            <div class="ch-row">
+              <span class="av"><span class="img">A</span><span class="on"></span></span>
+              <div class="m"><div class="r1"><span class="n">Alice</span><span style="background:var(--aurora);-webkit-background-clip:text;background-clip:text;color:transparent;font-size:11px">✓</span><span class="tm">2m</span></div><div class="pv ur">⚡ zapped you 420 sats "for the idea 🚀"</div></div>
+              <span class="bdg">2</span>
+            </div>
+            <div class="ch-row">
+              <span class="av"><span class="img">⚡</span></span>
+              <div class="m"><div class="r1"><span class="n">Nostr Devs</span><span style="font-size:8.5px;font-weight:800;color:var(--a2);border:1px solid rgba(138,91,255,.4);padding:2px 7px;border-radius:99px">GROUP</span><span class="tm">1h</span></div><div class="pv ur">fiatjaf: NIP-17 gift wraps ship next week 🔥</div></div>
+              <span class="bdg">5</span>
+            </div>
+            <div class="ch-row">
+              <span class="av"><span class="img">B</span><span class="on"></span></span>
+              <div class="m"><div class="r1"><span class="n">Bob</span><span class="tm">3h</span></div><div class="pv">You: sent the ecash — claim it 🥜</div></div>
+            </div>
+            <div class="ch-row">
+              <span class="av"><span class="img">🎅</span></span>
+              <div class="m"><div class="r1"><span class="n">Secret Santa</span><span style="font-size:8.5px;font-weight:800;color:var(--zap);border:1px solid rgba(255,178,91,.4);padding:2px 7px;border-radius:99px">⏳ 24h</span><span class="tm">2d</span></div><div class="pv">This message disappears…</div></div>
+            </div>
+          </div></div>
+          <div class="dock">
+            <div class="d-item"><span class="g">🏠</span><span class="l">Home</span></div>
+            <div class="d-item"><span class="g">🧭</span><span class="l">Explore</span></div>
+            <div class="d-fab"><span class="b">✦</span></div>
+            <div class="d-item on"><span class="g">💬</span><span class="l">Chat</span><span class="d-badge">7</span></div>
+            <div class="d-item"><span class="g">👛</span><span class="l">Wallet</span></div>
+          </div>
+          <div class="p-hi"></div>
+        </div>
+      </div>
+      <div class="p-label"><b>Chat — shimmering AI row</b><span>online-presence ring avatars · aurora unread badges</span></div>
+    </div>
+
+    <!-- CHAT THREAD -->
+    <div>
+      <div class="phone"><div class="p-notch"></div>
+        <div class="p-scr">
+          <div class="p-status"><span>9:41</span><span>●●●</span></div>
+          <div class="n-bar" style="border-bottom:1px solid var(--glass-border);padding:8px 10px">
+            <span class="n-ico" style="background:transparent;border:0">‹</span>
+            <span style="width:31px;height:31px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;border:2px solid #3DDC97">A</span>
+            <div style="flex:1"><div style="font-size:13.5px;font-weight:800">Alice <span style="background:var(--aurora);-webkit-background-clip:text;background-clip:text;color:transparent;font-size:10px">✓</span></div><div style="font-size:9.5px;color:#3DDC97;font-weight:700">● online · 🔒 NIP-17</div></div>
+            <span class="n-ico">📞</span><span class="n-ico">✦</span>
+          </div>
+          <div class="n-body"><div class="n-scroll">
+            <div class="bb-thread">
+              <div style="text-align:center;font-size:9px;color:var(--text3);padding:4px 0 10px">Today · 🔒 end-to-end encrypted</div>
+              <div class="bb-row"><div class="bb them">gm! did you see the zap goals? ⚡</div></div>
+              <div class="bb-row me"><div class="bb me">gm! shipping it today 🛠️<span class="tm">09:41 ✓✓</span></div></div>
+              <div class="bb-row me"><div class="bb me">zapping you 420 for the idea 🚀<span class="tm">09:41 ✓✓</span></div></div>
+              <div class="bb-row"><div class="bb zap">⚡ <b>420 sats</b> received<br><span style="font-size:10px;opacity:.75">"for the idea 🚀" · claim ✓</span></div></div>
+              <div class="bb-row"><div class="bb them">you're the best 🧡</div></div>
+              <div class="bb-row"><div class="bb them" style="opacity:.7;display:flex;gap:3px;padding:11px 15px"><span style="animation:pulse 1s infinite">●</span><span style="animation:pulse 1s .2s infinite">●</span><span style="animation:pulse 1s .4s infinite">●</span></div></div>
+            </div>
+          </div></div>
+          <div style="flex-shrink:0;display:flex;align-items:center;gap:8px;padding:10px 14px 18px">
+            <span class="n-ico" style="border-radius:14px">＋</span>
+            <div style="flex:1;background:var(--glass);border:1px solid var(--glass-border);border-radius:18px;padding:10px 15px;font-size:12.5px;color:var(--text3);backdrop-filter:var(--blur)">Message…</div>
+            <span class="n-ico" style="border-radius:14px;color:var(--zap)">⚡</span>
+            <span style="width:38px;height:38px;border-radius:14px;background:var(--aurora);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;box-shadow:0 4px 14px rgba(138,91,255,.4)">➤</span>
+          </div>
+          <div class="p-hi"></div>
+        </div>
+      </div>
+      <div class="p-label"><b>Thread — aurora bubbles</b><span>zap receipts render as glowing value cards</span></div>
+    </div>
+
+    <!-- WALLET -->
+    <div>
+      <div class="phone"><div class="p-notch"></div>
+        <div class="p-scr">
+          <div class="p-status"><span>9:41</span><span>●●●</span></div>
+          <div class="n-bar"><div class="t">Wallet</div><span class="n-ico">📊</span><span class="n-ico">⚙️</span></div>
+          <div class="n-body"><div class="n-scroll">
+            <div class="w-hero">
+              <div class="lb">Total balance · LNbits Spending ▾</div>
+              <div class="amt">142,857 <small>sats</small></div>
+              <div class="fiat">≈ $142.86 · <span style="color:#3DDC97">▲ 2.4% today</span></div>
+              <svg class="sparkline" width="90" height="34" viewBox="0 0 90 34" fill="none">
+                <path d="M2 28 L14 24 L26 26 L38 18 L50 20 L62 12 L74 14 L88 4" stroke="url(#sg)" stroke-width="2.5" stroke-linecap="round"/>
+                <defs><linearGradient id="sg" x1="0" y1="0" x2="90" y2="0"><stop stop-color="#5B8CFF"/><stop offset="1" stop-color="#FF5BB0"/></linearGradient></defs>
+              </svg>
+              <div class="acts">
+                <span class="w-act recv">↓ Receive</span>
+                <span class="w-act send">↑ Send</span>
+                <span class="w-act" style="background:linear-gradient(120deg,#FFB25B,#FF8A3D);color:#231300">⚡ Zap</span>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;padding:13px 14px 4px;overflow-x:auto;scrollbar-width:none">
+              <span class="w-chip on">🟢 LNbits</span><span class="w-chip">🔗 NWC</span><span class="w-chip">🥜 Cashu</span><span class="w-chip">🌊 LndHub</span>
+            </div>
+            <div style="padding:10px 16px 4px;font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--text3)">✦ Grow your sats</div>
+            <div style="display:flex;gap:9px;padding:8px 14px;overflow-x:auto;scrollbar-width:none">
+              <div style="min-width:104px;border-radius:18px;padding:12px;background:var(--aurora-soft);border:1px solid rgba(138,91,255,.3);cursor:pointer">
+                <div style="font-size:19px">💧</div><div style="font-size:11.5px;font-weight:800;margin-top:6px">Drops</div><div style="font-size:9px;color:var(--text2)">+21 ready ✦</div>
+              </div>
+              <div style="min-width:104px;border-radius:18px;padding:12px;background:var(--glass);border:1px solid var(--glass-border);cursor:pointer">
+                <div style="font-size:19px">🎯</div><div style="font-size:11.5px;font-weight:800;margin-top:6px">Bounties</div><div style="font-size:9px;color:var(--text2)">3 open · 5.2k</div>
+              </div>
+              <div style="min-width:104px;border-radius:18px;padding:12px;background:var(--glass);border:1px solid var(--glass-border);cursor:pointer">
+                <div style="font-size:19px">🥅</div><div style="font-size:11.5px;font-weight:800;margin-top:6px">Goals</div><div style="font-size:9px;color:var(--text2)">2 funding</div>
+              </div>
+              <div style="min-width:104px;border-radius:18px;padding:12px;background:var(--glass);border:1px solid var(--glass-border);cursor:pointer">
+                <div style="font-size:19px">📊</div><div style="font-size:11.5px;font-weight:800;margin-top:6px">Studio</div><div style="font-size:9px;color:var(--text2)">21.4k wk</div>
+              </div>
+            </div>
+            <div style="padding:10px 16px 4px;font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--text3)">Activity</div>
+            <div class="tx-row"><span class="ic" style="background:rgba(61,220,151,.12)">⚡</span><div><div class="tt">Zap from @alice</div><div class="ts">"for the idea 🚀" · 2m</div></div><span class="amt plus">+420</span></div>
+            <div class="tx-row"><span class="ic" style="background:var(--aurora-soft)">✦</span><div><div class="tt">Nova AI credits</div><div class="ts">8,000 tokens · 1h</div></div><span class="amt" style="color:var(--text2)">−2,100</span></div>
+            <div class="tx-row"><span class="ic" style="background:rgba(61,220,151,.12)">💧</span><div><div class="tt">Daily drop claimed</div><div class="ts">streak 🔥 6 days</div></div><span class="amt plus">+21</span></div>
+            <div class="tx-row"><span class="ic" style="background:rgba(255,178,91,.12)">🥜</span><div><div class="tt">Ecash from @bob</div><div class="ts">mint.minibits.cash · 6h</div></div><span class="amt plus">+100</span></div>
+          </div></div>
+          <div class="dock">
+            <div class="d-item"><span class="g">🏠</span><span class="l">Home</span></div>
+            <div class="d-item"><span class="g">🧭</span><span class="l">Explore</span></div>
+            <div class="d-fab"><span class="b">✦</span></div>
+            <div class="d-item"><span class="g">💬</span><span class="l">Chat</span></div>
+            <div class="d-item on"><span class="g">👛</span><span class="l">Wallet</span></div>
+          </div>
+          <div class="p-hi"></div>
+        </div>
+      </div>
+      <div class="p-label"><b>Wallet — nebula hero card</b><span>aurora sparkline · "Grow your sats" orbit · zap CTA</span></div>
+    </div>
+
+    <!-- ZAP SHEET -->
+    <div>
+      <div class="phone"><div class="p-notch"></div>
+        <div class="p-scr" style="background:rgba(0,0,0,.6)">
+          <div class="p-status"><span>9:41</span><span>●●●</span></div>
+          <div class="n-body"></div>
+          <div class="z-sheet">
+            <div style="width:36px;height:4px;border-radius:2px;background:var(--glass-border2);margin:0 auto 14px"></div>
+            <div style="display:flex;align-items:center;gap:11px">
+              <span style="width:42px;height:42px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-weight:800;border:2px solid transparent;background-clip:padding-box;position:relative">S</span>
+              <div><div style="font-size:14px;font-weight:800">Zap Satoshi's Ghost</div><div style="font-size:10.5px;color:var(--text3)">satoshi@ln.nostrfeed.com</div></div>
+              <span style="margin-left:auto;font-size:20px;color:var(--zap)">⚡</span>
+            </div>
+            <div class="z-grid">
+              <div class="z-cell">👍<span class="a">21</span></div>
+              <div class="z-cell sel">🚀<span class="a">420</span></div>
+              <div class="z-cell">☕<span class="a">1k</span></div>
+              <div class="z-cell">🍻<span class="a">5k</span></div>
+              <div class="z-cell">🍷<span class="a">10k</span></div>
+              <div class="z-cell">👑<span class="a">100k</span></div>
+            </div>
+            <div class="z-slider">
+              <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:7px"><span>Custom</span><span style="font-size:12px;font-weight:800;color:var(--zap)">420 sats ≈ $0.42</span></div>
+              <div class="track"><div class="fill"></div><div class="thumb"></div></div>
+            </div>
+            <div style="background:var(--glass);border:1px solid var(--glass-border);border-radius:14px;padding:10px 13px;font-size:12px;color:var(--text3);margin-top:13px">💬 for the idea 🚀 (on the receipt)</div>
+            <button class="btn zapbtn" style="width:100%;margin-top:13px;font-size:15px;padding:15px">⚡ Zap 420 sats</button>
+            <div style="text-align:center;font-size:10px;color:var(--text3);margin-top:9px">Balance 142,857 · pays with LNbits ⚡</div>
+          </div>
+          <div class="p-hi"></div>
+        </div>
+      </div>
+      <div class="p-label"><b>Zap sheet — value you can feel</b><span>slider + glow presets · the zap button has the only colored shadow</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PROFILE + AI ── -->
+<section id="profile-ai">
+  <div class="sec-kicker">05 — Identity & intelligence</div>
+  <h2 class="sec-title">You, and your AI</h2>
+  <p class="sec-sub">The profile is a personal universe — aurora ring avatar floating over a cinematic cover, glass stat pills, and tabs that slide. AI gets a universal home: ⌘K from anywhere summons the command palette — search, actions, and assistant in one.</p>
+  <div class="phones">
+
+    <!-- PROFILE -->
+    <div>
+      <div class="phone"><div class="p-notch"></div>
+        <div class="p-scr">
+          <div class="n-body"><div class="n-scroll">
+            <div style="height:150px;background:linear-gradient(130deg,#1e1440,#331345 60%,#4a1530);position:relative;flex-shrink:0">
+              <div style="position:absolute;inset:0;background:radial-gradient(300px 150px at 80% 20%,rgba(255,91,176,.3),transparent 60%)"></div>
+              <span class="n-ico" style="position:absolute;top:44px;left:10px;background:rgba(0,0,0,.3);border-color:rgba(255,255,255,.15);color:#fff">‹</span>
+              <span class="n-ico" style="position:absolute;top:44px;right:10px;background:rgba(0,0,0,.3);border-color:rgba(255,255,255,.15);color:#fff">⋯</span>
+            </div>
+            <div style="padding:0 16px;position:relative">
+              <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:-36px">
+                <div style="width:80px;height:80px;border-radius:50%;padding:3px;background:var(--aurora);box-shadow:0 8px 26px rgba(138,91,255,.5)">
+                  <div style="width:100%;height:100%;border-radius:50%;background:var(--bg3);border:3px solid var(--bg2);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800">K</div>
+                </div>
+                <div style="display:flex;gap:8px;margin-bottom:8px">
+                  <button class="btn glass sm" style="font-size:11px">Edit profile</button>
+                  <button class="btn zapbtn sm" style="font-size:11px">⚡</button>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:11px">
+                <span style="font-size:19px;font-weight:800;letter-spacing:-.03em">Kimi Nakamoto</span>
+                <span style="width:19px;height:19px;border-radius:50%;background:var(--aurora);display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:11px;box-shadow:0 2px 10px rgba(138,91,255,.5)">✓</span>
+                <span style="font-size:12px" title="Paid relay">🛡️</span>
+              </div>
+              <div style="font-size:11.5px;margin-top:3px"><span class="aura-txt" style="font-weight:700">kimi@nostrfeed.com</span></div>
+              <div style="font-size:12.5px;line-height:1.5;margin-top:8px;color:var(--text)">Building the Nostr OS ⚡ designer × developer · zaps fund open source 🧡</div>
+              <div style="display:flex;gap:9px;margin-top:12px">
+                <span style="flex:1;text-align:center;background:var(--glass);border:1px solid var(--glass-border);border-radius:14px;padding:9px 4px;cursor:pointer"><span style="font-size:14px;font-weight:800">8,391</span><br><span style="font-size:9px;color:var(--text3)">Followers</span></span>
+                <span style="flex:1;text-align:center;background:var(--glass);border:1px solid var(--glass-border);border-radius:14px;padding:9px 4px;cursor:pointer"><span style="font-size:14px;font-weight:800">1,247</span><br><span style="font-size:9px;color:var(--text3)">Following</span></span>
+                <span style="flex:1;text-align:center;background:linear-gradient(120deg,rgba(255,178,91,.14),rgba(255,138,61,.08));border:1px solid rgba(255,178,91,.3);border-radius:14px;padding:9px 4px;cursor:pointer"><span style="font-size:14px;font-weight:800;color:var(--zap)">42k</span><br><span style="font-size:9px;color:var(--text3)">⚡ Zapped</span></span>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:13px;border-bottom:1px solid var(--glass-border)">
+                <span style="font-size:12px;font-weight:800;padding:8px 13px;border-bottom:2px solid;border-image:var(--aurora) 1;color:var(--text)">Posts</span>
+                <span style="font-size:12px;font-weight:600;padding:8px 13px;color:var(--text3)">Replies</span>
+                <span style="font-size:12px;font-weight:600;padding:8px 13px;color:var(--text3)">Media</span>
+                <span style="font-size:12px;font-weight:600;padding:8px 13px;color:var(--text3)">🛍️ Shop</span>
+              </div>
+            </div>
+            <div class="post">
+              <div class="p-head">
+                <span class="av"><span class="img">K</span></span>
+                <div class="who"><div class="n">Kimi Nakamoto <span class="v">✓</span></div><div class="h">4h</div></div>
+                <span class="more">⋯</span>
+              </div>
+              <div class="p-text">Shipping the new wallet hub today 🛠️ every money feature, one screen.</div>
+              <div class="p-acts">
+                <span class="p-act"><span class="i">💬</span><span class="cnt">31</span></span>
+                <span class="p-act"><span class="i">🔁</span><span class="cnt">14</span></span>
+                <span class="p-act"><span class="i">❤️</span><span class="cnt">287</span></span>
+                <span class="p-act zap"><span class="i">⚡</span><span class="cnt">4.2k</span></span>
+                <span class="sp"></span><span class="p-act"><span class="i">🔖</span></span>
+              </div>
+            </div>
+          </div></div>
+          <div class="p-hi"></div>
+        </div>
+      </div>
+      <div class="p-label"><b>Profile — personal universe</b><span>aurora ring avatar · glass stat pills · Shop tab</span></div>
+    </div>
+
+    <!-- NOTIFICATIONS -->
+    <div>
+      <div class="phone"><div class="p-notch"></div>
+        <div class="p-scr">
+          <div class="p-status"><span>9:41</span><span>●●●</span></div>
+          <div class="n-bar"><span class="n-ico" style="background:transparent;border:0">‹</span><div class="t">Activity</div><span class="n-ico">✦</span></div>
+          <div style="display:flex;gap:8px;padding:2px 14px 11px;overflow-x:auto;scrollbar-width:none">
+            <span class="w-chip on">All</span><span class="w-chip">⚡ Zaps</span><span class="w-chip">💬 Replies</span><span class="w-chip">👥 Follows</span>
+          </div>
+          <div class="n-body"><div class="n-scroll">
+            <div style="margin:0 12px 10px;border-radius:20px;padding:13px 14px;background:linear-gradient(120deg,rgba(255,178,91,.12),rgba(255,138,61,.06));border:1px solid rgba(255,178,91,.35)">
+              <div style="display:flex;gap:10px;align-items:center">
+                <span style="font-size:21px">⚡</span>
+                <div style="flex:1"><div style="font-size:12.5px;font-weight:800">4,200 sats from 12 zappers</div><div style="font-size:10.5px;color:var(--text2);margin-top:1px">"gm nostr ☕ what's everyone building…"</div></div>
+                <span style="font-size:9.5px;color:var(--text3)">2m</span>
+              </div>
+              <div style="display:flex;margin-top:9px">
+                <span style="width:24px;height:24px;border-radius:50%;background:var(--bg3);border:2px solid var(--bg2);display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800">A</span>
+                <span style="width:24px;height:24px;border-radius:50%;background:var(--bg3);border:2px solid var(--bg2);display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;margin-left:-8px">B</span>
+                <span style="width:24px;height:24px;border-radius:50%;background:var(--bg3);border:2px solid var(--bg2);display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;margin-left:-8px">C</span>
+                <span style="width:24px;height:24px;border-radius:50%;background:var(--glass2);border:2px solid var(--bg2);display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;margin-left:-8px">+9</span>
+              </div>
+            </div>
+            <div class="ch-row">
+              <span class="av"><span class="img">B</span></span>
+              <div class="m"><div class="r1"><span class="n">Bob replied</span><span class="tm">18m</span></div><div class="pv">"Clients are the new browsers…" 💬</div></div>
+            </div>
+            <div class="ch-row">
+              <span class="av"><span class="img">D</span></span>
+              <div class="m"><div class="r1"><span class="n">Diana + 7 reposted</span><span class="tm">1h</span></div><div class="pv" style="color:var(--repost)">🔁 your note about key management</div></div>
+            </div>
+            <div class="ch-row">
+              <span class="av"><span class="img">I</span></span>
+              <div class="m"><div class="r1"><span class="n">Iris followed you</span><span class="tm">5h</span></div><div class="pv">👋 Say hi back</div></div>
+              <button class="btn aura sm" style="font-size:10px;padding:6px 13px">Follow</button>
+            </div>
+          </div></div>
+          <div class="p-hi"></div>
+        </div>
+      </div>
+      <div class="p-label"><b>Activity — value-first grouping</b><span>zap totals lead · smart aggregation · follow-back inline</span></div>
+    </div>
+  </div>
+
+  <!-- COMMAND-K -->
+  <div style="max-width:640px;margin:44px auto 0">
+    <h3 style="font-size:20px;font-weight:800;letter-spacing:-.025em;text-align:center">⌘K — the universal assistant</h3>
+    <p style="text-align:center;color:var(--text2);font-size:13px;margin-top:6px">Long-press the ✦ dock button (or ⌘K) from ANY screen. Search, navigate, and AI in one palette.</p>
+    <div class="cmdk">
+      <div class="inp"><span class="k">✦</span> summarize the thread about relay routing…<span style="margin-left:auto;width:14px;height:16px;border-left:2px solid var(--a2);animation:pulse 1s infinite"></span></div>
+      <div class="grp">✦ Nova AI</div>
+      <div class="row sel"><span class="ic" style="background:var(--aurora-soft)">✦</span>Summarize this thread<span class="hint">12 tokens</span></div>
+      <div class="row"><span class="ic">🌐</span>Translate to Portuguese<span class="hint">8 tokens</span></div>
+      <div class="row"><span class="ic">✍️</span>Draft a reply<span class="hint">12 tokens</span></div>
+      <div class="grp">Jump to</div>
+      <div class="row"><span class="ic">🧵</span>Thread · "relay routing" with @fiatjaf<span class="hint">↵</span></div>
+      <div class="row"><span class="ic">👤</span>@relayrunner<span class="hint">↵</span></div>
+      <div class="grp">Actions</div>
+      <div class="row"><span class="ic">⚡</span>Zap the OP 420 sats<span class="hint">↵</span></div>
+      <div class="row"><span class="ic">🔖</span>Save to Bookmarks<span class="hint">↵</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── BEFORE / AFTER ── -->
+<section id="before-after">
+  <div class="sec-kicker">06 — The delta</div>
+  <h2 class="sec-title">Old → NOVA, side by side</h2>
+  <div class="ba">
+    <div class="col old">
+      <h5>Current (v1.3)</h5>
+      <ul>
+        <li>Ice-blue #0A66C2 — reads "enterprise SaaS", same hue as LinkedIn</li>
+        <li>Bottom-nav pill + Material icons — competent, generic</li>
+        <li>Feed = uniform rows; media constrained to grids</li>
+        <li>Discovery hidden in a 20-item drawer</li>
+        <li>Search is a screen, AI is a destination</li>
+        <li>easeOutCubic 300ms everywhere — smooth but flat</li>
+        <li>Zap button same weight as like/repost</li>
+        <li>Profile = standard cover + stats row</li>
+      </ul>
+    </div>
+    <div class="col new">
+      <h5>NOVA (v2.0 vision)</h5>
+      <ul>
+        <li>Aurora spectrum — ownable, electric, uniquely Nostr</li>
+        <li>Floating glass dock, spring physics, ✦ create lifts above</li>
+        <li>Gallery feed — text compact, media full-bleed heroes</li>
+        <li>Explore is a TAB with masonry + trending rings</li>
+        <li>⌘K palette — search + actions + AI from anywhere</li>
+        <li>Spring curves (.34,1.45,.44,1) — buttons compress & rebound</li>
+        <li>Zap glows with the only colored shadow — value feels physical</li>
+        <li>Profile = personal universe: aurora ring, glass stats, Shop tab</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── SPEC ── -->
+<section id="spec">
+  <div class="sec-kicker">07 — Implementation</div>
+  <h2 class="sec-title">From vision to Flutter</h2>
+  <p class="sec-sub">NOVA is designed to be buildable with the current architecture — it's a theme + component evolution, not a rewrite. Roughly 80% of the structure (routing, shell, feeds, stores) is untouched.</p>
+  <div class="grid2">
+    <div class="gcard">
+      <h4>🎨 Phase 1 — Theme & tokens (1-2 days)</h4>
+      <p>Replace <code>AppTheme</code> schemes with the aurora ramp (keep hand-specified ladder pattern). Add <code>AppGlow</code> token for the zap shadow. Swap easing to spring curves in <code>AppMotion</code>. All WCAG pairs re-pinned in <code>app_theme_test.dart</code>.</p>
+    </div>
+    <div class="gcard">
+      <h4>🧭 Phase 2 — Dock & shell (2-3 days)</h4>
+      <p>Replace the pill with the floating glass dock: <code>BackdropFilter</code> + spring <code>AnimatedScale</code> on tap. Create button lifts with <code>Transform.translate</code> + gradient border. Add Explore as tab 2 (reorder, Chat keeps badge).</p>
+    </div>
+    <div class="gcard">
+      <h4>🖼️ Phase 3 — Feed elevation (3-5 days)</h4>
+      <p><code>PostCard</code> gains a <code>layout: hero|compact</code> switch — media posts (≥1 image/video, no quote) render <code>HeroPostCard</code> full-bleed; text stays compact. Stories row ingests recent media from follows (kind 20/21/22 tail). Live island = <code>dmStoreProvider</code>-style notifier fed by zap/engagement live events.</p>
+    </div>
+    <div class="gcard">
+      <h4>✦ Phase 4 — ⌘K & AI weave (4-6 days)</h4>
+      <p>Command palette as a route overlay fed by a registry (screens, profiles, actions, AI intents). Long-press dock ✦ opens it. AI intents reuse <code>AiContextService</code> — summarize/translate/draft get token-priced chips inline.</p>
+    </div>
+  </div>
+  <table class="spec">
+    <tr><th>Token</th><th>v1.3 (now)</th><th>NOVA</th><th>Where</th></tr>
+    <tr><td>Brand gradient</td><td>#0A66C2 → #3D9BE9</td><td>#5B8CFF → #8A5BFF → #FF5BB0</td><td>AppTheme.brandGradient</td></tr>
+    <tr><td>Zap accent</td><td>#FFA02F flat</td><td>#FFB25B → #FF8A3D + glow</td><td>AppActionColors.zap + AppGlow.zap</td></tr>
+    <tr><td>Motion curve</td><td>easeOutCubic</td><td>spring (.34,1.45,.44,1)</td><td>AppMotion.curve</td></tr>
+    <tr><td>Nav container</td><td>pill, surfaceContainer</td><td>glass dock, backdrop blur 22</td><td>app_shell.dart</td></tr>
+    <tr><td>Feed media</td><td>grids only</td><td>hero | compact layouts</td><td>post_card.dart</td></tr>
+    <tr><td>AI entry</td><td>create sheet + chat pin</td><td>⌘K palette + inline intents</td><td>new: cmdk_sheet.dart</td></tr>
+    <tr><td>Radius scale</td><td>4/8/12/16/20/28</td><td>same + 24 (r-lg) default</td><td>AppShapes</td></tr>
+  </table>
+  <div class="gcard" style="margin-top:20px;border-color:rgba(255,178,91,.35)">
+    <h4>⚠️ What NOVA deliberately does NOT change</h4>
+    <p>PostCard's avatar-left grid (it's correct), chat bubble tails (they read native), zap emoji presets (cultural shorthand), compact profile cover (content-first), the surface-ladder approach (hand-specified forever), and every performance rule in AGENTS.md — memoization, feed rebuild discipline, and the size budget all survive. NOVA is a feeling upgrade, not an architecture churn.</p>
+  </div>
+</section>
+
+<div class="footer">
+  <div class="mark">⚡</div>
+  <div><b style="color:var(--text)">NostrFeed NOVA</b> · 2026 vision · aurora identity · glass · hero media · springs · ⌘K<br>
+  Pair with <code>index.html</code> (v1.3 system reference) — NOVA is where we're going, v1.3 is where we are.<br>
+  Every screen here maps to an existing route. Nothing invented that the protocol can't already do.</div>
+</div>
+
+</div>
+
+<script>
+document.getElementById('modes').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.documentElement.setAttribute('data-mode', b.dataset.m);
+  document.querySelectorAll('#modes button').forEach(x => x.classList.toggle('on', x === b));
+});
+</script>
+</body>
+</html>

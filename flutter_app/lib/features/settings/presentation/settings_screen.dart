@@ -7,10 +7,15 @@ import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/providers/app_info_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/services/background_sync.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/settings/presentation/relay_settings_screen.dart';
 import 'package:nostrfeed_mobile/features/settings/presentation/widgets/wallet_settings_section.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// App settings screen: profile, account keys, appearance, relays,
@@ -51,11 +56,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               leading: SafeAvatar(
                 imageUrl: auth.profile?.picture,
                 radius: 24,
-                fallback: const Icon(Icons.person),
+                fallback: const AppIcon('users'),
               ),
               title: Text(
                 auth.profile?.displayNameOrName ?? 'Nostr User',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
               subtitle: auth.profile?.nip05 != null
                   ? Text(auth.profile!.nip05!)
@@ -68,7 +76,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             )
           else
             ListTile(
-              leading: const Icon(Icons.login),
+              leading: const AppIcon('key'),
               title: const Text('Log in to manage profile'),
               onTap: () => context.push('/login'),
             ),
@@ -81,16 +89,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           if (auth.isLoggedIn) ...[
             // npub
             ListTile(
-              leading: const Icon(Icons.key),
+              leading: const AppIcon('key'),
               title: const Text('Public Key (npub)'),
               subtitle: Text(
                 _npub(auth),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(fontFamily: 'monospace'),
               ),
               trailing: IconButton(
-                icon: const Icon(Icons.copy, size: 20),
+                icon: const AppIcon('edit', size: 20),
                 tooltip: 'Copy npub',
                 onPressed: () => _copy(context, _npub(auth), 'npub'),
               ),
@@ -98,24 +109,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             // nsec (hidden / reveal)
             if (!auth.isReadOnly && auth.privateKey != null)
               ListTile(
-                leading: const Icon(Icons.lock),
+                leading: const AppIcon('key'),
                 title: const Text('Private Key (nsec)'),
                 subtitle: Text(
                   _showNsec ? _nsec(auth) : '••••••••••••••••••••••••',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontFamily: 'monospace'),
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      icon: Icon(
-                        _showNsec
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                        size: 20,
+                      icon: AppIcon(
+                        _showNsec ? 'eye_off' : 'eye',
+                        size: AppIconSize.md,
                       ),
                       tooltip: _showNsec ? 'Hide' : 'Reveal',
                       onPressed: () =>
@@ -123,7 +134,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     if (_showNsec)
                       IconButton(
-                        icon: const Icon(Icons.copy, size: 20),
+                        icon: const AppIcon('edit', size: AppIconSize.md),
                         tooltip: 'Copy nsec',
                         onPressed: () =>
                             _copy(context, _nsec(auth), 'nsec'),
@@ -133,14 +144,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             // Logout
             ListTile(
-              leading: Icon(Icons.logout, color: colorScheme.error),
-              title: Text('Logout',
-                  style: TextStyle(color: colorScheme.error)),
+              leading: AppIcon('back', color: colorScheme.error),
+              title: Text(
+                'Logout',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.copyWith(color: colorScheme.error),
+              ),
               onTap: () => _confirmLogout(context),
             ),
           ] else
             ListTile(
-              leading: const Icon(Icons.login),
+              leading: const AppIcon('key'),
               title: const Text('Log in'),
               onTap: () => context.push('/login'),
             ),
@@ -157,41 +173,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // Appearance
           // -------------------------------------------------------------------
           _sectionHeader('Appearance'),
-          ListTile(
-            leading: const Icon(Icons.palette),
-            title: const Text('Theme'),
-            subtitle: Text(_themeLabel(ref)),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<AppAppearance>(
-                segments: const [
-                  ButtonSegment(
-                      value: AppAppearance.light,
-                      icon: Icon(Icons.light_mode, size: 18),
-                      tooltip: 'Light'),
-                  ButtonSegment(
-                      value: AppAppearance.dark,
-                      icon: Icon(Icons.dark_mode, size: 18),
-                      tooltip: 'Dark'),
-                  ButtonSegment(
-                      value: AppAppearance.oled,
-                      icon: Icon(Icons.contrast, size: 18),
-                      tooltip: 'OLED black'),
-                  ButtonSegment(
-                      value: AppAppearance.system,
-                      icon: Icon(Icons.settings_brightness, size: 18),
-                      tooltip: 'System'),
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md, 0, AppSpacing.md, AppSpacing.xs),
+            child: Row(
+              children: [
+                for (final mode in AppAppearance.values) ...[
+                  Expanded(
+                    child: _AppearanceSwatch(
+                      mode: mode,
+                      selected: ref.watch(appAppearanceProvider) == mode,
+                      onTap: () => ref
+                          .read(appAppearanceProvider.notifier)
+                          .setAppearance(mode),
+                    ),
+                  ),
+                  if (mode != AppAppearance.values.last)
+                    const SizedBox(width: AppSpacing.xs),
                 ],
-                selected: {_currentAppearance(ref)},
-                onSelectionChanged: (selected) {
-                  ref
-                      .read(appAppearanceProvider.notifier)
-                      .setAppearance(selected.first);
-                },
-              ),
+              ],
             ),
           ),
           const Divider(),
@@ -202,10 +202,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _sectionHeader('Relays'),
           _relaySummary(context),
           ListTile(
-            leading: const Icon(Icons.hub),
+            leading: const AppIcon('globe'),
             title: const Text('Manage Relays'),
             subtitle: const Text('Add, remove, configure relay connections'),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: const AppIcon('chevron_r'),
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -219,7 +219,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // -------------------------------------------------------------------
           _sectionHeader('Background updates'),
           SwitchListTile(
-            secondary: const Icon(Icons.sync_rounded),
+            secondary: const AppIcon('repost'),
             title: const Text('Background catch-up'),
             subtitle: const Text(
                 'Periodically fetch new messages and activity while the app is closed. Battery-friendly — no persistent connection.'),
@@ -228,6 +228,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 .read(backgroundSyncEnabledProvider.notifier)
                 .toggle(val),
           ),
+          // Phase 4 (ADR-0007): the opt-in continuous tier — a dataSync
+          // foreground-service sync window. Android-only (iOS has no FGS
+          // concept; the hourly catch-up above is the only tier there).
+          if (syncWindowSupported)
+            SwitchListTile(
+              secondary: const AppIcon('zap'),
+              title: const Text('Stay synced (faster)'),
+              subtitle: const Text(
+                  'Keep syncing continuously in the background with a low-priority status icon. Uses more battery than catch-up. Android may pause it to save power.'),
+              value: ref.watch(syncWindowEnabledProvider).value ?? false,
+              onChanged: (val) => ref
+                  .read(syncWindowEnabledProvider.notifier)
+                  .toggle(val),
+            ),
           const Divider(),
 
           // -------------------------------------------------------------------
@@ -235,7 +249,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // -------------------------------------------------------------------
           _sectionHeader('Content filters'),
           SwitchListTile(
-            secondary: const Icon(Icons.visibility_off_outlined),
+            secondary: const AppIcon('eye_off'),
             title: const Text('Hide explicit content'),
             subtitle: const Text(
                 'NSFW posts, profiles and names, in any language'),
@@ -246,7 +260,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // Three-option sensitive-content display (blueprint's user
           // preference layer): hide / blur-until-tapped / allow.
           ListTile(
-            leading: const Icon(Icons.blur_on_rounded),
+            leading: const AppIcon('eye_off'),
             title: const Text('Sensitive content display'),
             subtitle: const Text(
                 'How posts marked sensitive (by author or detector) show'),
@@ -255,13 +269,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               segments: const [
                 ButtonSegment(
                     value: SensitiveContentMode.hide,
-                    icon: Icon(Icons.block_rounded, size: 16)),
+                    icon: AppIcon('eye_off', size: 16)),
                 ButtonSegment(
                     value: SensitiveContentMode.blur,
-                    icon: Icon(Icons.blur_on_rounded, size: 16)),
+                    icon: AppIcon('eye_off', size: 16)),
                 ButtonSegment(
                     value: SensitiveContentMode.allow,
-                    icon: Icon(Icons.visibility_rounded, size: 16)),
+                    icon: AppIcon('eye', size: 16)),
               ],
               selected: {ref.watch(sensitiveModeProvider)},
               onSelectionChanged: (modes) => ref
@@ -270,7 +284,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           SwitchListTile(
-            secondary: const Icon(Icons.link_off_rounded),
+            secondary: const AppIcon('link'),
             title: const Text('Hide spam links'),
             subtitle: const Text(
                 'Link dumps, search-spam links and known spam domains'),
@@ -279,25 +293,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ref.read(spamFilterProvider.notifier).toggle(val),
           ),
           ListTile(
-            leading: const Icon(Icons.text_fields_rounded),
+            leading: const AppIcon('edit'),
             title: const Text('Blocked words'),
             subtitle: Text(
               ref.watch(blockedWordsProvider).isEmpty
                   ? 'Posts containing these words are hidden'
                   : '${ref.watch(blockedWordsProvider).length} blocked',
             ),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: const AppIcon('chevron_r'),
             onTap: () => _showBlockedWordsSheet(context),
           ),
           ListTile(
-            leading: const Icon(Icons.person_off_outlined),
+            leading: const AppIcon('eye_off'),
             title: const Text('Blocked accounts'),
             subtitle: Text(
               ref.watch(blockedAuthorsProvider).isEmpty
                   ? 'Accounts you have blocked'
                   : '${ref.watch(blockedAuthorsProvider).length} blocked',
             ),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: const AppIcon('chevron_r'),
             onTap: () => _showBlockedAuthorsSheet(context),
           ),
           const Divider(),
@@ -307,7 +321,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // -------------------------------------------------------------------
           _sectionHeader('Notifications'),
           SwitchListTile(
-            secondary: const Icon(Icons.notifications),
+            secondary: const AppIcon('bell'),
             title: const Text('Push Notifications'),
             subtitle: const Text('Receive alerts for mentions and zaps'),
             value: _notificationsEnabled,
@@ -321,7 +335,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // -------------------------------------------------------------------
           _sectionHeader('About'),
           ListTile(
-            leading: const Icon(Icons.info),
+            leading: const AppIcon('eye'),
             title: const Text('App Version'),
             subtitle: Text(
               ref.watch(appVersionProvider).isEmpty
@@ -330,16 +344,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.code),
+            leading: const AppIcon('article'),
             title: const Text('Source Code'),
             subtitle: const Text('github.com/nostrfeed'),
-            trailing: const Icon(Icons.open_in_new, size: 18),
+            trailing: const AppIcon('link', size: 18),
             onTap: () => _openUrl('https://github.com/nostrfeed'),
           ),
           ListTile(
-            leading: const Icon(Icons.description),
+            leading: const AppIcon('article'),
             title: const Text('Terms & Privacy'),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: const AppIcon('chevron_r'),
             onTap: () => _openUrl('https://nostrfeed.com/terms'),
           ),
           const SizedBox(height: 32),
@@ -354,15 +368,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _sectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.lg, AppSpacing.md, AppSpacing.xxs),
       child: Text(
         title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.primary,
-          letterSpacing: 1.2,
-        ),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: Theme.of(context).colorScheme.primary,
+              letterSpacing: 1.2,
+            ),
       ),
     );
   }
@@ -376,7 +390,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return ListTile(
       leading: Stack(
         children: [
-          const Icon(Icons.dns, size: 28),
+          const AppIcon('globe', size: 28),
           Positioned(
             right: 0,
             bottom: 0,
@@ -384,7 +398,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               width: 10,
               height: 10,
               decoration: BoxDecoration(
-                color: connected > 0 ? Colors.green : Colors.red,
+                color: connected > 0
+                    ? AppStatusColors.success
+                    : AppStatusColors.error,
                 shape: BoxShape.circle,
                 border: Border.all(
                     color: Theme.of(context).colorScheme.surface, width: 1.5),
@@ -424,16 +440,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _copy(BuildContext context, String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label copied to clipboard')),
-    );
+    AppToast.success(context, '$label copied to clipboard');
   }
-
-  AppAppearance _currentAppearance(WidgetRef ref) {
-    return ref.watch(appAppearanceProvider);
-  }
-
-  String _themeLabel(WidgetRef ref) => _currentAppearance(ref).label;
 
   void _confirmLogout(BuildContext context) {
     showDialog(
@@ -532,7 +540,10 @@ class _BlockedWordsSheetState extends ConsumerState<_BlockedWordsSheet> {
           Text(
             'Any post containing one of these words is hidden. They sync to '
             'your NIP-51 mute list when you are logged in.',
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           Row(
@@ -558,7 +569,10 @@ class _BlockedWordsSheetState extends ConsumerState<_BlockedWordsSheet> {
               child: Text(
                 'No blocked words yet.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             )
           else
@@ -571,7 +585,7 @@ class _BlockedWordsSheetState extends ConsumerState<_BlockedWordsSheet> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(words[i]),
                   trailing: IconButton(
-                    icon: const Icon(Icons.close, size: 18),
+                    icon: const AppIcon('plus', size: 18),
                     onPressed: () => ref
                         .read(blockedWordsProvider.notifier)
                         .remove(words[i]),
@@ -589,6 +603,83 @@ class _BlockedWordsSheetState extends ConsumerState<_BlockedWordsSheet> {
     if (word.isEmpty) return;
     await ref.read(blockedWordsProvider.notifier).add(word);
     _controller.clear();
+  }
+}
+
+// ─── Appearance swatch tile ─────────────────────────────────────────────
+
+class _AppearanceSwatch extends StatelessWidget {
+  final AppAppearance mode;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _AppearanceSwatch({
+    required this.mode,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = switch (mode) {
+      AppAppearance.dark || AppAppearance.oled => true,
+      _ => false,
+    };
+    final isOled = mode == AppAppearance.oled;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: isOled
+              ? const Color(0xFF000000) // token-guard: allow — OLED true-black swatch preview
+              : isDark
+                  ? scheme.surfaceContainerHighest
+                  : scheme.surfaceContainerLowest,
+          borderRadius: AppShapes.radiusSm,
+          border: Border.all(
+            color: selected ? scheme.primary : scheme.outlineVariant,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(
+              switch (mode) {
+                AppAppearance.system => 'settings',
+                AppAppearance.light => 'eye',
+                AppAppearance.dark => 'eye_off',
+                AppAppearance.oled => 'eye_off',
+              },
+              size: AppIconSize.sm,
+              color: selected
+                  ? scheme.primary
+                  : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              mode.label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: selected
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant,
+                    fontWeight:
+                        selected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+            ),
+            if (selected) ...[
+              const SizedBox(height: 2),
+              AppIcon('check',
+                  size: AppIconSize.xs, color: scheme.primary),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -624,7 +715,10 @@ class _BlockedAuthorsSheet extends ConsumerWidget {
           Text(
             'Their posts, profiles and messages are hidden. The list syncs '
             'to your NIP-51 mute list when you are logged in.',
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           if (blocked.isEmpty)
@@ -633,7 +727,10 @@ class _BlockedAuthorsSheet extends ConsumerWidget {
               child: Text(
                 'No blocked accounts. Block someone from a post’s menu.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             )
           else
@@ -651,7 +748,7 @@ class _BlockedAuthorsSheet extends ConsumerWidget {
                     leading: SafeAvatar(
                       imageUrl: profile?.picture,
                       radius: 16,
-                      fallback: const Icon(Icons.person, size: 16),
+                      fallback: const AppIcon('users', size: 16),
                     ),
                     title: Text(
                       profile?.displayNameOrName ??

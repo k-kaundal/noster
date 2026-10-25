@@ -7,6 +7,7 @@ import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/features/feed/application/post_actions.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Saved posts. Each row is a PostCard (with its own bookmark toggle), and a
 /// swipe removes it — the explicit UNBOOKMARK path, so removing a save isn't
@@ -66,7 +67,7 @@ class _BookmarkRow extends ConsumerWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         color: scheme.error,
-        child: const Icon(Icons.bookmark_remove_rounded, color: Colors.white),
+        child: const AppIcon('bookmark', color: Colors.white), // token-guard: allow — on error-red bg
       ),
       child: PostCard(event: event),
     );

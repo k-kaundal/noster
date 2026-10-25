@@ -72,12 +72,12 @@ class SocialAlert {
 /// Real-time social engagement center: ingests likes, comments, reposts,
 /// zaps, replies, and new followers from the live subscription, tracks
 /// unread state, and drives in-app banners + the notifications badge.
-class NotificationCenter {
-  final Ref _ref;
-  NotificationCenter(this._ref) {
-    ready = _restoreLastRead();
-  }
-
+///
+/// This IS a Riverpod [Notifier] — mutations flow through
+/// [NotificationCenterState] replacement (`state =`), NOT a manual version
+/// poke (the old `notificationVersionProvider` hand-rolled exactly what
+/// Notifier exists for, and every new mutation path had to remember to poke).
+class NotificationCenter extends Notifier<NotificationCenterState> {
   /// Epoch counter: bumped by [reset] so an in-flight [_restoreLastRead]
   /// from before the reset can't write a stale watermark afterwards.
   int _epoch = 0;
@@ -95,6 +95,20 @@ class NotificationCenter {
   int _lastRead = 0;
   late final Future<void> ready;
 
+  @override
+  NotificationCenterState build() {
+    ready = _restoreLastRead();
+    return const NotificationCenterState();
+  }
+
+  void _emit() {
+    state = NotificationCenterState(
+      eventCount: _events.length,
+      unreadCount: unreadCount,
+      lastRead: _lastRead,
+    );
+  }
+
   int get lastRead => _lastRead;
 
   List<SocialEvent> get events => List.unmodifiable(_events);
@@ -108,15 +122,15 @@ class NotificationCenter {
     _events.insert(0, SocialEvent(event: event, arrivedAt: arrived));
     // Keep the in-memory list bounded.
     if (_events.length > 200) _events.removeRange(200, _events.length);
-    _ref.read(notificationVersionProvider.notifier).state++;
+    _emit();
     // Refresh the historical list so the notifications screen picks this up
     // too (debounced by Riverpod's own rebuild batching).
-    _ref.invalidate(notificationsProvider);
+    ref.invalidate(notificationsProvider);
     // Engagement on a specific event → refresh its counts live.
     final target = event.getTag('e');
     if (target != null) {
-      _ref.invalidate(engagementProvider(target));
-      _ref.invalidate(userInteractionsProvider(target));
+      ref.invalidate(engagementProvider(target));
+      ref.invalidate(userInteractionsProvider(target));
     }
     return true;
   }
@@ -187,7 +201,7 @@ class NotificationCenter {
   /// one-shot list updates.
   void syncUnreadFromHistory(List<NostrEvent> history) {
     _recomputeHistorical(history);
-    _ref.read(notificationVersionProvider.notifier).state++;
+    _emit();
   }
 
   /// Mark all notifications as read (opening the notifications screen).
@@ -201,7 +215,7 @@ class NotificationCenter {
     }
     _lastRead = watermark;
     _historicalUnread = 0;
-    _ref.read(notificationVersionProvider.notifier).state++;
+    _emit();
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_lastReadPrefKey, _lastRead);
@@ -216,7 +230,7 @@ class NotificationCenter {
     _seen.clear();
     _historicalUnread = 0;
     _lastRead = 0;
-    _ref.read(notificationVersionProvider.notifier).state++;
+    _emit();
     SharedPreferences.getInstance()
         .then((p) => p.remove(_lastReadPrefKey))
         .ignore();
@@ -253,17 +267,39 @@ class NotificationCenter {
       };
 }
 
-final notificationCenterProvider = Provider<NotificationCenter>((ref) {
-  return NotificationCenter(ref);
-});
+/// Immutable snapshot of the notification center's observable state.
+/// Watch fields via `.select` — e.g. the bell badge only rebuilds when the
+/// UNREAD COUNT changes, not on every ingest (the old version-poke rebuilt
+/// every watcher on every mutation).
+class NotificationCenterState {
+  /// Number of live events currently held (list changed when this changes).
+  final int eventCount;
 
-/// Bumped on every notification-center mutation (ingest, mark-read, sync).
-final notificationVersionProvider = StateProvider<int>((ref) => 0);
+  /// Live + historical unread — the bell badge number.
+  final int unreadCount;
+
+  /// The current read watermark (unix seconds).
+  final int lastRead;
+
+  const NotificationCenterState({
+    this.eventCount = 0,
+    this.unreadCount = 0,
+    this.lastRead = 0,
+  });
+}
+
+final notificationCenterProvider =
+    NotifierProvider<NotificationCenter, NotificationCenterState>(
+  NotificationCenter.new,
+);
 
 /// Total unread social notifications — drives the bell badge in the AppBar.
+/// `.select` granularity: rebuilds ONLY when the count changes (a like
+/// landing while already at 12 unread is one rebuild, not two).
 final unreadNotificationsProvider = Provider<int>((ref) {
-  ref.watch(notificationVersionProvider);
-  return ref.read(notificationCenterProvider).unreadCount;
+  return ref.watch(
+    notificationCenterProvider.select((s) => s.unreadCount),
+  );
 });
 
 /// Real-time engagement stream: reactions, replies, reposts, comments,
@@ -302,7 +338,7 @@ final socialLiveListenerProvider = Provider<void>((ref) {
   // Ingest live events.
   ref.listen(liveSocialEventsProvider, (_, next) {
     next.whenData((event) {
-      final center = ref.read(notificationCenterProvider);
+      final center = ref.read(notificationCenterProvider.notifier);
       final auth = ref.read(authStateProvider);
       final myPubkey = auth.pubkey ?? '';
       // Never banner my own actions (liking my own post, self-replies).
@@ -345,7 +381,7 @@ final socialLiveListenerProvider = Provider<void>((ref) {
   // Keep historical unread in sync with the one-shot fetch.
   ref.listen(notificationsProvider, (_, next) {
     next.whenData((events) {
-      ref.read(notificationCenterProvider).syncUnreadFromHistory(events);
+      ref.read(notificationCenterProvider.notifier).syncUnreadFromHistory(events);
     });
   });
 });

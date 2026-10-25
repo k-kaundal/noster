@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 import 'package:nostrfeed_mobile/features/groups/application/group_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Create a NIP-29 group (kind 39000 metadata) with cover image upload.
 class CreateGroupSheet extends ConsumerStatefulWidget {
@@ -109,7 +110,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded),
+                  icon: const AppIcon('plus'),
                   tooltip: 'Close',
                   onPressed: () => Navigator.pop(context),
                 ),
@@ -159,7 +160,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                         ),
                       )
                     : IconButton(
-                        icon: const Icon(Icons.add_photo_alternate_outlined),
+                        icon: const AppIcon('image'),
                         tooltip: 'Upload cover',
                         onPressed: _pickImage,
                       ),
@@ -208,7 +209,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                           color: colorScheme.onPrimary,
                         ),
                       )
-                    : const Icon(Icons.group_add_rounded),
+                    : const AppIcon('plus'),
                 label: const Text('Create Group'),
               ),
             ),

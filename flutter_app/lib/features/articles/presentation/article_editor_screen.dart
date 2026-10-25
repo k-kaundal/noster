@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 
@@ -199,9 +202,9 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
         actions: [
           TextButton.icon(
             onPressed: () => setState(() => _preview = !_preview),
-            icon: Icon(
-              _preview ? Icons.edit_outlined : Icons.visibility_outlined,
-              size: 18,
+            icon: AppIcon(
+              _preview ? 'edit' : 'eye',
+              size: AppIconSize.md,
             ),
             label: Text(_preview ? 'Edit' : 'Preview'),
           ),
@@ -236,17 +239,20 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
         TextField(
           controller: _titleController,
           textCapitalization: TextCapitalization.sentences,
-          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          style: Theme.of(context)
+              .textTheme
+              .headlineSmall
+              ?.copyWith(fontWeight: FontWeight.bold),
           decoration: InputDecoration(
             hintText: 'Article title',
             border: InputBorder.none,
-            hintStyle: TextStyle(
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-            ),
+            hintStyle: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
           ),
           onChanged: (_) => setState(() {}),
         ),
-        Divider(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+        Divider(color: colorScheme.outlineVariant),
 
         // Summary
         TextField(
@@ -255,8 +261,7 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
           decoration: InputDecoration(
             hintText: 'Summary — shown in feeds (optional)',
             border: InputBorder.none,
-            hintStyle: TextStyle(
-              fontSize: 14,
+            hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
             ),
           ),
@@ -271,12 +276,12 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
                 controller: _imageController,
                 decoration: InputDecoration(
                   hintText: 'Cover image URL (optional)',
-                  prefixIcon: const Icon(Icons.image_outlined, size: 18),
+                  prefixIcon: const AppIcon('image', size: 18),
                   border: InputBorder.none,
-                  hintStyle: TextStyle(
-                    fontSize: 13,
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                  ),
+                  hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color:
+                            colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
                 ),
                 keyboardType: TextInputType.url,
                 onChanged: (_) => setState(() {}),
@@ -292,7 +297,7 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
                     ),
                   )
                 : IconButton(
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    icon: const AppIcon('image'),
                     tooltip: 'Upload cover image',
                     onPressed: _pickCoverImage,
                   ),
@@ -303,7 +308,7 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: AppShapes.radiusMd,
               child: Image.network(
                 _imageController.text.trim(),
                 height: 110,
@@ -319,15 +324,14 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
           controller: _tagsController,
           decoration: InputDecoration(
             hintText: 'Hashtags, comma separated (optional)',
-            prefixIcon: const Icon(Icons.tag_rounded, size: 18),
+            prefixIcon: const AppIcon('hash', size: 18),
             border: InputBorder.none,
-            hintStyle: TextStyle(
-              fontSize: 13,
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-            ),
+            hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
           ),
         ),
-        Divider(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+        Divider(color: colorScheme.outlineVariant),
 
         // Markdown content
         TextField(
@@ -338,12 +342,15 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
           decoration: InputDecoration(
             hintText: 'Write your article in Markdown…',
             border: InputBorder.none,
-            hintStyle: TextStyle(
+            hintStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
               height: 1.5,
               color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
             ),
           ),
-          style: const TextStyle(fontSize: 15, height: 1.6),
+          style: Theme.of(context)
+              .textTheme
+              .bodyLarge
+              ?.copyWith(height: 1.6),
           onChanged: (_) => setState(() {}),
         ),
       ],
@@ -362,7 +369,7 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
       children: [
         if (image.isNotEmpty)
           ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: AppShapes.radiusMd,
             child: Image.network(
               image,
               height: 180,
@@ -375,17 +382,19 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
         if (title.isNotEmpty)
           Text(
             title,
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+            style: Theme.of(context)
+                .textTheme
+                .headlineMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
           ),
         if (summary.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
             summary,
-            style: TextStyle(
-              fontSize: 15,
-              fontStyle: FontStyle.italic,
-              color: colorScheme.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontStyle: FontStyle.italic,
+                  color: colorScheme.onSurfaceVariant,
+                ),
           ),
         ],
         if (tags.isNotEmpty) ...[
@@ -396,11 +405,10 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
               for (final t in tags)
                 Text(
                   '#$t',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
                 ),
             ],
           ),
@@ -409,36 +417,44 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
         content.isEmpty
             ? Text(
                 'Nothing to preview yet…',
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: colorScheme.onSurfaceVariant),
               )
             : MarkdownBody(
                 data: content,
                 styleSheet: MarkdownStyleSheet(
-                  p: const TextStyle(fontSize: 15, height: 1.6),
-                  h1: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  h2: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  h3: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  blockquote: TextStyle(
-                    color: colorScheme.onSurfaceVariant,
-                    fontStyle: FontStyle.italic,
-                  ),
-                  code: TextStyle(
-                    backgroundColor: colorScheme.surfaceContainerHighest,
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                  ),
+                  p: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(height: 1.6),
+                  h1: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                  h2: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                  h3: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                  blockquote: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
+                  code: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        fontFamily: 'monospace',
+                      ),
                   codeblockDecoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppShapes.radiusSm,
                   ),
                 ),
               ),
@@ -461,20 +477,23 @@ class _LoginPrompt extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.lock_outline,
-              size: 48,
+            AppIcon(
+              'key',
+              size: AppIconSize.xl + 24,
               color: colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             Text(
               'Log in to write articles',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.xs),
             Text(
               'Articles are signed with your key.',
-              style: TextStyle(color: colorScheme.onSurfaceVariant),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -494,18 +513,17 @@ class _MarkdownToolbar extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
+        color: colorScheme.surfaceContainerLowest,
         border: Border(
-          top: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
-          ),
+          top: BorderSide(color: colorScheme.outlineVariant),
         ),
       ),
       child: SafeArea(
         top: false,
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xs - 2, vertical: AppSpacing.xxs),
           child: Row(
             children: [
               _Btn(icon: Icons.format_bold_rounded, tooltip: 'Bold',
@@ -568,8 +586,8 @@ class _Divider extends StatelessWidget {
     return Container(
       width: 1,
       height: 22,
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+      color: Theme.of(context).colorScheme.outlineVariant,
     );
   }
 }
@@ -592,44 +610,43 @@ class _PublishBar extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: EdgeInsets.fromLTRB(
-        16,
-        10,
-        16,
-        MediaQuery.of(context).viewPadding.bottom + 10,
+        AppSpacing.md,
+        AppSpacing.sm - 2,
+        AppSpacing.md,
+        MediaQuery.of(context).viewPadding.bottom + AppSpacing.sm - 2,
       ),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
-          top: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
+          top: BorderSide(color: colorScheme.outlineVariant),
         ),
       ),
       child: Row(
         children: [
-          Icon(Icons.article_outlined, size: 18, color: colorScheme.primary),
-          const SizedBox(width: 8),
+          AppIcon('article',
+              size: AppIconSize.md, color: colorScheme.primary),
+          const SizedBox(width: AppSpacing.xs),
           Expanded(
             child: Text(
               'Markdown · NIP-23',
-              style: TextStyle(
-                fontSize: 12,
-                color: colorScheme.onSurfaceVariant,
-              ),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ),
           FilledButton.icon(
             onPressed: canPublish ? onPublish : null,
             icon: publishing
-                ? const SizedBox(
+                ? SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: Colors.white,
+                      color: colorScheme.onPrimary,
                     ),
                   )
-                : const Icon(Icons.publish_rounded, size: 18),
+                : const AppIcon('send', size: AppIconSize.md),
             label: Text(publishing ? 'Publishing…' : 'Publish'),
           ),
         ],

@@ -10,6 +10,7 @@ import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Posts approved for a community (NIP-72 kind 4550 approvals, plus the
 /// community's a-tagged posts as a fallback).
@@ -120,7 +121,7 @@ class CommunityDetailScreen extends ConsumerWidget {
                 name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 16),
+                style: Theme.of(context).textTheme.titleMedium,
               ),
               background: image != null
                   ? CachedNetworkImage(
@@ -143,11 +144,10 @@ class CommunityDetailScreen extends ConsumerWidget {
                   if (description.isNotEmpty)
                     Text(
                       description,
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.4,
-                        color: scheme.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            height: 1.4,
+                            color: scheme.onSurfaceVariant,
+                          ),
                     ),
                   const SizedBox(height: 12),
                   Row(
@@ -155,21 +155,19 @@ class CommunityDetailScreen extends ConsumerWidget {
                       Expanded(
                         child: Text(
                           'Moderated community (NIP-72)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
                         ),
                       ),
                       if (auth.isLoggedIn && !auth.isReadOnly)
                         FilledButton.tonalIcon(
                           onPressed: () =>
                               _toggleJoin(context, ref, isJoined),
-                          icon: Icon(
-                            isJoined
-                                ? Icons.check_rounded
-                                : Icons.add_rounded,
-                            size: 18,
+                          icon: AppIcon(
+                            isJoined ? 'check' : 'plus',
+                            size: AppIconSize.md,
                           ),
                           label: Text(isJoined ? 'Joined' : 'Join'),
                         ),
@@ -200,7 +198,7 @@ class CommunityDetailScreen extends ConsumerWidget {
       floatingActionButton: auth.isLoggedIn && !auth.isReadOnly
           ? FloatingActionButton.extended(
               onPressed: () => _composePost(context, ref),
-              icon: const Icon(Icons.edit_rounded),
+              icon: const AppIcon('edit'),
               label: const Text('Post'),
             )
           : null,
@@ -281,10 +279,10 @@ class CommunityDetailScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             Text(
               'Posts go to moderators for approval (NIP-72).',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-              ),
+              style: Theme.of(ctx)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Theme.of(ctx).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
@@ -318,7 +316,7 @@ class CommunityDetailScreen extends ConsumerWidget {
                   }
                 }
               },
-              icon: const Icon(Icons.send_rounded),
+              icon: const AppIcon('send'),
               label: const Text('Post'),
             ),
           ],
@@ -334,14 +332,6 @@ class _CoverFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [scheme.primary, scheme.tertiary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-    );
+    return Container(color: scheme.surfaceContainerHigh);
   }
 }

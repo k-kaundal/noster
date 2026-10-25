@@ -4,12 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/reels/data/reel_uploader.dart';
 import 'package:nostrfeed_mobile/features/zap/presentation/zap_sheet.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 
@@ -57,15 +60,15 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen>
     final canPost = auth.isLoggedIn && !auth.isReadOnly;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.black, // token-guard: allow — immersive video surface
       extendBodyBehindAppBar: true,
       // Immersive full-screen reels (Instagram-style) — a floating back
       // button top-left since this is now a pushed detail page, not a tab.
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.transparent, // token-guard: allow — immersive video surface
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+          icon: const AppIcon('back', color: Colors.white), // token-guard: allow — immersive video surface
           tooltip: 'Back',
           onPressed: () {
             HapticFeedback.lightImpact();
@@ -76,25 +79,28 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen>
             }
           },
         ),
-        title: const Text(
+        title: Text(
           'Reels',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.white, // token-guard: allow — immersive video surface
+                fontWeight: FontWeight.bold,
+              ),
         ),
       ),
       // Upload reel — top-right, clear of the right action column.
       floatingActionButton: canPost
           ? FloatingActionButton.small(
               heroTag: 'reel_upload_fab',
-              backgroundColor: Colors.white24,
+              backgroundColor: Colors.white24, // token-guard: allow — immersive video surface
               onPressed: () => ReelUploader.show(context),
               tooltip: 'Upload reel',
-              child: const Icon(Icons.add_rounded, color: Colors.white),
+              child: const AppIcon('plus', color: Colors.white), // token-guard: allow — immersive video surface
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
       body: videosAsync.when(
         loading: () => const Center(
-          child: CircularProgressIndicator(color: Colors.white54),
+          child: CircularProgressIndicator(color: Colors.white54), // token-guard: allow — immersive video surface
         ),
         error: (err, _) => ErrorView(
           message: 'Failed to load reels',
@@ -109,11 +115,11 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen>
               icon: Icons.video_library_outlined,
               title: 'No reels yet',
               subtitle: 'Short videos from Nostr will appear here.',
-              iconColor: Colors.white54,
+              iconColor: Colors.white54, // token-guard: allow — immersive video surface
               action: canPost
                   ? FilledButton.icon(
                       onPressed: () => ReelUploader.show(context),
-                      icon: const Icon(Icons.video_call_rounded),
+                      icon: const AppIcon('video'),
                       label: const Text('Upload the first reel'),
                     )
                   : null,
@@ -327,9 +333,7 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
   }
 
   void _showLoginPrompt() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Log in to interact with reels')),
-    );
+    AppToast.warning(context, 'Log in to interact with reels');
   }
 
   @override
@@ -364,7 +368,7 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
           },
           onPointerCancel: (_) => _tapDown = false,
           child: Container(
-            color: Colors.black,
+            color: Colors.black, // token-guard: allow — immersive video surface
             child: _initialized && controller != null
                 ? Center(
                     child: AspectRatio(
@@ -387,10 +391,7 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
         if (_showPlayIcon && _initialized)
           IgnorePointer(
             child: Center(
-              child: Icon(
-                Icons.play_arrow,
-                size: 80,
-                color: Colors.white.withValues(alpha: 0.8),
+              child: AppIcon('play', size: 80, color: Colors.white.withValues(alpha: 0.8), // token-guard: allow — immersive video surface
               ),
             ),
           ),
@@ -404,9 +405,9 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
               onPressed: _toggleMute,
               icon: Icon(
                 _muted ? Icons.volume_off : Icons.volume_up,
-                color: Colors.white,
+                color: Colors.white, // token-guard: allow — immersive video surface
               ),
-              style: IconButton.styleFrom(backgroundColor: Colors.black45),
+              style: IconButton.styleFrom(backgroundColor: Colors.black45), // token-guard: allow — immersive video surface
             ),
           ),
 
@@ -417,28 +418,28 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
           child: Column(
             children: [
               _ReelAction(
-                icon: Icons.favorite,
+                icon: 'heart_filled',
                 label: _formatCount(likes),
-                color: Colors.redAccent,
+                color: AppActionColors.like(Brightness.dark),
                 onTap: _handleLike,
               ),
               const SizedBox(height: 20),
               _ReelAction(
-                icon: Icons.chat_bubble_outline,
+                icon: 'comment',
                 label: _formatCount(comments),
                 onTap: _handleComment,
               ),
               const SizedBox(height: 20),
               _ReelAction(
-                icon: Icons.share_outlined,
+                icon: 'share',
                 label: 'Share',
                 onTap: _share,
               ),
               const SizedBox(height: 20),
               _ReelAction(
-                icon: Icons.bolt,
+                icon: 'zap',
                 label: 'Zap',
-                color: Colors.amber,
+                color: AppActionColors.zap,
                 onTap: _handleZap,
               ),
             ],
@@ -465,12 +466,12 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                       data: (profile) => SafeAvatar(
                         imageUrl: profile?.picture,
                         radius: 18,
-                        fallback: const Icon(Icons.person, size: 18),
+                        fallback: const AppIcon('users', size: 18),
                       ),
                       loading: () => const CircleAvatar(radius: 18),
                       error: (_, _) => const CircleAvatar(
                         radius: 18,
-                        child: Icon(Icons.person, size: 18),
+                        child: AppIcon('users', size: 18),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -478,18 +479,18 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                       child: Text(
                         profileAsync.value?.displayNameOrName ??
                             '${widget.event.pubkey.substring(0, 8)}…',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: Colors.white, // token-guard: allow — immersive video surface
+                              fontWeight: FontWeight.bold,
+                            ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Colors.white70,
-                      size: 18,
+                    const AppIcon(
+                      'chevron_r',
+                      color: Colors.white70, // token-guard: allow — immersive video surface
+                      size: AppIconSize.md,
                     ),
                   ],
                 ),
@@ -503,21 +504,19 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                   widget.event.content,
                   maxLines: _captionExpanded ? 20 : 3,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    height: 1.35,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.white, // token-guard: allow — immersive video surface
+                        height: 1.35,
+                      ),
                 ),
               ),
               if (widget.event.content.length > 120 && !_captionExpanded)
-                const Text(
+                Text(
                   'more',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Colors.white70, // token-guard: allow — immersive video surface
+                        fontWeight: FontWeight.w600,
+                      ),
                 ),
             ],
           ),
@@ -538,13 +537,13 @@ class _VideoLoading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Center(
-      child: CircularProgressIndicator(color: Colors.white54),
+      child: CircularProgressIndicator(color: Colors.white54), // token-guard: allow — immersive video surface
     );
   }
 }
 
 class _ReelAction extends StatelessWidget {
-  final IconData icon;
+  final String icon;
   final String label;
   final Color? color;
   final VoidCallback onTap;
@@ -564,12 +563,18 @@ class _ReelAction extends StatelessWidget {
       },
       child: Column(
         children: [
-          Icon(icon, color: color ?? Colors.white, size: 30),
+          AppIcon(
+            icon,
+            color: color ?? Colors.white, // token-guard: allow — immersive video surface
+            size: AppIconSize.xl,
+          ),
           if (label.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
               label,
-              style: const TextStyle(color: Colors.white, fontSize: 11),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Colors.white, // token-guard: allow — immersive video surface
+                  ),
             ),
           ],
         ],

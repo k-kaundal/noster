@@ -17,7 +17,7 @@ final dmThreadProvider = FutureProvider.autoDispose
   // Rebuild when the outbox/decryption cache changes (incoming DM, sent msg).
   ref.watch(dmStoreVersionProvider);
   final events = await ref.watch(dmsProvider.future);
-  final store = ref.read(dmStoreProvider);
+  final store = ref.read(dmStoreProvider.notifier);
   await store.ready;
   await store.prime(events);
   return store.threadFor(events, peerPubkey);

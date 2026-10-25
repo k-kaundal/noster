@@ -6,6 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/services/wallet_payment.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/lnurl_service.dart';
 import 'package:nostrfeed_mobile/features/zap/application/quick_zap.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -209,9 +213,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
       final wallet = await payWithAnyWallet(ref.read, invoice);
       if (!mounted) return;
       if (wallet != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('⚡ Zap of $amount sats sent!')),
-        );
+        AppToast.success(context, '⚡ Zap of $amount sats sent!');
         Navigator.pop(context);
         return;
       }
@@ -267,7 +269,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
               // Header
               Row(
                 children: [
-                  Icon(Icons.bolt, color: Colors.amber.shade700, size: 28),
+                  const AppIcon('zap', size: 28, color: AppActionColors.zap),
                   const SizedBox(width: 8),
                   Text(
                     'Send Zap',
@@ -277,7 +279,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const AppIcon('plus', size: AppIconSize.lg),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -308,7 +310,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.error_outline, size: 48, color: colorScheme.error),
+        AppIcon('eye_off', size: 48, color: colorScheme.error),
         const SizedBox(height: 16),
         Text(
           _error ?? 'Unknown error',
@@ -377,9 +379,9 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
             labelText: 'Amount (sats)',
-            prefixIcon: Icon(Icons.currency_bitcoin,
-                color: Colors.amber.shade700),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            prefixIcon:
+                const AppIcon('zap', size: AppIconSize.lg, color: AppActionColors.zap),
+            border: OutlineInputBorder(borderRadius: AppShapes.radiusMd),
           ),
           onChanged: (_) => setState(() => _selectedPreset = 0),
         ),
@@ -391,8 +393,8 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           maxLines: 2,
           decoration: InputDecoration(
             labelText: 'Message (optional)',
-            prefixIcon: const Icon(Icons.message_outlined),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            prefixIcon: const AppIcon('edit', size: AppIconSize.md),
+            border: OutlineInputBorder(borderRadius: AppShapes.radiusMd),
           ),
         ),
 
@@ -404,13 +406,13 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.check_circle,
-                    size: 14, color: Colors.green.shade600),
+                const AppIcon('check',
+                    size: 14, color: AppStatusColors.success),
                 const SizedBox(width: 4),
                 Text(
                   'Will pay from your connected wallet',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.green.shade700,
+                        color: AppStatusColors.success,
                       ),
                 ),
               ],
@@ -422,7 +424,10 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           const SizedBox(height: 12),
           Text(
             _error!,
-            style: TextStyle(color: colorScheme.error, fontSize: 13),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: colorScheme.error),
             textAlign: TextAlign.center,
           ),
         ],
@@ -435,7 +440,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : Icon(Icons.bolt, color: Colors.amber.shade700),
+              : const AppIcon('zap', size: AppIconSize.lg, color: AppActionColors.zap),
           label: Builder(builder: (context) {
             return Text(
               hasPayingWallet(ref.read) ? 'Send Zap' : 'Create Invoice',
@@ -461,13 +466,13 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            color: Colors.white, // token-guard: allow — QR needs white bg
+            borderRadius: AppShapes.radiusMd,
           ),
           child: QrImageView(
             data: _invoice!.toUpperCase(),
             size: 220,
-            backgroundColor: Colors.white,
+            backgroundColor: Colors.white, // token-guard: allow — QR needs white bg
           ),
         ),
         const SizedBox(height: 16),
@@ -485,11 +490,9 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
             OutlinedButton.icon(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: _invoice!));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invoice copied')),
-                );
+                AppToast.success(context, 'Invoice copied');
               },
-              icon: const Icon(Icons.copy, size: 18),
+              icon: const AppIcon('edit', size: AppIconSize.md),
               label: const Text('Copy Invoice'),
             ),
             const SizedBox(width: 12),
@@ -527,26 +530,25 @@ class _ZapPresetCell extends StatelessWidget {
     return Material(
       color: selected ? scheme.surface : scheme.surfaceContainerHighest,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: AppShapes.radiusMd,
         side: selected
             ? BorderSide(color: scheme.tertiary, width: 1)
             : BorderSide.none,
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: AppShapes.radiusMd,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 26)),
+            Text(emoji, style: const TextStyle(fontSize: 26)), // token-guard: allow — emoji glyph metric
             const SizedBox(height: 4),
             Text(
               label,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
-              ),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
             ),
           ],
         ),

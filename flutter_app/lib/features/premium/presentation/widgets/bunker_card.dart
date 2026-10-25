@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/premium/application/bunker_providers.dart';
 import 'package:nostrfeed_mobile/features/premium/data/bunker_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Nostr Bunker — the premium "key held for you" card.
 ///
@@ -39,8 +40,7 @@ class BunkerCard extends ConsumerWidget {
                     color: Colors.deepPurple.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.vpn_key_rounded,
-                      size: 20, color: Colors.deepPurple),
+                  child: const AppIcon('key', size: 20, color: Colors.deepPurple),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -256,7 +256,7 @@ class _BunkerBodyState extends ConsumerState<_BunkerBody> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.add_rounded, size: 18),
+              : const AppIcon('plus', size: 18),
           label: const Text('Create my bunker key'),
         ),
       );
@@ -278,8 +278,7 @@ class _BunkerBodyState extends ConsumerState<_BunkerBody> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.verified_user_rounded,
-                        size: 16, color: Colors.deepPurple),
+                    const AppIcon('verified', size: 16, color: Colors.deepPurple),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -296,8 +295,7 @@ class _BunkerBodyState extends ConsumerState<_BunkerBody> {
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       children: [
-                        Icon(Icons.link,
-                            size: 14, color: scheme.onSurfaceVariant),
+                        AppIcon('link', size: 14, color: scheme.onSurfaceVariant),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -316,7 +314,7 @@ class _BunkerBodyState extends ConsumerState<_BunkerBody> {
                   width: double.infinity,
                   child: FilledButton.tonalIcon(
                     onPressed: _busy ? null : () => _mintConnection(key),
-                    icon: const Icon(Icons.qr_code_rounded, size: 16),
+                    icon: const AppIcon('qr', size: 16),
                     label: const Text('Mint a bunker:// link'),
                   ),
                 ),

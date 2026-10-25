@@ -205,10 +205,18 @@ class FeedNotifier extends Notifier<FeedState> {
   /// Pull-to-refresh entry: clears a stuck `isRefreshing`/`isLoadingMore`
   /// flag from a previous hung fetch before starting, so a user pull ALWAYS
   /// gets a fresh attempt (the "pull does nothing when stuck" bug).
+  ///
+  /// ALSO folds the pill's pending posts into the list FIRST. After the P3
+  /// pipeline change, live posts land in the store + pill the moment they
+  /// arrive, so a pull-to-refresh that only re-merges the relay page could
+  /// show NO visible change (the "pull-to-refresh doesn't work" report) —
+  /// the genuinely-new posts were pending behind the pill, not in the list.
+  /// A user pull is an explicit "show me what's new" — honor it.
   Future<void> refreshFromPull() {
     if (state.isRefreshing || state.isLoadingMore) {
       state = state.copyWith(isRefreshing: false, isLoadingMore: false);
     }
+    showNewPosts();
     return refresh();
   }
 

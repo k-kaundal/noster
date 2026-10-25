@@ -38,6 +38,12 @@ class AiCreditsService {
   /// reconciling twice, or two devices reconciling the same payment).
   static const _creditedHashesKey = 'ai:credited_hashes_v1';
 
+  /// Cap on the credited-hash set. Reconcile pages at most 200 recent
+  /// payments from LNbits (`AiPaymentTracker` limit=200), so a hash older
+  /// than the last 200 payments can never be re-encountered — evicting it
+  /// is safe, and the secure-storage blob stops growing per top-up.
+  static const _maxCreditedHashes = 200;
+
   /// One-time unit-migration flag: ledgers written before credits became
   /// tokens are converted sats → tokens at first load after the upgrade.
   static const _migratedToTokensKey = 'ai:credits_migrated_to_tokens_v1';
@@ -187,9 +193,17 @@ class AiCreditsService {
   }
 
   Future<void> _saveCreditedHashes(Set<String> hashes) {
+    // Bound the set: keep the 200 most recent (the set is small enough
+    // that insertion order approximates recency — reconcile adds in
+    // payment order and markCredited appends the just-paid one).
+    final list = hashes.toList();
+    final trimmed =
+        list.length > _maxCreditedHashes
+            ? list.sublist(list.length - _maxCreditedHashes)
+            : list;
     return _storage.write(
       key: _creditedHashesKey,
-      value: jsonEncode(hashes.toList()),
+      value: jsonEncode(trimmed),
     );
   }
 

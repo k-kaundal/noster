@@ -9,13 +9,18 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
 import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 /// Provider holding the current search query text.
-final searchQueryProvider = StateProvider<String>((ref) => '');
+final searchQueryProvider = StateProvider.autoDispose<String>((ref) => '');
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -129,7 +134,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       backgroundColor: colorScheme.surface,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
+          icon: const AppIcon('back'),
           tooltip: 'Back',
           onPressed: () {
             HapticFeedback.lightImpact();
@@ -149,12 +154,27 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           onSubmitted: _onSubmitted,
           decoration: InputDecoration(
             hintText: 'Search posts, @people, #hashtags, npub…',
-            border: InputBorder.none,
-            filled: false,
-            prefixIcon: const Icon(Icons.search),
+            filled: true,
+            fillColor: colorScheme.surfaceContainerHighest,
+            isDense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            border: OutlineInputBorder(
+              borderRadius: AppShapes.radiusFull,
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: AppShapes.radiusFull,
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: AppShapes.radiusFull,
+              borderSide: BorderSide.none,
+            ),
+            prefixIcon: AppIcon('search', size: AppIconSize.md),
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(Icons.clear),
+                    icon: const AppIcon('plus'),
                     onPressed: () {
                       _searchController.clear();
                       _debounce?.cancel();
@@ -184,10 +204,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                     unselectedLabelColor: colorScheme.onSurfaceVariant,
                     indicatorColor: colorScheme.primary,
                     indicatorWeight: 3,
-                    labelStyle: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
+                    labelStyle: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
                     tabs: const [
                       Tab(text: 'Posts'),
                       Tab(text: 'People'),
@@ -235,9 +255,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   color: colorScheme.primaryContainer.withValues(alpha: 0.3),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  Icons.search_rounded,
-                  size: 64,
+                child: AppIcon(
+                  'search',
+                  size: 56,
                   color: colorScheme.primary,
                 ),
               ),
@@ -248,7 +268,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.xs),
               Text(
                 'Find posts, people, and hashtags',
                 textAlign: TextAlign.center,
@@ -271,9 +291,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Recent searches',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
+                'RECENT SEARCHES',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.primary,
+                  letterSpacing: 1.2,
                 ),
               ),
               TextButton.icon(
@@ -281,7 +303,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   HapticFeedback.lightImpact();
                   _clearRecentSearches();
                 },
-                icon: const Icon(Icons.clear_all_rounded, size: 18),
+                icon: const AppIcon('plus', size: 18),
                 label: const Text('Clear'),
                 style: TextButton.styleFrom(
                   foregroundColor: colorScheme.primary,
@@ -298,9 +320,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
           child: Text(
-            'Trending hashtags',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
+            'TRENDING HASHTAGS',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colorScheme.primary,
+              letterSpacing: 1.2,
             ),
           ),
         ),
@@ -337,11 +361,14 @@ class _RecentSearchTile extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Material(
-      color: Colors.transparent,
+      type: MaterialType.transparency,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.sm,
+          ),
           child: Row(
             children: [
               Container(
@@ -350,9 +377,9 @@ class _RecentSearchTile extends StatelessWidget {
                   color: colorScheme.surfaceContainerHighest,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  Icons.history_rounded,
-                  size: 20,
+                child: AppIcon(
+                  'clock',
+                  size: AppIconSize.lg,
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
@@ -360,16 +387,13 @@ class _RecentSearchTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   query,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w500),
                 ),
               ),
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 14,
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+              AppIcon('chevron_r', size: 14, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
               ),
             ],
           ),
@@ -392,15 +416,16 @@ class _HashtagChip extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Material(
-      color: Colors.transparent,
+      type: MaterialType.transparency,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: AppShapes.radiusXl,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.sm - 2),
           decoration: BoxDecoration(
             color: colorScheme.primaryContainer.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: AppShapes.radiusXl,
             border: Border.all(
               color: colorScheme.primary.withValues(alpha: 0.3),
             ),
@@ -408,19 +433,18 @@ class _HashtagChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.tag_rounded,
-                size: 16,
+              AppIcon(
+                'hash',
+                size: AppIconSize.sm,
                 color: colorScheme.primary,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: AppSpacing.xxs),
               Text(
                 tag,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.primary,
-                ),
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.primary,
+                    ),
               ),
             ],
           ),
@@ -490,19 +514,22 @@ class _PostTile extends ConsumerWidget {
     final time = DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
 
     return Material(
-      color: Colors.transparent,
+      type: MaterialType.transparency,
       child: InkWell(
         onTap: () {
           HapticFeedback.lightImpact();
           context.push('/profile/${event.pubkey}');
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.sm,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _Avatar(imageUrl: profile?.picture, name: name),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -511,28 +538,26 @@ class _PostTile extends ConsumerWidget {
                       name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: AppSpacing.xxs),
                     Text(
                       event.content,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
+                      style: theme.textTheme.bodyMedium?.copyWith(
                         height: 1.4,
                         color: colorScheme.onSurface.withValues(alpha: 0.9),
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: AppSpacing.xs - 2),
                     Text(
                       timeago.format(time),
-                      style: theme.textTheme.bodySmall?.copyWith(
+                      style: theme.textTheme.labelSmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
-                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -575,10 +600,10 @@ class _PeopleTab extends ConsumerWidget {
           itemBuilder: (context, i) => _PersonTile(event: events[i]),
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => EmptyState(
-        icon: Icons.error_outline_rounded,
-        title: 'Search failed: $e',
+      loading: () => const SkeletonList(itemCount: 5),
+      error: (e, _) => ErrorView.fromError(
+        e,
+        onRetry: () => ref.invalidate(userSearchProvider(query)),
       ),
     );
   }
@@ -612,18 +637,21 @@ class _PersonTile extends ConsumerWidget {
     final isSelf = auth.pubkey == event.pubkey;
 
     return Material(
-      color: Colors.transparent,
+      type: MaterialType.transparency,
       child: InkWell(
         onTap: () {
           HapticFeedback.lightImpact();
           context.push('/profile/${event.pubkey}');
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.sm,
+          ),
           child: Row(
             children: [
               _Avatar(imageUrl: profile?.picture, name: name),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -635,18 +663,18 @@ class _PersonTile extends ConsumerWidget {
                             name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
                         ),
                         if (profile?.nip05 != null &&
                             profile!.nip05!.isNotEmpty) ...[
                           const SizedBox(width: 4),
-                          Icon(
-                            Icons.verified_rounded,
-                            size: 16,
+                          AppIcon(
+                            'verified',
+                            size: AppIconSize.sm,
                             color: colorScheme.primary,
                           ),
                         ],
@@ -659,11 +687,13 @@ class _PersonTile extends ConsumerWidget {
                         profile.nip05!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w500,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w500,
+                            ),
                       ),
                     ],
                     if (profile?.about != null &&
@@ -673,17 +703,17 @@ class _PersonTile extends ConsumerWidget {
                         profile.about!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ],
                 ),
               ),
               if (auth.isLoggedIn && !auth.isReadOnly && !isSelf) ...[
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.sm),
                 FilledButton.tonal(
                   onPressed: () {
                     HapticFeedback.mediumImpact();
@@ -697,13 +727,13 @@ class _PersonTile extends ConsumerWidget {
                   },
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.xs,
                     ),
                   ),
                   child: Text(
                     isFollowing ? 'Unfollow' : 'Follow',
-                    style: const TextStyle(fontSize: 13),
+                    style: Theme.of(context).textTheme.labelLarge,
                   ),
                 ),
               ],
@@ -781,7 +811,7 @@ class _HashtagsTab extends ConsumerWidget {
         final tag = merged[i];
         final count = counts[tag];
         return Material(
-          color: Colors.transparent,
+          type: MaterialType.transparency,
           child: InkWell(
             onTap: () => onTagTap(tag),
             child: Padding(
@@ -794,10 +824,7 @@ class _HashtagsTab extends ConsumerWidget {
                       color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
-                      Icons.tag_rounded,
-                      size: 20,
-                      color: Theme.of(context).colorScheme.primary,
+                    child: AppIcon('hash', size: 20, color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -807,28 +834,29 @@ class _HashtagsTab extends ConsumerWidget {
                       children: [
                         Text(
                           '#$tag',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           count != null && count > 0
                               ? '$count recent post${count == 1 ? '' : 's'}'
                               : 'View posts with this hashtag',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
                         ),
                       ],
                     ),
                   ),
-                  Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 14,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  AppIcon('chevron_r', size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                 ],
               ),
@@ -858,11 +886,10 @@ class _Avatar extends StatelessWidget {
       backgroundColor: colorScheme.primaryContainer,
       fallback: Text(
         initial,
-        style: TextStyle(
-          color: colorScheme.onPrimaryContainer,
-          fontWeight: FontWeight.w600,
-          fontSize: 18,
-        ),
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: colorScheme.onPrimaryContainer,
+              fontWeight: FontWeight.w600,
+            ),
       ),
     );
   }

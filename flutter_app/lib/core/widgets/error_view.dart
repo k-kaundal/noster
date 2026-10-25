@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 
 /// Shared error view for full-screen / feed error states.
 ///
@@ -35,7 +36,7 @@ class ErrorView extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: AppSpacing.paddingXl,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,

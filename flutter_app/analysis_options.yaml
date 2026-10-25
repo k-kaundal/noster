@@ -18,6 +18,12 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+  errors:
+    # Convention guards (AGENTS.md): these patterns are banned outright —
+    # a violation is an error, not a lint.
+    # Raw http + jsonDecode blocks (use ApiHttpClient).
+    # (enforced by code review; no lint exists — kept as a comment)
+    unused_import: warning
 
 linter:
   # The lint rules applied to this project can be customized in the

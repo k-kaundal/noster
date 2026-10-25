@@ -8,6 +8,7 @@ import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_credits.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// AI credits top-up: pick a token pack or enter a custom token amount
 /// (+3% processing) → house-wallet invoice priced in SATS at the LIVE
@@ -204,7 +205,7 @@ class _AiTopUpSheetState extends ConsumerState<_AiTopUpSheet> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const AppIcon('plus'),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -258,7 +259,7 @@ class _AiTopUpSheetState extends ConsumerState<_AiTopUpSheet> {
                 decoration: InputDecoration(
                   labelText: 'Amount (tokens)',
                   hintText: 'min $minCustomTokens',
-                  prefixIcon: Icon(Icons.edit_rounded, color: scheme.primary),
+                  prefixIcon: AppIcon('edit', size: AppIconSize.md, color: scheme.primary),
                 ),
               ),
               const SizedBox(height: 10),
@@ -304,7 +305,7 @@ class _AiTopUpSheetState extends ConsumerState<_AiTopUpSheet> {
                         memoNote:
                             'custom amount (incl. +$manualFeePercent% fee)',
                       ),
-                icon: const Icon(Icons.bolt_rounded),
+                icon: const AppIcon('zap'),
                 label: Text(
                   _customTokens == null
                       ? 'Enter an amount (min $minCustomTokens)'
@@ -338,7 +339,7 @@ class _AiTopUpSheetState extends ConsumerState<_AiTopUpSheet> {
                           height: 14,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.refresh_rounded, size: 16),
+                      : const AppIcon('repost', size: 16),
                   label: Text(
                     _restoring ? 'Checking…' : 'Paid but no credits? Restore',
                     style: const TextStyle(fontSize: 12),
@@ -447,7 +448,7 @@ class _PackTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.bolt_rounded, color: scheme.primary),
+            AppIcon('zap', color: scheme.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -489,7 +490,7 @@ class _PackTile extends StatelessWidget {
                 ),
               ),
             const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
+            AppIcon('chevron_r', color: scheme.onSurfaceVariant),
           ],
         ),
       ),

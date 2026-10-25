@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/utils/media.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Video handling for note content:
@@ -209,7 +210,7 @@ class _DirectVideoTile extends StatelessWidget {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.videocam_rounded,
+                    AppIcon('video',
                         color: Colors.white, size: 13),
                     SizedBox(width: 4),
                     Text(

@@ -7,6 +7,7 @@ import 'package:nostrfeed_mobile/features/chat/presentation/chat_screen.dart'
     show normalizePubkey;
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/search_results.dart';
 import 'package:nostrfeed_mobile/features/chat/presentation/widgets/suggested_peers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Bottom-sheet "new message" picker with live people search.
 /// Accepts: npub, nprofile, hex pubkey, NIP-05 (alice@domain.com),
@@ -106,7 +107,7 @@ class _NewMessageSheetState extends ConsumerState<NewMessageSheet> {
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: const Icon(Icons.close),
+                      icon: const AppIcon('plus'),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
@@ -122,10 +123,10 @@ class _NewMessageSheetState extends ConsumerState<NewMessageSheet> {
                   autocorrect: false,
                   decoration: InputDecoration(
                     hintText: 'Name, npub, NIP-05, or lightning address…',
-                    prefixIcon: const Icon(Icons.search),
+                    prefixIcon: AppIcon('search', size: AppIconSize.md),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear),
+                            icon: const AppIcon('plus'),
                             onPressed: () {
                               _searchController.clear();
                               setState(() {

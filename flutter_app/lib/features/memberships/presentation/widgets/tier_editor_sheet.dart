@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/memberships/application/membership_providers.dart';
 import 'package:nostrfeed_mobile/features/studio/domain/subscription.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Create or edit a subscription tier (kind 37001). The slug is the tier's
 /// identity: editing keeps it, so the new event replaces the old one at the
@@ -197,7 +198,7 @@ class _TierEditorSheetState extends ConsumerState<TierEditorSheet> {
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: InputDecoration(
                       labelText: 'Price (sats)',
-                      prefixIcon: Icon(Icons.bolt, color: scheme.primary),
+                      prefixIcon: AppIcon('zap', size: AppIconSize.md, color: scheme.primary),
                     ),
                   ),
                 ),
@@ -257,7 +258,7 @@ class _TierEditorSheetState extends ConsumerState<TierEditorSheet> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.publish_rounded),
+                  : const AppIcon('share'),
               label: Text(editing ? 'Save changes' : 'Publish tier'),
             ),
             AppSpacing.gapSm,

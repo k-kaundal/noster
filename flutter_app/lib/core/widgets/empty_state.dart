@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 
 /// Shared empty-state view (icon + title + optional subtitle + optional action).
 ///
@@ -26,7 +27,7 @@ class EmptyState extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: AppSpacing.paddingXl,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,

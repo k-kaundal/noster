@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/settings/application/settings_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/nwc_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/wallet_tools_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// The Wallet section of Settings: the LNbits instance this app talks to,
 /// quick links to the wallet + NWC + Cashu, and a Premium entry.
@@ -35,7 +38,7 @@ class WalletSettingsSection extends ConsumerWidget {
               decoration: const InputDecoration(
                 labelText: 'Instance URL',
                 hintText: 'https://ln.nostrfeed.com',
-                prefixIcon: Icon(Icons.dns_outlined),
+                prefixIcon: AppIcon('globe', size: AppIconSize.md),
               ),
               keyboardType: TextInputType.url,
               autofocus: true,
@@ -84,14 +87,21 @@ class WalletSettingsSection extends ConsumerWidget {
       children: [
         // LNbits instance
         ListTile(
-          leading: CircleAvatar(
-            backgroundColor: lnbits.isConnected
-                ? Colors.green.withValues(alpha: 0.12)
-                : scheme.surfaceContainerHighest,
-            child: Icon(
-              lnbits.isConnected ? Icons.check : Icons.account_balance,
-              color: lnbits.isConnected ? Colors.green : scheme.onSurfaceVariant,
-              size: 20,
+          leading: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: lnbits.isConnected
+                  ? AppStatusColors.success.withValues(alpha: 0.12)
+                  : scheme.surfaceContainerHighest,
+              borderRadius: AppShapes.radiusMd,
+            ),
+            child: AppIcon(
+              lnbits.isConnected ? 'check' : 'globe',
+              size: AppIconSize.md,
+              color: lnbits.isConnected
+                  ? AppStatusColors.success
+                  : scheme.onSurfaceVariant,
             ),
           ),
           title: const Text('Wallet server (LNbits)'),
@@ -99,7 +109,10 @@ class WalletSettingsSection extends ConsumerWidget {
             url.replaceFirst('https://', ''),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(fontFamily: 'monospace'),
           ),
           trailing: TextButton(
             onPressed: () => _editUrl(context, ref),
@@ -108,51 +121,59 @@ class WalletSettingsSection extends ConsumerWidget {
         ),
         // Wallet / NWC / Cashu quick links
         ListTile(
-          leading: const Icon(Icons.account_balance_wallet_outlined),
+          leading: const AppIcon('wallet'),
           title: const Text('Wallet'),
           subtitle: Text(
             lnbits.isConnected
                 ? '${lnbits.account?.wallets.length ?? 0} wallet${lnbits.account?.wallets.length == 1 ? '' : 's'} connected'
                 : 'Not connected',
           ),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const AppIcon('chevron_r'),
           onTap: () => context.push('/wallet/lnbits'),
         ),
         ListTile(
-          leading: const Icon(Icons.link),
+          leading: const AppIcon('link'),
           title: const Text('Nostr Wallet Connect'),
           subtitle: Text(
             nwc.isConnected
                 ? (nwc.activeConnection?.alias ?? 'Connected')
                 : 'External wallet (Alby, Zeus…)',
           ),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const AppIcon('chevron_r'),
           onTap: () => context.push('/wallet/nwc'),
         ),
         ListTile(
-          leading: const Icon(Icons.eco_outlined),
+          leading: const AppIcon('gift'),
           title: const Text('Cashu ecash'),
           subtitle: const Text('Private ecash wallet'),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const AppIcon('chevron_r'),
           onTap: () => context.push('/wallet/cashu'),
         ),
         // Premium entry
         ListTile(
-          leading: CircleAvatar(
-            backgroundColor: scheme.primaryContainer,
-            child: Icon(Icons.workspace_premium_rounded,
-                color: scheme.onPrimaryContainer, size: 20),
+          leading: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer.withValues(alpha: 0.5),
+              borderRadius: AppShapes.radiusMd,
+            ),
+            child: AppIcon(
+              'verified',
+              size: AppIconSize.md,
+              color: scheme.primary,
+            ),
           ),
           title: const Text('Premium'),
           subtitle: const Text(
               'Verified name, paid relay, bunker, Wallet Connect'),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const AppIcon('chevron_r'),
           onTap: () => context.push('/premium'),
         ),
         // Recheck pending payments (the "invoice stuck" fix).
         if (lnbits.isConnected)
           ListTile(
-            leading: const Icon(Icons.sync_rounded),
+            leading: const AppIcon('repost'),
             title: const Text('Refresh pending payments'),
             subtitle: const Text(
                 'Force a re-check of payments stuck on "pending"'),

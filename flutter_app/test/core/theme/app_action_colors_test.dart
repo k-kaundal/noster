@@ -5,30 +5,31 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 
-/// Pins the Primal-inspired engagement palette: the exact hex values from
-/// Primal's `extraColorScheme`, plus WCAG contrast of the ACTIVE icon/text
-/// color against the app's surfaces (these colors sit on `surface` in the
-/// action row).
+/// Pins the Refined engagement palette: muted (not neon) accents, plus WCAG
+/// contrast of the ACTIVE icon/text color against the app's surfaces (these
+/// colors sit on `surface` in the action row). The Refined direction trades
+/// Primal's neon for accents that read on both white and near-black.
 void main() {
   group('AppActionColors', () {
-    test('zap is Primal orange in both modes', () {
-      expect(AppActionColors.zap, const Color(0xFFFFA02F));
+    test('zap is muted amber per mode (AA on both surfaces)', () {
+      expect(AppActionColors.zapFor(Brightness.dark), const Color(0xFFF0A03C));
+      expect(AppActionColors.zapFor(Brightness.light), const Color(0xFFCC7008));
+      // The const fallback is the dark value (used by const Icon call sites).
+      expect(AppActionColors.zap, const Color(0xFFF0A03C));
     });
 
-    test('bookmark is Primal blue in both modes', () {
-      expect(AppActionColors.bookmark, const Color(0xFF0090F8));
+    test('bookmark is the muted brand blue in both modes', () {
+      expect(AppActionColors.bookmark, const Color(0xFF4A7FD6));
     });
 
-    test('like matches Primal liked pink per mode', () {
-      expect(AppActionColors.like(Brightness.dark), const Color(0xFFF800C1));
-      expect(AppActionColors.like(Brightness.light), const Color(0xFFCA079F));
+    test('like is rose per mode (muted from neon pink)', () {
+      expect(AppActionColors.like(Brightness.dark), const Color(0xFFE86FA0));
+      expect(AppActionColors.like(Brightness.light), const Color(0xFFD64B7F));
     });
 
-    test('repost: Primal green on dark, AA-passing leaf green on light', () {
-      // Dark is Primal's exact `reposted` value; light is darkened because
-      // Primal's own `#52CE0A` is ~2:1 on white (far below WCAG AA).
-      expect(AppActionColors.repost(Brightness.dark), const Color(0xFF66E205));
-      expect(AppActionColors.repost(Brightness.light), const Color(0xFF4E9A06));
+    test('repost is green per mode (muted from neon)', () {
+      expect(AppActionColors.repost(Brightness.dark), const Color(0xFF45C182));
+      expect(AppActionColors.repost(Brightness.light), const Color(0xFF2E9E63));
     });
 
     // WCAG contrast ratio (relative luminance per the sRGB spec).
@@ -52,16 +53,18 @@ void main() {
     // Action icons + counts are small but bold; 3:1 (AA large) is the floor,
     // and every accent should clear it comfortably on its own surface.
     test('light-mode accents pass AA on the light surface', () {
-      const surface = Color(0xFFF7FAFD); // AppTheme light surface
+      final surface = AppTheme.lightTheme.colorScheme.surface;
       expect(contrast(AppActionColors.like(Brightness.light), surface),
           greaterThan(3.0));
       expect(contrast(AppActionColors.repost(Brightness.light), surface),
           greaterThan(3.0));
       expect(contrast(AppActionColors.bookmark, surface), greaterThan(3.0));
+      expect(contrast(AppActionColors.zapFor(Brightness.light), surface),
+          greaterThan(3.0));
     });
 
     test('dark-mode accents pass AA on the dark surface', () {
-      const surface = Color(0xFF0B0F14); // AppTheme dark surface
+      final surface = AppTheme.darkTheme.colorScheme.surface;
       expect(contrast(AppActionColors.like(Brightness.dark), surface),
           greaterThan(4.5));
       expect(contrast(AppActionColors.repost(Brightness.dark), surface),

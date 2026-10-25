@@ -4,15 +4,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/utils/text_sanitize.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 import 'package:nostrfeed_mobile/features/market/application/market_providers.dart';
 import 'package:nostrfeed_mobile/features/market/domain/listing.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 /// Market home: browse NIP-99 classified listings + create.
@@ -28,18 +33,10 @@ class MarketScreen extends ConsumerWidget {
     return DetailScaffold(
       title: 'Market',
       body: listingsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Failed to load listings'),
-              TextButton(
-                onPressed: () => ref.invalidate(listingsProvider),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
+        loading: () => const SkeletonList(),
+        error: (err, _) => ErrorView.fromError(
+          err,
+          onRetry: () => ref.invalidate(listingsProvider),
         ),
         data: (listings) {
           final mine = myListingsAsync.valueOrNull ?? [];
@@ -89,7 +86,7 @@ class MarketScreen extends ConsumerWidget {
                 showDragHandle: true,
                 builder: (_) => const _CreateListingSheet(),
               ),
-              icon: const Icon(Icons.add_business_rounded),
+              icon: const AppIcon('shopping'),
               label: const Text('Sell'),
             )
           : null,
@@ -107,12 +104,11 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
       child: Text(
         title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.4,
-          color: Theme.of(context).colorScheme.primary,
-        ),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: Theme.of(context).colorScheme.primary,
+            ),
       ),
     );
   }
@@ -129,10 +125,14 @@ class _ListingCard extends ConsumerWidget {
     final sellerAsync = ref.watch(profileProvider(listing.sellerPubkey));
     final seller = sellerAsync.valueOrNull;
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: InkWell(
         onTap: () => _showDetail(context, ref),
         child: Column(
@@ -162,16 +162,21 @@ class _ListingCard extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: scheme.primary,
-                        borderRadius: BorderRadius.circular(8),
+                        color: scheme.inverseSurface,
+                        borderRadius: AppShapes.radiusSm,
                       ),
                       child: Text(
                         listing.price!.display,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(
+                              color: AppActionColors.zapFor(Brightness.dark),
+                              fontWeight: FontWeight.bold,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures()
+                              ],
+                            ),
                       ),
                     ),
                   ),
@@ -183,16 +188,19 @@ class _ListingCard extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(6),
+                        color: Colors.black54, // token-guard: allow — media scrim over listing image
+                        borderRadius: AppShapes.radiusXs,
                       ),
-                      child: const Text(
+                      child: Text(
                         'YOURS',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white, // token-guard: allow — on media scrim
+                            ),
                       ),
                     ),
                   ),
@@ -205,8 +213,10 @@ class _ListingCard extends ConsumerWidget {
                 children: [
                   Text(
                     listing.title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -214,8 +224,10 @@ class _ListingCard extends ConsumerWidget {
                     const SizedBox(height: 3),
                     Text(
                       listing.summary,
-                      style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -226,7 +238,7 @@ class _ListingCard extends ConsumerWidget {
                       SafeAvatar(
                         imageUrl: seller?.picture,
                         radius: 12,
-                        fallback: const Icon(Icons.person, size: 12),
+                        fallback: const AppIcon('users', size: 12),
                       ),
                       const SizedBox(width: 6),
                       Expanded(
@@ -241,8 +253,10 @@ class _ListingCard extends ConsumerWidget {
                               locale: 'en_short',
                             ),
                           ].join(' · '),
-                          style: TextStyle(
-                              fontSize: 11, color: scheme.onSurfaceVariant),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -289,7 +303,7 @@ class _ListingDetailSheet extends ConsumerWidget {
         children: [
           if (listing.image != null)
             ClipRRect(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: AppShapes.radiusMd,
               child: CachedNetworkImage(
                 httpHeaders: kImageHttpHeaders,
                 imageUrl: listing.image!,
@@ -306,8 +320,10 @@ class _ListingDetailSheet extends ConsumerWidget {
               Expanded(
                 child: Text(
                   listing.title,
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
               ),
               if (listing.price != null)
@@ -315,16 +331,21 @@ class _ListingDetailSheet extends ConsumerWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: scheme.primary,
-                    borderRadius: BorderRadius.circular(10),
+                    color: scheme.inverseSurface,
+                    borderRadius: AppShapes.radiusSm,
                   ),
                   child: Text(
                     listing.price!.display,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(
+                          color: AppActionColors.zapFor(Brightness.dark),
+                          fontWeight: FontWeight.bold,
+                          fontFeatures: const [
+                            FontFeature.tabularFigures()
+                          ],
+                        ),
                   ),
                 ),
             ],
@@ -335,14 +356,17 @@ class _ListingDetailSheet extends ConsumerWidget {
               SafeAvatar(
                 imageUrl: seller?.picture,
                 radius: 16,
-                fallback: const Icon(Icons.person, size: 16),
+                fallback: const AppIcon('users', size: 16),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   seller?.displayNameOrName ??
                       '${listing.sellerPubkey.substring(0, 8)}…',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -350,13 +374,14 @@ class _ListingDetailSheet extends ConsumerWidget {
               if (listing.location != null)
                 Row(
                   children: [
-                    Icon(Icons.location_on_outlined,
-                        size: 14, color: scheme.onSurfaceVariant),
+                    AppIcon('globe', size: 14, color: scheme.onSurfaceVariant),
                     const SizedBox(width: 3),
                     Text(
                       listing.location!,
-                      style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -366,7 +391,10 @@ class _ListingDetailSheet extends ConsumerWidget {
           if (listing.description.isNotEmpty)
             Text(
               sanitizeText(listing.description),
-              style: const TextStyle(fontSize: 14, height: 1.5),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(height: 1.5),
             ),
           if (listing.hashtags.isNotEmpty) ...[
             const SizedBox(height: 14),
@@ -376,11 +404,13 @@ class _ListingDetailSheet extends ConsumerWidget {
                 for (final t in listing.hashtags)
                   Text(
                     '#$t',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
                   ),
               ],
             ),
@@ -394,7 +424,7 @@ class _ListingDetailSheet extends ConsumerWidget {
                 Navigator.pop(context);
                 context.push('/chat/${listing.sellerPubkey}');
               },
-              icon: const Icon(Icons.chat_bubble_outline_rounded),
+              icon: const AppIcon('chat'),
               label: const Text('Message seller'),
             ),
           ),
@@ -410,17 +440,12 @@ class _ImageFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Quiet flat placeholder — no gradient.
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [scheme.primary, scheme.tertiary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
+      color: scheme.surfaceContainerHighest,
       child: Center(
-        child: Icon(Icons.storefront_rounded,
-            color: Colors.white.withValues(alpha: 0.5), size: 40),
+        child: AppIcon('shopping',
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.5), size: 40),
       ),
     );
   }
@@ -548,7 +573,7 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
                 ),
                 // Close button — bottom sheets must always be dismissible.
                 IconButton(
-                  icon: const Icon(Icons.close_rounded),
+                  icon: const AppIcon('plus'),
                   tooltip: 'Close',
                   onPressed: () => Navigator.pop(context),
                 ),
@@ -628,7 +653,7 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
                         ),
                       )
                     : IconButton(
-                        icon: const Icon(Icons.add_photo_alternate_outlined),
+                        icon: const AppIcon('image'),
                         tooltip: 'Upload image',
                         onPressed: _pickImage,
                       ),
@@ -638,7 +663,7 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: AppShapes.radiusMd,
                   child: Image.network(
                     _imageCtrl.text.trim(),
                     height: 90,
@@ -677,7 +702,7 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
                           color: colorScheme.onPrimary,
                         ),
                       )
-                    : const Icon(Icons.publish_rounded),
+                    : const AppIcon('share'),
                 label: const Text('Publish listing'),
               ),
             ),

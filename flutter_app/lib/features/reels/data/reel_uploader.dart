@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:video_player/video_player.dart';
 
 /// NIP-71 reel uploader: pick a video → upload via Blossom → publish a
@@ -186,7 +187,7 @@ class _ReelUploadSheetState extends ConsumerState<_ReelUploadSheet> {
               padding: const EdgeInsets.fromLTRB(20, 0, 8, 12),
               child: Row(
                 children: [
-                  Icon(Icons.video_call_rounded, color: colorScheme.primary),
+                  AppIcon('video', color: colorScheme.primary),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -198,7 +199,7 @@ class _ReelUploadSheetState extends ConsumerState<_ReelUploadSheet> {
                   ),
                   // Close button — dismisses keyboard + sheet cleanly.
                   IconButton(
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const AppIcon('plus'),
                     tooltip: 'Close',
                     onPressed: () {
                       FocusScope.of(context).unfocus();
@@ -350,7 +351,7 @@ class _ReelUploadSheetState extends ConsumerState<_ReelUploadSheet> {
                           color: Colors.white,
                         ),
                       )
-                    : const Icon(Icons.publish_rounded),
+                    : const AppIcon('share'),
                 label: Text(_uploading ? 'Publishing…' : 'Publish reel'),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),

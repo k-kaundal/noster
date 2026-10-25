@@ -5,7 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Resolve the event a reply points to (its direct parent), store-first then
 /// a bounded relay fetch — for the "in reply to @name" context line.
@@ -21,6 +24,35 @@ final _parentEventProvider =
   } catch (_) {
     return null;
   }
+});
+
+/// The freshest known version of the thread's root event. A thread opened
+/// from a notification/search passes a possibly-stale event object (old
+/// content, old engagement); this re-reads the store (warm from the ingest
+/// pipeline) and backfills from the relay once, so the card shows CURRENT
+/// data — the "notification tap shows stale data" bug.
+final _freshRootProvider =
+    FutureProvider.family<NostrEvent, NostrEvent>((ref, passed) async {
+  // Store-first: the pipeline keeps it warm; a newer revision may already
+  // be local. Fall back to the passed object if the store is behind/absent.
+  final stored = await EventStore.instance.eventById(passed.id);
+  var best = (stored != null && stored.createdAt >= passed.createdAt)
+      ? stored
+      : passed;
+
+  // Relay backfill (bounded): picks up edits + freshens counts/engagement
+  // landing since the passed object was created.
+  try {
+    final nostr = await initNostr(ref);
+    final fresh = await nostr.fetchEventById(passed.id);
+    if (fresh != null) {
+      await EventStore.instance.ingest([fresh]);
+      if (fresh.createdAt >= best.createdAt) best = fresh;
+    }
+  } catch (_) {
+    // Offline — the store/passed version stands.
+  }
+  return best;
 });
 
 class ThreadScreen extends ConsumerStatefulWidget {
@@ -48,9 +80,7 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
 
     final auth = ref.read(authStateProvider);
     if (!auth.isLoggedIn || auth.isReadOnly) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Log in to reply')),
-      );
+      AppToast.warning(context, 'Log in to reply');
       return;
     }
 
@@ -85,15 +115,11 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
       ref.invalidate(repliesProvider(threadRoot));
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reply posted!')),
-        );
+        AppToast.success(context, 'Reply posted!');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to post reply: $e')),
-        );
+        AppToast.error(context, 'Failed to post reply: $e');
       }
     } finally {
       if (mounted) {
@@ -122,7 +148,7 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
       appBar: AppBar(
         title: const Text('Thread'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const AppIcon('back'),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -197,7 +223,7 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
                         decoration: InputDecoration(
                           hintText: 'Write a reply...',
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
+                            borderRadius: AppShapes.radiusPill,
                             borderSide: BorderSide.none,
                           ),
                           filled: true,
@@ -246,15 +272,19 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
   }
 
   /// The thread header: "in reply to" context + the opened post + the
-  /// "Replies" divider. Built as item 0 of the lazy list.
+  /// "Replies" divider. Built as item 0 of the lazy list. The root card
+  /// renders the FRESHEST known event (notification taps pass stale objects).
   Widget _buildHeader(ColorScheme colorScheme, {bool drawLineBelow = false}) {
+    final rootAsync = ref.watch(_freshRootProvider(widget.rootEvent));
+    final root = rootAsync.valueOrNull ?? widget.rootEvent;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.rootEvent.replyToId != null)
-          _ReplyContextBanner(parentId: widget.rootEvent.replyToId!),
+        if (root.replyToId != null)
+          _ReplyContextBanner(parentId: root.replyToId!),
         PostCard(
-          event: widget.rootEvent,
+          key: ValueKey('root-${root.id}-${root.createdAt}'),
+          event: root,
           isThreadView: true,
           drawLineBelowAvatar: drawLineBelow,
         ),
@@ -344,22 +374,20 @@ class _ReplyContextBanner extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              Icon(Icons.reply_rounded, size: 16, color: scheme.primary),
+              AppIcon('comment', size: 16, color: scheme.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'In reply to $name',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: scheme.onSurfaceVariant,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (parent != null)
-                Icon(Icons.chevron_right_rounded,
-                    size: 16, color: scheme.onSurfaceVariant),
+                AppIcon('chevron_r', size: 16, color: scheme.onSurfaceVariant),
             ],
           ),
         ),

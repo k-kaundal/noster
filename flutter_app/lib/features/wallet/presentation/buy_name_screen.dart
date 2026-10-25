@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/data/address_service.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Dedicated screen for buying a verified NIP-05 name or custom lightning
 /// address. Replaces the cramped AlertDialog with a full-screen flow that
@@ -196,9 +200,7 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
     try {
       await ref.read(nip5Provider.notifier).publishToProfile(address: address);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Published to your Nostr profile')),
-        );
+        AppToast.success(context, 'Published to your Nostr profile');
       }
     } catch (e) {
       if (mounted) {
@@ -244,7 +246,7 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.verified_outlined, size: 64, color: colorScheme.primary),
+            AppIcon('verified', size: 64, color: colorScheme.primary),
             const SizedBox(height: 24),
             Text(
               'Log in to get a verified name',
@@ -276,7 +278,7 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
         if (publishedNip5 != null) ...[
           Card(
             child: ListTile(
-              leading: Icon(Icons.verified, color: Colors.green.shade600),
+              leading: const AppIcon('verified', color: AppStatusColors.success),
               title: const Text('Current verified name'),
               subtitle: Text(
                 publishedNip5,
@@ -354,12 +356,12 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                   decoration: InputDecoration(
                     labelText: 'Name',
                     hintText: 'alice',
-                    prefixIcon: const Icon(Icons.verified_outlined),
+                    prefixIcon: AppIcon('verified', size: AppIconSize.md),
                     suffixText: _selectedDomain != null
                         ? '@${_selectedDomain!.domain}'
                         : null,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: AppShapes.radiusMd,
                     ),
                   ),
                   onChanged: _search,
@@ -401,7 +403,7 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                       horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppShapes.radiusSm,
                   ),
                   child: const Text('1 year'),
                 ),
@@ -412,9 +414,9 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                   controller: _promoController,
                   decoration: InputDecoration(
                     labelText: 'Promo code (optional)',
-                    prefixIcon: const Icon(Icons.discount_outlined),
+                    prefixIcon: AppIcon('hash', size: AppIconSize.md),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: AppShapes.radiusMd,
                     ),
                   ),
                 ),
@@ -435,7 +437,7 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: colorScheme.errorContainer,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: AppShapes.radiusSm,
                     ),
                     child: Text(
                       _errorMsg!,
@@ -458,7 +460,7 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.shopping_cart_checkout),
+                : const AppIcon('shopping'),
             label: Text(
               _isClaiming
                   ? 'Processing…'
@@ -480,13 +482,13 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isAvailable
-            ? Colors.green.withValues(alpha: 0.08)
-            : Colors.red.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
+            ? AppStatusColors.success.withValues(alpha: 0.08)
+            : AppStatusColors.error.withValues(alpha: 0.08),
+        borderRadius: AppShapes.radiusMd,
         border: Border.all(
           color: isAvailable
-              ? Colors.green.withValues(alpha: 0.3)
-              : Colors.red.withValues(alpha: 0.3),
+              ? AppStatusColors.success.withValues(alpha: 0.3)
+              : AppStatusColors.error.withValues(alpha: 0.3),
         ),
       ),
       child: Column(
@@ -496,7 +498,9 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
             children: [
               Icon(
                 isAvailable ? Icons.check_circle : Icons.cancel,
-                color: isAvailable ? Colors.green : Colors.red,
+                color: isAvailable
+                    ? AppStatusColors.success
+                    : AppStatusColors.error,
                 size: 24,
               ),
               const SizedBox(width: 12),
@@ -506,21 +510,23 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                   children: [
                     Text(
                       isAvailable ? 'Available!' : 'Not available',
-                      style: TextStyle(
-                        color: isAvailable
-                            ? Colors.green.shade700
-                            : Colors.red.shade700,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(
+                            color: isAvailable
+                                ? AppStatusColors.success
+                                : AppStatusColors.error,
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
                     if (!isAvailable && result.reason != null)
                       Text(
                         result.reason!,
-                        style: TextStyle(
-                          color: Colors.red.shade700,
-                          fontSize: 13,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: AppStatusColors.error),
                       ),
                   ],
                 ),
@@ -549,16 +555,18 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
             width: 60,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 13,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -585,35 +593,38 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(12),
+                      color: AppStatusColors.warning.withValues(alpha: 0.08),
+                      borderRadius: AppShapes.radiusMd,
                       border: Border.all(
-                          color: Colors.orange.withValues(alpha: 0.3)),
+                          color:
+                              AppStatusColors.warning.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.schedule_rounded,
-                            color: Colors.orange.shade700, size: 22),
+                        const AppIcon('clock',
+                            color: AppStatusColors.warning, size: 22),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              const Text(
                                 'Reserved — payment pending',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.orange.shade800,
+                                  color: AppStatusColors.warning,
                                 ),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 address?.identifier ?? 'Your name',
-                                style: const TextStyle(
-                                  fontFamily: 'monospace',
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                      fontFamily: 'monospace',
+                                      fontWeight: FontWeight.w600,
+                                    ),
                               ),
                             ],
                           ),
@@ -633,7 +644,7 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                   const SizedBox(height: 18),
                   FilledButton.icon(
                     onPressed: _payReserved,
-                    icon: const Icon(Icons.bolt_rounded, size: 18),
+                    icon: const AppIcon('zap', size: 18),
                     label: Text(
                       _searchResult?.priceSats != null
                           ? 'Pay ${_formatSats(_searchResult!.priceSats!)} sats now'
@@ -663,10 +674,10 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
               padding: const EdgeInsets.all(24),
               child: Column(
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.check_circle,
                     size: 64,
-                    color: Colors.green.shade600,
+                    color: AppStatusColors.success,
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -678,16 +689,18 @@ class _BuyNameScreenState extends ConsumerState<BuyNameScreen> {
                   if (address != null) ...[
                     SelectableText(
                       address.identifier,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w600,
+                          ),
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
                       onPressed: _publishToProfile,
-                      icon: const Icon(Icons.publish, size: 18),
+                      icon: const AppIcon('share', size: 18),
                       label: const Text('Publish to Nostr profile'),
                     ),
                     const SizedBox(height: 8),

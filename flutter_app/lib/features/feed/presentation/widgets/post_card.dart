@@ -12,6 +12,7 @@ import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -279,20 +280,19 @@ class _PostCardState extends ConsumerState<PostCard> {
                   padding: const EdgeInsets.only(left: contentIndent),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.repeat,
-                        size: 15,
+                      AppIcon(
+                        'repost',
+                        size: AppIconSize.xs,
                         color: colorScheme.onSurfaceVariant,
                       ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           '$reposterName reposted',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w500,
+                              ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -356,9 +356,9 @@ class _PostCardState extends ConsumerState<PostCard> {
                                       if (profile?.nip05 != null &&
                                           profile!.nip05!.isNotEmpty) ...[
                                         const SizedBox(width: 4),
-                                        Icon(
-                                          Icons.verified,
-                                          size: 15,
+                                        AppIcon(
+                                          'verified',
+                                          size: AppIconSize.xs,
                                           color: colorScheme.primary,
                                         ),
                                       ],
@@ -453,7 +453,7 @@ class _PostCardState extends ConsumerState<PostCard> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             _ActionButton(
-                              icon: Icons.chat_bubble_outline,
+                              icon: 'comment',
                               count: replyCount,
                               onTap: widget.isThreadView
                                   ? null
@@ -463,9 +463,7 @@ class _PostCardState extends ConsumerState<PostCard> {
                                     ),
                             ),
                             _ActionButton(
-                              icon: isReposted
-                                  ? Icons.repeat
-                                  : Icons.repeat_outlined,
+                              icon: 'repost',
                               count: repostCount,
                               color: isReposted
                                   ? AppActionColors.repost(brightness)
@@ -478,9 +476,7 @@ class _PostCardState extends ConsumerState<PostCard> {
                               ),
                             ),
                             _ActionButton(
-                              icon: isLiked
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
+                              icon: isLiked ? 'heart_filled' : 'heart',
                               count: reactionCount,
                               color: isLiked
                                   ? AppActionColors.like(brightness)
@@ -489,14 +485,14 @@ class _PostCardState extends ConsumerState<PostCard> {
                                   _handleLike(context, ref, auth, displayEvent),
                             ),
                             _ActionButton(
-                              icon: Icons.bolt,
+                              icon: 'zap',
                               count: zapCount,
                               label: zapSats > 0
                                   ? '${_formatSats(zapSats)} sats'
                                   : null,
-                              // Zap keeps its signature orange as an invite
-                              // (Primal's `zapped`), active or not.
-                              color: AppActionColors.zap,
+                              // Zap keeps its signature amber as an invite,
+                              // active or not (Refined muted, AA per mode).
+                              color: AppActionColors.zapFor(brightness),
                               tooltip: 'Tap: zap options · Hold: quick zap',
                               onTap: () =>
                                   _handleZap(context, ref, auth, displayEvent),
@@ -509,8 +505,8 @@ class _PostCardState extends ConsumerState<PostCard> {
                             ),
                             _ActionButton(
                               icon: isBookmarked
-                                  ? Icons.bookmark
-                                  : Icons.bookmark_border,
+                                  ? 'bookmark_filled'
+                                  : 'bookmark',
                               count: 0,
                               color: isBookmarked
                                   ? AppActionColors.bookmark
@@ -524,7 +520,7 @@ class _PostCardState extends ConsumerState<PostCard> {
                               ),
                             ),
                             _ActionButton(
-                              icon: Icons.share_outlined,
+                              icon: 'share',
                               count: 0,
                               onTap: () =>
                                   _handleShare(context, ref, displayEvent),
@@ -811,9 +807,9 @@ class _PostOptionsMenu extends ConsumerWidget {
     final isBlocked = ref.watch(blockedAuthorsProvider).contains(event.pubkey);
 
     return PopupMenuButton<String>(
-      icon: Icon(
-        Icons.more_vert_rounded,
-        size: 18,
+      icon: AppIcon(
+        'more',
+        size: AppIconSize.md,
         color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
       tooltip: 'Post options',
@@ -869,7 +865,7 @@ class _PostOptionsMenu extends ConsumerWidget {
           value: 'quote',
           child: Row(
             children: [
-              Icon(Icons.format_quote_rounded, size: 18),
+              AppIcon('article', size: 18),
               SizedBox(width: 10),
               Text('Quote post'),
             ],
@@ -894,10 +890,7 @@ class _PostOptionsMenu extends ConsumerWidget {
           value: 'report',
           child: Row(
             children: [
-              Icon(
-                Icons.flag_outlined,
-                size: 18,
-                color: Theme.of(context).colorScheme.error,
+              AppIcon('target', size: 18, color: Theme.of(context).colorScheme.error,
               ),
               const SizedBox(width: 10),
               Text(
@@ -926,7 +919,7 @@ class _PostOptionsMenu extends ConsumerWidget {
           value: 'copy_text',
           child: Row(
             children: [
-              Icon(Icons.copy_outlined, size: 18),
+              AppIcon('edit', size: 18),
               SizedBox(width: 10),
               Text('Copy text'),
             ],
@@ -958,7 +951,7 @@ class _BoostedChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.bolt_rounded, size: 11, color: Colors.amber),
+            const AppIcon('zap', size: 11, color: Colors.amber),
             const SizedBox(width: 2),
             Text(
               'Boosted',
@@ -1062,7 +1055,8 @@ class _FollowButton extends ConsumerWidget {
 // ─── Action Button ─────────────────────────────────────────────────
 
 class _ActionButton extends StatelessWidget {
-  final IconData icon;
+  /// Refined stroke-icon asset name (assets/icons/<icon>.svg).
+  final String icon;
   final int count;
   final String? label;
   final VoidCallback? onTap;
@@ -1117,11 +1111,10 @@ class _ActionButton extends StatelessWidget {
               const SizedBox(width: 5),
               Text(
                 label ?? _formatCount(count),
-                style: TextStyle(
-                  color: effectiveColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: effectiveColor,
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
             ],
           ],
@@ -1148,7 +1141,8 @@ class _ActionButton extends StatelessWidget {
 /// [TweenAnimationBuilder]'s shared ticker machinery rather than a
 /// dedicated per-button vsync callback.
 class _PopIcon extends StatefulWidget {
-  final IconData icon;
+  /// Refined stroke-icon asset name (assets/icons/<icon>.svg).
+  final String icon;
   final Color color;
 
   const _PopIcon({required this.icon, required this.color});
@@ -1176,7 +1170,7 @@ class _PopIconState extends State<_PopIcon> {
         curve: AppMotion.curveEmphasis,
         builder: (context, value, child) =>
             Transform.scale(scale: value, child: child),
-        child: Icon(widget.icon, size: 19, color: widget.color),
+        child: AppIcon(widget.icon, size: AppIconSize.md, color: widget.color),
       ),
     );
   }

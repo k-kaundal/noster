@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/auth/data/key_backup_service.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Auth flow inspired by Damus, Amethyst, X, and Threads:
 /// - Hero brand section on top (gradient, logo, tagline)
@@ -221,19 +223,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 decoration: BoxDecoration(
                   color: scheme.surface,
                   borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(24),
+                    top: Radius.circular(AppShapes.xl),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: scheme.shadow.withValues(alpha: 0.1),
-                      blurRadius: 20,
-                      offset: const Offset(0, -4),
+                  border: Border(
+                    top: BorderSide(
+                      color: scheme.outlineVariant,
+                      width: 0.5,
                     ),
-                  ],
+                  ),
                 ),
                 child: ClipRRect(
                   borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(24),
+                    top: Radius.circular(AppShapes.xl),
                   ),
                   child: _buildSheetContent(theme, scheme),
                 ),
@@ -283,12 +284,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           // Primary CTA — create new account
           FilledButton.icon(
             onPressed: () => setState(() => _step = _AuthStep.signup),
-            icon: const Icon(Icons.person_add_outlined),
+            icon: const AppIcon('plus'),
             label: const Text('Create new account'),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppShapes.radiusLg,
               ),
             ),
           ),
@@ -297,12 +298,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           // Secondary CTA — login with existing key
           OutlinedButton.icon(
             onPressed: () => setState(() => _step = _AuthStep.login),
-            icon: const Icon(Icons.key_outlined),
+            icon: const AppIcon('key'),
             label: const Text('I already have a key'),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppShapes.radiusLg,
               ),
             ),
           ),
@@ -365,9 +366,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               decoration: InputDecoration(
                 labelText: 'Public Key',
                 hintText: 'npub1…',
-                prefixIcon: const Icon(Icons.person_outline),
+                prefixIcon: AppIcon('users', size: AppIconSize.md),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: AppShapes.radiusMd,
                 ),
               ),
             ),
@@ -380,7 +381,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: AppShapes.radiusMd,
                 ),
               ),
               child: const Text('Browse'),
@@ -420,15 +421,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: scheme.tertiaryContainer.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppShapes.radiusMd,
               border: Border.all(
                 color: scheme.tertiary.withValues(alpha: 0.3),
               ),
             ),
             child: Row(
               children: [
-                Icon(Icons.shield_outlined,
-                    size: 20, color: scheme.tertiary),
+                AppIcon('verified',
+                    size: AppIconSize.md, color: scheme.tertiary),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -451,23 +452,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             enabled: !_isLoading,
             autocorrect: false,
             enableSuggestions: false,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+            style: theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
             decoration: InputDecoration(
               labelText: 'Secret key',
               hintText: 'nsec1…',
-              prefixIcon: const Icon(Icons.key_outlined),
+              prefixIcon: AppIcon('key', size: AppIconSize.md),
               suffixIcon: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.paste_outlined, size: 20),
+                    icon: const AppIcon('edit', size: AppIconSize.md),
                     tooltip: 'Paste',
                     onPressed: () => _pasteFromClipboard(_nsecController),
                   ),
                   IconButton(
-                    icon: Icon(
-                      _showKey ? Icons.visibility_off : Icons.visibility,
-                      size: 20,
+                    icon: AppIcon(
+                      _showKey ? 'eye_off' : 'eye',
+                      size: AppIconSize.md,
                     ),
                     tooltip: _showKey ? 'Hide' : 'Show',
                     onPressed: () => setState(() => _showKey = !_showKey),
@@ -475,7 +476,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ],
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppShapes.radiusMd,
               ),
             ),
           ),
@@ -488,16 +489,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2, color: Colors.white), // token-guard: allow — on primary button
                   )
-                : const Icon(Icons.login),
+                : const AppIcon('key'),
             label: const Text('Log in'),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppShapes.radiusLg,
               ),
             ),
+          ),
+          const SizedBox(height: 20),
+
+          // Trust note
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AppIcon('key',
+                  size: AppIconSize.xs, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text(
+                'Your key never leaves this device',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -529,19 +547,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           const SizedBox(height: 24),
 
           _InfoRow(
-            icon: Icons.key_outlined,
+            icon: 'key',
             text: 'A private key is generated on your device. It never leaves this app.',
             scheme: scheme,
           ),
           const SizedBox(height: 12),
           _InfoRow(
-            icon: Icons.no_accounts_outlined,
+            icon: 'users',
             text: 'No signup forms, no verification codes. Your key is your account.',
             scheme: scheme,
           ),
           const SizedBox(height: 12),
           _InfoRow(
-            icon: Icons.backup_outlined,
+            icon: 'download',
             text: 'You\'ll back up your key in the next step — it\'s your only way back in.',
             scheme: scheme,
           ),
@@ -554,14 +572,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2, color: Colors.white), // token-guard: allow — on primary button
                   )
-                : const Icon(Icons.bolt_outlined),
+                : const AppIcon('zap'),
             label: const Text('Generate my secret key'),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppShapes.radiusLg,
               ),
             ),
           ),
@@ -599,7 +617,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppShapes.radiusMd,
               border: Border.all(color: scheme.outlineVariant),
             ),
             child: Column(
@@ -615,9 +633,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const Spacer(),
                     IconButton(
-                      icon: Icon(
-                        _showBackupKey ? Icons.visibility_off : Icons.visibility,
-                        size: 20,
+                      icon: AppIcon(
+                        _showBackupKey ? 'eye_off' : 'eye',
+                        size: AppIconSize.md,
                       ),
                       onPressed: () =>
                           setState(() => _showBackupKey = !_showBackupKey),
@@ -629,9 +647,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   _showBackupKey
                       ? (_generatedNsec ?? '')
                       : 'nsec1${'•' * 48}',
-                  style: const TextStyle(
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     fontFamily: 'monospace',
-                    fontSize: 14,
                   ),
                 ),
               ],
@@ -642,8 +659,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           // Backup actions: download file (primary) + copy (secondary)
           FilledButton.tonalIcon(
             onPressed: _isLoading ? null : _downloadKeyFile,
-            icon: Icon(
-              _keySavedToFile ? Icons.check_circle_outline : Icons.download_outlined,
+            icon: AppIcon(
+              _keySavedToFile ? 'check' : 'download',
+              size: AppIconSize.md,
             ),
             label: Text(
               _keySavedToFile ? 'Key file saved' : 'Download key file',
@@ -651,19 +669,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppShapes.radiusMd,
               ),
             ),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _copyKey,
-            icon: const Icon(Icons.copy_outlined),
+            icon: const AppIcon('edit'),
             label: const Text('Copy to clipboard'),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppShapes.radiusMd,
               ),
             ),
           ),
@@ -678,7 +696,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 color: _keyBackedUp
                     ? scheme.primaryContainer.withValues(alpha: 0.3)
                     : scheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppShapes.radiusMd,
                 border: Border.all(
                   color: _keyBackedUp
                       ? scheme.primary
@@ -687,10 +705,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(
-                    _keyBackedUp
-                        ? Icons.check_circle
-                        : Icons.circle_outlined,
+                  AppIcon(
+                    _keyBackedUp ? 'check' : 'eye',
+                    size: AppIconSize.lg,
                     color: _keyBackedUp
                         ? scheme.primary
                         : scheme.onSurfaceVariant,
@@ -716,7 +733,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppShapes.radiusLg,
               ),
             ),
             child: const Text('I\'ve saved my key — Continue'),
@@ -744,20 +761,14 @@ class _HeroSection extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [scheme.primary, scheme.tertiary],
-        ),
-      ),
+      color: scheme.primary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           if (onBack != null)
             IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              icon: const AppIcon('back', color: Colors.white), // token-guard: allow — on accent hero
               onPressed: onBack,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
@@ -765,18 +776,18 @@ class _HeroSection extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // Logo
+          // Logo mark — flat accent rounded square with a white AppIcon
           Center(
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.15), // token-guard: allow — on accent hero
+                borderRadius: AppShapes.radiusLg,
               ),
-              child: const Icon(
-                Icons.bolt,
+              child: const AppIcon(
+                'zap',
                 size: 40,
-                color: Colors.white,
+                color: Colors.white, // token-guard: allow — on accent hero
               ),
             ),
           ),
@@ -785,7 +796,7 @@ class _HeroSection extends StatelessWidget {
             child: Text(
               'NostrFeed',
               style: theme.textTheme.headlineMedium?.copyWith(
-                color: Colors.white,
+                color: Colors.white, // token-guard: allow — on accent hero
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -795,7 +806,7 @@ class _HeroSection extends StatelessWidget {
             child: Text(
               'Your social network, your keys.',
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.white.withValues(alpha: 0.85),
+                color: Colors.white.withValues(alpha: 0.85), // token-guard: allow — on accent hero
               ),
             ),
           ),
@@ -808,7 +819,7 @@ class _HeroSection extends StatelessWidget {
 // ── Info row for signup ──────────────────────────────────────────────
 
 class _InfoRow extends StatelessWidget {
-  final IconData icon;
+  final String icon;
   final String text;
   final ColorScheme scheme;
 
@@ -827,19 +838,19 @@ class _InfoRow extends StatelessWidget {
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: scheme.primaryContainer.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: AppShapes.radiusMd,
           ),
-          child: Icon(icon, size: 18, color: scheme.primary),
+          child:
+              AppIcon(icon, size: AppIconSize.md, color: scheme.primary),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: Text(
             text,
-            style: TextStyle(
-              fontSize: 13,
-              color: scheme.onSurfaceVariant,
-              height: 1.4,
-            ),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
           ),
         ),
       ],

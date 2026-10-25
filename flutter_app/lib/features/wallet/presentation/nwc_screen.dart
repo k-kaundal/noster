@@ -3,8 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/nwc_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/nwc_service.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// NWC Wallet Connect screen: paste URI, scan QR, or select from stored
 /// connections. Shows active connection status and lets user disconnect.
@@ -51,7 +54,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    Icon(Icons.error_outline, color: colorScheme.error),
+                    AppIcon('eye_off', color: colorScheme.error),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -75,7 +78,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.link, color: colorScheme.primary),
+                      AppIcon('link', color: colorScheme.primary),
                       const SizedBox(width: 8),
                       Text(
                         'Connect Wallet',
@@ -90,9 +93,11 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                     decoration: InputDecoration(
                       labelText: 'NWC Connection URI',
                       hintText: 'nostr+walletconnect://…',
-                      prefixIcon: const Icon(Icons.bolt),
+                      // md (18) is Material's text-field icon scale — the
+                      // default lg (21) reads oversized in a prefix slot.
+                      prefixIcon: const AppIcon('zap', size: AppIconSize.md),
                       suffixIcon: IconButton(
-                        icon: const Icon(Icons.paste),
+                        icon: const AppIcon('edit', size: AppIconSize.md),
                         tooltip: 'Paste',
                         onPressed: () async {
                           final data = await Clipboard.getData('text/plain');
@@ -102,7 +107,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                         },
                       ),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppShapes.radiusMd,
                       ),
                     ),
                     maxLines: 2,
@@ -114,9 +119,9 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                     decoration: InputDecoration(
                       labelText: 'Alias (optional)',
                       hintText: 'My Alby Wallet',
-                      prefixIcon: const Icon(Icons.label_outline),
+                      prefixIcon: const AppIcon('hash', size: AppIconSize.md),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppShapes.radiusMd,
                       ),
                     ),
                   ),
@@ -126,23 +131,24 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: AppShapes.radiusMd,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.info_outline_rounded,
-                                size: 15, color: colorScheme.primary),
+                            AppIcon('eye', size: 15, color: colorScheme.primary),
                             const SizedBox(width: 6),
                             Text(
                               'Works with any NWC wallet',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: colorScheme.primary,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: colorScheme.primary,
+                                  ),
                             ),
                           ],
                         ),
@@ -150,11 +156,13 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                         Text(
                           'Alby · Zeus · Wallet of Satoshi · Mutiny · Phoenix · Breez · Alby Hub\n'
                           'In your wallet: find "Nostr Wallet Connect" → copy the connection URI or QR.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            height: 1.4,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                height: 1.4,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
                         ),
                       ],
                     ),
@@ -185,7 +193,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2),
                                 )
-                              : const Icon(Icons.link),
+                              : const AppIcon('link'),
                           label: const Text('Connect'),
                         ),
                       ),
@@ -245,8 +253,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.info_outline,
-                          size: 18, color: colorScheme.onSurfaceVariant),
+                      AppIcon('eye', size: 18, color: colorScheme.onSurfaceVariant),
                       const SizedBox(width: 8),
                       Text(
                         'What is NWC?',
@@ -290,7 +297,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
           children: [
             Row(
               children: [
-                Icon(Icons.check_circle, color: colorScheme.primary),
+                AppIcon('check', color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -302,7 +309,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const AppIcon('plus'),
                   tooltip: 'Disconnect',
                   onPressed: () => _disconnect(conn.id),
                 ),
@@ -375,7 +382,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
                 child: const Text('Switch'),
               ),
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20),
+              icon: const AppIcon('eye_off', size: 20),
               tooltip: 'Remove',
               onPressed: () => _remove(conn.id),
             ),
@@ -393,19 +400,14 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
   Future<void> _connect(BuildContext context) async {
     final uri = _uriController.text.trim();
     if (uri.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a NWC URI')),
-      );
+      AppToast.warning(context, 'Please enter a NWC URI');
       return;
     }
 
     // Validate format before calling the service
     if (NwcService.parseUri(uri) == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('Invalid NWC URI format. Expected nostr+walletconnect://…')),
-      );
+      AppToast.error(
+          context, 'Invalid NWC URI format. Expected nostr+walletconnect://…');
       return;
     }
 
@@ -420,18 +422,14 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
     if (ok && context.mounted) {
       _uriController.clear();
       _aliasController.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wallet connected')),
-      );
+      AppToast.success(context, 'Wallet connected');
     }
   }
 
   Future<void> _disconnect(String id) async {
     await ref.read(nwcNotifierProvider.notifier).removeConnection(id);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wallet disconnected')),
-      );
+      AppToast.success(context, 'Wallet disconnected');
     }
   }
 
@@ -457,9 +455,7 @@ class _NwcScreenState extends ConsumerState<NwcScreen> {
     if (confirmed == true) {
       await ref.read(nwcNotifierProvider.notifier).removeConnection(id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Connection removed')),
-        );
+        AppToast.success(context, 'Connection removed');
       }
     }
   }
@@ -576,7 +572,7 @@ class QrScannerOverlayShape extends ShapeBorder {
 
     // Dim background outside cut-out.
     final backgroundPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.5)
+      ..color = Colors.black.withValues(alpha: 0.5) // token-guard: allow — QR scrim
       ..style = PaintingStyle.fill;
     final backgroundPath = Path.combine(
       PathOperation.difference,

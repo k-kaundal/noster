@@ -268,6 +268,15 @@ class NostrFilter {
   int? limit;
   String? search;
 
+  /// Client-side only (never serialized to relays): when true, the local
+  /// store must NOT serve this filter (the merged query goes remote-only).
+  /// Used for scopes the local index can't answer — e.g. uppercase NIP-22
+  /// `A`/`E` tags (the store indexes only single-letter first-values per
+  /// NIP-01, and an uppercase letter on the wire is a distinct scope that
+  /// some relays treat case-insensitively — serving it locally would risk
+  /// WRONG results, not just empty ones). Default false.
+  bool remoteOnly = false;
+
   NostrFilter({
     this.ids,
     this.authors,

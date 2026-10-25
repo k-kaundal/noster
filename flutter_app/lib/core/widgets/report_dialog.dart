@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/nostr/report_types.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 
 /// NIP-56 (kind 1984) report flow — required by Google Play's child-safety
@@ -25,7 +26,9 @@ Future<void> showReportDialog(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(AppShapes.xl),
+      ),
     ),
     builder: (_) => _ReportSheet(eventId: eventId, pubkey: pubkey),
   );
@@ -106,7 +109,7 @@ class _ReportSheetState extends ConsumerState<_ReportSheet> {
                 height: 4,
                 decoration: BoxDecoration(
                   color: colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: AppShapes.radiusXs,
                 ),
               ),
             ),
@@ -130,8 +133,7 @@ class _ReportSheetState extends ConsumerState<_ReportSheet> {
               child: Text(
                 'Reports are published publicly (NIP-56) and reviewed by '
                 'relay operators and other clients.',
-                style: TextStyle(
-                  fontSize: 12,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                   height: 1.35,
                 ),
@@ -171,7 +173,7 @@ class _ReportSheetState extends ConsumerState<_ReportSheet> {
                 decoration: InputDecoration(
                   hintText: 'Add details (optional)',
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: AppShapes.radiusMd,
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -201,7 +203,7 @@ class _ReportSheetState extends ConsumerState<_ReportSheet> {
                   backgroundColor: colorScheme.error,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: AppShapes.radiusMd,
                   ),
                 ),
               ),
@@ -241,10 +243,10 @@ class _ReasonTile extends StatelessWidget {
                 ? colorScheme.errorContainer.withValues(alpha: 0.4)
                 : colorScheme.primaryContainer.withValues(alpha: 0.4))
             : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppShapes.radiusMd,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppShapes.radiusMd,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
@@ -265,21 +267,20 @@ class _ReasonTile extends StatelessWidget {
                     children: [
                       Text(
                         type.label,
-                        style: TextStyle(
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontWeight: emphasized || selected
                               ? FontWeight.w600
                               : FontWeight.normal,
                           color: color,
-                          fontSize: 14.5,
                         ),
                       ),
                       if (subtitle != null)
                         Text(
                           subtitle!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                     ],
                   ),

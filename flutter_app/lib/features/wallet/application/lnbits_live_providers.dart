@@ -135,8 +135,11 @@ class LnbitsLiveCoordinator {
       onDone: () {
         if (_disposed) return;
         _houseFailures++;
+        _houseReconnect?.cancel();
         final secs = (5 << (_houseFailures - 1)).clamp(5, 120);
-        Timer(Duration(seconds: secs), () {
+        // Stored (like _walletReconnect) so dispose/resync can cancel it —
+        // an unassigned timer stacked reconnects after wallet churn.
+        _houseReconnect = Timer(Duration(seconds: secs), () {
           if (!_disposed) _syncHouseSocket();
         });
       },

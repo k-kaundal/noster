@@ -111,7 +111,7 @@ class AuthNotifier extends Notifier<AuthState> {
     // Wipe per-account DM state (decrypted cache, watermarks, outbox) so the
     // next account on this device never inherits them (cross-account leak).
     try {
-      ref.read(dmStoreProvider).clearAll();
+      ref.read(dmStoreProvider.notifier).clearAll();
     } catch (_) {}
     await _nostr.setAuth(const AuthState());
     state = const AuthState();
@@ -124,7 +124,7 @@ class AuthNotifier extends Notifier<AuthState> {
     final next = await _nostr.authService.switchAccount(pubkey);
     if (next == null) return;
     try {
-      ref.read(dmStoreProvider).clearAll();
+      ref.read(dmStoreProvider.notifier).clearAll();
     } catch (_) {}
     await _nostr.setAuth(next);
     state = next;
@@ -182,7 +182,6 @@ class AuthNotifier extends Notifier<AuthState> {
     // Invalidate follow-dependent providers so counts/lists update everywhere.
     ref.invalidate(followsProvider);
     ref.invalidate(followersProvider);
-    ref.invalidate(followingFeedProvider);
   }
 }
 
@@ -255,11 +254,6 @@ final userPostsProvider = FutureProvider.family<List<NostrEvent>, String>((
   );
 });
 
-/// Feed events (following)
-final followingFeedProvider = FutureProvider<List<NostrEvent>>((ref) async {
-  final nostr = await initNostr(ref);
-  final auth = ref.watch(authStateProvider);
-  if (!auth.isLoggedIn || auth.pubkey == null) return [];
-  final follows = await nostr.fetchFollows(auth.pubkey!);
-  return nostr.fetchFollowingFeed(follows);
-});
+/// The Following feed lives on `followingFeedNotifierProvider` (SQLite-
+/// backed Notifier). No plain FutureProvider here — one existed and was
+/// dead code (unwatched; invalidating an unwatched provider is a no-op).

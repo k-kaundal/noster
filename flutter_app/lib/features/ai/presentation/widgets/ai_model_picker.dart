@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_gateway.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Opens the model picker sheet. Selects the model on tap.
 Future<void> showAiModelPicker(BuildContext context) {
@@ -87,7 +88,7 @@ class _AiModelPickerSheetState extends ConsumerState<_AiModelPickerSheet> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const AppIcon('plus'),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -102,7 +103,7 @@ class _AiModelPickerSheetState extends ConsumerState<_AiModelPickerSheet> {
                 onChanged: (v) => setState(() => _query = v),
                 decoration: InputDecoration(
                   hintText: 'Search models…',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  prefixIcon: const AppIcon('search', size: 20),
                   filled: true,
                   fillColor: scheme.surfaceContainerHighest,
                   border: OutlineInputBorder(
@@ -277,7 +278,7 @@ class _ModelTile extends ConsumerWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.bolt_rounded, size: 12, color: scheme.primary),
+                AppIcon('zap', size: 12, color: scheme.primary),
                 Text(
                   '~$price/msg',
                   style: TextStyle(
@@ -292,7 +293,7 @@ class _ModelTile extends ConsumerWidget {
           ),
           if (selected) ...[
             const SizedBox(width: 6),
-            Icon(Icons.check_circle_rounded, size: 18, color: scheme.primary),
+            AppIcon('check', size: 18, color: scheme.primary),
           ],
         ],
       ),

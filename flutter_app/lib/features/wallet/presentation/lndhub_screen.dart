@@ -3,10 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/qr_scan_sheet.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lndhub_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// LndHub wallet: connect by scanning a `lndhub://` QR (the BlueWallet /
 /// Zeus / Alby / Umbrel / BTCPay "connect wallet" code), see the balance,
@@ -28,31 +32,26 @@ class LndHubScreen extends ConsumerWidget {
           if (hub.isConnected) ...[
             // Connected state
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.blue.shade800, Colors.indigo.shade600],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(18),
+                gradient: AppTheme.brandGradient,
+                borderRadius: AppShapes.radiusXl,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.hub_rounded,
-                          color: Colors.white, size: 20),
+                      const AppIcon('globe',
+                          color: Colors.white, size: 20), // token-guard: allow — on brand gradient
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           hub.credentials!.host.replaceFirst('https://', ''),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.8), // token-guard: allow — on brand gradient
+                                fontFamily: 'monospace',
+                              ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -64,11 +63,10 @@ class LndHubScreen extends ConsumerWidget {
                     hub.balanceSats != null
                         ? '${formatter.format(hub.balanceSats)} sats'
                         : '…',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                          color: Colors.white, // token-guard: allow — on brand gradient
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
                 ],
               ),
@@ -80,7 +78,7 @@ class LndHubScreen extends ConsumerWidget {
                   child: OutlinedButton.icon(
                     onPressed: () =>
                         ref.read(lndHubProvider.notifier).refresh(),
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    icon: const AppIcon('repost', size: 18),
                     label: const Text('Refresh'),
                   ),
                 ),
@@ -88,7 +86,7 @@ class LndHubScreen extends ConsumerWidget {
                 Expanded(
                   child: FilledButton.tonalIcon(
                     onPressed: () => _confirmDisconnect(context, ref),
-                    icon: const Icon(Icons.link_off_rounded, size: 18),
+                    icon: const AppIcon('link', size: 18),
                     label: const Text('Disconnect'),
                   ),
                 ),
@@ -98,18 +96,20 @@ class LndHubScreen extends ConsumerWidget {
               const SizedBox(height: 12),
               Text(
                 hub.error!,
-                style: TextStyle(color: scheme.error, fontSize: 12),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.error),
               ),
             ],
             const SizedBox(height: 20),
             Text(
               'This wallet pays through the normal Send flow — it is offered '
               'after LNbits, NWC and Cashu when you pay an invoice.',
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurfaceVariant,
-                height: 1.4,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
             ),
           ] else ...[
             // Connect card
@@ -121,7 +121,7 @@ class LndHubScreen extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.hub_rounded, color: scheme.primary),
+                        AppIcon('globe', color: scheme.primary),
                         const SizedBox(width: 8),
                         Text(
                           'Connect an LndHub wallet',
@@ -137,16 +137,15 @@ class LndHubScreen extends ConsumerWidget {
                       'Scan the QR your hub shows: BlueWallet export, Zeus '
                       'LNDhub account, Alby LNDhub, Umbrel, or a BTCPay '
                       '"LNDhub API" code.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: scheme.onSurfaceVariant,
-                        height: 1.45,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            height: 1.45,
+                          ),
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
                       onPressed: () => _scan(context, ref),
-                      icon: const Icon(Icons.qr_code_scanner_rounded),
+                      icon: const AppIcon('qr'),
                       label: const Text('Scan LndHub QR'),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -155,14 +154,17 @@ class LndHubScreen extends ConsumerWidget {
                     const SizedBox(height: 10),
                     OutlinedButton.icon(
                       onPressed: () => _paste(context, ref),
-                      icon: const Icon(Icons.content_paste_rounded),
+                      icon: const AppIcon('edit'),
                       label: const Text('Paste lndhub:// URI'),
                     ),
                     if (hub.error != null) ...[
                       const SizedBox(height: 12),
                       Text(
                         hub.error!,
-                        style: TextStyle(color: scheme.error, fontSize: 12),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.error),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -180,8 +182,7 @@ class LndHubScreen extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.shield_outlined,
-                            size: 18, color: scheme.onSurfaceVariant),
+                        AppIcon('verified', size: 18, color: scheme.onSurfaceVariant),
                         const SizedBox(width: 8),
                         Text(
                           'What is LndHub?',

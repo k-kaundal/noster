@@ -5,8 +5,11 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -125,12 +128,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_library),
+              leading: const AppIcon('image'),
               title: const Text('Gallery'),
               onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_camera),
+              leading: const AppIcon('image'),
               title: const Text('Camera'),
               onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
@@ -169,24 +172,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                '${isBanner ? 'Banner' : 'Profile picture'} uploaded — save to publish it'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppToast.success(context, '${isBanner ? 'Banner' : 'Profile picture'} uploaded — save to publish it');
       }
     } catch (e) {
       setState(() => _uploadError = e.toString());
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload failed: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppToast.error(context, 'Upload failed: $e');
       }
     } finally {
       setState(() {
@@ -222,19 +213,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       await ref.read(authStateProvider.notifier).updateProfile(updated);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile updated')),
-        );
+        AppToast.success(context, 'Profile updated');
         Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to save: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
+        AppToast.error(context, 'Failed to save: $e');
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -252,7 +236,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.close),
+          icon: const AppIcon('plus'),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text('Edit Profile'),
@@ -310,15 +294,15 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                   padding: const EdgeInsets.all(12),
                   child: Row(
                     children: [
-                      Icon(Icons.error_outline, color: scheme.error),
+                      AppIcon('eye_off', color: scheme.error),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           _uploadError!,
-                          style: TextStyle(
-                            color: scheme.onErrorContainer,
-                            fontSize: 13,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: scheme.onErrorContainer),
                         ),
                       ),
                     ],
@@ -412,7 +396,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         hintText: hint,
         prefixIcon: Icon(icon),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: AppShapes.radiusMd,
         ),
         alignLabelWithHint: maxLines > 1,
       ),
@@ -468,15 +452,15 @@ class _ImageSection extends StatelessWidget {
           children: [
             Text(
               label,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const Spacer(),
             if (hasImage)
               IconButton(
-                icon: const Icon(Icons.close, size: 18),
+                icon: const AppIcon('plus', size: 18),
                 tooltip: 'Remove',
                 onPressed: () => onUrlChanged(''),
               ),
@@ -484,10 +468,10 @@ class _ImageSection extends StatelessWidget {
         ),
         Text(
           hint,
-          style: TextStyle(
-            fontSize: 12,
-            color: scheme.onSurfaceVariant,
-          ),
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 12),
 
@@ -501,7 +485,7 @@ class _ImageSection extends StatelessWidget {
               height: previewType == _PreviewType.square ? 80 : 90,
               decoration: BoxDecoration(
                 color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppShapes.radiusMd,
                 border: Border.all(
                   color: scheme.outlineVariant.withValues(alpha: 0.5),
                 ),
@@ -556,7 +540,7 @@ class _ImageSection extends StatelessWidget {
                               strokeWidth: 2,
                             ),
                           )
-                        : const Icon(Icons.upload, size: 18),
+                        : const AppIcon('share', size: 18),
                     label: Text(
                       isUploading
                           ? 'Uploading…'
@@ -571,16 +555,16 @@ class _ImageSection extends StatelessWidget {
                     onChanged: onUrlChanged,
                     decoration: InputDecoration(
                       hintText: 'https://…',
-                      prefixIcon: const Icon(Icons.link, size: 18),
+                      prefixIcon: const AppIcon('link', size: 18),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppShapes.radiusMd,
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 10,
                       ),
                     ),
-                    style: const TextStyle(fontSize: 13),
+                    style: Theme.of(context).textTheme.bodySmall,
                     keyboardType: TextInputType.url,
                   ),
                 ],

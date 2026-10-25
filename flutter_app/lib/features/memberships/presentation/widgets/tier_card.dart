@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/nostr/usecases/zap_receipts.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/features/memberships/application/membership_providers.dart';
 import 'package:nostrfeed_mobile/features/studio/domain/subscription.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// What a creator asks for, and where the reader stands on it.
 ///
@@ -97,13 +100,16 @@ class _TierCardState extends ConsumerState<TierCard> {
     final active = status.state == SubscriptionState.active;
     final lapsed = status.state == SubscriptionState.lapsed;
 
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: active
-            ? BorderSide(color: scheme.primary, width: 1.5)
-            : BorderSide.none,
+    final zapColor = AppActionColors.zapFor(scheme.brightness);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(
+          color: active ? scheme.primary : scheme.outlineVariant,
+          width: active ? 1.5 : 1,
+        ),
       ),
       child: Padding(
         padding: AppSpacing.paddingMd,
@@ -126,16 +132,16 @@ class _TierCardState extends ConsumerState<TierCard> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: scheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(8),
+                      color: scheme.primary.withValues(alpha: 0.12),
+                      borderRadius: AppShapes.radiusSm,
                     ),
                     child: Text(
                       'ACTIVE',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: scheme.onPrimaryContainer,
-                      ),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: scheme.primary,
+                          ),
                     ),
                   ),
               ],
@@ -144,19 +150,24 @@ class _TierCardState extends ConsumerState<TierCard> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Icon(Icons.bolt, size: 18, color: scheme.primary),
+                AppIcon('zap', size: 18, color: zapColor),
                 Text(
                   _format(widget.tier.amount),
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: scheme.primary,
-                  ),
+                  style:
+                      Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: zapColor,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ],
+                          ),
                 ),
                 Text(
                   ' sats/${describeCadence(widget.tier.cadence)}',
-                  style:
-                      TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
               ],
             ),
@@ -164,7 +175,10 @@ class _TierCardState extends ConsumerState<TierCard> {
               AppSpacing.gapSm,
               Text(
                 widget.tier.description,
-                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ],
             if (widget.tier.perks.isNotEmpty) ...[
@@ -174,11 +188,13 @@ class _TierCardState extends ConsumerState<TierCard> {
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(
                     children: [
-                      Icon(Icons.check_circle,
-                          size: 16, color: scheme.primary),
+                      AppIcon('check', size: 16, color: scheme.primary),
                       AppSpacing.gapXs,
                       Expanded(
-                        child: Text(perk, style: const TextStyle(fontSize: 13)),
+                        child: Text(
+                          perk,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ),
                     ],
                   ),
@@ -190,7 +206,10 @@ class _TierCardState extends ConsumerState<TierCard> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   'Active · ${status.daysLeft} days left',
-                  style: TextStyle(fontSize: 12, color: scheme.primary),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: scheme.primary),
                 ),
               ),
             if (!widget.isSelf && lapsed)
@@ -198,8 +217,10 @@ class _TierCardState extends ConsumerState<TierCard> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   'Lapsed — pay again for another ${describeCadence(widget.tier.cadence)}',
-                  style:
-                      TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
               ),
             if (!widget.isSelf && status.shortfallSats > 0)
@@ -207,7 +228,10 @@ class _TierCardState extends ConsumerState<TierCard> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   'You sent ${_format(status.totalSats)} sats — a period needs one payment of ${_format(widget.tier.amount)}.',
-                  style: TextStyle(fontSize: 12, color: scheme.error),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: scheme.error),
                 ),
               ),
             SizedBox(
@@ -222,7 +246,7 @@ class _TierCardState extends ConsumerState<TierCard> {
                               height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.bolt_rounded, size: 18),
+                          : const AppIcon('zap', size: 18),
                       label: Text(
                         active
                             ? 'Pay another ${describeCadence(widget.tier.cadence)}'

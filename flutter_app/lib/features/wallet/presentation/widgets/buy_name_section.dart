@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/data/address_service.dart';
 import 'package:nostrfeed_mobile/features/identity/presentation/widgets/owned_nip5_tile.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 // ── Buy Name Section ──────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ class BuyNameSection extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.verified_outlined, color: colorScheme.primary),
+                AppIcon('verified', color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'Verified Name',
@@ -77,7 +78,7 @@ class BuyNameSection extends ConsumerWidget {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () => context.push('/wallet/buy-name'),
-                  icon: const Icon(Icons.add, size: 18),
+                  icon: const AppIcon('plus', size: 18),
                   label: const Text('Buy another name'),
                 ),
               ),
@@ -86,7 +87,7 @@ class BuyNameSection extends ConsumerWidget {
                 width: double.infinity,
                 child: FilledButton.tonalIcon(
                   onPressed: () => context.push('/wallet/buy-name'),
-                  icon: const Icon(Icons.add, size: 18),
+                  icon: const AppIcon('plus', size: 18),
                   label: const Text('Get a verified name'),
                 ),
               ),

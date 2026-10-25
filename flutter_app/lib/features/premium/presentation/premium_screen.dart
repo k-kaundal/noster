@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
@@ -12,6 +15,7 @@ import 'package:nostrfeed_mobile/features/premium/application/premium_providers.
 import 'package:nostrfeed_mobile/features/premium/data/admission_service.dart';
 import 'package:nostrfeed_mobile/features/premium/presentation/widgets/bunker_card.dart';
 import 'package:nostrfeed_mobile/features/premium/presentation/widgets/nwc_provider_card.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Premium: verified names (NIP-05) + paid relay + lightning addresses.
 class PremiumScreen extends ConsumerStatefulWidget {
@@ -131,7 +135,7 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
 
           // ── Feature 1: Verified name (NIP-05) ──
           _FeatureCard(
-            icon: Icons.verified_rounded,
+            iconName: 'verified',
             iconColor: scheme.primary,
             title: 'Verified Name (NIP-05)',
             description:
@@ -143,18 +147,17 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
                 const SizedBox(height: 10),
                 Text(
                   'e.g. you@${Env.nip5Domain} or you@getzap.me — shown next to your name with a ✓ check.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onSurfaceVariant,
-                    height: 1.4,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
                 ),
                 const SizedBox(height: 12),
                 FilledButton.tonalIcon(
                   onPressed: auth.isLoggedIn
                       ? () => context.push('/identity')
                       : null,
-                  icon: const Icon(Icons.verified_outlined, size: 18),
+                  icon: const AppIcon('verified', size: 18),
                   label: const Text('Claim your name'),
                 ),
               ],
@@ -164,8 +167,8 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
 
           // ── Feature 2: Paid relay (payment first, connect after) ──
           _FeatureCard(
-            icon: Icons.speed_rounded,
-            iconColor: Colors.orange.shade700,
+            iconName: 'globe',
+            iconColor: AppStatusColors.warning,
             title: 'Paid Relay Access',
             description:
                 'Guaranteed uptime, spam-free, higher rate limits, priority event delivery via ${Env.paidRelay.replaceFirst('wss://', '')}.',
@@ -175,8 +178,9 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(10),
+                    color: scheme.surfaceContainerLowest,
+                    borderRadius: AppShapes.radiusMd,
+                    border: Border.all(color: scheme.outlineVariant),
                   ),
                   child: Column(
                     children: [
@@ -211,24 +215,26 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.bolt_rounded, size: 18),
+                      : const AppIcon('zap', size: 18),
                   label: Text(
                     relayStatus?.connected == true
                         ? 'Connected'
                         : admission == AdmissionState.admitted
                             ? 'Connect to paid relay'
                             : 'Pay ${_formatSats(feeSats)} sats & connect',
+                    style: const TextStyle(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
                 if (admission != AdmissionState.admitted) ...[
                   const SizedBox(height: 8),
                   Text(
                     'One-time admission, tied to your key. Payment happens first — the relay connects once it confirms you.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onSurfaceVariant,
-                      height: 1.4,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          height: 1.4,
+                        ),
                   ),
                 ],
               ],
@@ -238,8 +244,8 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
 
           // ── Feature 3: Lightning address ──
           _FeatureCard(
-            icon: Icons.bolt_rounded,
-            iconColor: Colors.amber.shade700,
+            iconName: 'zap',
+            iconColor: AppActionColors.zapFor(scheme.brightness),
             title: 'Lightning Address',
             description:
                 'Receive zaps from any Nostr client to your own address. Works with your wallet.',
@@ -256,18 +262,17 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
                 else
                   Text(
                     'e.g. you@${Env.lightningAddressDomain}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onSurfaceVariant,
-                      fontFamily: 'monospace',
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontFamily: 'monospace',
+                        ),
                   ),
                 const SizedBox(height: 12),
                 FilledButton.tonalIcon(
                   onPressed: auth.isLoggedIn
                       ? () => context.push('/identity')
                       : null,
-                  icon: const Icon(Icons.bolt_outlined, size: 18),
+                  icon: const AppIcon('zap', size: 18),
                   label: Text(
                     entitlements?.lightningAddresses.isNotEmpty == true
                         ? 'Manage addresses'
@@ -296,7 +301,10 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
               child: Text(
                 'Log in to claim names and connect the paid relay',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ),
         ],
@@ -319,20 +327,19 @@ class _RelayStatusRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(
-          ok ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+        AppIcon(
+          ok ? 'check' : 'clock',
           size: 18,
-          color: ok ? Colors.green : scheme.onSurfaceVariant,
+          color: ok ? AppStatusColors.success : scheme.onSurfaceVariant,
         ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: ok ? Colors.green.shade700 : scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: ok ? AppStatusColors.success : scheme.onSurfaceVariant,
+                ),
           ),
         ),
       ],
@@ -358,39 +365,37 @@ class _Hero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // Quiet dark-ink statement card — no gradient, content-first.
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [scheme.primary, scheme.tertiary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
+        color: scheme.inverseSurface,
+        borderRadius: AppShapes.radiusXl,
       ),
       child: Row(
         children: [
-          const Icon(Icons.workspace_premium_rounded,
-              size: 36, color: Colors.white),
+          AppIcon('verified', size: 36, color: scheme.onInverseSurface),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isPremium ? 'You\'re Premium ✓' : 'NostrFeed Premium',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  isPremium ? 'You\'re Premium' : 'NostrFeed Premium',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: scheme.onInverseSurface,
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   isPremium
                       ? 'Verified name, paid relay, and lightning address are active.'
                       : 'Verified name, paid relay, and your lightning address — all in one.',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color:
+                            scheme.onInverseSurface.withValues(alpha: 0.72),
+                      ),
                 ),
               ],
             ),
@@ -402,14 +407,14 @@ class _Hero extends StatelessWidget {
 }
 
 class _FeatureCard extends StatelessWidget {
-  final IconData icon;
+  final String iconName;
   final Color iconColor;
   final String title;
   final String description;
   final Widget child;
 
   const _FeatureCard({
-    required this.icon,
+    required this.iconName,
     required this.iconColor,
     required this.title,
     required this.description,
@@ -419,10 +424,14 @@ class _FeatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: AppSpacing.paddingMd,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -432,18 +441,18 @@ class _FeatureCard extends StatelessWidget {
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: iconColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: AppShapes.radiusMd,
                   ),
-                  child: Icon(icon, size: 20, color: iconColor),
+                  child: AppIcon(iconName, size: 20, color: iconColor),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -451,11 +460,10 @@ class _FeatureCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               description,
-              style: TextStyle(
-                fontSize: 13,
-                color: scheme.onSurfaceVariant,
-                height: 1.45,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.45,
+                  ),
             ),
             const SizedBox(height: 12),
             child,
@@ -481,16 +489,15 @@ class _DomainChipRow extends StatelessWidget {
                   .colorScheme
                   .primaryContainer
                   .withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: AppShapes.radiusSm,
             ),
             child: Text(
               'you@$d',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'monospace',
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'monospace',
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
             ),
           ),
       ],
@@ -505,9 +512,12 @@ class _EntitlementsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      color: scheme.primaryContainer.withValues(alpha: 0.3),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -515,12 +525,11 @@ class _EntitlementsCard extends StatelessWidget {
           children: [
             Text(
               'YOUR PREMIUM',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.4,
-                color: scheme.primary,
-              ),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.4,
+                    color: scheme.primary,
+                  ),
             ),
             const SizedBox(height: 10),
             for (final name in entitlements.nip5Names)
@@ -552,17 +561,16 @@ class _CopyRow extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.w600,
+                  ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.copy_rounded, size: 16),
+            icon: const AppIcon('edit', size: 16),
             tooltip: 'Copy',
             visualDensity: VisualDensity.compact,
             onPressed: () {
@@ -580,42 +588,50 @@ class _IncludedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final items = [
-      (Icons.check_circle_outline_rounded, 'Verified ✓ next to your name everywhere'),
-      (Icons.check_circle_outline_rounded, 'Spam-free, low-latency paid relay'),
-      (Icons.check_circle_outline_rounded, 'Higher rate limits + priority delivery'),
-      (Icons.check_circle_outline_rounded, 'Zaps straight to your own address'),
-      (Icons.check_circle_outline_rounded, 'Media uploads up to 100MB'),
-      (Icons.check_circle_outline_rounded, 'Priority support from the team'),
+    const items = [
+      'Verified ✓ next to your name everywhere',
+      'Spam-free, low-latency paid relay',
+      'Higher rate limits + priority delivery',
+      'Zaps straight to your own address',
+      'Media uploads up to 100MB',
+      'Priority support from the team',
     ];
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: AppSpacing.paddingMd,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'ALSO INCLUDED',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.4,
-                color: scheme.primary,
-              ),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.4,
+                    color: scheme.primary,
+                  ),
             ),
             const SizedBox(height: 12),
-            for (final (icon, text) in items)
+            for (final text in items)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Row(
                   children: [
-                    Icon(icon, size: 18, color: Colors.green.shade600),
+                    const AppIcon('check',
+                        size: AppIconSize.md,
+                        color: AppStatusColors.success),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         text,
-                        style: const TextStyle(fontSize: 13, height: 1.35),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(height: 1.35),
                       ),
                     ),
                   ],

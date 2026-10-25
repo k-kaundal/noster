@@ -47,7 +47,7 @@ void main() {
     test('recordSent adds a pending message to the thread', () {
       final c = _makeContainer();
       addTearDown(c.dispose);
-      final store = c.read(dmStoreProvider);
+      final store = c.read(dmStoreProvider.notifier);
 
       store.recordSent(peerPubkey: _peer, plaintext: 'gm', eventId: 'ev1');
 
@@ -61,7 +61,7 @@ void main() {
     test('threadFor merges outbox with kind-4 events, newest first', () {
       final c = _makeContainer();
       addTearDown(c.dispose);
-      final store = c.read(dmStoreProvider);
+      final store = c.read(dmStoreProvider.notifier);
 
       final old = _kind4(id: 'e1', from: _peer, to: _me, createdAt: 500);
       store.recordSent(peerPubkey: _peer, plaintext: 'just sent', eventId: 'e2');
@@ -75,7 +75,7 @@ void main() {
     test('kind-4 from someone else is not in my thread with peer', () {
       final c = _makeContainer();
       addTearDown(c.dispose);
-      final store = c.read(dmStoreProvider);
+      final store = c.read(dmStoreProvider.notifier);
 
       final other = _kind4(id: 'e1', from: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', to: _me, createdAt: 500);
       expect(store.threadFor([other], _peer), isEmpty);
@@ -84,7 +84,7 @@ void main() {
     test('conversations includes outbox-only peers', () {
       final c = _makeContainer();
       addTearDown(c.dispose);
-      final store = c.read(dmStoreProvider);
+      final store = c.read(dmStoreProvider.notifier);
 
       store.recordSent(peerPubkey: _peer, plaintext: 'hi', eventId: 'e1');
       final convs = store.conversations(const []);
@@ -96,7 +96,7 @@ void main() {
     test('clearOutbox removes pending messages for that peer only', () {
       final c = _makeContainer();
       addTearDown(c.dispose);
-      final store = c.read(dmStoreProvider);
+      final store = c.read(dmStoreProvider.notifier);
 
       store.recordSent(peerPubkey: _peer, plaintext: 'a', eventId: 'e1');
       store.recordSent(peerPubkey: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', plaintext: 'b', eventId: 'e2');
@@ -109,7 +109,7 @@ void main() {
     test('recordSent no-ops when logged out', () {
       final c = ProviderContainer();
       addTearDown(c.dispose);
-      final store = c.read(dmStoreProvider);
+      final store = c.read(dmStoreProvider.notifier);
       store.recordSent(peerPubkey: _peer, plaintext: 'x', eventId: 'e1');
       expect(store.threadFor(const [], _peer), isEmpty);
     });
@@ -118,7 +118,7 @@ void main() {
       test('recordSent returns the local id; markStatus flips pending→sent', () {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
 
         final id =
             store.recordSent(peerPubkey: _peer, plaintext: 'gm', eventId: 'e1');
@@ -135,7 +135,7 @@ void main() {
       test('markStatus on unknown id is a safe no-op', () {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
         store.markStatus(_peer, 'nope', MessageStatus.sent);
         expect(store.threadFor(const [], _peer), isEmpty);
       });
@@ -143,7 +143,7 @@ void main() {
       test('removePending deletes a failed message', () {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
         final id =
             store.recordSent(peerPubkey: _peer, plaintext: 'x', eventId: 'e1');
         store.markStatus(_peer, id, MessageStatus.failed);
@@ -156,7 +156,7 @@ void main() {
       test('incoming kind-4 counts as unread until thread is read', () async {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
         await store.ready;
 
         final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -178,7 +178,7 @@ void main() {
       test('my own messages are never unread', () async {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
         await store.ready;
 
         final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -189,7 +189,7 @@ void main() {
       test('old messages before lastRead are not unread', () async {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
         await store.ready;
 
         await store.markThreadRead(_peer);
@@ -200,7 +200,7 @@ void main() {
       test('live-ingested kind-4 arrives with arrival timestamp and unread', () async {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
         await store.ready;
 
         // Simulate a message arriving via the live subscription AFTER the
@@ -218,7 +218,7 @@ void main() {
       test('marking read clamps live events — no re-notify on re-delivery', () async {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
         await store.ready;
 
         // A message arrives live → unread = 1.
@@ -240,7 +240,7 @@ void main() {
       test('live-ingested messages show arrival time, not backdated created_at', () async {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
         await store.ready;
 
         // NIP-17 backdates created_at up to 2 days — display must use arrival.
@@ -254,7 +254,7 @@ void main() {
       test('ingest ignores duplicate and wrong-kind events', () async {
         final c = _makeContainer();
         addTearDown(c.dispose);
-        final store = c.read(dmStoreProvider);
+        final store = c.read(dmStoreProvider.notifier);
         await store.ready;
 
         final live =

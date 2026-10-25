@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Rich card for a plain external link in a note (not an image or video).
 ///
@@ -57,7 +58,7 @@ class LinkPreviewCard extends StatelessWidget {
                           color: colorScheme.primary,
                         ),
                       )
-                    : Icon(Icons.link_rounded, color: colorScheme.primary),
+                    : AppIcon('link', color: colorScheme.primary),
               ),
               const SizedBox(width: 12),
               Expanded(

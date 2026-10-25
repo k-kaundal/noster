@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 
 /// Shared bottom-sheet helpers.
 ///
@@ -22,7 +23,9 @@ class AppSheet {
       isDismissible: isDismissible,
       enableDrag: enableDrag,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppShapes.xl),
+        ),
       ),
       builder: (_) => Padding(
         padding: EdgeInsets.only(

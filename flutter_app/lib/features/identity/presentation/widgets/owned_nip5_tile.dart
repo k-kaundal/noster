@@ -6,6 +6,7 @@ import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/pay_invoice_sheet.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
 import 'package:nostrfeed_mobile/features/identity/data/address_service.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// One owned NIP-05 name in a list — its own domain (from the address's
 /// `domainId`), copy action, and the action that fits its state:
@@ -219,7 +220,7 @@ class OwnedNip5Tile extends ConsumerWidget {
                     color: Colors.orange.shade700,
                   ),
                 IconButton(
-                  icon: const Icon(Icons.copy, size: 18),
+                  icon: const AppIcon('edit', size: 18),
                   tooltip: 'Copy identifier',
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: identifier));
@@ -228,7 +229,7 @@ class OwnedNip5Tile extends ConsumerWidget {
                 ),
                 if (auth.isLoggedIn && !auth.isReadOnly)
                   PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, size: 18),
+                    icon: const AppIcon('more', size: 18),
                     tooltip: 'More',
                     onSelected: (choice) {
                       if (choice == 'release-unpaid') {
@@ -244,7 +245,7 @@ class OwnedNip5Tile extends ConsumerWidget {
                         const PopupMenuItem(
                           value: 'release-unpaid',
                           child: ListTile(
-                            leading: Icon(Icons.lock_open_rounded),
+                            leading: AppIcon('key'),
                             title: Text('Release reservation'),
                             subtitle: Text('Free it for others'),
                             contentPadding: EdgeInsets.zero,
@@ -254,7 +255,7 @@ class OwnedNip5Tile extends ConsumerWidget {
                         const PopupMenuItem(
                           value: 'transfer',
                           child: ListTile(
-                            leading: Icon(Icons.swap_horiz_rounded),
+                            leading: AppIcon('repost'),
                             title: Text('Transfer to another user'),
                             contentPadding: EdgeInsets.zero,
                           ),
@@ -262,7 +263,7 @@ class OwnedNip5Tile extends ConsumerWidget {
                         const PopupMenuItem(
                           value: 'release-active',
                           child: ListTile(
-                            leading: Icon(Icons.delete_outline_rounded),
+                            leading: AppIcon('eye_off'),
                             title: Text('Delete'),
                             contentPadding: EdgeInsets.zero,
                           ),
@@ -294,7 +295,7 @@ class OwnedNip5Tile extends ConsumerWidget {
                       }
                     }
                   },
-                  icon: const Icon(Icons.publish, size: 18),
+                  icon: const AppIcon('share', size: 18),
                   label: const Text('Use this one for my ✓'),
                 ),
               ),
@@ -412,7 +413,7 @@ class PayForNameButtonState extends ConsumerState<PayForNameButton> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.bolt_rounded, size: 18),
+              : const AppIcon('zap', size: 18),
           label: Text(sats != null ? 'Pay ${_fmt(sats)} sats' : 'Pay for it'),
         ),
       ),

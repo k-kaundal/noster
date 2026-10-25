@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/features/premium/application/premium_providers.dart';
 import 'package:nostrfeed_mobile/features/premium/data/admission_service.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// The mark for paid relay admission, which is not a name tier.
 ///
@@ -31,7 +32,7 @@ class PaidRelayMark extends ConsumerWidget {
       message: 'Paid relay member — the paid relay accepts their writes.',
       child: Padding(
         padding: const EdgeInsets.only(left: 2),
-        child: Icon(Icons.shield_rounded, size: size, color: color),
+        child: AppIcon('verified', size: size, color: color),
       ),
     );
   }
@@ -60,7 +61,7 @@ class PaidRelayBadge extends ConsumerWidget {
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.shield_rounded, size: 12, color: color),
+            AppIcon('verified', size: 12, color: color),
             SizedBox(width: 4),
             Text(
               'Paid member',

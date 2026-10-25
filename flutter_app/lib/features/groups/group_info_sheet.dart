@@ -7,6 +7,7 @@ import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/groups/application/group_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Group info bottom sheet: about, members (with admin remove), admins,
 /// and leave group. Opened from the group chat header.
@@ -51,7 +52,7 @@ class GroupInfoSheet extends ConsumerWidget {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close_rounded),
+                icon: const AppIcon('plus'),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
@@ -108,7 +109,7 @@ class GroupInfoSheet extends ConsumerWidget {
           if (auth.isLoggedIn && !auth.isReadOnly)
             OutlinedButton.icon(
               onPressed: () => _leaveGroup(context, ref),
-              icon: Icon(Icons.logout_rounded, color: scheme.error),
+              icon: AppIcon('back', color: scheme.error),
               label: Text('Leave group',
                   style: TextStyle(color: scheme.error)),
               style: OutlinedButton.styleFrom(

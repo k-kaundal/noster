@@ -126,11 +126,19 @@ void main() {
       expect(spec.matchesAny(ev(id: 'e', kind: 1, createdAt: 600)), isFalse); // no tag
     });
 
-    test('authors + ids filters', () {
-      expect([NostrFilter(authors: ['alice'])].matchesAny(ev(id: 'a', pubkey: 'alice')), isTrue);
-      expect([NostrFilter(authors: ['alice'])].matchesAny(ev(id: 'a', pubkey: 'bob')), isFalse);
-      expect([NostrFilter(ids: ['a'])].matchesAny(ev(id: 'a')), isTrue);
-      expect([NostrFilter(ids: ['a'])].matchesAny(ev(id: 'b')), isFalse);
+    test('authors + ids filters (NIP-01: 64-hex values)', () {
+      final alice = 'a' * 64;
+      final bob = 'b' * 64;
+      expect(
+        [NostrFilter(authors: [alice])].matchesAny(ev(id: 'x', pubkey: alice)),
+        isTrue,
+      );
+      expect(
+        [NostrFilter(authors: [alice])].matchesAny(ev(id: 'x', pubkey: bob)),
+        isFalse,
+      );
+      expect([NostrFilter(ids: [alice])].matchesAny(ev(id: alice)), isTrue);
+      expect([NostrFilter(ids: [alice])].matchesAny(ev(id: bob)), isFalse);
     });
 
     test('OR semantics across the set', () {

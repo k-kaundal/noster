@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
@@ -13,6 +14,7 @@ import 'package:nostrfeed_mobile/features/memberships/presentation/widgets/membe
 import 'package:nostrfeed_mobile/features/memberships/presentation/widgets/tier_card.dart';
 import 'package:nostrfeed_mobile/features/memberships/presentation/widgets/tier_editor_sheet.dart';
 import 'package:nostrfeed_mobile/features/studio/domain/subscription.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Memberships — user-to-user subscriptions.
 ///
@@ -45,7 +47,7 @@ class MembershipsScreen extends ConsumerWidget {
       floatingActionButton: canSell
           ? FloatingActionButton.extended(
               onPressed: () => TierEditorSheet.show(context),
-              icon: const Icon(Icons.add_rounded),
+              icon: const AppIcon('plus'),
               label: const Text('New tier'),
             )
           : null,
@@ -57,28 +59,34 @@ class MembershipsScreen extends ConsumerWidget {
             AppSpacing.gapLg,
           ],
           if (canSell) ...[
-            Text(
-              'Your tiers',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
+            const _SectionLabel('Your tiers'),
             AppSpacing.gapSm,
             const _CreatorSection(),
             AppSpacing.gapLg,
           ],
-          Text(
-            'Your subscriptions',
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
+          const _SectionLabel('Your subscriptions'),
           AppSpacing.gapSm,
           const _SubscribingSection(),
         ],
       ),
+    );
+  }
+}
+
+/// Uppercase accent section label — the Refined header treatment.
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text.toUpperCase(),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+            color: Theme.of(context).colorScheme.primary,
+          ),
     );
   }
 }
@@ -88,9 +96,12 @@ class _PremiumGateCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Padding(
         padding: AppSpacing.paddingMd,
         child: Column(
@@ -98,7 +109,7 @@ class _PremiumGateCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.workspace_premium_rounded,
+                AppIcon('verified',
                     color: scheme.primary, size: 28),
                 AppSpacing.gapSm,
                 Expanded(
@@ -117,12 +128,15 @@ class _PremiumGateCard extends ConsumerWidget {
               'Creators sell subscriptions under a verified, paid name — that is '
               'what a subscriber is paying to support. Get a NIP-05 name to open '
               'your own tiers. Subscribing to someone else needs nothing but sats.',
-              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
             AppSpacing.gapMd,
             FilledButton.tonalIcon(
               onPressed: () => context.push('/premium'),
-              icon: const Icon(Icons.verified_rounded, size: 18),
+              icon: const AppIcon('verified', size: 18),
               label: const Text('Get Premium'),
             ),
           ],
@@ -204,19 +218,28 @@ class _SummaryChip extends StatelessWidget {
       child: Container(
         padding: AppSpacing.paddingSm,
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          color: scheme.surfaceContainerLowest,
+          borderRadius: AppShapes.radiusMd,
+          border: Border.all(color: scheme.outlineVariant),
         ),
         child: Column(
           children: [
             Text(
               value,
-              style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
             ),
             Text(
               label,
-              style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -241,16 +264,22 @@ class _TierBlock extends ConsumerWidget {
             Expanded(
               child: Text(
                 '${tier.title} · ${_format(tier.amount)} sats/${describeCadence(tier.cadence)}',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.edit_rounded, size: 20),
+              icon: const AppIcon('edit', size: 20),
               tooltip: 'Edit tier',
               onPressed: () => TierEditorSheet.show(context, existing: tier),
             ),
             IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, size: 20),
+              icon: const AppIcon('eye_off', size: 20),
               tooltip: 'Retire tier',
               onPressed: () => _confirmRetire(context, ref, tier),
             ),
@@ -261,9 +290,9 @@ class _TierBlock extends ConsumerWidget {
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
               'Nobody has paid this tier yet.',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
           )
         else
@@ -337,11 +366,11 @@ class _HeldMemberships extends ConsumerWidget {
     // queries to a sane number.
     final creators = follows.where((pk) => pk != me).take(40).toList();
     if (creators.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.only(bottom: 24),
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 24),
         child: Text(
           'Follow a creator and their support tiers show up here.',
-          style: TextStyle(fontSize: 13),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
       );
     }
@@ -390,7 +419,10 @@ class _CreatorTiersForSubscriber extends ConsumerWidget {
           padding: const EdgeInsets.only(top: 8, bottom: 4),
           child: Text(
             name,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
         ...cards,
@@ -411,7 +443,7 @@ class _LoadingList extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 12),
           child: SkeletonBox(
             height: 72,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: AppShapes.radiusLg,
           ),
         ),
       ),

@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/identity/application/address_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 // ── Free Address Section ──────────────────────────────────────────────
 
@@ -31,7 +33,7 @@ class FreeAddressSection extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.card_giftcard, color: colorScheme.primary),
+                AppIcon('gift', color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'Free Address',
@@ -62,13 +64,11 @@ class FreeAddressSection extends ConsumerWidget {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.copy, size: 18),
+                  icon: const AppIcon('edit', size: 18),
                   tooltip: 'Copy address',
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: fullAddress));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Address copied')),
-                    );
+                    AppToast.success(context, 'Address copied');
                   },
                 ),
               ],
@@ -84,16 +84,11 @@ class FreeAddressSection extends ConsumerWidget {
                           .read(lightningAddressProvider.notifier)
                           .claim(username: freeAddress);
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Free address claimed!')),
-                        );
+                        AppToast.success(context, 'Free address claimed!');
                       }
                     } catch (e) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('$e')),
-                        );
+                        AppToast.success(context, '$e');
                       }
                     }
                   },
@@ -104,8 +99,7 @@ class FreeAddressSection extends ConsumerWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Icon(Icons.check_circle,
-                      size: 16, color: Colors.green.shade600),
+                  AppIcon('check', size: 16, color: Colors.green.shade600),
                   const SizedBox(width: 4),
                   Text(
                     'Claimed',

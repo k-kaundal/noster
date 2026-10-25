@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/relay/local_first_query.dart';
 import 'package:nostrfeed_mobile/features/settings/application/relay_settings_providers.dart'
     show readRelayUrls, writeRelayUrls;
 import 'package:uuid/uuid.dart';
@@ -378,6 +379,10 @@ class RelayPool {
   RelayPool({List<String>? relays})
       : relayUrls = List.from(relays ?? Env.defaultRelays);
 
+  /// ADR-0007: when false, [query] is remote-only (pre-ADR behavior) — the
+  /// rollback switch for the local-first merged read path.
+  bool localFirstEnabled = true;
+
   List<RelayConnection> get connections => _relays.values.toList();
   List<String> get connectedUrls => _relays.entries
       .where((e) => e.value.isConnected)
@@ -428,7 +433,53 @@ class RelayPool {
   /// Query events with EOSE tracking — returns when all connected READ
   /// relays have sent EOSE or timeout, whichever comes first. A relay the
   /// user marked write-only is never asked for events.
+  ///
+  /// ADR-0007: **local-first merged.** The local store answers instantly
+  /// (offline-correct) and remote relays supplement in parallel; results
+  /// merge deduped by id, newest-first. Filters the local index can't
+  /// answer (uppercase NIP-22 `A`/`E` scopes, or `remoteOnly`) are served
+  /// remote-only for that query. Rollback: [localFirstEnabled] = false.
   Future<List<NostrEvent>> query(
+    List<NostrFilter> filters, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    if (!localFirstEnabled || !_hasLocalUnsupportedScope(filters)) {
+      return _queryRemote(filters, timeout: timeout);
+    }
+    return localFirstQuery(
+      filters,
+      store: EventStore.instance,
+      remoteQuery: (fs) => _queryRemote(fs, timeout: timeout),
+      // The merged answer must never be slower than the remote leg alone —
+      // local is instant, remote is the bound.
+      remoteWait: timeout,
+    );
+  }
+
+  /// True when ANY filter carries a scope the local single-letter tag index
+  /// can't answer: an uppercase NIP-22 `A`/`E` (a distinct wire scope the
+  /// store doesn't index) or an explicit `remoteOnly` marker. Such queries
+  /// go remote-only for correctness (a wrong local answer is worse than an
+  /// empty one).
+  bool _hasLocalUnsupportedScope(List<NostrFilter> filters) {
+    for (final f in filters) {
+      if (f.remoteOnly) return false;
+      final tags = f.tagFilters;
+      if (tags != null) {
+        for (final name in tags.keys) {
+          if (name.length == 1 && name.toUpperCase() == name &&
+              name.toLowerCase() != name) {
+            return false; // uppercase single-letter scope → remote-only
+          }
+        }
+      }
+    }
+    return true; // all scopes are locally answerable
+  }
+
+  /// The remote-only query path (pre-ADR-0007 behavior, and the remote leg
+  /// of the merged query).
+  Future<List<NostrEvent>> _queryRemote(
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 5),
   }) async {

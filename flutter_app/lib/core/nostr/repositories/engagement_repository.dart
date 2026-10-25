@@ -68,14 +68,17 @@ class EngagementRepository {
   ) async {
     if (eventIds.isEmpty) return {};
 
-    // Query all engagement events that reference any of the target events
+    // Query all engagement events that reference any of the target events.
+    // 5s, not 8s: engagement is a WEIGHT signal for ranking, not the data
+    // itself — a slow relay must not hold the explore/trending waterfall
+    // hostage. A partial map just ranks on slightly older counts.
     final events = await relayPool.query([
       NostrFilter(
         kinds: [1, 6, 7, 16, 9735],
         tagFilters: {'e': eventIds},
         limit: 1000,
       ),
-    ], timeout: const Duration(seconds: 8));
+    ], timeout: const Duration(seconds: 5));
 
     // Group by the event they reference
     final Map<String, List<NostrEvent>> byTarget = {};

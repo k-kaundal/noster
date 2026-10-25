@@ -4,12 +4,15 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
 import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/boost/application/boost_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 class TrendingScreen extends ConsumerStatefulWidget {
   const TrendingScreen({super.key});
@@ -135,22 +138,23 @@ class _TrendingPostCard extends StatelessWidget {
               color: rank != null && rank <= 3
                   ? scheme.primary.withValues(alpha: 0.15)
                   : scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: AppShapes.radiusSm,
             ),
             child: Center(
               child: rank != null
                   ? Text(
                       '$rank',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        color: rank <= 3
-                            ? scheme.primary
-                            : scheme.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: rank <= 3
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
                     )
-                  : const Icon(Icons.bolt_rounded,
-                      size: 14, color: Colors.amber),
+                  : const AppIcon('zap', size: 14, color: AppActionColors.zap),
             ),
           ),
         ),

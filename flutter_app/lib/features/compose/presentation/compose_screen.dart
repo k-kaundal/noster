@@ -6,9 +6,12 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/compose/data/upload_service.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/quote_card.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 class ComposeScreen extends ConsumerStatefulWidget {
   /// The event being quoted (NIP-18 quote post), or null for a plain note.
@@ -171,34 +174,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.check_circle_rounded,
-                    color: Colors.white, size: 20),
-                SizedBox(width: 12),
-                Text('Posted successfully!'),
-              ],
-            ),
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            backgroundColor: Colors.green,
-          ),
-        );
+        AppToast.success(context, 'Posted successfully!');
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to post: $e'),
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        AppToast.error(context, 'Failed to post: $e');
         setState(() => _isPosting = false);
       }
     }
@@ -247,12 +228,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isUploading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload failed: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppToast.error(context, 'Upload failed: $e');
       }
     }
   }
@@ -293,10 +269,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               : _mode == _ComposeMode.poll
                   ? 'New poll'
                   : 'New Post',
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.close_rounded),
+          icon: const AppIcon('plus'),
           onPressed: () {
             HapticFeedback.lightImpact();
             context.pop();
@@ -310,18 +288,19 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: AppShapes.radiusXl,
                 ),
               ),
               child: _isPosting
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                          strokeWidth: 2, color: colorScheme.onPrimary),
                     )
-                  : const Text('Post',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  : Text('Post',
+                      style: theme.textTheme.labelLarge
+                          ?.copyWith(fontWeight: FontWeight.w600)),
             ),
           ),
         ],
@@ -335,7 +314,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 auth.isReadOnly
                     ? 'You are in read-only mode. Log in with a key to post.'
                     : 'You must be logged in to post.',
-                style: TextStyle(color: colorScheme.onErrorContainer),
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: colorScheme.onErrorContainer),
               ),
               actions: [
                 TextButton(
@@ -353,12 +333,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 segments: const [
                   ButtonSegment(
                     value: _ComposeMode.note,
-                    icon: Icon(Icons.edit_note_rounded),
+                    icon: AppIcon('edit'),
                     label: Text('Post'),
                   ),
                   ButtonSegment(
                     value: _ComposeMode.poll,
-                    icon: Icon(Icons.poll_rounded),
+                    icon: AppIcon('chart'),
                     label: Text('Poll'),
                   ),
                 ],
@@ -383,16 +363,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                             ? NetworkImage(auth.profile!.picture!)
                             : null,
                         child: auth.profile?.picture == null
-                            ? Icon(Icons.person_rounded,
-                                color: colorScheme.onPrimaryContainer)
+                            ? AppIcon('users', color: colorScheme.onPrimaryContainer)
                             : null,
                       ),
                       const SizedBox(width: 12),
                       Text(
                         auth.profile?.displayNameOrName ?? 'Anonymous',
-                        style: const TextStyle(
+                        style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w600,
-                          fontSize: 15,
                         ),
                       ),
                     ],
@@ -406,17 +384,16 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                     maxLines: null,
                     minLines: _mode == _ComposeMode.poll ? 2 : 5,
                     textAlignVertical: TextAlignVertical.top,
-                    style: const TextStyle(fontSize: 17, height: 1.5),
+                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
                     decoration: InputDecoration(
                       hintText: _mode == _ComposeMode.poll
                           ? 'Ask a question…'
                           : _isQuote
                               ? 'Add your thoughts…'
                               : "What's on your mind?",
-                      hintStyle: TextStyle(
+                      hintStyle: theme.textTheme.bodyLarge?.copyWith(
                         color:
                             colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                        fontSize: 17,
                       ),
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.zero,
@@ -445,7 +422,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                         itemBuilder: (context, i) => Stack(
                           children: [
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: AppShapes.radiusMd,
                               child: Image.network(
                                 _imageUrls[i].url,
                                 width: 100,
@@ -462,12 +439,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                                   padding: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(
                                     color:
-                                        Colors.black.withValues(alpha: 0.6),
+                                        Colors.black.withValues(alpha: 0.6), // token-guard: allow — scrim over photo
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(
                                     Icons.close_rounded,
-                                    color: Colors.white,
+                                    color: Colors.white, // token-guard: allow — on dark scrim
                                     size: 14,
                                   ),
                                 ),
@@ -508,10 +485,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                       onPressed: () => _appendHashtag(tag),
                       backgroundColor:
                           colorScheme.primaryContainer.withValues(alpha: 0.5),
-                      labelStyle: TextStyle(
+                      labelStyle: theme.textTheme.labelLarge?.copyWith(
                         color: colorScheme.primary,
                         fontWeight: FontWeight.w600,
-                        fontSize: 13,
                       ),
                     ),
                   );
@@ -537,9 +513,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   children: [
                     if (_mode == _ComposeMode.note)
                       IconButton(
-                        icon: Icon(
-                          Icons.image_outlined,
-                          color: _isUploading
+                        icon: AppIcon('image', color: _isUploading
                               ? colorScheme.onSurfaceVariant
                                   .withValues(alpha: 0.3)
                               : colorScheme.primary,
@@ -557,8 +531,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                       const SizedBox(width: 4),
                       Text(
                         'Uploading…',
-                        style: TextStyle(
-                          fontSize: 12,
+                        style: theme.textTheme.labelSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -572,7 +545,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                         color: isOverLimit
                             ? colorScheme.errorContainer
                             : colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppShapes.radiusMd,
                       ),
                       child: Text(
                         '$remaining',
@@ -612,11 +585,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                   hintText: 'Option ${i + 1}',
                   isDense: true,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: AppShapes.radiusMd,
                   ),
                   suffixIcon: _pollOptions.length > 2
                       ? IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 18),
+                          icon: const AppIcon('plus', size: 18),
                           onPressed: () =>
                               setState(() => _pollOptions.removeAt(i)),
                         )
@@ -628,7 +601,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
             TextButton.icon(
               onPressed: () =>
                   setState(() => _pollOptions.add(TextEditingController())),
-              icon: const Icon(Icons.add_rounded, size: 18),
+              icon: const AppIcon('plus', size: 18),
               label: const Text('Add option'),
             ),
           Row(
@@ -637,8 +610,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 child: SwitchListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Allow multiple choices',
-                      style: TextStyle(fontSize: 14)),
+                  title: Text('Allow multiple choices',
+                      style: Theme.of(context).textTheme.bodyMedium),
                   value: _pollMultiple,
                   onChanged: (v) => setState(() => _pollMultiple = v),
                 ),

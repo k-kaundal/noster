@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
@@ -10,6 +11,7 @@ import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/lists/application/list_providers.dart';
 import 'package:nostrfeed_mobile/features/lists/domain/nostr_list.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Lists home: the user's NIP-51 follow sets with create + manage.
 class ListsScreen extends ConsumerWidget {
@@ -33,7 +35,7 @@ class ListsScreen extends ConsumerWidget {
           action: auth.isLoggedIn
               ? FilledButton.icon(
                   onPressed: () => _showCreateSheet(context, ref),
-                  icon: const Icon(Icons.playlist_add),
+                  icon: const AppIcon('plus'),
                   label: const Text('Create your first list'),
                 )
               : null,
@@ -45,7 +47,7 @@ class ListsScreen extends ConsumerWidget {
       floatingActionButton: auth.isLoggedIn
           ? FloatingActionButton.extended(
               onPressed: () => _showCreateSheet(context, ref),
-              icon: const Icon(Icons.playlist_add),
+              icon: const AppIcon('plus'),
               label: const Text('New List'),
             )
           : null,
@@ -120,7 +122,7 @@ class ListsScreen extends ConsumerWidget {
                     }
                   }
                 },
-                icon: const Icon(Icons.check_rounded),
+                icon: const AppIcon('check'),
                 label: const Text('Create'),
               ),
             ),
@@ -142,7 +144,10 @@ class _ListCard extends ConsumerWidget {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(
+        borderRadius: AppShapes.radiusLg,
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
       child: InkWell(
         onTap: () => context.push('/lists/detail', extra: list),
         child: Padding(
@@ -157,10 +162,10 @@ class _ListCard extends ConsumerWidget {
                     ? Container(
                         decoration: BoxDecoration(
                           color: scheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: AppShapes.radiusMd,
                         ),
-                        child: Icon(
-                          Icons.list_rounded,
+                        child: AppIcon(
+                          'users',
                           color: scheme.onPrimaryContainer,
                         ),
                       )
@@ -173,20 +178,20 @@ class _ListCard extends ConsumerWidget {
                   children: [
                     Text(
                       list.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '${list.members.length} member${list.members.length == 1 ? '' : 's'}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: scheme.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                     if (list.description.isNotEmpty) ...[
                       const SizedBox(height: 3),
@@ -194,17 +199,17 @@ class _ListCard extends ConsumerWidget {
                         list.description,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right_rounded,
+              AppIcon(
+                'chevron_r',
                 color: scheme.onSurfaceVariant,
               ),
             ],
@@ -256,7 +261,7 @@ class _MemberAvatar extends ConsumerWidget {
           (profile?.displayNameOrName ?? pubkey).isNotEmpty
               ? firstGrapheme(profile?.displayNameOrName ?? pubkey)
               : '?',
-          style: const TextStyle(fontSize: 11),
+          style: Theme.of(context).textTheme.labelSmall,
         ),
       ),
     );

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 
 /// Centralized, professional toast notifications.
 ///
@@ -118,7 +119,7 @@ class AppToast {
           closeIconColor: fg.withValues(alpha: 0.8),
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: AppShapes.radiusLg,
           ),
           backgroundColor: bg,
           duration: Duration(
@@ -131,10 +132,9 @@ class AppToast {
               Expanded(
                 child: Text(
                   message,
-                  style: TextStyle(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: fg,
                     fontWeight: FontWeight.w500,
-                    fontSize: 14,
                     height: 1.3,
                   ),
                 ),
@@ -214,7 +214,7 @@ class _OverlayToastCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final card = Material(
       elevation: 8,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: AppShapes.radiusLg,
       color: background,
       child: Dismissible(
         key: const Key('app_toast_overlay'),
@@ -229,10 +229,9 @@ class _OverlayToastCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   message,
-                  style: TextStyle(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: foreground,
                     fontWeight: FontWeight.w500,
-                    fontSize: 14,
                     height: 1.3,
                   ),
                 ),

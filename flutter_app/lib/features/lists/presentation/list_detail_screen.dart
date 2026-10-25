@@ -10,6 +10,7 @@ import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 import 'package:nostrfeed_mobile/features/lists/application/list_providers.dart';
 import 'package:nostrfeed_mobile/features/lists/domain/nostr_list.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// List detail: members management + "view as feed".
 class ListDetailScreen extends ConsumerStatefulWidget {
@@ -139,12 +140,12 @@ class _ListDetailScreenState extends ConsumerState<ListDetailScreen>
         title: Text(_list.title),
         actions: [
           IconButton(
-            icon: const Icon(Icons.person_add_alt_rounded),
+            icon: const AppIcon('plus'),
             tooltip: 'Add member',
             onPressed: _addMember,
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline_rounded),
+            icon: const AppIcon('eye_off'),
             tooltip: 'Delete list',
             onPressed: _deleteList,
           ),
@@ -173,7 +174,7 @@ class _ListDetailScreenState extends ConsumerState<ListDetailScreen>
               action: _list.members.isEmpty
                   ? FilledButton.icon(
                       onPressed: _addMember,
-                      icon: const Icon(Icons.person_add_alt_rounded),
+                      icon: const AppIcon('plus'),
                       label: const Text('Add members'),
                     )
                   : null,
@@ -189,7 +190,7 @@ class _ListDetailScreenState extends ConsumerState<ListDetailScreen>
                   subtitle: 'Add people to build this list.',
                   action: FilledButton.icon(
                     onPressed: _addMember,
-                    icon: const Icon(Icons.person_add_alt_rounded),
+                    icon: const AppIcon('plus'),
                     label: const Text('Add members'),
                   ),
                 )
@@ -233,17 +234,19 @@ class _MemberTile extends ConsumerWidget {
         name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w600),
+        style: Theme.of(context)
+            .textTheme
+            .titleSmall
+            ?.copyWith(fontWeight: FontWeight.w600),
       ),
       subtitle: profile?.nip05 != null
           ? Text(
               profile!.nip05!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
             )
           : null,
       trailing: IconButton(

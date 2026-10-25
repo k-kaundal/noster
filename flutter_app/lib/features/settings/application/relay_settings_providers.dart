@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -93,14 +94,22 @@ class RelaySettingsNotifier extends Notifier<List<ManagedRelay>> {
     } catch (_) {}
   }
 
-  Future<void> _save() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _kRelaysKey,
-        jsonEncode(state.map((r) => r.toJson()).toList()),
-      );
-    } catch (_) {}
+  /// Disk write, DEBOUNCED: `_apply` fires on every toggle (setRead/setWrite/
+  /// add/remove), and each used to JSON-encode the entire relay list
+  /// synchronously — 10 toggles was 10 full writes. One write per burst.
+  Timer? _saveTimer;
+
+  void _save() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          _kRelaysKey,
+          jsonEncode(state.map((r) => r.toJson()).toList()),
+        );
+      } catch (_) {}
+    });
   }
 
   void _publishStatus() {
@@ -115,7 +124,7 @@ class RelaySettingsNotifier extends Notifier<List<ManagedRelay>> {
     writeRelayUrls
       ..clear()
       ..addAll(state.where((r) => r.write).map((r) => r.url));
-    await _save();
+    _save(); // debounced — not awaited
     _publishStatus();
   }
 

@@ -32,7 +32,7 @@ void main() {
   setUp(() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
-    center = container.read(notificationCenterProvider);
+    center = container.read(notificationCenterProvider.notifier);
   });
 
   group('isNotificationForMe — the "I followed you" bug', () {

@@ -13,10 +13,12 @@ import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/utils/encrypted_content.dart';
 import 'package:nostrfeed_mobile/core/utils/media.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/ecash_token_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/link_preview_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/quote_card.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/video_card.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -102,9 +104,16 @@ class NoteContent extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
+    // Refined reading type: 13.5px post body with a 1.5 line-height — dense
+    // enough to scan, comfortable for long reading sessions. (The M3 ramp's
+    // bodyMedium stays 14 for sheets/cards; this is the feed-only style.)
     final defaultStyle =
         textStyle ??
-        Theme.of(context).textTheme.bodyMedium!.copyWith(height: 1.45);
+        Theme.of(context).textTheme.bodyMedium!.copyWith(
+              fontSize: 13.5,
+              height: 1.5,
+              letterSpacing: -0.05,
+            );
 
     final render = parsed.render;
     final imeta = parsed.imeta;
@@ -1164,12 +1173,7 @@ class _CodeBlock extends StatelessWidget {
                 InkWell(
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: code));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Code copied to clipboard'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
+                    AppToast.success(context, 'Code copied to clipboard');
                   },
                   child: Icon(
                     Icons.copy,
@@ -1567,10 +1571,7 @@ class _NetworkImageTileState extends State<_NetworkImageTile> {
           borderRadius: BorderRadius.circular(12),
         ),
         child: Center(
-          child: Icon(
-            Icons.image_outlined,
-            size: 40,
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          child: AppIcon('image', size: 40, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
         ),
       ),

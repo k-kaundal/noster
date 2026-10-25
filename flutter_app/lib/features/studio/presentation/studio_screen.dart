@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
@@ -13,6 +15,7 @@ import 'package:nostrfeed_mobile/features/studio/application/studio_providers.da
 import 'package:nostrfeed_mobile/features/studio/domain/subscription.dart';
 import 'package:nostrfeed_mobile/features/studio/presentation/widgets/zap_goal_card.dart';
 import 'package:nostrfeed_mobile/features/studio/presentation/widgets/zap_goal_editor.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Creator Studio — what you earned, and the tools to earn it.
 ///
@@ -83,7 +86,7 @@ class _StudioGate extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.dashboard_rounded, size: 64, color: scheme.primary),
+            AppIcon('chart', size: 64, color: scheme.primary),
             AppSpacing.gapMd,
             Text(
               'Studio is a Premium feature',
@@ -98,18 +101,39 @@ class _StudioGate extends StatelessWidget {
               'Creators sell subscriptions and run zap goals under a verified, '
               'paid name — that is what supporters are paying to reach. Get a '
               'NIP-05 name to open your Studio.',
-              style: TextStyle(color: scheme.onSurfaceVariant, height: 1.4),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant, height: 1.4),
               textAlign: TextAlign.center,
             ),
             AppSpacing.gapLg,
             FilledButton.icon(
               onPressed: () => context.push('/premium'),
-              icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+              icon: const AppIcon('verified', size: 18),
               label: const Text('Get Premium'),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Uppercase accent section label — the Refined header treatment.
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text.toUpperCase(),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+            color: Theme.of(context).colorScheme.primary,
+          ),
     );
   }
 }
@@ -136,15 +160,7 @@ class _EarningsSectionState extends ConsumerState<_EarningsSection> {
       children: [
         Row(
           children: [
-            Expanded(
-              child: Text(
-                'Earnings',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-            ),
+            const Expanded(child: _SectionLabel('Earnings')),
             SegmentedButton<int>(
               segments: _windows
                   .map((d) => ButtonSegment(value: d, label: Text('${d}d')))
@@ -193,10 +209,12 @@ class _EarningsSectionState extends ConsumerState<_EarningsSection> {
                 Text(
                   '${data.refused} receipt${data.refused == 1 ? '' : 's'} named you and '
                   'failed a NIP-57 check, so not counted.',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
               ],
             ],
@@ -220,8 +238,9 @@ class _Stat extends StatelessWidget {
       child: Container(
         padding: AppSpacing.paddingSm,
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          color: scheme.surfaceContainerLowest,
+          borderRadius: AppShapes.radiusMd,
+          border: Border.all(color: scheme.outlineVariant),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -230,18 +249,30 @@ class _Stat extends StatelessWidget {
               value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
             ),
             Text(
               label,
-              style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
             if (delta != null)
               Text(
                 delta!,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 10, color: scheme.primary),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: scheme.primary),
               ),
           ],
         ),
@@ -260,9 +291,12 @@ class _TrendCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final max = daily.fold<int>(0, (m, d) => d.sats > m ? d.sats : m);
 
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusMd,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Padding(
         padding: AppSpacing.paddingMd,
         child: SizedBox(
@@ -271,8 +305,10 @@ class _TrendCard extends StatelessWidget {
               ? Center(
                   child: Text(
                     'No zaps in this period.',
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                 )
               : Row(
@@ -291,10 +327,9 @@ class _TrendCard extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: day.sats > 0
                                     ? scheme.primary
-                                        .withValues(alpha: 0.75)
                                     : scheme.surfaceContainerHigh,
                                 borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(2)),
+                                    top: Radius.circular(AppShapes.xs)),
                               ),
                             ),
                           ),
@@ -322,18 +357,10 @@ class _GoalsSection extends ConsumerWidget {
       children: [
         Row(
           children: [
-            Expanded(
-              child: Text(
-                'Zap goals',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-            ),
+            const Expanded(child: _SectionLabel('Zap goals')),
             TextButton.icon(
               onPressed: () => ZapGoalEditorSheet.show(context),
-              icon: const Icon(Icons.add_rounded, size: 18),
+              icon: const AppIcon('plus', size: 18),
               label: const Text('New goal'),
             ),
           ],
@@ -381,18 +408,10 @@ class _MembershipsSection extends ConsumerWidget {
       children: [
         Row(
           children: [
-            Expanded(
-              child: Text(
-                'Memberships',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-            ),
+            const Expanded(child: _SectionLabel('Memberships')),
             TextButton.icon(
               onPressed: () => TierEditorSheet.show(context),
-              icon: const Icon(Icons.add_rounded, size: 18),
+              icon: const AppIcon('plus', size: 18),
               label: const Text('New tier'),
             ),
             TextButton(
@@ -463,8 +482,9 @@ class _StudioTierRow extends StatelessWidget {
     return Container(
       padding: AppSpacing.paddingSm,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusMd,
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(
         children: [
@@ -476,20 +496,32 @@ class _StudioTierRow extends StatelessWidget {
                   tier.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 Text(
                   '${_format(tier.amount)} sats/${describeCadence(tier.cadence)}'
                   ' · ${standing.active.length} active',
-                  style: TextStyle(
-                      fontSize: 12, color: scheme.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
               ],
             ),
           ),
           Text(
             '${_format(standing.lifetimeSats)} sats',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppActionColors.zapFor(scheme.brightness),
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
           ),
         ],
       ),
@@ -504,14 +536,20 @@ class _HintCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusMd,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Padding(
         padding: AppSpacing.paddingMd,
         child: Text(
           text,
-          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: scheme.onSurfaceVariant),
         ),
       ),
     );

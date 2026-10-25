@@ -9,7 +9,12 @@ import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/utils/markdown.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_badge.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/async_feed_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
@@ -33,7 +38,7 @@ class ArticlesScreen extends ConsumerWidget {
         title: const Text('Articles'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search),
+            icon: const AppIcon('search'),
             onPressed: () => context.push('/search'),
             tooltip: 'Search articles',
           ),
@@ -53,7 +58,7 @@ class ArticlesScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEditor(context, ref),
-        icon: const Icon(Icons.edit_note),
+        icon: const AppIcon('edit'),
         label: const Text('Write'),
       ),
     );
@@ -106,35 +111,77 @@ class _ArticleCard extends ConsumerWidget {
       (sum, r) => sum + _zapAmountSats(r),
     );
 
-    return Card(
+    return Container(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: InkWell(
         onTap: () => _openArticle(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (image != null)
-              CachedNetworkImage(
-                httpHeaders: kImageHttpHeaders,
-                imageUrl: image,
-                height: 160,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                placeholder: (_, _) => Container(
-                  height: 160,
-                  color: scheme.surfaceContainerHighest,
-                ),
-                errorWidget: (_, _, _) => Container(
-                  height: 160,
-                  color: scheme.surfaceContainerHighest,
-                  child: const Center(
-                    child: Icon(Icons.article_outlined, size: 40),
+              Stack(
+                children: [
+                  CachedNetworkImage(
+                    httpHeaders: kImageHttpHeaders,
+                    imageUrl: image,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => Container(
+                      height: 160,
+                      color: scheme.surfaceContainerHigh,
+                    ),
+                    errorWidget: (_, _, _) => Container(
+                      height: 160,
+                      color: scheme.surfaceContainerHigh,
+                      child: const Center(
+                        child: AppIcon('article', size: AppIconSize.xl),
+                      ),
+                    ),
                   ),
-                ),
+                  // Read-time overlay on cover
+                  Positioned(
+                    bottom: AppSpacing.xs,
+                    right: AppSpacing.xs,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                        vertical: AppSpacing.xxs,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerLowest
+                            .withValues(alpha: 0.9),
+                        borderRadius: AppShapes.radiusSm,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppIcon(
+                            'clock',
+                            size: AppIconSize.xs,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                          Text(
+                            '$readTime min read',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: AppSpacing.paddingMd,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -145,41 +192,49 @@ class _ArticleCard extends ConsumerWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpacing.xxs + 2),
                   Text(
                     summary,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant,
-                      height: 1.4,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          height: 1.4,
+                        ),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.sm),
+                  // Hairline separator
+                  Divider(
+                    height: 1,
+                    color: scheme.outlineVariant,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
                   Row(
                     children: [
                       profileAsync.when(
                         data: (profile) => SafeAvatar(
                           imageUrl: profile?.picture,
                           radius: 12,
-                          fallback: const Icon(Icons.person, size: 12),
+                          fallback: const AppIcon('users', size: AppIconSize.xs),
                         ),
                         loading: () => const CircleAvatar(radius: 12),
                         error: (_, _) => const CircleAvatar(
                           radius: 12,
-                          child: Icon(Icons.person, size: 12),
+                          child: AppIcon('users', size: AppIconSize.xs),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppSpacing.xs),
                       Expanded(
                         child: Text(
                           profileAsync.value?.displayNameOrName ??
                               '${event.pubkey.substring(0, 8)}…',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(fontWeight: FontWeight.w500),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -187,59 +242,69 @@ class _ArticleCard extends ConsumerWidget {
                       // Zap button + count
                       InkWell(
                         onTap: () => _handleZap(context, ref),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppShapes.radiusMd,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
+                            horizontal: AppSpacing.xs - 2,
                             vertical: 2,
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.bolt,
-                                size: 16,
-                                color: Colors.amber.shade700,
+                              AppIcon(
+                                'zap',
+                                size: AppIconSize.sm,
+                                color: AppActionColors.zapFor(
+                                    scheme.brightness),
                               ),
                               const SizedBox(width: 2),
                               if (zapCount > 0)
                                 Text(
                                   '$zapCount',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.amber.shade700,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelLarge
+                                      ?.copyWith(
+                                        color: AppActionColors.zapFor(
+                                            scheme.brightness),
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
                             ],
                           ),
                         ),
                       ),
                       if (zapSats > 0) ...[
-                        const SizedBox(width: 4),
+                        const SizedBox(width: AppSpacing.xxs),
                         Text(
                           '${_formatSats(zapSats)} sats',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.amber.shade700,
-                            fontWeight: FontWeight.w500,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                color: AppActionColors.zapFor(
+                                    scheme.brightness),
+                                fontWeight: FontWeight.w500,
+                              ),
                         ),
                       ],
-                      const SizedBox(width: 10),
-                      Icon(
-                        Icons.schedule,
-                        size: 13,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$readTime min read',
-                        style: TextStyle(
-                          fontSize: 12,
+                      // Read time (when no cover image)
+                      if (image == null) ...[
+                        const SizedBox(width: AppSpacing.sm - 2),
+                        AppIcon(
+                          'clock',
+                          size: AppIconSize.xs,
                           color: scheme.onSurfaceVariant,
                         ),
-                      ),
+                        const SizedBox(width: AppSpacing.xxs),
+                        Text(
+                          '$readTime min read',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -322,21 +387,18 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
         actions: [
           // Zap button in app bar
           IconButton(
-            icon: Badge(
-              isLabelVisible: zapCount > 0,
-              label: Text(
-                zapCount > 999 ? '999+' : '$zapCount',
-                style: const TextStyle(fontSize: 9),
-              ),
-              backgroundColor: Colors.amber.shade700,
-              textColor: Colors.white,
-              child: Icon(Icons.bolt, color: Colors.amber.shade700),
+            icon: AppBadge.count(
+              count: zapCount,
+              max: 999,
+              color: AppActionColors.zap,
+              textColor: Colors.white, // token-guard: allow — on zap-orange badge
+              child: const AppIcon('zap', color: AppActionColors.zap),
             ),
             tooltip: 'Zap this article',
             onPressed: () => _handleZap(),
           ),
           IconButton(
-            icon: const Icon(Icons.share_outlined),
+            icon: const AppIcon('share'),
             tooltip: 'Share',
             onPressed: _handleShare,
           ),
@@ -362,12 +424,12 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
                   data: (profile) => SafeAvatar(
                     imageUrl: profile?.picture,
                     radius: 16,
-                    fallback: const Icon(Icons.person, size: 16),
+                    fallback: const AppIcon('users', size: 16),
                   ),
                   loading: () => const CircleAvatar(radius: 16),
                   error: (_, _) => const CircleAvatar(
                     radius: 16,
-                    child: Icon(Icons.person, size: 16),
+                    child: AppIcon('users', size: 16),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -378,7 +440,10 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
                       Text(
                         profileAsync.value?.displayNameOrName ??
                             '${event.pubkey.substring(0, 8)}…',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -388,10 +453,10 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
                             event.createdAt * 1000,
                           ),
                         ),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -402,10 +467,12 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
 
             // Engagement & action bar — like, comment, repost, zap, share
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xs, vertical: AppSpacing.xxs),
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(12),
+                color: scheme.surfaceContainerLowest,
+                borderRadius: AppShapes.radiusMd,
+                border: Border.all(color: scheme.outlineVariant),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -416,38 +483,38 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
                       children: [
                         // Like
                         _EngagementChip(
-                          icon: Icons.favorite_border,
+                          iconName: 'heart',
                           count: engagement?.reactions ?? 0,
-                          color: Colors.pink.shade400,
+                          color: AppActionColors.like(scheme.brightness),
                           onTap: auth.isLoggedIn && !auth.isReadOnly
                               ? _handleLike
                               : null,
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: AppSpacing.xxs),
                         // Comments
                         _EngagementChip(
-                          icon: Icons.chat_bubble_outline,
+                          iconName: 'comment',
                           count: commentCount,
                           color: scheme.primary,
                           onTap: _scrollToComments,
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: AppSpacing.xxs),
                         // Repost
                         _EngagementChip(
-                          icon: Icons.repeat,
+                          iconName: 'repost',
                           count: engagement?.reposts ?? 0,
-                          color: Colors.green.shade600,
+                          color: AppActionColors.repost(scheme.brightness),
                           onTap: auth.isLoggedIn && !auth.isReadOnly
                               ? _handleRepost
                               : null,
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: AppSpacing.xxs),
                         // Zap
                         _EngagementChip(
-                          icon: Icons.bolt,
+                          iconName: 'zap',
                           count: zapCount,
                           satsLabel: zapSats > 0 ? _formatSats(zapSats) : null,
-                          color: Colors.amber.shade700,
+                          color: AppActionColors.zapFor(scheme.brightness),
                           onTap: _handleZap,
                         ),
                       ],
@@ -455,8 +522,9 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
                   ),
                   // Right side: share
                   IconButton(
-                    icon: Icon(Icons.share_outlined,
-                        size: 20, color: scheme.onSurfaceVariant),
+                    icon: AppIcon('share',
+                        size: AppIconSize.lg,
+                        color: scheme.onSurfaceVariant),
                     onPressed: _handleShare,
                     tooltip: 'Share',
                     visualDensity: VisualDensity.compact,
@@ -469,7 +537,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
             // Hero image
             if (image != null)
               ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppShapes.radiusMd,
                 child: CachedNetworkImage(
                   httpHeaders: kImageHttpHeaders,
                   imageUrl: image,
@@ -487,72 +555,70 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
               shrinkWrap: true,
               softLineBreak: true,
               styleSheet: MarkdownStyleSheet(
-                p: TextStyle(
-                  fontSize: 16,
-                  height: 1.7,
-                  color: scheme.onSurface,
-                ),
-                h1: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: scheme.onSurface,
-                  height: 1.3,
-                ),
-                h2: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: scheme.onSurface,
-                  height: 1.3,
-                ),
-                h3: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurface,
-                  height: 1.3,
-                ),
-                h4: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurface,
-                ),
-                blockquote: TextStyle(
-                  fontStyle: FontStyle.italic,
-                  color: scheme.onSurfaceVariant,
-                  fontSize: 15,
-                ),
+                p: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      height: 1.7,
+                      color: scheme.onSurface,
+                    ),
+                h1: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: scheme.onSurface,
+                    ),
+                h2: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: scheme.onSurface,
+                    ),
+                h3: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
+                h4: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
+                blockquote: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color: scheme.onSurfaceVariant,
+                    ),
                 blockquoteDecoration: BoxDecoration(
                   border: Border(
                     left: BorderSide(color: scheme.primary, width: 3),
                   ),
                 ),
-                code: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                  backgroundColor: scheme.surfaceContainerHighest,
-                  color: scheme.onSurface,
-                ),
+                code: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                      backgroundColor: scheme.surfaceContainerHighest,
+                      color: scheme.onSurface,
+                    ),
                 codeblockDecoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: AppShapes.radiusSm,
                   border: Border.all(
                     color: scheme.outline.withValues(alpha: 0.2),
                   ),
                 ),
-                a: TextStyle(
-                  color: scheme.primary,
-                  decoration: TextDecoration.underline,
-                ),
-                listBullet: TextStyle(color: scheme.onSurface, fontSize: 16),
-                img: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+                a: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: scheme.primary,
+                      decoration: TextDecoration.underline,
+                    ),
+                listBullet: Theme.of(context)
+                    .textTheme
+                    .bodyLarge
+                    ?.copyWith(color: scheme.onSurface),
+                img: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
                 // Tables: fixed column width so wide tables scroll
                 // horizontally instead of squishing columns into nothing.
                 // Without this a 4+ column table on a phone is unreadable.
-                tableHead: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: scheme.onSurface,
-                ),
-                tableBody: TextStyle(fontSize: 14, color: scheme.onSurface),
+                tableHead: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
+                tableBody: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: scheme.onSurface),
                 tableHeadAlign: TextAlign.left,
                 tableColumnWidth: const IntrinsicColumnWidth(),
                 tableScrollbarThumbVisibility: true,
@@ -566,7 +632,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
                 tableBorder: TableBorder.all(
                   color: scheme.outlineVariant,
                   width: 1,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: AppShapes.radiusSm,
                 ),
               ),
               onTapLink: (text, href, title) {
@@ -578,7 +644,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppShapes.radiusSm,
                     child: CachedNetworkImage(
                       httpHeaders: kImageHttpHeaders,
                       imageUrl: config.uri.toString(),
@@ -592,7 +658,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
                         height: 120,
                         color: scheme.surfaceContainerHighest,
                         child: const Center(
-                          child: Icon(Icons.broken_image_outlined),
+                          child: AppIcon('image'),
                         ),
                       ),
                     ),
@@ -640,13 +706,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
       ref.invalidate(addressableEngagementProvider(_coordinate));
     });
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Liked'),
-          duration: Duration(seconds: 1),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppToast.success(context, 'Liked');
     }
   }
 
@@ -659,13 +719,7 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
       ref.invalidate(addressableEngagementProvider(_coordinate));
     });
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Reposted to your feed'),
-          duration: Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppToast.success(context, 'Reposted to your feed');
     }
   }
 
@@ -731,14 +785,14 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
 // ─── Compact engagement chip: icon + count (no label) ──────────────
 
 class _EngagementChip extends StatelessWidget {
-  final IconData icon;
+  final String iconName;
   final int count;
   final String? satsLabel; // Optional suffix like "1.2K" for zap sats
   final Color color;
   final VoidCallback? onTap;
 
   const _EngagementChip({
-    required this.icon,
+    required this.iconName,
     required this.count,
     this.satsLabel,
     required this.color,
@@ -755,7 +809,7 @@ class _EngagementChip extends StatelessWidget {
     final label = satsLabel ?? (showCount ? '$count' : '');
 
     return Material(
-      color: Colors.transparent,
+      color: Colors.transparent, // token-guard: allow — ink surface
       child: InkWell(
         onTap: onTap == null
             ? null
@@ -763,25 +817,22 @@ class _EngagementChip extends StatelessWidget {
                 HapticFeedback.lightImpact();
                 onTap!();
               },
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-          ),
+        borderRadius: AppShapes.radiusXl,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm - 2, vertical: AppSpacing.xs - 2),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 18, color: effectiveColor),
+              AppIcon(iconName, size: AppIconSize.md, color: effectiveColor),
               if (label.isNotEmpty) ...[
-                const SizedBox(width: 4),
+                const SizedBox(width: AppSpacing.xxs),
                 Text(
                   label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: effectiveColor,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: effectiveColor,
+                        fontWeight: FontWeight.w600,
+                      ),
                 ),
               ],
             ],
@@ -897,12 +948,7 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to post: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppToast.error(context, 'Failed to post: $e');
       }
     } finally {
       if (mounted) setState(() => _isPosting = false);
@@ -920,7 +966,7 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
         // Header
         Row(
           children: [
-            Icon(Icons.chat_bubble_outline, size: 20, color: scheme.primary),
+            AppIcon('comment', size: 20, color: scheme.primary),
             const SizedBox(width: 8),
             Text(
               'Comments',
@@ -932,10 +978,10 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
             commentsAsync.when(
               data: (comments) => Text(
                 '(${comments.length})',
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
               loading: () => const SizedBox.shrink(),
               error: (_, _) => const SizedBox.shrink(),
@@ -948,11 +994,9 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
         if (widget.isLoggedIn) ...[
           Container(
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: scheme.outlineVariant.withValues(alpha: 0.5),
-              ),
+              color: scheme.surfaceContainerLowest,
+              borderRadius: AppShapes.radiusLg,
+              border: Border.all(color: scheme.outlineVariant),
             ),
             child: Column(
               children: [
@@ -963,10 +1007,10 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
                   decoration: InputDecoration(
                     hintText: 'Add a comment…',
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.all(16),
-                    hintStyle: TextStyle(
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
-                    ),
+                    contentPadding: AppSpacing.paddingMd,
+                    hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                        ),
                   ),
                 ),
                 Padding(
@@ -984,7 +1028,7 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Icon(Icons.send_rounded, size: 16),
+                            : const AppIcon('send', size: 16),
                         label: Text(_isPosting ? 'Posting…' : 'Post'),
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
@@ -1002,19 +1046,24 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
           const SizedBox(height: 24),
         ] else ...[
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: AppSpacing.paddingMd,
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(12),
+              color: scheme.surfaceContainerLowest,
+              borderRadius: AppShapes.radiusMd,
+              border: Border.all(color: scheme.outlineVariant),
             ),
             child: Row(
               children: [
-                Icon(Icons.lock_outline, size: 18, color: scheme.onSurfaceVariant),
-                const SizedBox(width: 12),
+                AppIcon('key',
+                    size: AppIconSize.md, color: scheme.onSurfaceVariant),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
                     'Log in to comment on this article',
-                    style: TextStyle(color: scheme.onSurfaceVariant),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                 ),
               ],
@@ -1032,10 +1081,13 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
             ),
           ),
           error: (err, _) => Padding(
-            padding: const EdgeInsets.all(16),
+            padding: AppSpacing.paddingMd,
             child: Text(
               'Failed to load comments',
-              style: TextStyle(color: scheme.error),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: scheme.error),
             ),
           ),
           data: (comments) {
@@ -1045,26 +1097,29 @@ class _CommentsSectionState extends ConsumerState<_CommentsSection> {
                 child: Center(
                   child: Column(
                     children: [
-                      Icon(
-                        Icons.chat_bubble_outline,
-                        size: 40,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
-                      ),
-                      const SizedBox(height: 12),
+                      AppIcon('comment',
+                          size: AppIconSize.xl + 16,
+                          color: scheme.onSurfaceVariant
+                              .withValues(alpha: 0.4)),
+                      const SizedBox(height: AppSpacing.sm),
                       Text(
                         'No comments yet',
-                        style: TextStyle(
-                          color: scheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
-                        ),
+                        style:
+                            Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w500,
+                                ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: AppSpacing.xxs),
                       Text(
                         'Be the first to share your thoughts',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(
+                              color: scheme.onSurfaceVariant
+                                  .withValues(alpha: 0.7),
+                            ),
                       ),
                     ],
                   ),
@@ -1108,21 +1163,22 @@ class _CommentTile extends ConsumerWidget {
             data: (profile) => SafeAvatar(
               imageUrl: profile?.picture,
               radius: 18,
-              fallback: const Icon(Icons.person, size: 18),
+              fallback: const AppIcon('users', size: 18),
             ),
             loading: () => const CircleAvatar(radius: 18),
             error: (_, _) => const CircleAvatar(
               radius: 18,
-              child: Icon(Icons.person, size: 18),
+              child: AppIcon('users', size: 18),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Container(
-              padding: const EdgeInsets.all(12),
+              padding: AppSpacing.paddingSm,
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(12),
+                color: scheme.surfaceContainerLowest,
+                borderRadius: AppShapes.radiusMd,
+                border: Border.all(color: scheme.outlineVariant),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1133,10 +1189,10 @@ class _CommentTile extends ConsumerWidget {
                         child: Text(
                           profileAsync.value?.displayNameOrName ??
                               '${event.pubkey.substring(0, 8)}…',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1148,21 +1204,20 @@ class _CommentTile extends ConsumerWidget {
                           ),
                           locale: 'en_short',
                         ),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Text(
                     event.content,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.4,
-                      color: scheme.onSurface,
-                    ),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          height: 1.4,
+                          color: scheme.onSurface,
+                        ),
                   ),
                 ],
               ),

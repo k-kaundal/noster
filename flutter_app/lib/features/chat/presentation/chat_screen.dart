@@ -4,11 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
-import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart' show DecryptedDm;
+import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart'
+    show DecryptedDm;
 import 'package:nostrfeed_mobile/core/nostr/relay/dm_delivery.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/utils/nip19.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
@@ -73,7 +76,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
+                    icon: const AppIcon('back', size: AppIconSize.lg),
                     tooltip: 'Back',
                     onPressed: () => context.pop(),
                   ),
@@ -87,16 +90,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline, size: 48),
+                      const AppIcon('eye_off', size: 48, color: Colors.grey),
                       const SizedBox(height: 16),
                       const Text('Invalid recipient identifier'),
                       const SizedBox(height: 8),
                       Text(
                         widget.peerNpub!,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(fontFamily: 'monospace'),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -136,7 +137,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               children: [
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.add_comment_outlined),
+                  icon: const AppIcon('edit', size: AppIconSize.lg),
                   tooltip: 'New message',
                   onPressed: () {
                     HapticFeedback.lightImpact();
@@ -165,8 +166,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             // in the chat list — even with zero DMs.
                             const _AiChatTile(),
                             SizedBox(
-                              height:
-                                  MediaQuery.of(context).size.height * 0.45,
+                              height: MediaQuery.of(context).size.height * 0.45,
                               child: _buildEmptyState(context),
                             ),
                           ],
@@ -179,8 +179,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           separatorBuilder: (_, index) => Divider(
                             height: 1,
                             indent: 84,
-                            color: colorScheme.outlineVariant
-                                .withValues(alpha: 0.3),
+                            color: colorScheme.outlineVariant.withValues(
+                              alpha: 0.3,
+                            ),
                           ),
                           itemBuilder: (context, index) {
                             if (index == 0) return const _AiChatTile();
@@ -220,7 +221,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   width: 120,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: AppShapes.radiusXs,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -229,7 +230,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: AppShapes.radiusXs,
                   ),
                 ),
               ],
@@ -256,14 +257,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   ) {
     final profileAsync = ref.watch(profileProvider(conv.peer));
     final colorScheme = Theme.of(context).colorScheme;
-    final lastTimestamp =
-        conv.decrypted?.createdAt ?? conv.lastEvent.createdAt;
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(
-      lastTimestamp * 1000,
-    );
+    final lastTimestamp = conv.decrypted?.createdAt ?? conv.lastEvent.createdAt;
+    final timestamp = DateTime.fromMillisecondsSinceEpoch(lastTimestamp * 1000);
     // Unread count for this peer (cleared when the thread is opened).
     final dms = ref.watch(dmsProvider).valueOrNull ?? const <NostrEvent>[];
-    final unread = ref.read(dmStoreProvider).unreadFor(dms, conv.peer);
+    final unread = ref.read(dmStoreProvider.notifier).unreadFor(dms, conv.peer);
 
     return Material(
       color: Colors.transparent,
@@ -298,11 +296,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                   _shortKey(conv.peer),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                                letterSpacing: -0.2,
-                              ),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.2,
+                                  ),
                             ),
                             loading: () => Text(_shortKey(conv.peer)),
                             error: (_, _) => Text(_shortKey(conv.peer)),
@@ -310,18 +308,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         ),
                         Text(
                           timeago.format(timestamp, locale: 'en_short'),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(
-                          Icons.lock_rounded,
+                        AppIcon(
+                          'key',
                           size: 12,
                           color: colorScheme.onSurfaceVariant.withValues(
                             alpha: 0.6,
@@ -333,13 +329,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             conv.decrypted?.plaintext ?? '…',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: colorScheme.onSurfaceVariant,
-                              fontWeight: unread > 0
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: unread > 0
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                ),
                           ),
                         ),
                         if (unread > 0) ...[
@@ -351,15 +347,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ),
                             decoration: BoxDecoration(
                               color: colorScheme.primary,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: AppShapes.radiusFull,
                             ),
                             child: Text(
                               unread > 99 ? '99+' : '$unread',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: colorScheme.onPrimary,
-                              ),
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: colorScheme.onPrimary,
+                                  ),
                             ),
                           ),
                         ],
@@ -386,7 +382,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // Opening this thread marks its messages as read (clears unread badge).
     // MUST run post-frame: markThreadRead bumps dmStoreVersionProvider, and
     // modifying a provider DURING build is illegal (crashes the frame).
-    final store = ref.read(dmStoreProvider);
+    final store = ref.read(dmStoreProvider.notifier);
     final dmsForRead = dmsAsync.valueOrNull ?? const <NostrEvent>[];
     var latestTs = 0;
     for (final e in dmsForRead) {
@@ -423,7 +419,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       children: [
                         // Back button (shell AppBar is hidden on threads).
                         IconButton(
-                          icon: const Icon(Icons.arrow_back_rounded),
+                          icon: const AppIcon('back', size: AppIconSize.lg),
                           tooltip: 'Back',
                           onPressed: () {
                             HapticFeedback.lightImpact();
@@ -445,26 +441,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                     _shortKey(peerPubkey),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
                               ),
                               Row(
                                 children: [
-                                  Icon(
-                                    Icons.lock_rounded,
+                                  AppIcon(
+                                    'key',
                                     size: 11,
                                     color: colorScheme.primary,
                                   ),
                                   const SizedBox(width: 3),
                                   Text(
                                     'End-to-end encrypted',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: colorScheme.primary,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: colorScheme.primary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                   ),
                                 ],
                               ),
@@ -472,10 +468,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.person_outline_rounded),
+                          icon: const AppIcon('users', size: AppIconSize.lg),
                           tooltip: 'View profile',
-                          onPressed: () =>
-                              context.push('/profile/$peerPubkey'),
+                          onPressed: () => context.push('/profile/$peerPubkey'),
                         ),
                       ],
                     ),
@@ -486,7 +481,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   child: Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded),
+                        icon: const AppIcon('back', size: AppIconSize.lg),
                         onPressed: () => context.pop(),
                       ),
                       const SizedBox(width: 12),
@@ -499,7 +494,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   child: Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded),
+                        icon: const AppIcon('back', size: AppIconSize.lg),
                         onPressed: () => context.pop(),
                       ),
                       const SizedBox(width: 12),
@@ -515,76 +510,79 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             color: colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
           Expanded(
-            child: ref.watch(dmThreadProvider(peerPubkey)).when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, _) => Center(
-                child: Text(
-                  'Failed to load messages',
-                  style: TextStyle(color: colorScheme.error),
-                ),
-              ),
-              data: (thread) {
-                if (thread.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.waving_hand_rounded,
-                    title: 'No messages yet',
-                    subtitle: 'Say hello! Messages are end-to-end encrypted.',
-                  );
-                }
-                return ListView.builder(
-                  controller: _scrollController,
-                  reverse: true,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+            child: ref
+                .watch(dmThreadProvider(peerPubkey))
+                .when(
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (err, _) => ErrorView.fromError(
+                    err,
+                    onRetry: () => ref.invalidate(dmThreadProvider(peerPubkey)),
                   ),
-                  itemCount: thread.length,
-                  itemBuilder: (context, index) {
-                    final msg = thread[index];
-                    final isSent = msg.senderPubkey == auth.pubkey;
-                    final showDateSeparator =
-                        index == thread.length - 1 ||
-                        !_isSameDay(
-                          thread[index].createdAt,
-                          thread[index + 1].createdAt,
+                  data: (thread) {
+                    if (thread.isEmpty) {
+                      return const EmptyState(
+                        icon: Icons.waving_hand_rounded,
+                        title: 'No messages yet',
+                        subtitle:
+                            'Say hello! Messages are end-to-end encrypted.',
+                      );
+                    }
+                    return ListView.builder(
+                      controller: _scrollController,
+                      reverse: true,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      itemCount: thread.length,
+                      itemBuilder: (context, index) {
+                        final msg = thread[index];
+                        final isSent = msg.senderPubkey == auth.pubkey;
+                        final showDateSeparator =
+                            index == thread.length - 1 ||
+                            !_isSameDay(
+                              thread[index].createdAt,
+                              thread[index + 1].createdAt,
+                            );
+                        // Primal grouped bubbles: this message CONTINUES a group
+                        // when the next (older) message is from the same sender
+                        // (the list is reversed — index+1 is older in time).
+                        final continuesGroup =
+                            index < thread.length - 1 &&
+                            thread[index + 1].senderPubkey == msg.senderPubkey;
+                        return Column(
+                          children: [
+                            if (showDateSeparator)
+                              ChatDateSeparator(timestamp: msg.createdAt),
+                            // Swipe right → reply to this message (NIP-17
+                            // 'e' tag reply). Only for text messages.
+                            GestureDetector(
+                              onHorizontalDragEnd: msg.text.isNotEmpty
+                                  ? (_) {
+                                      HapticFeedback.lightImpact();
+                                      setState(() => _replyingTo = msg);
+                                    }
+                                  : null,
+                              child: MessageBubble(
+                                key: ValueKey(msg.id),
+                                message: msg,
+                                isSent: isSent,
+                                isGroupContinuation: continuesGroup,
+                                onRetry: msg.status == MessageStatus.failed
+                                    ? () => _retryMessage(peerPubkey, msg)
+                                    : null,
+                                onDelete: msg.status == MessageStatus.failed
+                                    ? () => _deleteFailed(peerPubkey, msg)
+                                    : null,
+                              ),
+                            ),
+                          ],
                         );
-                    // Primal grouped bubbles: this message CONTINUES a group
-                    // when the next (older) message is from the same sender
-                    // (the list is reversed — index+1 is older in time).
-                    final continuesGroup = index < thread.length - 1 &&
-                        thread[index + 1].senderPubkey == msg.senderPubkey;
-                    return Column(
-                      children: [
-                        if (showDateSeparator)
-                          ChatDateSeparator(timestamp: msg.createdAt),
-                        // Swipe right → reply to this message (NIP-17
-                        // 'e' tag reply). Only for text messages.
-                        GestureDetector(
-                          onHorizontalDragEnd: msg.text.isNotEmpty
-                              ? (_) {
-                                  HapticFeedback.lightImpact();
-                                  setState(() => _replyingTo = msg);
-                                }
-                              : null,
-                          child: MessageBubble(
-                            key: ValueKey(msg.id),
-                            message: msg,
-                            isSent: isSent,
-                            isGroupContinuation: continuesGroup,
-                            onRetry: msg.status == MessageStatus.failed
-                                ? () => _retryMessage(peerPubkey, msg)
-                                : null,
-                            onDelete: msg.status == MessageStatus.failed
-                                ? () => _deleteFailed(peerPubkey, msg)
-                                : null,
-                          ),
-                        ),
-                      ],
+                      },
                     );
                   },
-                );
-              },
-            ),
+                ),
           ),
           _buildInputBar(context, auth, peerPubkey),
         ],
@@ -621,7 +619,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             child: Row(
               children: [
-                Icon(Icons.reply_rounded, size: 16, color: colorScheme.primary),
+                AppIcon(
+                  'back',
+                  size: AppIconSize.sm,
+                  color: colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -630,8 +632,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     children: [
                       Text(
                         'Reply to',
-                        style: TextStyle(
-                          fontSize: 11,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: colorScheme.primary,
                         ),
@@ -640,16 +641,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         replying.text.isEmpty ? '🔒 message' : replying.text,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18),
+                  icon: AppIcon(
+                    'plus',
+                    size: AppIconSize.sm,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                   onPressed: () => setState(() => _replyingTo = null),
                 ),
               ],
@@ -662,92 +665,87 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             top: 8,
             bottom: MediaQuery.of(context).viewPadding.bottom + 8,
           ),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(
-          top: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // Attach (image) — kind-15 file message, WhatsApp-style.
-          IconButton(
-            icon: _isUploading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add_photo_alternate_outlined),
-            tooltip: 'Send an image',
-            onPressed: _isUploading || !auth.isLoggedIn || auth.isReadOnly
-                ? null
-                : () => _sendImage(auth, peerPubkey),
-          ),
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.7,
-                ),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: TextField(
-                controller: _messageController,
-                decoration: InputDecoration(
-                  hintText: 'Message…',
-                  hintStyle: TextStyle(
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                ),
-                minLines: 1,
-                maxLines: 4,
-                textCapitalization: TextCapitalization.sentences,
-                enabled: auth.isLoggedIn && !auth.isReadOnly,
-                onSubmitted: (_) => _send(auth, peerPubkey),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            border: Border(
+              top: BorderSide(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [colorScheme.primary, colorScheme.tertiary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Attach (image) — kind-15 file message, WhatsApp-style.
+              IconButton(
+                icon: _isUploading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const AppIcon('image', size: AppIconSize.lg),
+                tooltip: 'Send an image',
+                onPressed: _isUploading || !auth.isLoggedIn || auth.isReadOnly
+                    ? null
+                    : () => _sendImage(auth, peerPubkey),
               ),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              onPressed: _isSending || !auth.isLoggedIn
-                  ? null
-                  : () => _send(auth, peerPubkey),
-              icon: _isSending
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.send_rounded,
-                      color: Colors.white,
-                      size: 20,
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.7,
                     ),
-            ),
+                    borderRadius: AppShapes.radiusPill,
+                  ),
+                  child: TextField(
+                    controller: _messageController,
+                    decoration: InputDecoration(
+                      hintText: 'Message…',
+                      hintStyle: TextStyle(
+                        color: colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.6,
+                        ),
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                    ),
+                    minLines: 1,
+                    maxLines: 4,
+                    textCapitalization: TextCapitalization.sentences,
+                    enabled: auth.isLoggedIn && !auth.isReadOnly,
+                    onSubmitted: (_) => _send(auth, peerPubkey),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: colorScheme
+                      .primary, // Refined: flat accent, not a gradient
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  onPressed: _isSending || !auth.isLoggedIn
+                      ? null
+                      : () => _send(auth, peerPubkey),
+                  icon: _isSending
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.onPrimary,
+                          ),
+                        )
+                      : AppIcon('send', color: colorScheme.onPrimary, size: 20),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
         ),
       ],
     );
@@ -759,7 +757,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     HapticFeedback.mediumImpact();
     setState(() => _isSending = true);
-    final store = ref.read(dmStoreProvider);
+    final store = ref.read(dmStoreProvider.notifier);
     try {
       final nostr = ref.read(nostrServiceProvider);
       // NIP-17 gift-wrapped DM (kind 1059). Returns TWO wraps: the
@@ -866,12 +864,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (file == null || !mounted) return;
 
     setState(() => _isUploading = true);
-    final store = ref.read(dmStoreProvider);
+    final store = ref.read(dmStoreProvider.notifier);
     try {
       final nostr = ref.read(nostrServiceProvider);
       // 1. Upload to Blossom (public URL).
-      final url = await UploadService(nostr.authService, nostr)
-          .uploadImage(file);
+      final url = await UploadService(
+        nostr.authService,
+        nostr,
+      ).uploadImage(file);
       if (!mounted) return;
 
       // 2. Wrap as a kind-15 file message (plaintext = the URL).
@@ -943,14 +943,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Re-publish a failed message: remove the old entry and send again.
   Future<void> _retryMessage(String peerPubkey, ChatMessage msg) async {
     final auth = ref.read(authStateProvider);
-    ref.read(dmStoreProvider).removePending(peerPubkey, msg.id);
+    ref.read(dmStoreProvider.notifier).removePending(peerPubkey, msg.id);
     _messageController.text = msg.text;
     await _send(auth, peerPubkey);
   }
 
   /// Discard a failed outgoing message.
   void _deleteFailed(String peerPubkey, ChatMessage msg) {
-    ref.read(dmStoreProvider).removePending(peerPubkey, msg.id);
+    ref.read(dmStoreProvider.notifier).removePending(peerPubkey, msg.id);
     AppToast.info(context, 'Message deleted');
   }
 
@@ -964,7 +964,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           HapticFeedback.lightImpact();
           _showNewMessageDialog(context);
         },
-        icon: const Icon(Icons.add_rounded),
+        icon: const AppIcon('plus', size: AppIconSize.lg),
         label: const Text('New Message'),
       ),
     );
@@ -1011,25 +1011,21 @@ class _AiChatTile extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           child: Row(
             children: [
-              // Gradient avatar — visually distinct from every DM peer.
+              // Flat accent circle — visually distinct from every DM peer
+              // (Refined: no gradients except the logo mark).
               Container(
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      colorScheme.primary.withValues(alpha: 0.8),
-                      colorScheme.tertiary.withValues(alpha: 0.8),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: colorScheme.primary,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  Icons.smart_toy_rounded,
-                  color: colorScheme.onPrimary,
-                  size: 28,
+                child: Center(
+                  child: AppIcon(
+                    'sparkle',
+                    color: colorScheme.onPrimary,
+                    size: 26,
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -1037,13 +1033,12 @@ class _AiChatTile extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'NostrFeed AI',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
-                        fontSize: 16,
                         letterSpacing: -0.2,
                       ),
                     ),
@@ -1052,25 +1047,25 @@ class _AiChatTile extends ConsumerWidget {
                       !available
                           ? 'Assistant (not configured)'
                           : trialLeft > 0
-                              ? 'Summarize, translate, create · '
-                                  '$trialLeft free today'
-                              : 'Summarize, translate, create · '
-                                  '$balance credits',
+                          ? 'Summarize, translate, create · '
+                                '$trialLeft free today'
+                          : 'Summarize, translate, create · '
+                                '$balance credits',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: available
                             ? colorScheme.onSurfaceVariant
-                            : colorScheme.onSurfaceVariant
-                                .withValues(alpha: 0.5),
+                            : colorScheme.onSurfaceVariant.withValues(
+                                alpha: 0.5,
+                              ),
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.auto_awesome_rounded,
+              AppIcon(
+                'sparkle',
                 size: 18,
                 color: colorScheme.primary.withValues(alpha: 0.7),
               ),

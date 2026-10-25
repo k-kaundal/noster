@@ -22,6 +22,12 @@ import 'package:nostrfeed_mobile/core/providers/nostr_service_providers.dart';
 final ingestPipelineProvider = Provider<void>((ref) {
   final bus = ref.watch(eventBusProvider);
   final notifier = ref.read(engagementVersionProvider.notifier);
+  // ADR-0007: mirror every stored event into the local relay's live monitor
+  // so its view of the store stays current (the merged transport's local
+  // half emits these). Enabled flag off → relay is null, nothing mirrored.
+  final localRelay = ref.watch(localRelayEnabledProvider)
+      ? ref.watch(localRelayProvider)
+      : null;
 
   // Debounced engagement tick (Amethyst's sampleTime=500): a burst of
   // likes/zaps = ONE version bump = one wave of row-scoped recounts, not a
@@ -39,6 +45,10 @@ final ingestPipelineProvider = Provider<void>((ref) {
     if (_dmKinds.contains(event.kind)) return;
 
     unawaited(EventStore.instance.ingest([event]));
+    // ADR-0007: fan the event into the local relay (live subscribers get it
+    // instantly — zero network). The store write above remains the source of
+    // truth; this is only the relay's live monitor.
+    localRelay?.onEvent(event);
 
     // Engagement kinds carrying e-tags change post counts.
     if (_engagementKinds.contains(event.kind) && event.eventRefs.isNotEmpty) {

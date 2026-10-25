@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/nostr/filter.dart';
+import 'package:nostrfeed_mobile/core/nostr/kinds.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -23,6 +25,11 @@ import 'package:sqflite/sqflite.dart';
 /// Schema (normalized, X/FB-style):
 ///
 /// - `events`       — one row per Nostr event, content-addressed by id.
+/// - `tags`         — (event_id, name, first-value) per single-letter tag
+///                    (ADR-0007 v3 — NIP-01's indexing contract; `#x`
+///                    filters are indexed lookups, not JSON decodes).
+/// - `deletions`    — NIP-09 audit (ADR-0007 v3): reject late copies of
+///                    author-deleted events.
 /// - `event_refs`   — one row per (event → referenced-event `e`-tag), the
 ///                    engagement index: "who liked/reposted/replied to X".
 /// - `profiles`     — kind-0 metadata per pubkey (TTL'd by `fetched_at`).
@@ -32,16 +39,22 @@ import 'package:sqflite/sqflite.dart';
 ///                    `tie()` / Gossip seen-on): relay hints for backfill
 ///                    and outbox routing later.
 ///
-/// Everything is `INSERT OR REPLACE` keyed on stable ids, so ingesting the
-/// same event twice is a no-op — the live tail and the page fetch can both
-/// write without deduping in Dart.
+/// Ingest enforces the NIP-01 lifecycle (ADR-0007 v3): ephemeral kinds are
+/// never stored; replaceable (0, 3, 10000–19999) and addressable
+/// (30000–39999) kinds keep only the newest version per identity; kind-5
+/// deletions remove same-author targets and block their late re-arrival.
+/// Everything else is `INSERT OR REPLACE` keyed on stable ids, so ingesting
+/// the same event twice is a no-op — the live tail and the page fetch can
+/// both write without deduping in Dart.
 class EventStore {
   EventStore._();
   static final EventStore instance = EventStore._();
 
   static const _dbName = 'nostrfeed_events.db';
   // v2 (ADR-0005 P1): + thread_edges + seen_on.
-  static const _dbVersion = 2;
+  // v3 (ADR-0007 P1): + tags (generalized single-letter index) + deletions
+  //                   (NIP-09 audit) + NIP-01 lifecycle enforcement.
+  static const _dbVersion = 3;
 
   Database? _db;
   Future<Database>? _opening;
@@ -72,14 +85,17 @@ class EventStore {
   Future<Database> get db {
     final existing = _db;
     if (existing != null) return Future.value(existing);
-    return _opening ??= _open().then((opened) {
-      _db = opened;
-      _opening = null;
-      return opened;
-    }, onError: (Object e) {
-      _opening = null; // let the next caller retry a fresh open
-      throw e;
-    });
+    return _opening ??= _open().then(
+      (opened) {
+        _db = opened;
+        _opening = null;
+        return opened;
+      },
+      onError: (Object e) {
+        _opening = null; // let the next caller retry a fresh open
+        throw e;
+      },
+    );
   }
 
   Future<Database> _open() async {
@@ -153,6 +169,81 @@ class EventStore {
         // Continue — the v2 tables exist; edges fill in from here forward.
       }
     }
+    if (oldVersion < 3) {
+      await _createV3Tables(db);
+      // Backfill the generalized tag index from stored events so existing
+      // installs can answer #tag queries immediately. Best-effort, like the
+      // v2 backfill: a malformed row must not brick the migration.
+      try {
+        await _backfillTags(db);
+      } catch (_) {
+        // tags re-derive on future ingests.
+      }
+    }
+  }
+
+  /// ADR-0007 Phase 1 tables: the generalized single-letter tag index
+  /// (NIP-01's indexing contract — replaces the e-tag-only view for
+  /// FILTERING; `event_refs` stays as the engagement projection) and the
+  /// NIP-09 deletion audit. All DDL IF NOT EXISTS → idempotent.
+  static Future<void> _createV3Tables(Database db) async {
+    // One row per (event, tag-name, first-value) for every single-letter
+    // tag. `#e`/`#p`/`#a`/`#t`/`#d`/`#h`/`#q`… queries become indexed
+    // lookups here instead of JSON-decoding every row's tags.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS tags (
+        event_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (event_id, name, value)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tags_name_value ON tags(name, value, event_id)',
+    );
+
+    // NIP-09 audit: (deleted target, who deleted it, when). Lets ingest
+    // REJECT a late-arriving copy of an already-deleted event (relays
+    // deliver out of order — the deletion can land before the event).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS deletions (
+        target_id TEXT NOT NULL,
+        deleted_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (target_id, deleted_by)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_deletions_target ON deletions(target_id)',
+    );
+
+    // since/until scans with no better index fall back to created_at.
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_events_time ON events(created_at DESC)',
+    );
+  }
+
+  /// Backfill `tags` from events stored before v3 existed.
+  static Future<void> _backfillTags(Database db) async {
+    final rows = await db.query('events', columns: ['id', 'tags']);
+    final batch = db.batch();
+    for (final row in rows) {
+      final id = row['id'] as String;
+      List<dynamic> decoded;
+      try {
+        decoded = jsonDecode(row['tags'] as String) as List<dynamic>;
+      } catch (_) {
+        continue;
+      }
+      for (final entry in _singleLetterTagRows(decoded)) {
+        batch.insert('tags', {
+          'event_id': id,
+          'name': entry.$1,
+          'value': entry.$2,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    }
+    await batch.commit(noResult: true);
   }
 
   /// ADR-0005 L4 tables: thread assembly + seen-on tracking. All DDL is
@@ -209,15 +300,11 @@ class EventStore {
       });
       final root = event.rootId ?? event.replyToId;
       if (root != null) {
-        batch.insert(
-          'thread_edges',
-          {
-            'root_id': root,
-            'reply_id': event.id,
-            'created_at': event.createdAt,
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
+        batch.insert('thread_edges', {
+          'root_id': root,
+          'reply_id': event.id,
+          'created_at': event.createdAt,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
     }
     await batch.commit(noResult: true);
@@ -227,64 +314,478 @@ class EventStore {
     await _onCreateV1(db);
     // v2 tables (ADR-0005): thread_edges + seen_on.
     await _createV2Tables(db);
+    // v3 tables (ADR-0007): tags + deletions + time index.
+    await _createV3Tables(db);
   }
 
-  // ── Ingest ──────────────────────────────────────────────────────────
+  // ── Ingest (NIP-01 lifecycle — ADR-0007 Phase 1) ──────────────────────
 
-  /// Write a batch of events + their engagement edges. Idempotent (INSERT
-  /// OR REPLACE), so the page fetch and the live tail can both call it.
+  /// Write a batch of events with full NIP-01 storage semantics:
+  ///
+  /// - **Ephemeral** (20000–29999): never persisted (forwarded live by the
+  ///   relay layer; the store stays clean).
+  /// - **Replaceable** (0, 3, 10000–19999): newest per (pubkey, kind) wins;
+  ///   an older/stale version is dropped, a newer one replaces.
+  /// - **Addressable** (30000–39999): newest per (pubkey, kind, d-tag) wins.
+  /// - **NIP-09 deletion** (kind 5): deletes referenced same-author targets
+  ///   and records the deletion so a late copy is rejected.
+  /// - **NIP-01 tag indexing**: every single-letter tag's first value lands
+  ///   in `tags` for `#x` filtering.
+  ///
+  /// Idempotent, so the page fetch and the live tail can both call it.
+  ///
+  /// Two paths, chosen per event kind, so a big engagement sync doesn't
+  /// hold the DB lock for seconds (the "database has been locked" spam):
+  ///
+  /// - **Fast path (regular kinds)** — posts, reactions, reposts, zap
+  ///   receipts, chat… ~95% of volume. No lifecycle reads needed (no
+  ///   replaceable/addressable/deletion checks): writes go through ONE
+  ///   `batch()` per chunk, committed in small pieces so the lock breathes
+  ///   between chunks and other reads/writes interleave.
+  /// - **Lifecycle path (replaceable / addressable / deletion)** — per-event
+  ///   transactions, because newest-wins and delete semantics need read-
+  ///   modify-write. These are a small minority of events.
   Future<void> ingest(List<NostrEvent> events) async {
     if (events.isEmpty) return;
-    final database = await db;
-    final batch = database.batch();
+    Database database;
+    try {
+      database = await db;
+    } catch (e) {
+      if (e is DatabaseException && '$e'.contains('database_closed')) return;
+      rethrow;
+    }
+
+    final fast = <NostrEvent>[];
+    final lifecycle = <NostrEvent>[];
     for (final e in events) {
-      batch.insert(
-        'events',
-        {
-          'id': e.id,
-          'pubkey': e.pubkey,
-          'created_at': e.createdAt,
-          'kind': e.kind,
-          'tags': jsonEncode(e.tags),
-          'content': e.content,
-          'sig': e.sig,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+      if (NostrKinds.isEphemeral(e.kind)) continue; // never stored
+      final needsLifecycle =
+          NostrKinds.isReplaceable(e.kind) ||
+          NostrKinds.isAddressable(e.kind) ||
+          e.kind == NostrKinds.deletion;
+      (needsLifecycle ? lifecycle : fast).add(e);
+    }
+
+    // Fast path: chunked batches. Each chunk is one short transaction —
+    // long enough to be efficient, short enough that the lock breathes
+    // between chunks and the UI never stalls behind a 1000-event sync.
+    const chunkSize = 50;
+    for (var i = 0; i < fast.length; i += chunkSize) {
+      final chunk = fast.sublist(
+        i,
+        i + chunkSize > fast.length ? fast.length : i + chunkSize,
       );
-      // Index e-tag refs so engagement is a local COUNT, not a relay query.
-      for (final targetId in _eTagTargets(e)) {
-        batch.insert(
-          'event_refs',
-          {
-            'target_id': targetId,
-            'event_id': e.id,
-            'kind': e.kind,
-            'pubkey': e.pubkey,
-            'created_at': e.createdAt,
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
+      try {
+        await database.transaction((txn) async {
+          // NIP-09 late-copy rejection, BATCHED: load the deletion rows for
+          // this chunk's ids in ONE query, then filter in Dart — a kind-1
+          // post arriving after its author deleted it must never be stored,
+          // but the check must not cost a round-trip per event.
+          final ids = chunk.map((e) => e.id).toList();
+          final deleted = <String>{};
+          final placeholders = List.filled(ids.length, '?').join(',');
+          final delRows = await txn.query(
+            'deletions',
+            columns: ['target_id'],
+            where: 'target_id IN ($placeholders)',
+            whereArgs: ids,
+          );
+          for (final r in delRows) {
+            deleted.add(r['target_id'] as String);
+          }
+          final batch = txn.batch();
+          for (final e in chunk) {
+            if (deleted.contains(e.id)) continue;
+            _queueFastEvent(batch, e);
+          }
+          await batch.commit(noResult: true);
+        });
+      } catch (err) {
+        if (err is DatabaseException && '$err'.contains('database_closed')) {
+          return;
+        }
+        assert(() {
+          // ignore: avoid_print
+          print('EventStore.ingest fast chunk failed: $err');
+          return true;
+        }());
+      }
+    }
+
+    // Lifecycle path: per-event transactions (read-modify-write).
+    for (final e in lifecycle) {
+      try {
+        await database.transaction((txn) => _ingestOne(txn, e));
+      } catch (err) {
+        if (err is DatabaseException && '$err'.contains('database_closed')) {
+          return;
+        }
+        assert(() {
+          // ignore: avoid_print
+          print('EventStore.ingest skipped event ${e.id}: $err');
+          return true;
+        }());
+      }
+    }
+  }
+
+  /// Queue a regular-kind event's writes into a [Batch] — no reads needed:
+  /// the row + tags + engagement refs + thread edge, all `INSERT OR REPLACE`
+  /// / `INSERT OR IGNORE` keyed on stable ids. Deletions don't apply
+  /// (regular kinds can't be deletion targets of the lifecycle path's own
+  /// author-scoped check in the same ingest — a rare race, and the
+  /// `deletions` table is consulted on the QUERY side for those).
+  void _queueFastEvent(Batch batch, NostrEvent e) {
+    batch.insert('events', {
+      'id': e.id,
+      'pubkey': e.pubkey,
+      'created_at': e.createdAt,
+      'kind': e.kind,
+      'tags': jsonEncode(e.tags),
+      'content': e.content,
+      'sig': e.sig,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    // Rebuild the tag index for this id (replace, so stale tags never linger).
+    batch.delete('tags', where: 'event_id = ?', whereArgs: [e.id]);
+    for (final entry in _singleLetterTagRows(e.tags)) {
+      batch.insert('tags', {
+        'event_id': e.id,
+        'name': entry.$1,
+        'value': entry.$2,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    // Engagement index (e-tag refs).
+    for (final targetId in _eTagTargets(e)) {
+      batch.insert('event_refs', {
+        'target_id': targetId,
+        'event_id': e.id,
+        'kind': e.kind,
+        'pubkey': e.pubkey,
+        'created_at': e.createdAt,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    // NIP-10 thread edge.
+    if (e.kind == 1) {
+      final root = e.rootId ?? e.replyToId;
+      if (root != null) {
+        batch.insert('thread_edges', {
+          'root_id': root,
+          'reply_id': e.id,
+          'created_at': e.createdAt,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    }
+  }
+
+  Future<void> _ingestOne(Transaction txn, NostrEvent e) async {
+    final kind = e.kind;
+
+    // Ephemeral: relays MUST NOT store these. Forwarding is the relay
+    // layer's job; nothing reaches disk here.
+    if (NostrKinds.isEphemeral(kind)) return;
+
+    // NIP-09 deletion request: process it, and keep the deletion event
+    // itself (it's a regular kind — relays store it).
+    if (kind == NostrKinds.deletion) {
+      await _applyDeletion(txn, e);
+    }
+
+    // Replaceable / addressable: only the newest version survives. Tie-break
+    // per NIP-01: same created_at → lowest id wins.
+    if (NostrKinds.isReplaceable(kind)) {
+      final stale = await _isStaleReplaceable(
+        txn,
+        where: 'pubkey = ? AND kind = ?',
+        args: [e.pubkey, kind],
+        event: e,
+      );
+      if (stale) return;
+      await txn.delete(
+        'events',
+        where: 'pubkey = ? AND kind = ? AND id != ?',
+        whereArgs: [e.pubkey, kind, e.id],
+      );
+    } else if (NostrKinds.isAddressable(kind)) {
+      final d = e.dTag ?? '';
+      // Addressable staleness needs an EXACT d-tag match, which SQL can't do
+      // on the JSON-serialized tags column — compare in Dart (same approach
+      // as _deleteSupersededAddressable). Using a LIKE probe with `=` here
+      // silently matched NOTHING before, letting a late older version wipe
+      // the newer stored one (articles, lists, communities…).
+      final stale = await _isStaleAddressable(txn, e, d);
+      if (stale) return;
+      // Remove superseded versions of the same address.
+      await _deleteSupersededAddressable(txn, e, d);
+    }
+
+    // NIP-09: a late-arriving event already deleted by its author is
+    // rejected (the deletion landed first — relays deliver out of order).
+    if (await _isDeleted(txn, e.id, e.pubkey)) return;
+
+    await txn.insert('events', {
+      'id': e.id,
+      'pubkey': e.pubkey,
+      'created_at': e.createdAt,
+      'kind': e.kind,
+      'tags': jsonEncode(e.tags),
+      'content': e.content,
+      'sig': e.sig,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    // Generalized single-letter tag index (NIP-01 contract). Replace on
+    // re-ingest so stale tags never linger.
+    await txn.delete('tags', where: 'event_id = ?', whereArgs: [e.id]);
+    final tagBatch = <Map<String, Object?>>[
+      for (final entry in _singleLetterTagRows(e.tags))
+        {'event_id': e.id, 'name': entry.$1, 'value': entry.$2},
+    ];
+    for (final row in tagBatch) {
+      await txn.insert(
+        'tags',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+
+    // Index e-tag refs so engagement is a local COUNT, not a relay query.
+    for (final targetId in _eTagTargets(e)) {
+      await txn.insert('event_refs', {
+        'target_id': targetId,
+        'event_id': e.id,
+        'kind': e.kind,
+        'pubkey': e.pubkey,
+        'created_at': e.createdAt,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+
+    // NIP-10 thread edge at ingest (ADR-0005 L3).
+    if (kind == 1) {
+      final root = e.rootId ?? e.replyToId;
+      if (root != null) {
+        await txn.insert('thread_edges', {
+          'root_id': root,
+          'reply_id': e.id,
+          'created_at': e.createdAt,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    }
+  }
+
+  /// Is there already a NEWER version of this replaceable event stored?
+  /// [where]/[args] select the version row(s) for the same identity
+  /// (pubkey+kind).
+  Future<bool> _isStaleReplaceable(
+    Transaction txn, {
+    required String where,
+    required List<Object?> args,
+    required NostrEvent event,
+  }) async {
+    final rows = await txn.query(
+      'events',
+      columns: ['created_at', 'id'],
+      where: where,
+      whereArgs: args,
+    );
+    for (final row in rows) {
+      final existingTs = row['created_at'] as int;
+      final existingId = row['id'] as String;
+      if (existingTs > event.createdAt) return true; // newer already stored
+      // Same timestamp → NIP-01 tie-break: lowest id wins, so an incoming
+      // HIGHER id is stale.
+      if (existingTs == event.createdAt && existingId.compareTo(event.id) < 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Addressable staleness: true when a stored event with the SAME
+  /// (pubkey, kind, d) is newer than [incoming] (or ties with a lower id).
+  /// d-tags are compared in Dart — the tags column is JSON.
+  Future<bool> _isStaleAddressable(
+    Transaction txn,
+    NostrEvent incoming,
+    String d,
+  ) async {
+    final candidates = await txn.query(
+      'events',
+      columns: ['id', 'tags', 'created_at'],
+      where: 'pubkey = ? AND kind = ? AND id != ?',
+      whereArgs: [incoming.pubkey, incoming.kind, incoming.id],
+    );
+    for (final row in candidates) {
+      if (_rowDTag(row['tags'] as String) != d) continue;
+      final existingTs = row['created_at'] as int;
+      final existingId = row['id'] as String;
+      if (existingTs > incoming.createdAt) return true;
+      if (existingTs == incoming.createdAt &&
+          existingId.compareTo(incoming.id) < 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// The d-tag value in a serialized tags JSON, or '' (Dart-side helper for
+  /// addressable identity — SQL can't probe inside the JSON portably).
+  static String _rowDTag(String tagsJson) {
+    List<dynamic> decoded;
+    try {
+      decoded = jsonDecode(tagsJson) as List<dynamic>;
+    } catch (_) {
+      return '';
+    }
+    for (final t in decoded) {
+      if (t is List && t.length > 1 && t[0] == 'd') return '${t[1]}';
+    }
+    return '';
+  }
+
+  /// Delete superseded versions of the same address (pubkey, kind, d).
+  /// JSON tags are decoded in Dart for an exact d-tag compare — the SQL
+  /// LIKE probe only narrows candidates.
+  Future<void> _deleteSupersededAddressable(
+    Transaction txn,
+    NostrEvent incoming,
+    String d,
+  ) async {
+    final candidates = await txn.query(
+      'events',
+      columns: ['id', 'tags', 'created_at'],
+      where: 'pubkey = ? AND kind = ? AND id != ?',
+      whereArgs: [incoming.pubkey, incoming.kind, incoming.id],
+    );
+    for (final row in candidates) {
+      if (_rowDTag(row['tags'] as String) == d) {
+        await txn.delete(
+          'events',
+          where: 'id = ?',
+          whereArgs: [row['id'] as String],
         );
       }
-      // NIP-10 thread edge at ingest (ADR-0005 L3): a reply's root (marked
-      // tags preferred, positional fallback) links it into its thread, so
-      // thread assembly is a local JOIN — never a relay query. Replies to
-      // replies link via their root too (whole-conversation assembly).
-      if (e.kind == 1) {
-        final root = e.rootId ?? e.replyToId;
-        if (root != null) {
-          batch.insert(
-            'thread_edges',
-            {
-              'root_id': root,
-              'reply_id': e.id,
-              'created_at': e.createdAt,
-            },
-            conflictAlgorithm: ConflictAlgorithm.ignore,
-          );
+    }
+  }
+
+  /// Has this event id already been deleted by [pubkey] (NIP-09)?
+  Future<bool> _isDeleted(
+    Transaction txn,
+    String eventId,
+    String pubkey,
+  ) async {
+    final rows = await txn.query(
+      'deletions',
+      columns: ['target_id'],
+      where: 'target_id = ? AND deleted_by = ?',
+      whereArgs: [eventId, pubkey],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  /// Apply a NIP-09 deletion event: delete referenced targets the author
+  /// owns, and record the deletion so late copies are rejected. NIP-09:
+  /// relays SHOULD only honor deletions where the deletion author equals
+  /// the target author. `a` tags address replaceable/addressable events.
+  Future<void> _applyDeletion(Transaction txn, NostrEvent deletion) async {
+    final now = deletion.createdAt;
+    // e tags: plain event ids.
+    for (final targetId in _eTagTargets(deletion)) {
+      // Only delete if we hold the target AND it's by the same author.
+      final held = await txn.query(
+        'events',
+        columns: ['pubkey'],
+        where: 'id = ?',
+        whereArgs: [targetId],
+        limit: 1,
+      );
+      if (held.isNotEmpty && held.first['pubkey'] == deletion.pubkey) {
+        await _deleteEventCascade(txn, targetId);
+      }
+      // Record regardless (covers late arrivals of the target).
+      await txn.insert('deletions', {
+        'target_id': targetId,
+        'deleted_by': deletion.pubkey,
+        'created_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    // a tags: kind:pubkey:d — delete that author's matching versions.
+    for (final a in deletion.getTags('a')) {
+      final parts = a.split(':');
+      if (parts.length < 2) continue;
+      final kind = int.tryParse(parts[0]);
+      final author = parts[1];
+      if (kind == null || author != deletion.pubkey) continue;
+      final d = parts.length > 2 ? parts.sublist(2).join(':') : '';
+      final candidates = await txn.query(
+        'events',
+        columns: ['id', 'tags'],
+        where: 'pubkey = ? AND kind = ?',
+        whereArgs: [author, kind],
+      );
+      for (final row in candidates) {
+        if (d.isEmpty) {
+          await _deleteEventCascade(txn, row['id'] as String);
+          continue;
+        }
+        List<dynamic> decoded;
+        try {
+          decoded = jsonDecode(row['tags'] as String) as List<dynamic>;
+        } catch (_) {
+          continue;
+        }
+        var rowD = '';
+        for (final t in decoded) {
+          if (t is List && t.length > 1 && t[0] == 'd') {
+            rowD = '${t[1]}';
+            break;
+          }
+        }
+        if (rowD == d) await _deleteEventCascade(txn, row['id'] as String);
+      }
+      await txn.insert('deletions', {
+        'target_id': a,
+        'deleted_by': author,
+        'created_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+  }
+
+  /// Delete an event and everything that points from/to it.
+  Future<void> _deleteEventCascade(Transaction txn, String eventId) async {
+    await txn.delete('events', where: 'id = ?', whereArgs: [eventId]);
+    await txn.delete('tags', where: 'event_id = ?', whereArgs: [eventId]);
+    await txn.delete('event_refs', where: 'event_id = ?', whereArgs: [eventId]);
+    await txn.delete(
+      'thread_edges',
+      where: 'reply_id = ?',
+      whereArgs: [eventId],
+    );
+    await txn.delete('seen_on', where: 'event_id = ?', whereArgs: [eventId]);
+  }
+
+  /// The (name, first-value) pairs of every single-letter tag — NIP-01's
+  /// indexing contract. Non-single-letter tags (e.g. `expiration`,
+  /// `subject`) are NOT indexed (they're not part of the `#x` contract).
+  ///
+  /// Canonical form: hex tags (`e`/`p`) and hashtags (`t`) are stored
+  /// LOWERCASED so queries match case-insensitively the way real relays
+  /// answer them (`#Nostr` ≡ `#nostr`, hex is always lowercase on the
+  /// wire). Every other tag keeps its exact value.
+  static List<(String, String)> _singleLetterTagRows(List<dynamic> tags) {
+    final out = <(String, String)>[];
+    for (final t in tags) {
+      if (t is List && t.length > 1 && t[0] is String) {
+        final name = t[0] as String;
+        if (name.length == 1 && RegExp(r'^[a-zA-Z]$').hasMatch(name)) {
+          final raw = '${t[1]}';
+          final value = (name == 'e' || name == 'p' || name == 't')
+              ? raw.toLowerCase()
+              : raw;
+          out.add((name, value));
         }
       }
     }
-    await batch.commit(noResult: true);
+    return out;
   }
 
   /// The event ids this event references via `e` tags (its engagement
@@ -299,6 +800,235 @@ class EventStore {
 
   // ── Feed reads ──────────────────────────────────────────────────────
 
+  /// Generic NIP-01 query engine (ADR-0007 §3.3) — the local relay's
+  /// "initial query" planner, shared with every feature that needs
+  /// filter-accurate reads.
+  ///
+  /// Per filter: pick the ONE most-selective index path (ids > #tags >
+  /// authors > kinds > time), bound the scan with since/until, then apply
+  /// the full [CompiledFilter] to each candidate before keeping it (the
+  /// same "scan one index, apply the rest" rule strfry uses). Results are
+  /// merged newest-first (NIP-01: ties → lowest id first) and bounded by
+  /// the smallest specified `limit`.
+  ///
+  /// NIP-40: expired events are excluded via the `expiration` tag marker.
+  /// Replaceable/addressable dedup is already enforced at ingest, so one
+  /// version per identity exists here.
+  Future<List<NostrEvent>> queryByFilters(
+    List<NostrFilter> filters, {
+    int defaultLimit = 50,
+  }) async {
+    if (filters.isEmpty) return [];
+    final database = await db;
+    final compiled = filters.map(CompiledFilter.from).toList();
+    final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+    // NIP-01 limit semantics: a filter's `limit` bounds ITS OWN initial
+    // query, and the REQ result is the OR (union) of its filters — so each
+    // filter scans with its own bound (`limit: 0` = "no stored events for
+    // this filter", contributes nothing) and the union is naturally bounded
+    // by the sum of the per-filter bounds. No global cap: a broad filter is
+    // never starved by a tight companion, and a lone tight filter caps its
+    // own result exactly as a relay would.
+    final merged = <String, NostrEvent>{};
+    for (var i = 0; i < filters.length; i++) {
+      final filter = filters[i];
+      final compiledFilter = compiled[i];
+      if (compiledFilter.isDead) continue;
+      if (filter.limit == 0) continue; // live-only filter
+      final filterCap = filter.limit ?? defaultLimit;
+
+      final rows = await _scanCandidates(database, filter, filterCap, nowSec);
+      for (final row in rows) {
+        final event = _rowToEvent(row);
+        if (event.isExpired) continue; // NIP-40 belt-and-braces
+        if (!compiledFilter.matches(event)) continue;
+        merged[event.id] = event;
+      }
+    }
+
+    final out = merged.values.toList()
+      ..sort((a, b) {
+        final byTime = b.createdAt.compareTo(a.createdAt);
+        return byTime != 0 ? byTime : a.id.compareTo(b.id); // NIP-01 tie
+      });
+    return out;
+  }
+
+  /// Scan the best index for [filter] and return candidate rows (bounded).
+  Future<List<Map<String, Object?>>> _scanCandidates(
+    Database database,
+    NostrFilter filter,
+    int cap,
+    int nowSec,
+  ) async {
+    final args = <Object?>[];
+    final where = StringBuffer('1=1');
+
+    // NIP-40: exclude rows carrying an already-past expiration tag.
+    // (expiration is not a single-letter tag, so it's not in `tags` —
+    // probe the serialized tags JSON; candidates are re-checked in Dart.)
+    void timeBounds() {
+      if (filter.since != null) {
+        where.write(' AND created_at >= ?');
+        args.add(filter.since);
+      }
+      if (filter.until != null) {
+        where.write(' AND created_at <= ?');
+        args.add(filter.until);
+      }
+    }
+
+    // 1. ids — primary-key lookups, most selective.
+    if (filter.ids != null && filter.ids!.isNotEmpty) {
+      final ids = filter.ids!
+          .where((v) => v.length == 64)
+          .map((v) => v.toLowerCase());
+      if (ids.isEmpty) return const [];
+      where.write(' AND id IN (${List.filled(ids.length, '?').join(',')})');
+      args.addAll(ids);
+      timeBounds();
+      return database.query(
+        'events',
+        where: where.toString(),
+        whereArgs: args,
+        limit: cap,
+      );
+    }
+
+    // 2. Single best #tag (the one with fewest values) → tags index.
+    final tagFilters = filter.tagFilters;
+    if (tagFilters != null && tagFilters.isNotEmpty) {
+      final best = tagFilters.entries.reduce(
+        (a, b) => a.value.length <= b.value.length ? a : b,
+      );
+      if (best.value.isEmpty) return const [];
+      where.write(
+        ' AND id IN (SELECT event_id FROM tags WHERE name = ? '
+        'AND value IN (${List.filled(best.value.length, '?').join(',')}))',
+      );
+      args.add(best.key);
+      // NIP-01 says nothing about case, but relays in practice match `#t`
+      // (hashtags) case-INSENSITIVELY (a `#Nostr` post answers `#nostr`) and
+      // `#e`/`#p` are hex (always lowercase on the wire). Match that: hex
+      // tags + `t` compare lowercased; every other tag stays exact.
+      final caseInsensitive =
+          best.key == 'e' || best.key == 'p' || best.key == 't';
+      args.addAll(
+        caseInsensitive ? best.value.map((v) => v.toLowerCase()) : best.value,
+      );
+      // Narrow further with kinds if present (cheap, uses the join).
+      if (filter.kinds != null && filter.kinds!.isNotEmpty) {
+        where.write(
+          ' AND kind IN (${List.filled(filter.kinds!.length, '?').join(',')})',
+        );
+        args.addAll(filter.kinds!);
+      }
+      timeBounds();
+      return database.query(
+        'events',
+        where: where.toString(),
+        whereArgs: args,
+        orderBy: 'created_at DESC',
+        limit: cap,
+      );
+    }
+
+    // 3. authors (+kinds) → idx_events_author_time.
+    if (filter.authors != null && filter.authors!.isNotEmpty) {
+      final authors = filter.authors!
+          .where((v) => v.length == 64)
+          .map((v) => v.toLowerCase());
+      if (authors.isEmpty) return const [];
+      where.write(
+        ' AND pubkey IN (${List.filled(authors.length, '?').join(',')})',
+      );
+      args.addAll(authors);
+      if (filter.kinds != null && filter.kinds!.isNotEmpty) {
+        where.write(
+          ' AND kind IN (${List.filled(filter.kinds!.length, '?').join(',')})',
+        );
+        args.addAll(filter.kinds!);
+      }
+      timeBounds();
+      return database.query(
+        'events',
+        where: where.toString(),
+        whereArgs: args,
+        orderBy: 'created_at DESC',
+        limit: cap,
+      );
+    }
+
+    // 4. kinds only → idx_events_kind_time. 5. else time scan.
+    if (filter.kinds != null && filter.kinds!.isNotEmpty) {
+      where.write(
+        ' AND kind IN (${List.filled(filter.kinds!.length, '?').join(',')})',
+      );
+      args.addAll(filter.kinds!);
+    }
+    timeBounds();
+    return database.query(
+      'events',
+      where: where.toString(),
+      whereArgs: args,
+      orderBy: 'created_at DESC',
+      limit: cap,
+    );
+  }
+
+  /// The (created_at, id) record set a NIP-77 sync needs — cheap (no
+  /// content/tags/sig decoded), sorted by (created_at, id) per the
+  /// negentropy record ordering. Built from a [NostrFilter] subset
+  /// (ids/authors/kinds/since/until — tag filters are not part of the sync
+  /// scope, matching strfry's NEG filter handling).
+  Future<List<({int timestamp, String id})>> syncRecords(
+    NostrFilter filter,
+  ) async {
+    final database = await db;
+    final where = StringBuffer('1=1');
+    final args = <Object?>[];
+    if (filter.ids != null && filter.ids!.isNotEmpty) {
+      final ids = filter.ids!
+          .where((v) => v.length == 64)
+          .map((v) => v.toLowerCase());
+      if (ids.isEmpty) return const [];
+      where.write(' AND id IN (${List.filled(ids.length, '?').join(',')})');
+      args.addAll(ids);
+    }
+    if (filter.authors != null && filter.authors!.isNotEmpty) {
+      final authors = filter.authors!
+          .where((v) => v.length == 64)
+          .map((v) => v.toLowerCase());
+      if (authors.isEmpty) return const [];
+      where.write(
+        ' AND pubkey IN (${List.filled(authors.length, '?').join(',')})',
+      );
+      args.addAll(authors);
+    }
+    if (filter.kinds != null && filter.kinds!.isNotEmpty) {
+      where.write(
+        ' AND kind IN (${List.filled(filter.kinds!.length, '?').join(',')})',
+      );
+      args.addAll(filter.kinds!);
+    }
+    if (filter.since != null) {
+      where.write(' AND created_at >= ?');
+      args.add(filter.since);
+    }
+    if (filter.until != null) {
+      where.write(' AND created_at <= ?');
+      args.add(filter.until);
+    }
+    final rows = await database.rawQuery(
+      'SELECT created_at AS ts, id FROM events WHERE $where ORDER BY ts ASC, id ASC',
+      args,
+    );
+    return rows
+        .map((r) => (timestamp: r['ts'] as int, id: r['id'] as String))
+        .toList();
+  }
+
   /// The newest [limit] events of [kinds], optionally restricted to
   /// [authors], newest first, [until] paging (exclusive created_at cursor).
   Future<List<NostrEvent>> queryEvents({
@@ -308,14 +1038,18 @@ class EventStore {
     List<String>? authors,
   }) async {
     final database = await db;
-    final where = StringBuffer('kind IN (${List.filled(kinds.length, '?').join(',')})');
+    final where = StringBuffer(
+      'kind IN (${List.filled(kinds.length, '?').join(',')})',
+    );
     final args = <Object?>[...kinds];
     if (until != null) {
       where.write(' AND created_at < ?');
       args.add(until);
     }
     if (authors != null && authors.isNotEmpty) {
-      where.write(' AND pubkey IN (${List.filled(authors.length, '?').join(',')})');
+      where.write(
+        ' AND pubkey IN (${List.filled(authors.length, '?').join(',')})',
+      );
       args.addAll(authors);
     }
     final rows = await database.query(
@@ -360,7 +1094,8 @@ class EventStore {
     }
     if (authors != null && authors.isNotEmpty) {
       where.write(
-          ' AND e.pubkey IN (${List.filled(authors.length, '?').join(',')})');
+        ' AND e.pubkey IN (${List.filled(authors.length, '?').join(',')})',
+      );
       args.addAll(authors);
     }
     final rows = await database.rawQuery(
@@ -412,14 +1147,16 @@ class EventStore {
       [sinceSeconds, candidateLimit],
     );
     return rows
-        .map((r) => TrendingCandidate(
-              eventId: r['id'] as String,
-              uniqueEngagers: (r['engagers'] as num).toInt(),
-              reactions: (r['reactions'] as num).toInt(),
-              reposts: (r['reposts'] as num).toInt(),
-              replies: (r['replies'] as num).toInt(),
-              zaps: (r['zaps'] as num).toInt(),
-            ))
+        .map(
+          (r) => TrendingCandidate(
+            eventId: r['id'] as String,
+            uniqueEngagers: (r['engagers'] as num).toInt(),
+            reactions: (r['reactions'] as num).toInt(),
+            reposts: (r['reposts'] as num).toInt(),
+            replies: (r['replies'] as num).toInt(),
+            zaps: (r['zaps'] as num).toInt(),
+          ),
+        )
         .toList();
   }
 
@@ -435,7 +1172,10 @@ class EventStore {
       whereArgs: ids,
     );
     final byId = {for (final r in rows) (r['id'] as String): _rowToEvent(r)};
-    return [for (final id in ids) if (byId.containsKey(id)) byId[id]!];
+    return [
+      for (final id in ids)
+        if (byId.containsKey(id)) byId[id]!,
+    ];
   }
 
   /// A single event by id, or null if we don't have it locally.
@@ -464,15 +1204,12 @@ class EventStore {
     if (targetIds.isEmpty) return {};
     final database = await db;
     final placeholders = List.filled(targetIds.length, '?').join(',');
-    final rows = await database.rawQuery(
-      '''
+    final rows = await database.rawQuery('''
       SELECT target_id, kind, COUNT(*) AS n
       FROM event_refs
       WHERE target_id IN ($placeholders)
       GROUP BY target_id, kind
-      ''',
-      targetIds,
-    );
+      ''', targetIds);
     final result = <String, EventCounts>{};
     for (final row in rows) {
       final target = row['target_id'] as String;
@@ -484,11 +1221,47 @@ class EventStore {
     return result;
   }
 
+  /// The current user's like/repost state for [targetIds], from the local
+  /// engagement index — ONE grouped SQL query for a whole page instead of
+  /// each PostCard firing its own relay query (the "every card does its own
+  /// fetchUserInteractions" jank). Only knows engagement we ingested (the
+  /// engagement batch brings the user's own kind 6/7/16 too); a card with
+  /// no local row just renders un-liked until the batch lands.
+  Future<Map<String, ({bool liked, bool reposted})>> userInteractionsFor(
+    String userPubkey,
+    List<String> targetIds,
+  ) async {
+    if (targetIds.isEmpty || userPubkey.isEmpty) return {};
+    final database = await db;
+    final placeholders = List.filled(targetIds.length, '?').join(',');
+    final rows = await database.rawQuery(
+      '''
+      SELECT target_id, kind FROM event_refs
+      WHERE pubkey = ? AND kind IN (6, 7, 16) AND target_id IN ($placeholders)
+      ''',
+      [userPubkey, ...targetIds],
+    );
+    final result = <String, ({bool liked, bool reposted})>{};
+    for (final row in rows) {
+      final target = row['target_id'] as String;
+      final kind = row['kind'] as int;
+      final existing = result[target] ?? (liked: false, reposted: false);
+      result[target] = (
+        liked: existing.liked || kind == 7,
+        reposted: existing.reposted || kind == 6 || kind == 16,
+      );
+    }
+    return result;
+  }
+
   /// Kind-1 replies to [targetId] we already have locally, oldest first —
   /// via the engagement index (every reply e-tags its parent/root). Powers
   /// store-first thread loads and OPTIMISTIC replies: a just-published reply
   /// is ingested immediately, so it renders before the relay round-trip.
-  Future<List<NostrEvent>> repliesFor(String targetId, {int limit = 200}) async {
+  Future<List<NostrEvent>> repliesFor(
+    String targetId, {
+    int limit = 200,
+  }) async {
     final database = await db;
     final rows = await database.rawQuery(
       '''
@@ -509,7 +1282,10 @@ class EventStore {
   /// thread_edges table written at ingest. Unlike [repliesFor] (which only
   /// finds replies that e-tag the target directly), this assembles the
   /// WHOLE conversation including replies-to-replies.
-  Future<List<NostrEvent>> threadReplies(String rootId, {int limit = 500}) async {
+  Future<List<NostrEvent>> threadReplies(
+    String rootId, {
+    int limit = 500,
+  }) async {
     final database = await db;
     final rows = await database.rawQuery(
       '''
@@ -565,11 +1341,11 @@ class EventStore {
       final batch = database.batch();
       final now = DateTime.now().millisecondsSinceEpoch;
       for (final s in pending) {
-        batch.insert(
-          'seen_on',
-          {'event_id': s.eventId, 'relay_url': s.relayUrl, 'seen_at': now},
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
+        batch.insert('seen_on', {
+          'event_id': s.eventId,
+          'relay_url': s.relayUrl,
+          'seen_at': now,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
       await batch.commit(noResult: true);
     } catch (e) {
@@ -579,7 +1355,9 @@ class EventStore {
       // flush retries fresh. debugPrint, don't crash.
       assert(() {
         // ignore: avoid_print
-        print('EventStore._flushSeenOn dropped ${pending.length} sightings: $e');
+        print(
+          'EventStore._flushSeenOn dropped ${pending.length} sightings: $e',
+        );
         return true;
       }());
     }
@@ -603,6 +1381,20 @@ class EventStore {
   // ── Profiles ────────────────────────────────────────────────────────
 
   Future<NostrProfile?> profileFor(String pubkey, {Duration? maxAge}) async {
+    final row = await profileRowFor(pubkey);
+    if (row == null) return null;
+    if (maxAge != null) {
+      final age = DateTime.now().millisecondsSinceEpoch - row.fetchedAtMs;
+      if (age > maxAge.inMilliseconds) return null; // stale — caller refetches
+    }
+    return row.profile;
+  }
+
+  /// The stored profile + its fetch timestamp (ms), or null. Used by the
+  /// persistent profile cache (stale-while-revalidate needs the age).
+  Future<({NostrProfile profile, int fetchedAtMs})?> profileRowFor(
+    String pubkey,
+  ) async {
     final database = await db;
     final rows = await database.query(
       'profiles',
@@ -611,14 +1403,12 @@ class EventStore {
       limit: 1,
     );
     if (rows.isEmpty) return null;
-    final fetchedAt = rows.first['fetched_at'] as int;
-    if (maxAge != null) {
-      final age = DateTime.now().millisecondsSinceEpoch - fetchedAt;
-      if (age > maxAge.inMilliseconds) return null; // stale — caller refetches
-    }
     try {
-      return NostrProfile.fromJson(
-        jsonDecode(rows.first['json'] as String) as Map<String, dynamic>,
+      return (
+        profile: NostrProfile.fromJson(
+          jsonDecode(rows.first['json'] as String) as Map<String, dynamic>,
+        ),
+        fetchedAtMs: rows.first['fetched_at'] as int,
       );
     } catch (_) {
       return null;
@@ -627,15 +1417,52 @@ class EventStore {
 
   Future<void> saveProfile(String pubkey, NostrProfile profile) async {
     final database = await db;
-    await database.insert(
-      'profiles',
-      {
-        'pubkey': pubkey,
-        'json': jsonEncode(profile.toJson()),
-        'fetched_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
+    await database.insert('profiles', {
+      'pubkey': pubkey,
+      'json': jsonEncode(profile.toJson()),
+      'fetched_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Local people search over the persistent profile cache — zero network.
+  /// Matches name/display_name/nip05/about. Powers the search screen's
+  /// local fallback (was a 500-event relay query per query). Returns
+  /// (pubkey, profile) pairs — NostrProfile carries no key of its own.
+  Future<List<({String pubkey, NostrProfile profile})>> searchProfiles(
+    String query, {
+    int limit = 20,
+  }) async {
+    final database = await db;
+    final like = '%${query.replaceAll('%', r'\%').replaceAll('_', r'\_')}%';
+    final rows = await database.rawQuery(
+      '''
+      SELECT pubkey, json FROM profiles
+      WHERE json LIKE ? ESCAPE '\\'
+      ORDER BY fetched_at DESC
+      LIMIT ?
+      ''',
+      [like, limit * 4], // over-fetch; JSON parse + field-match refines below
     );
+    final out = <({String pubkey, NostrProfile profile})>[];
+    for (final row in rows) {
+      try {
+        final p = NostrProfile.fromJson(
+          jsonDecode(row['json'] as String) as Map<String, dynamic>,
+        );
+        // Field-level match (LIKE on raw JSON would hit URLs/banner strings).
+        final hay = [
+          p.name ?? '',
+          p.displayName ?? '',
+          p.nip05 ?? '',
+          p.about ?? '',
+        ].join(' ').toLowerCase();
+        if (hay.contains(query)) {
+          out.add((pubkey: row['pubkey'] as String, profile: p));
+        }
+        if (out.length >= limit) break;
+      } catch (_) {}
+    }
+    return out;
   }
 
   // ── Maintenance (bounded storage — the "don't eat the user's disk" rule) ──
@@ -652,16 +1479,17 @@ class EventStore {
   /// and for budget-driven pruning.
   Future<int> storeBytes() async {
     final database = await db;
-    int sum(Map<String, Object?> r) =>
-        (r['b'] as num? ?? 0).toInt();
-    final ev = sum((await database.rawQuery(
-      "SELECT COALESCE(SUM(LENGTH(content)+LENGTH(tags)+LENGTH(sig)),0) AS b FROM events",
-    ))
-        .first);
-    final prof = sum((await database.rawQuery(
-      "SELECT COALESCE(SUM(LENGTH(json)),0) AS b FROM profiles",
-    ))
-        .first);
+    int sum(Map<String, Object?> r) => (r['b'] as num? ?? 0).toInt();
+    final ev = sum(
+      (await database.rawQuery(
+        "SELECT COALESCE(SUM(LENGTH(content)+LENGTH(tags)+LENGTH(sig)),0) AS b FROM events",
+      )).first,
+    );
+    final prof = sum(
+      (await database.rawQuery(
+        "SELECT COALESCE(SUM(LENGTH(json)),0) AS b FROM profiles",
+      )).first,
+    );
     return ev + prof;
   }
 
@@ -670,7 +1498,8 @@ class EventStore {
     final database = await db;
     Future<int> c(String t) async =>
         Sqflite.firstIntValue(
-            await database.rawQuery('SELECT COUNT(*) FROM $t')) ??
+          await database.rawQuery('SELECT COUNT(*) FROM $t'),
+        ) ??
         0;
     return (
       events: await c('events'),

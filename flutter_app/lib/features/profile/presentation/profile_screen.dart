@@ -6,20 +6,20 @@ import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/utils/media.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
-import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/profile_avatar.dart';
 import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
-import 'package:nostrfeed_mobile/features/communities/presentation/community_detail_screen.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
-import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 import 'package:nostrfeed_mobile/features/premium/presentation/widgets/paid_badge.dart';
 import 'package:nostrfeed_mobile/features/profile/application/profile_providers.dart';
 import 'package:nostrfeed_mobile/features/profile/presentation/edit_profile_screen.dart';
 import 'package:nostrfeed_mobile/features/profile/presentation/user_list_screen.dart';
+import 'package:nostrfeed_mobile/features/profile/presentation/widgets/profile_tabs.dart';
 import 'package:nostrfeed_mobile/features/zap/presentation/zap_sheet.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -69,12 +69,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_library),
+              leading: const AppIcon('image', size: AppIconSize.lg),
               title: const Text('Gallery'),
               onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_camera),
+              leading: const AppIcon('image', size: AppIconSize.lg),
               title: const Text('Camera'),
               onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
@@ -118,23 +118,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                '${isBanner ? 'Banner' : 'Profile picture'} updated'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppToast.success(context, '${isBanner ? 'Banner' : 'Profile picture'} updated');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload failed: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppToast.error(context, 'Upload failed: $e');
       }
     } finally {
       if (mounted) {
@@ -180,10 +168,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  isBlocked
-                      ? Icons.person_off_outlined
-                      : Icons.visibility_off_outlined,
+                AppIcon(
+                  'eye_off',
                   size: 56,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -274,11 +260,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             leading: Container(
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.4),
+                color: Colors.black.withValues(alpha: 0.4), // token-guard: allow — cover-photo scrim
                 shape: BoxShape.circle,
               ),
               child: IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                icon: const AppIcon('back', size: AppIconSize.lg, color: Colors.white), // token-guard: allow — cover-photo scrim
                 onPressed: () {
                   HapticFeedback.lightImpact();
                   if (Navigator.of(context).canPop()) {
@@ -303,11 +289,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 Container(
                   margin: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.4),
+                    color: Colors.black.withValues(alpha: 0.4), // token-guard: allow — cover-photo scrim
                     shape: BoxShape.circle,
                   ),
                   child: IconButton(
-                    icon: const Icon(Icons.edit_outlined, color: Colors.white),
+                    icon: const AppIcon('edit', size: AppIconSize.lg, color: Colors.white), // token-guard: allow — cover-photo scrim
                     tooltip: 'Edit Profile',
                     onPressed: () {
                       HapticFeedback.lightImpact();
@@ -319,12 +305,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 Container(
                   margin: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.4),
+                    color: Colors.black.withValues(alpha: 0.4), // token-guard: allow — cover-photo scrim
                     shape: BoxShape.circle,
                   ),
                   child: PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert_rounded,
-                        color: Colors.white),
+                    icon: const AppIcon('more', size: AppIconSize.lg,
+                        color: Colors.white), // token-guard: allow — cover-photo scrim
                     tooltip: 'Profile options',
                     onSelected: (value) async {
                       if (value == 'report') {
@@ -362,8 +348,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         value: 'report',
                         child: Row(
                           children: [
-                            Icon(
-                              Icons.flag_outlined,
+                            AppIcon('eye_off',
                               size: 18,
                               color: Theme.of(context).colorScheme.error,
                             ),
@@ -381,12 +366,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         value: 'block',
                         child: Row(
                           children: [
-                            Icon(
-                              isBlockedAuthor
-                                  ? Icons.person_add_outlined
-                                  : Icons.person_off_outlined,
-                              size: 18,
-                            ),
+                            isBlockedAuthor
+                                ? const AppIcon('plus', size: 18)
+                                : const AppIcon('eye_off', size: 18),
                             const SizedBox(width: 10),
                             Text(isBlockedAuthor
                                 ? 'Unblock account'
@@ -398,7 +380,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         value: 'copy_npub',
                         child: Row(
                           children: [
-                            Icon(Icons.key_rounded, size: 18),
+                            AppIcon('key', size: AppIconSize.md),
                             SizedBox(width: 10),
                             Text('Copy public key'),
                           ],
@@ -453,13 +435,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             },
                           )
                         : Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [scheme.primary, scheme.tertiary],
-                              ),
-                            ),
+                            // No-banner fallback — a quiet surface tint
+                            // (Refined: no gradient). The avatar + name
+                            // carry the identity, not a colored banner.
+                            color: scheme.surfaceContainerHigh,
                           ),
                   ),
 
@@ -472,7 +451,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     height: bannerHeight,
                     child: IgnorePointer(
                       child: Container(
-                        color: Colors.black.withValues(
+                        color: Colors.black.withValues( // token-guard: allow — cover-photo scrim
                           alpha: innerBoxIsScrolled ? 0.7 : 0.0,
                         ),
                       ),
@@ -495,7 +474,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       right: 12,
                       top: bannerHeight - 12 - 24, // 12 margin + 24 button
                       child: Material(
-                        color: Colors.black.withValues(alpha: 0.5),
+                        color: Colors.black.withValues(alpha: 0.5), // token-guard: allow — cover-photo scrim
                         shape: const CircleBorder(),
                         clipBehavior: Clip.antiAlias,
                         child: InkWell(
@@ -512,12 +491,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       strokeWidth: 2,
                                       valueColor:
                                           AlwaysStoppedAnimation<Color>(
-                                              Colors.white),
+                                              Colors.white), // token-guard: allow — cover-photo scrim
                                     ),
                                   )
-                                : const Icon(
-                                    Icons.photo_camera,
-                                    color: Colors.white,
+                                : const AppIcon('image',
+                                    color: Colors.white, // token-guard: allow — cover-photo scrim
                                     size: 18,
                                   ),
                           ),
@@ -572,12 +550,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                             strokeWidth: 2,
                                             valueColor:
                                                 AlwaysStoppedAnimation<
-                                                    Color>(Colors.white),
+                                                    Color>(Colors.white), // token-guard: allow — cover-photo scrim
                                           ),
                                         )
-                                      : const Icon(
-                                          Icons.photo_camera,
-                                          color: Colors.white,
+                                      : const AppIcon('image',
+                                          color: Colors.white, // token-guard: allow — cover-photo scrim
                                           size: 14,
                                         ),
                                 ),
@@ -641,14 +618,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                         }
                                       : null,
                                   style: IconButton.styleFrom(
-                                    backgroundColor:
-                                        Colors.amber.withValues(alpha: 0.15),
+                                    backgroundColor: AppActionColors.zap
+                                        .withValues(alpha: 0.15),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                   ),
-                                  icon: Icon(Icons.bolt_rounded,
-                                      color: Colors.amber.shade700, size: 20),
+                                  icon: const AppIcon('zap', size: 20, color: AppActionColors.zap),
                                 ),
                               if (profile?.lud16 != null &&
                                   profile!.lud16!.isNotEmpty)
@@ -668,8 +644,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                   ),
-                                  icon: Icon(Icons.chat_bubble_outline_rounded,
-                                      color: scheme.primary, size: 20),
+                                  icon: AppIcon('chat', size: 20, color: scheme.primary),
                                 ),
                               if (auth.isLoggedIn && !auth.isReadOnly)
                                 const SizedBox(width: 8),
@@ -731,8 +706,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           if (profile?.nip05 != null &&
                               profile!.nip05!.isNotEmpty) ...[
                             const SizedBox(width: 4),
-                            Icon(
-                              Icons.verified_rounded,
+                            AppIcon('verified',
                               size: 18,
                               color: scheme.primary,
                             ),
@@ -777,7 +751,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       const SizedBox(height: 12),
 
                       // ── Metadata details — X style icon + text rows ──
-                      _ProfileMetadata(profile: profile, pubkey: pubkey),
+                      ProfileMetadata(profile: profile, pubkey: pubkey),
 
                       const SizedBox(height: 12),
 
@@ -785,7 +759,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       // Following/Followers are TAPPABLE → user list screens.
                       Row(
                         children: [
-                          _XStat(
+                          XStat(
                             count: postsCount,
                             label: 'Posts',
                           ),
@@ -797,7 +771,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               title: 'Following',
                               provider: followingListProvider(pubkey),
                             ),
-                            child: _XStat(
+                            child: XStat(
                               count: followsAsync.value?.length ?? 0,
                               label: 'Following',
                             ),
@@ -810,7 +784,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               title: 'Followers',
                               provider: followersListProvider(pubkey),
                             ),
-                            child: _XStat(
+                            child: XStat(
                               count: followersCount,
                               label: 'Followers',
                             ),
@@ -829,7 +803,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // ── Tab bar ───────────────────────────────────────────
           SliverPersistentHeader(
             pinned: true,
-            delegate: _TabBarDelegate(
+            delegate: ProfileTabBarDelegate(
               tabBar: TabBar(
                 controller: _tabController,
                 labelColor: scheme.primary,
@@ -864,16 +838,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         children: [
           // Posts: notes + picture posts (kind 20), not replies. Picture-
           // first accounts post kind 20 — filtering kind==1 alone hid them.
-          _PostsTab(
+          ProfilePostsTab(
             pubkey: pubkey,
             filter: (e) =>
                 (e.kind == 1 && !e.isReply) || e.kind == 20 || e.kind == 6,
           ),
-          _PostsTab(pubkey: pubkey, filter: (e) => e.kind == 1 && e.isReply),
+          ProfilePostsTab(pubkey: pubkey, filter: (e) => e.kind == 1 && e.isReply),
           // NIP-23 long-form articles are kind 30023
-          _PostsTab(pubkey: pubkey, filter: (e) => e.kind == 30023),
+          ProfilePostsTab(pubkey: pubkey, filter: (e) => e.kind == 30023),
           // Media: picture/video kinds + notes that carry media URLs.
-          _PostsTab(
+          ProfilePostsTab(
             pubkey: pubkey,
             filter: (e) =>
                 e.kind == 20 ||
@@ -883,8 +857,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           ),
           // Likes = posts the USER liked (their kind-7 targets), not kind-7
           // in their own feed (which is always empty).
-          _LikedPostsTab(pubkey: pubkey),
-          _CommunitiesTab(pubkey: pubkey),
+          ProfileLikedPostsTab(pubkey: pubkey),
+          ProfileCommunitiesTab(pubkey: pubkey),
         ],
       ),
     );
@@ -938,42 +912,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       ref.invalidate(followsProvider);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(
-                  isFollowing ? Icons.person_remove_rounded : Icons.person_add_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Text(isFollowing ? 'Unfollowed' : 'Followed'),
-              ],
-            ),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            duration: const Duration(seconds: 2),
-          ),
+        AppToast.success(
+          context,
+          isFollowing ? 'Unfollowed' : 'Followed',
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update follow: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
+        AppToast.error(context, 'Failed to update follow: $e');
       }
     }
   }
+
+
+/// Whether the profile has a usable banner URL (non-empty after trim and a
+/// parseable http(s) URI) — guards against whitespace/garbage URLs that
+/// would hand the loader a raw invalid string.
+bool _hasBanner(NostrProfile? profile) {
+  final banner = profile?.banner?.trim();
+  if (banner == null || banner.isEmpty) return false;
+  final uri = Uri.tryParse(banner);
+  return uri != null && (uri.isScheme('http') || uri.isScheme('https'));
+}
 
   Widget _buildSkeleton(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -1125,362 +1085,4 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 // ─── Profile metadata details ───────────────────────────────────────
 
 /// NIP-05, lightning address, website, join date — X style icon + text rows.
-class _ProfileMetadata extends StatelessWidget {
-  final NostrProfile? profile;
-  final String pubkey;
 
-  const _ProfileMetadata({required this.profile, required this.pubkey});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final items = <Widget>[];
-
-    // NIP-05 verified identifier
-    if (profile?.nip05 != null && profile!.nip05!.isNotEmpty) {
-      items.add(_MetadataRow(
-        icon: Icons.verified_outlined,
-        text: profile!.nip05!,
-        color: scheme.primary,
-      ));
-    }
-
-    // Lightning address
-    if (profile?.lud16 != null && profile!.lud16!.isNotEmpty) {
-      items.add(_MetadataRow(
-        icon: Icons.bolt_outlined,
-        text: profile!.lud16!,
-        color: Colors.amber.shade700,
-      ));
-    }
-
-    // Website
-    if (profile?.website != null && profile!.website!.isNotEmpty) {
-      items.add(_MetadataRow(
-        icon: Icons.link_outlined,
-        text: profile!.website!,
-        color: scheme.primary,
-      ));
-    }
-
-    // Public key (shortened)
-    final npub = pubkey.length > 16
-        ? '${pubkey.substring(0, 8)}…${pubkey.substring(pubkey.length - 4)}'
-        : pubkey;
-    items.add(_MetadataRow(
-      icon: Icons.key_outlined,
-      text: npub,
-      color: scheme.onSurfaceVariant,
-    ));
-
-    // Join date (from earliest event or profile creation)
-    // We don't have a reliable join date from Nostr, so show first seen
-    // This would ideally come from the user's kind 0 event timestamp
-    // For now, show nothing if we don't have a date
-
-    if (items.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: items
-          .expand((w) => [w, const SizedBox(height: 6)])
-          .toList()
-          ..removeLast(),
-    );
-  }
-}
-
-class _MetadataRow extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final Color color;
-
-  const _MetadataRow({
-    required this.icon,
-    required this.text,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ─── X-style stat ───────────────────────────────────────────────────
-
-/// Bold number + muted label, inline. X shows "1,234 Posts" not a card.
-class _XStat extends StatelessWidget {
-  final int count;
-  final String label;
-
-  const _XStat({required this.count, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          _formatCount(count),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _formatCount(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return '$n';
-  }
-}
-
-class _TabBarDelegate extends SliverPersistentHeaderDelegate {
-  final TabBar tabBar;
-  final Color color;
-
-  _TabBarDelegate({required this.tabBar, required this.color});
-
-  @override
-  double get minExtent => tabBar.preferredSize.height;
-
-  @override
-  double get maxExtent => tabBar.preferredSize.height;
-
-  @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: color,
-      child: tabBar,
-    );
-  }
-
-  @override
-  bool shouldRebuild(_TabBarDelegate oldDelegate) =>
-      tabBar != oldDelegate.tabBar || color != oldDelegate.color;
-}
-
-/// Whether the profile has a usable banner URL (non-empty after trim and a
-/// parseable http(s) URI) — guards against whitespace/garbage URLs that
-/// would hand the loader a raw invalid string.
-bool _hasBanner(NostrProfile? profile) {
-  final banner = profile?.banner?.trim();
-  if (banner == null || banner.isEmpty) return false;
-  final uri = Uri.tryParse(banner);
-  return uri != null && (uri.isScheme('http') || uri.isScheme('https'));
-}
-
-/// Communities tab: communities the user JOINED + communities they CREATED.
-class _CommunitiesTab extends ConsumerWidget {
-  final String pubkey;
-  const _CommunitiesTab({required this.pubkey});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final joinedAsync = ref.watch(joinedCommunitiesProvider(pubkey));
-    final createdAsync = ref.watch(myCommunitiesProvider(pubkey));
-
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        if (createdAsync.valueOrNull?.isNotEmpty == true) ...[
-          const _SectionHeader(title: 'Created'),
-          for (final c in createdAsync.value!) _CommunityTile(event: c),
-          const SizedBox(height: 16),
-        ],
-        const _SectionHeader(title: 'Joined'),
-        joinedAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator()),
-          ),
-          error: (_, _) => const Text('Failed to load'),
-          data: (communities) => communities.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(
-                    child: Text('No communities joined yet'),
-                  ),
-                )
-              : Column(
-                  children: [
-                    for (final c in communities) _CommunityTile(event: c),
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.4,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
-class _CommunityTile extends StatelessWidget {
-  final NostrEvent event;
-  const _CommunityTile({required this.event});
-
-  @override
-  Widget build(BuildContext context) {
-    final name = event.getTag('name') ?? 'Unnamed';
-    final desc = event.getTag('description') ?? '';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: Icon(
-            Icons.groups_rounded,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
-          ),
-        ),
-        title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: desc.isNotEmpty
-            ? Text(desc, maxLines: 1, overflow: TextOverflow.ellipsis)
-            : null,
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => CommunityDetailScreen(community: event),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Likes tab: posts the USER liked (their kind-7 reaction targets).
-class _LikedPostsTab extends ConsumerWidget {
-  final String pubkey;
-  const _LikedPostsTab({required this.pubkey});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final likedAsync = ref.watch(userLikedPostsProvider(pubkey));
-
-    return likedAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (_, _) => const Center(child: Text('Failed to load likes')),
-      data: (posts) {
-        if (posts.isEmpty) {
-          return const EmptyState(
-            icon: Icons.favorite_outline_rounded,
-            title: 'No likes yet',
-            subtitle: 'Posts you like will appear here',
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.only(top: 8, bottom: 180),
-          itemCount: posts.length,
-          itemBuilder: (context, index) =>
-              _PostListItem(event: posts[index]),
-        );
-      },
-    );
-  }
-}
-
-class _PostsTab extends ConsumerWidget {
-  final String pubkey;
-  final bool Function(NostrEvent) filter;
-
-  const _PostsTab({required this.pubkey, required this.filter});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final postsAsync = ref.watch(userPostsProvider(pubkey));
-
-    return postsAsync.when(
-      data: (events) {
-        final userPosts = events.where(filter).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-        if (userPosts.isEmpty) {
-          return const EmptyState(
-            icon: Icons.article_outlined,
-            title: 'No posts yet',
-            subtitle: 'Posts will appear here',
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.only(top: 8, bottom: 180),
-          itemCount: userPosts.length,
-          itemBuilder: (context, index) {
-            final event = userPosts[index];
-            return _PostListItem(event: event);
-          },
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text('Failed to load posts: $error'),
-        ),
-      ),
-    );
-  }
-}
-
-class _PostListItem extends ConsumerWidget {
-  final NostrEvent event;
-
-  const _PostListItem({required this.event});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return PostCard(event: event);
-  }
-}

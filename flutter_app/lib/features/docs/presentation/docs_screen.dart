@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/features/docs/docs_data.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DocsScreen extends StatefulWidget {
@@ -40,7 +42,7 @@ class _DocsScreenState extends State<DocsScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: SearchBar(
                   hintText: 'Search docs…',
-                  leading: const Icon(Icons.search),
+                  leading: const AppIcon('search'),
                   elevation: const WidgetStatePropertyAll(0),
                   backgroundColor: WidgetStatePropertyAll(
                     Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -124,12 +126,11 @@ class _CommunitySection extends StatelessWidget {
           padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
             'COMMUNITY',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.5,
-              color: scheme.primary,
-            ),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                  color: scheme.primary,
+                ),
           ),
         ),
         Row(
@@ -180,7 +181,7 @@ class _CommunityCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Card(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: AppShapes.radiusMd),
       child: InkWell(
         onTap: onTap,
         child: Padding(
@@ -192,26 +193,26 @@ class _CommunityCard extends StatelessWidget {
                 height: 44,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: AppShapes.radiusMd,
                 ),
                 child: Icon(icon, color: color, size: 26),
               ),
               const SizedBox(height: 10),
               Text(
                 title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 2),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ],
           ),
@@ -229,9 +230,9 @@ class _DocCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: AppShapes.radiusMd),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: AppShapes.radiusMd,
         onTap: () {
           // Guides with real sections open the reader (the route, if any,
           // becomes the "Open it" button at the end). Only a section-less
@@ -253,7 +254,7 @@ class _DocCard extends StatelessWidget {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: scheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: AppShapes.radiusMd,
                 ),
                 child: Icon(doc.icon,
                     size: 22, color: scheme.onPrimaryContainer),
@@ -265,16 +266,21 @@ class _DocCard extends StatelessWidget {
                   children: [
                     Text(
                       doc.title,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       doc.description,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.onSurfaceVariant,
-                          height: 1.4),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            height: 1.4,
+                          ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -284,24 +290,23 @@ class _DocCard extends StatelessWidget {
                           horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: scheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: AppShapes.radiusXs,
                       ),
                       child: Text(
                         doc.category,
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: scheme.onSecondaryContainer),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: scheme.onSecondaryContainer),
                       ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(
-                doc.route != null
-                    ? Icons.open_in_new_rounded
-                    : Icons.chevron_right,
-                size: 18,
+              AppIcon(
+                doc.route != null ? 'link' : 'chevron_r',
+                size: AppIconSize.md,
                 color: scheme.onSurfaceVariant,
               ),
             ],
@@ -337,12 +342,14 @@ class _DocReaderScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: scheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: AppShapes.radiusXs,
             ),
             child: Text(
               doc.category,
-              style: TextStyle(
-                  fontSize: 12, color: scheme.onSecondaryContainer),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: scheme.onSecondaryContainer),
             ),
           ),
           const SizedBox(height: 16),
@@ -359,8 +366,7 @@ class _DocReaderScreen extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Text(
                   paragraph,
-                  style: TextStyle(
-                    fontSize: 15,
+                  style: textTheme.bodyLarge?.copyWith(
                     height: 1.65,
                     color: scheme.onSurface,
                   ),
@@ -372,7 +378,7 @@ class _DocReaderScreen extends StatelessWidget {
             const SizedBox(height: 20),
             FilledButton.tonalIcon(
               onPressed: () => context.push(doc.route!),
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              icon: const AppIcon('link', size: 18),
               label: const Text('Open it'),
             ),
           ],

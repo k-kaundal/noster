@@ -3,13 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/groups/application/group_providers.dart';
 import 'package:nostrfeed_mobile/features/groups/create_group_sheet.dart';
 import 'package:nostrfeed_mobile/features/groups/domain/group_models.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 /// Groups home: browse NIP-29 relay groups + "My Groups" + join/leave.
@@ -25,18 +29,10 @@ class GroupsScreen extends ConsumerWidget {
     return DetailScaffold(
       title: 'Groups',
       body: groupsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Failed to load groups'),
-              TextButton(
-                onPressed: () => ref.invalidate(groupsProvider),
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
+        loading: () => const SkeletonList(),
+        error: (err, _) => ErrorView.fromError(
+          err,
+          onRetry: () => ref.invalidate(groupsProvider),
         ),
         data: (groups) {
           final myGroups = myGroupsAsync.valueOrNull ?? [];
@@ -92,7 +88,7 @@ class GroupsScreen extends ConsumerWidget {
                 showDragHandle: true,
                 builder: (_) => const CreateGroupSheet(),
               ),
-              icon: const Icon(Icons.group_add_rounded),
+              icon: const AppIcon('plus'),
               label: const Text('Create Group'),
             )
           : null,
@@ -110,12 +106,11 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
       child: Text(
         title.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.4,
-          color: Theme.of(context).colorScheme.primary,
-        ),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: Theme.of(context).colorScheme.primary,
+            ),
       ),
     );
   }
@@ -133,10 +128,14 @@ class _GroupCard extends ConsumerWidget {
     final memberCount = membersAsync.valueOrNull?.length;
     final auth = ref.watch(authStateProvider);
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         onTap: () => context.push('/groups/chat', extra: _toEvent(group)),
         child: Padding(
@@ -147,8 +146,8 @@ class _GroupCard extends ConsumerWidget {
                 imageUrl: group.picture,
                 radius: 26,
                 backgroundColor: scheme.primaryContainer,
-                fallback: Icon(
-                  Icons.group_rounded,
+                fallback: AppIcon(
+                  'group',
                   color: scheme.onPrimaryContainer,
                 ),
               ),
@@ -162,27 +161,27 @@ class _GroupCard extends ConsumerWidget {
                         Flexible(
                           child: Text(
                             group.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (!group.isPublic) ...[
                           const SizedBox(width: 5),
-                          Icon(
-                            Icons.lock_outline,
-                            size: 13,
+                          AppIcon(
+                            'key',
+                            size: AppIconSize.xs,
                             color: scheme.onSurfaceVariant,
                           ),
                         ],
                         if (!group.isOpen) ...[
                           const SizedBox(width: 5),
-                          Icon(
-                            Icons.vpn_key_outlined,
-                            size: 13,
+                          AppIcon(
+                            'key',
+                            size: AppIconSize.xs,
                             color: scheme.onSurfaceVariant,
                           ),
                         ],
@@ -195,10 +194,10 @@ class _GroupCard extends ConsumerWidget {
                           '$memberCount member${memberCount == 1 ? '' : 's'}',
                         'active ${timeago.format(DateTime.fromMillisecondsSinceEpoch(group.createdAt * 1000))}',
                       ].join(' · '),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: scheme.onSurfaceVariant,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                     if (group.about.isNotEmpty) ...[
                       const SizedBox(height: 2),
@@ -206,10 +205,10 @@ class _GroupCard extends ConsumerWidget {
                         group.about,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ],
@@ -291,7 +290,7 @@ class _JoinButtonState extends ConsumerState<_JoinButton> {
               widget.isMember
                   ? 'Leave'
                   : (widget.group.isOpen ? 'Join' : 'Request'),
-              style: const TextStyle(fontSize: 13),
+              style: Theme.of(context).textTheme.labelLarge,
             ),
     );
   }

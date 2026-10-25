@@ -3,8 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/nostr/kinds.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -13,7 +18,7 @@ import 'package:nostrfeed_mobile/features/notifications/application/notification
 import 'package:timeago/timeago.dart' as timeago;
 
 /// Notification filter selection.
-final notificationFilterProvider = StateProvider<String>((ref) => 'all');
+final notificationFilterProvider = StateProvider.autoDispose<String>((ref) => 'all');
 
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
@@ -25,12 +30,12 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     with SingleTickerProviderStateMixin {
   static const _filters = [
-    ('all', 'All', Icons.notifications_rounded),
-    ('mention', 'Mentions', Icons.alternate_email_rounded),
-    ('reaction', 'Reactions', Icons.favorite_rounded),
-    ('repost', 'Reposts', Icons.repeat_rounded),
-    ('zap', 'Zaps', Icons.bolt_rounded),
-    ('follow', 'Following', Icons.person_add_alt_1_rounded),
+    ('all', 'All', 'bell'),
+    ('mention', 'Mentions', 'at'),
+    ('reaction', 'Reactions', 'heart'),
+    ('repost', 'Reposts', 'repost'),
+    ('zap', 'Zaps', 'zap'),
+    ('follow', 'Following', 'users'),
   ];
 
   late AnimationController _animationController;
@@ -52,7 +57,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     // (clears the bell badge).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(notificationCenterProvider).markAllRead();
+        ref.read(notificationCenterProvider.notifier).markAllRead();
       }
     });
   }
@@ -74,11 +79,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
     return Scaffold(
       backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Notifications',
-          style: TextStyle(
+          style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.w700,
-            fontSize: 24,
             letterSpacing: -0.5,
           ),
         ),
@@ -91,29 +95,32 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
         opacity: _fadeAnimation,
         child: Column(
           children: [
-            // Modern filter chips
+            // Filter chips row
             Container(
-              height: 64,
+              height: 56,
               decoration: BoxDecoration(
                 color: colorScheme.surface,
                 border: Border(
                   bottom: BorderSide(
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+                    color: colorScheme.outlineVariant,
                     width: 1,
                   ),
                 ),
               ),
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
                 itemCount: _filters.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
                 itemBuilder: (context, i) {
-                  final (value, label, icon) = _filters[i];
+                  final (value, label, iconName) = _filters[i];
                   final selected = filter == value;
-                  return _ModernFilterChip(
+                  return _FilterChip(
                     label: label,
-                    icon: icon,
+                    iconName: iconName,
                     selected: selected,
                     onSelected: () {
                       HapticFeedback.selectionClick();
@@ -149,12 +156,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
                     color: colorScheme.primary,
                     child: ListView.separated(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.xs,
+                      ),
                       itemCount: filtered.length,
                       separatorBuilder: (_, _) => Divider(
                         height: 1,
-                        indent: 80,
-                        color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                        indent: 68,
+                        color: colorScheme.outlineVariant,
                       ),
                       itemBuilder: (context, i) => TweenAnimationBuilder<double>(
                         duration: AppMotion.normal +
@@ -201,17 +210,17 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
   }
 }
 
-// ─── Modern Filter Chip ─────────────────────────────────────────────
+// ─── Filter chip (Refined: hairline, quiet) ─────────────────────────
 
-class _ModernFilterChip extends StatelessWidget {
+class _FilterChip extends StatelessWidget {
   final String label;
-  final IconData icon;
+  final String iconName;
   final bool selected;
   final VoidCallback onSelected;
 
-  const _ModernFilterChip({
+  const _FilterChip({
     required this.label,
-    required this.icon,
+    required this.iconName,
     required this.selected,
     required this.onSelected,
   });
@@ -226,42 +235,45 @@ class _ModernFilterChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: selected
             ? colorScheme.primaryContainer
-            : colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(20),
+            : colorScheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusXl,
         border: Border.all(
           color: selected
               ? colorScheme.primary
-              : colorScheme.outline.withValues(alpha: 0.2),
-          width: selected ? 1.5 : 1,
+              : colorScheme.outlineVariant,
+          width: 1,
         ),
       ),
       child: Material(
-        color: Colors.transparent,
+        color: Colors.transparent, // token-guard: allow — ink surface
         child: InkWell(
           onTap: onSelected,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: AppShapes.radiusXl,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.xs,
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  icon,
-                  size: 18,
+                AppIcon(
+                  iconName,
+                  size: AppIconSize.sm,
                   color: selected
                       ? colorScheme.onPrimaryContainer
                       : colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: AppSpacing.xxs),
                 Text(
                   label,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: selected
-                        ? colorScheme.onPrimaryContainer
-                        : colorScheme.onSurfaceVariant,
-                  ),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w500,
+                        color: selected
+                            ? colorScheme.onPrimaryContainer
+                            : colorScheme.onSurfaceVariant,
+                      ),
                 ),
               ],
             ),
@@ -274,24 +286,24 @@ class _ModernFilterChip extends StatelessWidget {
 
 String _typeFor(NostrEvent e) {
   switch (e.kind) {
-    case 7:
+    case NostrKinds.reaction:
       return 'reaction';
-    case 6:
-    case 16:
+    case NostrKinds.repost:
+    case NostrKinds.genericRepost:
       return 'repost';
-    case 9735:
+    case NostrKinds.zapReceipt:
       return 'zap';
-    case 1111:
+    case NostrKinds.comment:
       return 'comment';
-    case 1059:
+    case NostrKinds.giftWrap:
       return 'dm';
-    case 3:
+    case NostrKinds.contacts:
       return 'follow';
-    case 30023:
+    case NostrKinds.longForm:
       return 'article_mention';
-    case 31925:
+    case NostrKinds.calendarRsvp:
       return 'rsvp';
-    case 1:
+    case NostrKinds.textNote:
     default:
       return 'mention';
   }
@@ -310,81 +322,96 @@ class _NotificationTile extends ConsumerWidget {
     final name = profile?.displayNameOrName ??
         '${event.pubkey.substring(0, 8)}…';
     final time = DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
+    final lastRead = ref.watch(
+      notificationCenterProvider.select((s) => s.lastRead),
+    );
+    final isUnread = event.createdAt >= lastRead;
 
-    final (icon, color, action) = switch (type) {
+    final (iconName, color, action) = switch (type) {
       'reaction' => (
-          Icons.favorite_rounded,
-          Colors.red.shade400,
+          'heart_filled',
+          AppActionColors.like(colorScheme.brightness),
           'liked your note',
         ),
       'repost' => (
-          Icons.repeat_rounded,
-          Colors.green.shade400,
+          'repost',
+          AppActionColors.repost(colorScheme.brightness),
           'reposted your note',
         ),
       'zap' => (
-          Icons.bolt_rounded,
-          Colors.amber.shade700,
+          'zap_filled',
+          AppActionColors.zap,
           'zapped you',
         ),
       'comment' => (
-          Icons.comment_rounded,
-          colorScheme.secondary,
+          'comment',
+          colorScheme.primary,
           'commented on your note',
         ),
       'dm' => (
-          Icons.mail_rounded,
+          'chat',
           colorScheme.primary,
           'sent you a message',
         ),
       'follow' => (
-          Icons.person_add_alt_1_rounded,
-          colorScheme.primary,
+          'users',
+          colorScheme.onSurfaceVariant,
           'started following you',
         ),
       'article_mention' => (
-          Icons.article_rounded,
-          colorScheme.tertiary,
+          'article',
+          colorScheme.primary,
           'mentioned you in an article',
         ),
       'rsvp' => (
-          Icons.event_available_rounded,
+          'calendar',
           colorScheme.primary,
           'RSVP\'d to your event',
         ),
       _ => (
-          Icons.alternate_email_rounded,
+          'at',
           colorScheme.primary,
           'mentioned you',
         ),
     };
 
     return Material(
-      color: Colors.transparent,
+      color: isUnread
+          ? colorScheme.primaryContainer.withValues(alpha: 0.12)
+          : Colors.transparent, // token-guard: allow — ink surface
       child: InkWell(
         onTap: () {
           HapticFeedback.lightImpact();
           _open(context, ref, event);
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Icon indicator
+              // Type icon in a soft-tinted circle
               Container(
-                width: 32,
-                height: 32,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
+                  color: color.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: color, size: 18),
+                child: Center(
+                  child: AppIcon(
+                    iconName,
+                    size: AppIconSize.md,
+                    color: color,
+                  ),
+                ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.sm),
               // Avatar
               _Avatar(imageUrl: profile?.picture, name: name),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.sm),
               // Content
               Expanded(
                 child: Column(
@@ -400,14 +427,14 @@ class _NotificationTile extends ConsumerWidget {
                         children: [
                           TextSpan(
                             text: name,
-                            style: const TextStyle(
+                            style: theme.textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.2,
                             ),
                           ),
                           TextSpan(
                             text: ' $action',
-                            style: TextStyle(
+                            style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
                           ),
@@ -415,7 +442,7 @@ class _NotificationTile extends ConsumerWidget {
                       ),
                     ),
                     if (event.content.isNotEmpty) ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: AppSpacing.xxs),
                       Text(
                         event.content,
                         maxLines: 2,
@@ -426,12 +453,12 @@ class _NotificationTile extends ConsumerWidget {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 6),
+                    const SizedBox(height: AppSpacing.xxs),
                     Text(
                       timeago.format(time),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                        fontSize: 12,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color:
+                            colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -519,15 +546,14 @@ class _Avatar extends StatelessWidget {
 
     return SafeAvatar(
       imageUrl: imageUrl,
-      radius: 24,
+      radius: 20,
       backgroundColor: colorScheme.primaryContainer,
       fallback: Text(
         initial,
-        style: TextStyle(
-          color: colorScheme.onPrimaryContainer,
-          fontWeight: FontWeight.w600,
-          fontSize: 18,
-        ),
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: colorScheme.onPrimaryContainer,
+              fontWeight: FontWeight.w600,
+            ),
       ),
     );
   }

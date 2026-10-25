@@ -5,6 +5,7 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/feed/domain/poll.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 /// Fetches kind-1018 responses for a poll, honoring the poll's declared
@@ -125,7 +126,7 @@ class _PollCardState extends ConsumerState<PollCard> {
         children: [
           Row(
             children: [
-              Icon(Icons.poll_rounded, size: 16, color: colorScheme.primary),
+              AppIcon('chart', size: 16, color: colorScheme.primary),
               const SizedBox(width: 6),
               Text(
                 ended

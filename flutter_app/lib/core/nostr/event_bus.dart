@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/nostr/filter.dart';
 
 /// ADR-0005 L2 — the dispatch hub between L1 (RelayPool) and L3
 /// (per-domain processors).
@@ -147,39 +148,21 @@ class _ActiveSpec {
 }
 
 /// Local filter matching — a consumer's .where() guard on the bus's union
-/// stream. `search` is relay-side only (NIP-50) and evaluates TRUE locally
-/// (conservative: never drops a possible match; consumers of NIP-50 results
-/// already re-check content themselves).
+/// stream. Delegates to the compiled engine in `core/nostr/filter.dart`
+/// (ADR-0007 Phase 0), so the bus, the store, and the future local relay
+/// share ONE set of NIP-01 semantics. `search` (NIP-50) is relay-side only
+/// and evaluates TRUE locally (conservative: never drops a possible match).
 extension NostrFilterSetMatcher on List<NostrFilter> {
   /// True when [event] matches ANY filter in the set (OR semantics, like a
-  /// relay evaluating a REQ).
+  /// relay evaluating a REQ). Compiles per call — fine for `.where()` guards
+  /// on the union stream; hot loops should hold a [CompiledFilterGroup].
   bool matchesAny(NostrEvent event) => any((f) => f.matchesEvent(event));
 }
 
 extension NostrFilterMatcher on NostrFilter {
-  /// Does [event] satisfy this filter? Mirrors relay-side NIP-01 semantics
-  /// for the fields we can evaluate locally (ids/authors/kinds/#tags/
-  /// since/until). `limit` is a quantity hint, not a predicate — ignored.
-  bool matchesEvent(NostrEvent event) {
-    if (ids != null && !ids!.contains(event.id)) return false;
-    if (authors != null && !authors!.contains(event.pubkey)) return false;
-    if (kinds != null && !kinds!.contains(event.kind)) return false;
-    if (since != null && event.createdAt < since!) return false;
-    if (until != null && event.createdAt > until!) return false;
-    if (tagFilters != null) {
-      for (final entry in tagFilters!.entries) {
-        final wanted = entry.value;
-        if (wanted.isEmpty) continue;
-        var hit = false;
-        for (final tag in event.tags) {
-          if (tag.length > 1 && tag[0] == entry.key && wanted.contains(tag[1])) {
-            hit = true;
-            break;
-          }
-        }
-        if (!hit) return false;
-      }
-    }
-    return true;
-  }
+  /// Does [event] satisfy this filter? NIP-01-exact semantics via the
+  /// compiled engine: AND of present attributes, empty lists match nothing,
+  /// hex comparisons case-insensitive, `limit` not a predicate.
+  bool matchesEvent(NostrEvent event) =>
+      CompiledFilter.from(this).matches(event);
 }

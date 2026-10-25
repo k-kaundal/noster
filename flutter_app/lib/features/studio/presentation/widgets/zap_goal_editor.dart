@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/studio/application/studio_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 /// Create a zap goal (NIP-75 kind 9041): a fundraising target funded by
 /// zapping the goal itself. Amount is entered in sats and stored in millisats.
@@ -120,8 +121,7 @@ class _ZapGoalEditorSheetState extends ConsumerState<ZapGoalEditorSheet> {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
                 labelText: 'Target (sats)',
-                prefixIcon: Icon(Icons.track_changes_rounded,
-                    color: scheme.primary),
+                prefixIcon: AppIcon('target', size: AppIconSize.md, color: scheme.primary),
               ),
             ),
             AppSpacing.gapSm,
@@ -159,7 +159,7 @@ class _ZapGoalEditorSheetState extends ConsumerState<ZapGoalEditorSheet> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.publish_rounded),
+                  : const AppIcon('share'),
               label: const Text('Publish goal'),
             ),
             AppSpacing.gapSm,

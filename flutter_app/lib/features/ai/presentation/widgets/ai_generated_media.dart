@@ -5,6 +5,7 @@ import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/ai/data/ai_media_service.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:video_player/video_player.dart';
 
@@ -98,12 +99,12 @@ class _AiImageViewer extends StatelessWidget {
         title: const Text('Generated image'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.download_rounded),
+            icon: const AppIcon('download'),
             tooltip: 'Save to gallery',
             onPressed: () => _save(context),
           ),
           IconButton(
-            icon: const Icon(Icons.share_rounded),
+            icon: const AppIcon('share'),
             tooltip: 'Share',
             onPressed: () => _share(context),
           ),

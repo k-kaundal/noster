@@ -73,6 +73,11 @@ android {
                 "**/libbarhopper_v3.so",
             )
         }
+        resources {
+            // Room 2.7 splits room-common (JVM) from room-runtime (Android);
+            // both ship the same META-INF LICENSE — pick one, not both.
+            excludes += setOf("META-INF/androidx/room/room-common/LICENSE.txt")
+        }
     }
 }
 

@@ -19,6 +19,7 @@ import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
@@ -65,15 +66,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                     ],
                   ),
                 ),
-                // Home AI shortcut — a compact ✨ chip right on the tab row,
-                // next to the avatar (the shell AppBar button covers it too,
-                // but this one sits inside the feed itself).
+                // Home AI shortcut — a compact ✨ chip on the tab row. The
+                // avatar lives in the shell AppBar now (→/you), so it's
+                // removed here — just the AI icon remains.
                 if (aiAvailable)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
                     child: IconButton(
-                      icon: Icon(
-                        Icons.auto_awesome_rounded,
+                      icon: AppIcon(
+                        'sparkle',
+                        size: AppIconSize.lg,
                         color: colorScheme.primary,
                       ),
                       tooltip: 'AI Assistant',
@@ -84,29 +86,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                       },
                     ),
                   ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      if (auth.isLoggedIn && auth.pubkey != null) {
-                        context.push('/profile/${auth.pubkey}');
-                      } else {
-                        context.push('/login');
-                      }
-                    },
-                    child: SafeAvatar(
-                      imageUrl: auth.profile?.picture,
-                      radius: 16,
-                      backgroundColor: colorScheme.primaryContainer,
-                      fallback: Icon(
-                        Icons.person_rounded,
-                        size: 18,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -129,7 +108,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                   HapticFeedback.mediumImpact();
                   context.push('/compose');
                 },
-                icon: const Icon(Icons.edit_rounded),
+                icon: const AppIcon('edit'),
                 label: const Text('Post'),
                 elevation: 4,
               ),
@@ -263,24 +242,13 @@ class _FeedTabState extends ConsumerState<_FeedTab>
     // Following tab needs login.
     if (widget.following && !auth.isLoggedIn) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.people_outline, size: 64, color: Colors.grey),
-              const SizedBox(height: 16),
-              Text(
-                'Log in to see posts from people you follow',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: () => context.push('/login'),
-                child: const Text('Log in'),
-              ),
-            ],
+        child: EmptyState(
+          icon: Icons.people_outline,
+          title: 'Log in to see posts from people you follow',
+          iconColor: Colors.grey,
+          action: FilledButton(
+            onPressed: () => context.push('/login'),
+            child: const Text('Log in'),
           ),
         ),
       );
@@ -321,7 +289,7 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                           action: FilledButton.tonalIcon(
                             onPressed: () =>
                                 ref.read(_provider.notifier).refresh(),
-                            icon: const Icon(Icons.refresh),
+                            icon: const AppIcon('repost'),
                             label: const Text('Refresh'),
                           ),
                         ),
@@ -431,9 +399,9 @@ class _OfflineBanner extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              Icon(
-                offline ? Icons.cloud_off_rounded : Icons.sync_problem_rounded,
-                size: 16,
+              AppIcon(
+                offline ? 'wifi_off' : 'repost',
+                size: AppIconSize.sm,
                 color: scheme.onErrorContainer,
               ),
               const SizedBox(width: 8),
@@ -451,8 +419,7 @@ class _OfflineBanner extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(Icons.refresh_rounded,
-                  size: 16, color: scheme.onErrorContainer),
+              AppIcon('repost', size: 16, color: scheme.onErrorContainer),
             ],
           ),
         ),
@@ -493,8 +460,7 @@ class _NewPostsPill extends StatelessWidget {
                 _AvatarStack(pubkeys: authorPubkeys),
                 const SizedBox(width: 8),
               ] else ...[
-                const Icon(Icons.arrow_upward_rounded,
-                    size: 16, color: Colors.white),
+                const AppIcon('arrow_up', size: 16, color: Colors.white),
                 const SizedBox(width: 6),
               ],
               Text(

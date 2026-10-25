@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
-import 'package:qr_flutter/qr_flutter.dart';
+import 'package:nostrfeed_mobile/features/sats_drops/application/sats_drops_providers.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 class SatsDropsScreen extends ConsumerStatefulWidget {
@@ -30,29 +35,29 @@ class _SatsDropsScreenState extends ConsumerState<SatsDropsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final auth = ref.watch(authStateProvider);
+    final active = ref.watch(activeDropsProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sats Drops'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Active Drops'),
-            Tab(text: 'Claim History'),
+          tabs: [
+            Tab(text: 'Active (${active.length})'),
+            const Tab(text: 'Completed'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [
-          _ActiveDropsTab(isLoggedIn: auth.isLoggedIn),
-          const _ClaimHistoryTab(),
+        children: const [
+          _DropsTab(active: true),
+          _DropsTab(active: false),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCreateDropSheet(context),
-        icon: const Icon(Icons.water_drop),
+        icon: const AppIcon('gift'),
         label: const Text('New Drop'),
       ),
     );
@@ -68,206 +73,207 @@ class _SatsDropsScreenState extends ConsumerState<SatsDropsScreen>
   }
 }
 
-class _ActiveDropsTab extends StatelessWidget {
-  final bool isLoggedIn;
-  const _ActiveDropsTab({required this.isLoggedIn});
-
-  // Sample drops for UI preview
-  static const _sampleDrops = [
-    _Drop(id: '1', amount: 1000, claimed: 12, total: 50, label: 'Nostr Meetup'),
-    _Drop(id: '2', amount: 500, claimed: 8, total: 20, label: 'Podcast Bonus'),
-  ];
+class _DropsTab extends ConsumerWidget {
+  final bool active;
+  const _DropsTab({required this.active});
 
   @override
-  Widget build(BuildContext context) {
-    if (_sampleDrops.isEmpty) {
-      return const EmptyState(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final drops = ref.watch(
+      active ? activeDropsProvider : claimedDropsProvider,
+    );
+
+    if (drops.isEmpty) {
+      return EmptyState(
         icon: Icons.water_drop_outlined,
-        title: 'No active drops',
-        subtitle: 'Create a drop to share sats via QR code.',
+        title: active ? 'No active drops' : 'Nothing completed yet',
+        subtitle: active
+            ? 'Create a drop to share sats with your community.'
+            : 'Drops you finish sharing land here.',
       );
     }
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: _sampleDrops.length,
+      itemCount: drops.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, i) => _DropCard(drop: _sampleDrops[i]),
+      itemBuilder: (context, i) => _DropCard(drop: drops[i], active: active),
     );
   }
 }
 
-class _Drop {
-  final String id;
-  final int amount;
-  final int claimed;
-  final int total;
-  final String label;
-  const _Drop({
-    required this.id,
-    required this.amount,
-    required this.claimed,
-    required this.total,
-    required this.label,
-  });
-}
-
-class _DropCard extends StatelessWidget {
-  final _Drop drop;
-  const _DropCard({required this.drop});
+class _DropCard extends ConsumerWidget {
+  final SatsDrop drop;
+  final bool active;
+  const _DropCard({required this.drop, required this.active});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final progress = drop.claimed / drop.total;
+    final progress = drop.totalClaims == 0
+        ? 0.0
+        : drop.claimed / drop.totalClaims;
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    final zapColor = AppActionColors.zapFor(scheme.brightness);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // QR placeholder
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: scheme.outlineVariant),
-              ),
-              child: QrImageView(
-                data: 'LNURL1DP68GURN8GHJ7MRWW4EXCTNDD93K2EM0W4HK6ANPV5SK6CTYDSYXXCT8D3SK2CT9V5SK2CTYDSYXXCTYDSYXXCT8D3SK2CT9V5SK2CT8DSYXXCTYDSYXXCT8D3SK2CT9V5SK2CTYDSYXXCTYDSYXXCT8D3SK2CT9V5SK2CT8DSYXX',
-                size: 64,
-                padding: const EdgeInsets.all(4),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    drop.label,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.bolt, size: 14, color: scheme.primary),
                       Text(
-                        '${drop.amount} sats each',
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: scheme.primary,
-                            fontWeight: FontWeight.w600),
+                        drop.label,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          AppIcon('zap', size: 14, color: zapColor),
+                          Text(
+                            '${drop.amountSats} sats per claim',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: zapColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
+                                ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value: progress,
-                    backgroundColor: scheme.surfaceContainerHighest,
-                    color: scheme.primary,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${drop.claimed}/${drop.total} claimed',
-                    style: TextStyle(
-                        fontSize: 11, color: scheme.onSurfaceVariant),
-                  ),
-                ],
+                ),
+                IconButton(
+                  icon: const AppIcon('share'),
+                  onPressed: () => _share(context),
+                  tooltip: 'Share drop',
+                ),
+                IconButton(
+                  icon: AppIcon('eye_off', color: scheme.error),
+                  onPressed: () => _delete(context, ref),
+                  tooltip: 'Delete drop',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: progress,
+              backgroundColor: scheme.surfaceContainerHighest,
+              color: zapColor,
+              borderRadius: AppShapes.radiusXs,
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Text(
+                  '${drop.claimed}/${drop.totalClaims} claimed',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                ),
+                const Spacer(),
+                Text(
+                  timeago.format(drop.createdAt),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+            if (active) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: () => _markClaimed(context, ref),
+                  icon: const AppIcon('check', size: 18),
+                  label: const Text('Mark one claim paid'),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            IconButton(
-              icon: const Icon(Icons.share),
-              onPressed: () {},
-              tooltip: 'Share drop',
-            ),
+            ],
           ],
         ),
       ),
     );
   }
-}
 
-class _ClaimHistoryTab extends StatelessWidget {
-  const _ClaimHistoryTab();
+  Future<void> _share(BuildContext context) async {
+    final text = '💧 Sats Drop: ${drop.label}\n'
+        '⚡ ${drop.amountSats} sats per person · '
+        '${drop.totalClaims - drop.claimed} of ${drop.totalClaims} left\n'
+        'Reply or zap me to claim yours!';
+    await SharePlus.instance.share(ShareParams(text: text));
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final now = DateTime.now();
-
-    // Sample history
-    final history = [
-      (label: 'Nostr Meetup Drop', amount: 1000, time: now.subtract(const Duration(hours: 3))),
-      (label: 'Podcast Bonus', amount: 500, time: now.subtract(const Duration(days: 1))),
-      (label: 'Conference Swag', amount: 2100, time: now.subtract(const Duration(days: 5))),
-    ];
-
-    if (history.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.history, size: 56, color: scheme.primary),
-            const SizedBox(height: 12),
-            Text('No claims yet',
-                style: Theme.of(context).textTheme.titleMedium),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: history.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, i) {
-        final item = history[i];
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: scheme.primaryContainer,
-            child: Icon(Icons.water_drop,
-                color: scheme.onPrimaryContainer, size: 18),
-          ),
-          title: Text(item.label,
-              style:
-                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-          subtitle: Text(timeago.format(item.time),
-              style: const TextStyle(fontSize: 12)),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.bolt, size: 14, color: scheme.primary),
-              Text(
-                '${item.amount}',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, color: scheme.primary),
-              ),
-            ],
-          ),
-        );
-      },
+  Future<void> _markClaimed(BuildContext context, WidgetRef ref) async {
+    final confirmed = await AppDialog.confirm(
+      context,
+      title: 'Mark one claim as paid?',
+      message:
+          'Confirm you sent ${drop.amountSats} sats to one claimer of "${drop.label}".',
+      confirmLabel: 'Paid',
     );
+    if (confirmed == true) {
+      await ref.read(satsDropsProvider.notifier).markClaimed(drop.id);
+      if (context.mounted) {
+        AppToast.success(context, 'Claim recorded');
+      }
+    }
+  }
+
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await AppDialog.confirm(
+      context,
+      title: 'Delete this drop?',
+      message: '"${drop.label}" and its claim counter are removed.',
+      confirmLabel: 'Delete',
+      isDestructive: true,
+    );
+    if (confirmed == true) {
+      await ref.read(satsDropsProvider.notifier).delete(drop.id);
+      if (context.mounted) {
+        AppToast.success(context, 'Drop deleted');
+      }
+    }
   }
 }
 
-class _CreateDropSheet extends StatefulWidget {
+class _CreateDropSheet extends ConsumerStatefulWidget {
   const _CreateDropSheet();
 
   @override
-  State<_CreateDropSheet> createState() => _CreateDropSheetState();
+  ConsumerState<_CreateDropSheet> createState() => _CreateDropSheetState();
 }
 
-class _CreateDropSheetState extends State<_CreateDropSheet> {
+class _CreateDropSheetState extends ConsumerState<_CreateDropSheet> {
   final _labelCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
   final _countCtrl = TextEditingController();
+  bool _creating = false;
 
   @override
   void dispose() {
@@ -275,6 +281,46 @@ class _CreateDropSheetState extends State<_CreateDropSheet> {
     _amountCtrl.dispose();
     _countCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _create() async {
+    final label = _labelCtrl.text.trim();
+    final amount = int.tryParse(_amountCtrl.text.trim());
+    final count = int.tryParse(_countCtrl.text.trim());
+    if (label.isEmpty) {
+      AppToast.warning(context, 'Give the drop a label');
+      return;
+    }
+    if (amount == null || amount <= 0) {
+      AppToast.warning(context, 'Enter sats per claim');
+      return;
+    }
+    if (count == null || count <= 0) {
+      AppToast.warning(context, 'Enter the number of claims');
+      return;
+    }
+
+    setState(() => _creating = true);
+    try {
+      final drop =
+          await ref.read(satsDropsProvider.notifier).create(
+                label: label,
+                amountSats: amount,
+                totalClaims: count,
+              );
+      if (mounted) {
+        Navigator.pop(context);
+        AppToast.success(context, 'Drop created — share it to start');
+        // Offer to share right away.
+        final text = '💧 Sats Drop: ${drop.label}\n'
+            '⚡ ${drop.amountSats} sats per person · '
+            '${drop.totalClaims} claims\n'
+            'Reply or zap me to claim yours!';
+        await SharePlus.instance.share(ShareParams(text: text));
+      }
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
   }
 
   @override
@@ -319,14 +365,29 @@ class _CreateDropSheetState extends State<_CreateDropSheet> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.qr_code),
-              label: const Text('Generate Drop QR'),
+              onPressed: _creating ? null : _create,
+              icon: _creating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const AppIcon('gift'),
+              label: Text(_creating ? 'Creating…' : 'Create & Share'),
             ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'The drop tracks how many people you\'ve paid — share the link, '
+            'then mark each claim as you zap it.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
 }
-

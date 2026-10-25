@@ -107,6 +107,15 @@ over ~100 lines.
   - **Feeds live ONLY on the Notifiers** (`globalFeedProvider`,
     `followingFeedNotifierProvider`) — never add a plain feed
     FutureProvider (it diverges from the store-backed state).
+  - **Mutable app services are real Notifiers, never a Provider + manual
+    version poke** (`NotificationCenter` + `DmStore` are the models: a
+    `Notifier<…State>` emitting an immutable snapshot; watchers use
+    `.select` for rebuild granularity). The old pattern (mutable singleton
+    in a `Provider` + a `…VersionProvider` StateProvider poked after each
+    mutation) is banned — every new mutation path had to remember to poke.
+    `dmStoreVersionProvider` survives as a shim over
+    `dmStoreProvider.select((s) => s.version)`; new code watches
+    `dmStoreProvider` directly.
 - **Post interactions** (like/repost/bookmark/zap refresh): go through
   `postActionsProvider` (`features/feed/providers/post_actions.dart`) — never
   inside widgets.
@@ -210,19 +219,101 @@ over ~100 lines.
 - **Toasts**: always `AppToast.success/error/info/warning` — never raw
   `SnackBar(content: Text(...))`. Toasts auto-replace (no stacking) and
   strip `Exception: ` prefixes.
-- **Navigation architecture**: bottom nav = **Home · Reels · Create (center) ·
-  Chat (badge) · Wallet**. The center CREATE button opens a create sheet
-  (Ask AI / post / article / reel / live / group) — Instagram pattern. The
-  bar is a floating 64 dp pill (28 dp radius) with Primal's **sliding
-  indicator pill** behind the active tab (`AnimatedPositioned`, 300 ms
-  easeOutCubic ≈ Primal's spring-0.75, neutral `surfaceContainerHighest`
-  fill) — the Create slot never gets a pill (it's an action, not a
-  destination). The
+- **Navigation architecture (v2.2 — the drawer is GONE)**: bottom nav =
+  **Home · Explore · Create (center) · Chat (badge) · Wallet**. The center
+  CREATE button opens a create sheet. **Explore is tab 2.** The **top bar is
+  clean**: logo+name … search, bell, **avatar → /you**. There is **NO
+  hamburger and NO 3-dot** — the drawer was removed entirely, and the 3-dot
+  was replaced by the avatar.
+  **Where everything lives (one home each, no duplicates)**:
+  - **Tabs**: Home, Explore, Create, Chat, Wallet.
+  - **/you** (avatar, the single account hub): profile header, quick stats,
+    soft-update banner, Studio, Premium, Memberships, Bookmarks, Lists,
+    Switch account, Appearance (theme sheet), Identity, Settings, Docs,
+    Sign out.
+  - **Explore "Browse" chip row**: Trending, Articles, Calendar, Communities,
+    Groups, Live (the drawer's old Discover/Communities items — the drawer is
+    dead, these moved to the discovery tab).
+  - **Wallet "Earn" tab**: Drops, Bounties, Goals, Market, P2P, Names +
+    creator shortcuts (Studio/Memberships/Premium).
+  - **Theme switcher**: /you → Appearance (was the 3-dot's only job).
+  The old `_ShellOverflowMenu`, `ModernDrawer`, `_DrawerHeader`, `_DrawerItem`
+  and friends were deleted from `app_shell.dart`.
+  **Refined nav (v2.1)**: the bar is FLAT — a 56 dp row on `surface` with a
+  0.5 dp `outlineVariant` hairline top border (NO floating pill, NO shadow).
+  The active tab shows a small 18×3 top accent tick in `primary`
+  (`AnimatedContainer`, `AppMotion.fast`). Icons are the Refined stroke SVG
+  set via `AppIcon` (see below). The Create slot is an OUTLINED capsule
+  (1.5 dp `onSurfaceVariant` border, `radiusFull`, a `plus` AppIcon) — it's an
+  action, not a destination, so it never gets the tick. **Long-press the
+  Create capsule → the command palette** (`showCommandPalette`). The
   shell AppBar + bottom nav are **hidden on immersive routes** (chat threads,
   reels player) which render their own headers. Drawer is grouped by intent
   (Discover / People / Money / You) — never a flat 20+ item list. Detail
   routes use `DetailScaffold` (back button + title). Never hand-roll a drawer
   button inside a screen (it resolves to the inner drawer-less Scaffold).
+  **Layout refinements (v2.1)**: (1) the **create sheet** leads with the two
+  80% actions (Ask AI + Post as full rows) and compresses Article/Reel/Live/
+  Group into a 4-icon grid (`_CreateGridButton`); (2) the **"You" surface**
+  (`/you`, `features/profile/presentation/you_screen.dart`) is the profile hub
+  behind the feed-tab-row avatar — profile summary + quick stats + grouped
+  rows (Create & earn / Library / Account), the contextual alternative to
+  spelunking the drawer; (3) the **wallet quick-rails** (`_QuickRail` in
+  `wallet_screen.dart`'s Wallets tab) surface Earn (Drops/Bounties/Goals),
+  Creator (Studio/Memberships/Premium) and Trade (Market/P2P/Names) as
+  horizontal nav cards so the money features stop hiding in the drawer.
+  (4) the **command palette** (`core/widgets/command_palette.dart`,
+  `showCommandPalette`) is the ⌘K-style universal launcher — LONG-PRESS the
+  center Create capsule to open it from any screen: search field (submits to
+  `/search`), Nova AI lead (gated on `aiAvailableProvider`), Create rows
+  (Post/Article/Reel/Live/Group), and Navigate rows (tab destinations use
+  `context.go`, detail routes `context.push`).
+  **Home top bar (v2.1)**: the shell AppBar leading is a custom stroke `menu`
+  AppIcon (NOT the default Material hamburger) that opens the drawer; the
+  feed tab-row AI shortcut is a stroke `sparkle` AppIcon (NOT
+  `auto_awesome_rounded`). **The drawer uses AppIcon throughout** —
+  `_DrawerItem` and `_HeaderChip` take a `String` stroke-icon asset name
+  (converted from `IconData`), so every drawer row renders the Refined SVG
+  set.
+  **Explore tab (v2.1)**: as a tab, `ExploreScreen` renders NO internal
+  AppBar (the shell owns it). Its sections use the shared `_SectionHeader`
+  (uppercase accent label), the AI card is a QUIET hairline card with an
+  accent icon tile (NO gradient — discovery, not an ad), and People-to-follow
+  cards are hairline-bordered (`surfaceContainerLowest` + `outlineVariant`
+  border), not filled `surfaceContainerHighest`.
+  **Gradient discipline (v2.1)**: NO `LinearGradient` except the logo mark.
+  Sweep done across chat (AI tile avatar + send button → flat accent
+  circles), wallet (LNbits + NWC balance cards → quiet dark-ink
+  `inverseSurface` statement cards with `tabularFigures` amounts), and
+  profile (no-banner fallback → quiet `surfaceContainerHigh` tint). The
+  `tertiary` role now equals the accent, so chat "mine" bubbles read as
+  `#2F6BFF`/`#6B96FF` automatically (MessageBubble spec unchanged: flat
+  `tertiary` mine / `surfaceContainerHighest` theirs, no gradient).
+  **Wallet tabs (v2.1)**: Earn/Creator/Trade are a FIRST-CLASS **"Earn" tab**
+  in the wallet's TabBar (`_earnTab`), NOT buried at the bottom of the
+  wallets list. LNbits view tabs: Wallets / Earn / Activity / Settings. NWC
+  view tabs: Earn / Transactions / Zaps / Settings. There is NO separate
+  settings icon at the top of the Wallet screen — settings lives in the
+  TabBar's "Settings" tab (the top icon read as redundant clutter).
+  **Full-screen sweep (v2.1) — COMPLETE.** Every screen in `lib/features/` is
+  on the Refined system: hairline cards/rows (`surfaceContainerLowest` +
+  `outlineVariant` border, NOT filled containers or elevation), ZERO
+  `LinearGradient` except the logo mark, dense `textTheme` type (section
+  headers = uppercase accent `labelSmall`), `AppShapes`/`AppSpacing` radii +
+  spacing, stroke `AppIcon`s everywhere, zap = muted amber (`zapFor` for AA),
+  status pills = `AppStatusColors`, amounts = `tabularFigures`. Covered:
+  notifications (icon-coded grouped rows + unread tint), articles + editor
+  (hairline cards, read-time overlay), communities + detail + groups +
+  group-chat (flat-accent bubbles), live + room + go-live (status-first
+  cards, ended dimmed), settings + relays (swatch appearance picker, icon
+  tiles), identity + login (flat hero mark, trust note, npub/nsec cards),
+  docs, premium (dark-ink hero + pillar cards), studio (bar chart, stat
+  cards), memberships + tier cards (popular = primary border), market,
+  p2p (escrow note), bounties, sats-drops, lists + detail, calendar
+  (date-block rows), bookmarks, search (pill field), compose, reels,
+  ai-chat (credit cost in zap amber). Bare `icon: Icons.x` IconData-params
+  (EmptyState/ErrorView/FilledButton.icon/menu helpers) intentionally stay
+  Material.
 - **AI Assistant visibility** (gated on `aiAvailableProvider` so keyless
   builds never tease it): the create sheet leads with "Ask AI", and the
   Home feed's tab row has a compact ✨ shortcut button next to the avatar
@@ -255,21 +346,46 @@ over ~100 lines.
     (never hardcoded white containers — dark mode)
   - Feed-style async lists → `AsyncFeedList<T>`
   - Bottom sheets → `AppSheet.show`; confirms/alerts → `AppDialog.confirm/info`
+  - Buttons → `AppButton.primary/secondary/outline/destructive/ghost`
+    (supports `loading:` spinner + `expand:` full-width)
+  - Content cards → `AppCard` (flat, `surfaceContainerLowest`, radiusLg,
+    optional `onTap` ink)
+  - Count badges (nav/bell/unread) → `AppBadge.count` (auto "99+" cap)
+  - Status pills (live/ended/active/expired) → `StatusBadge.error/info/
+    success/warning` (driven by `AppStatusColors`)
+- **Token guardrail**: `tool/token_guard.sh` fails CI when raw
+  `Colors.*`/`BorderRadius.circular`/`TextStyle(` counts in `lib/features/`
+  GROW beyond the recorded baseline (`tool/.token_guard_baseline`) — run it
+  before committing UI changes; migrate DOWN with each screen touch. Rare
+  deliberate escapes (QR white backgrounds, video scrims) take an inline
+  `// token-guard: allow` comment.
 - **Design tokens**: spacing → `AppSpacing`; timeouts → `AppDurations`;
-  status colors → `AppStatusColors`; engagement action accents (zap orange,
-  like pink, repost green, bookmark blue — the exact Primal palette) →
-  `AppActionColors`; brand gradient → `AppTheme.brandGradient`;
+  status colors → `AppStatusColors`; engagement action accents (zap amber,
+  like rose, repost green, bookmark blue — the MUTED Refined palette) →
+  `AppActionColors` (zap is brightness-aware via `zapFor(brightness)` for AA;
+  the `zap` const is the dark fallback for `const Icon` sites); brand
+  gradient → `AppTheme.brandGradient`;
   typography → `Theme.of(context).textTheme.*` (the `AppTypography` ramp —
   never a raw `TextStyle(fontSize:)` in new code); corner radii →
   `AppShapes` (xs 4 / sm 8 / md 12 / lg 16 / xl 20 / pill 28 — never a new
   hardcoded `BorderRadius.circular(N)`).
+  **The shared UI kit is 100% token-based** (`core/widgets/*` — shell,
+  sheets, toasts, skeletons, empty/error views, dialogs, avatar, safe
+  image). Feature screens still have legacy hardcoded radii/fontSizes —
+  migrate them to `AppShapes`/`textTheme` opportunistically whenever you
+  touch a screen (map to the NEAREST token; keep deliberate micro-styles
+  like badge text).
 - **PostCard layout (Primal grid)**: avatar in a fixed LEFT column; header,
   content and the action row in ONE column indented right (avatar width +
   10); the repost notice aligns with the content column. Card padding is a
-  tight 12h/10v. Action colors come from `AppActionColors` — inactive stays
-  muted grey, active gets the per-action accent; zap keeps its signature
-  orange as an invite. Don't move content back under the avatar — the
-  indent IS the look.
+  tight 12h/10v. **Post body text is the Refined reading style — 13.5px with
+  a 1.5 line-height** (`note_content.dart`'s `defaultStyle`; the M3 ramp's
+  bodyMedium stays 14 for sheets/cards). The action row uses `AppIcon` stroke
+  SVGs (comment/repost/heart[zap]bookmark/share) with `AppIconSize.md`;
+  action colors come from `AppActionColors` — inactive stays muted grey,
+  active gets the per-action accent; zap keeps its signature amber as an
+  invite (`zapFor(brightness)`). Don't move content back under the avatar —
+  the indent IS the look.
 - **Thread connector lines (Primal chain)**: `PostCard.drawLineAboveAvatar` /
   `drawLineBelowAvatar` paint a 2 dp chain segment behind the avatar column
   (`_ThreadConnectorPainter`, stops at the avatar edge, never crosses it).
@@ -306,15 +422,37 @@ over ~100 lines.
   list). Mine = flat `colorScheme.tertiary` (Primal `#0C7DD8`, white text);
   theirs = `surfaceContainerHighest`. NO gradient on the bubble — flat is
   what makes Primal's chat read native.
-- **Brand color = ice blue** (`core/theme/app_theme.dart`), Primal-style.
-  The schemes are HAND-SPECIFIED (never `ColorScheme.fromSeed` — M3's seed
-  algorithm skews violet→blue and picks murky surfaces, the original
-  "bluish-muddy" complaint). Light mode: deep ocean blue `#0A66C2` primary
-  on ice-white `#F7FAFD`; dark mode: bright ice blue `#4FA3E8` on deep
-  ocean-charcoal `#0B0F14`. All text pairs pass WCAG AA. Change the brand by
-  editing `_brand`/`_brandDark` only — the app uses `colorScheme.*` tokens
-  throughout, so it re-themes at once. (History: violet seed → Lightning
-  amber → ice blue; the first two were reverted on review.)
+- **Brand color = Refined accent** (`core/theme/app_theme.dart`) — one
+  confident blue, used sparingly (Refined direction v2.1). The schemes are
+  HAND-SPECIFIED (never `ColorScheme.fromSeed` — M3's seed algorithm skews
+  violet→blue and picks murky surfaces, the original "bluish-muddy"
+  complaint). Light mode: `#2F6BFF` primary on a whisper-grey `#F7F8FA` page
+  (so pure-white cards lift with hairlines); dark mode: `#6B96FF` on
+  warm-neutral space `#0E0F13`. Surfaces are NEUTRAL (de-blued) — content
+  carries the color, chrome stays quiet. All text pairs pass WCAG AA. Change
+  the brand by editing `_brand`/`_brandDark` only — the app uses
+  `colorScheme.*` tokens throughout, so it re-themes at once. (History:
+  violet seed → Lightning amber → ice blue `#0A66C2` → **Refined `#2F6BFF`
+  on neutral surfaces**; the earlier three were reverted on review.)
+  **AppIcon icon system**: UI chrome uses the Refined stroke SVG set —
+  `AppIcon('name')` (`core/widgets/app_icon.dart`, assets in
+  `assets/icons/*.svg`, 24-viewBox, 1.75 stroke, recolored via
+  `BlendMode.srcIn`). Sizes via `AppIconSize` tokens (xs 13 / sm 16 / md 18 /
+  lg 21 / xl 24). **Migration COMPLETE**: the shell (nav + AppBar), PostCard
+  engagement row, and every feature screen (feed/thread/compose, chat + DM
+  widgets, zap, wallet + all wallet sub-screens & dialogs, profile + edit +
+  user-list, settings + relays, articles + editor, premium + bunker/nwc
+  cards, identity + nip5 tiles, login, ai-chat + model picker, search,
+  calendar, market, bounties, reels + uploader + video card, live + go-live +
+  room, communities, groups, memberships + tier cards, p2p, sats-drops,
+  lists, boost, studio + zap-goal cards, notifications) use `AppIcon` for
+  display icons. **Emoji survive ONLY in the zap preset grid** (cultural
+  shorthand for amounts) and as user CONTENT — never as UI icons.
+  **IconData-typed params stay Material**: `EmptyState`, `ErrorView`,
+  `AppButton.icon`, `AppToast`, `PopupMenuItem` helpers and feature-local
+  `IconData` helpers (e.g. wallet's `_walletCard`) still take `Icons.x` —
+  convert a display `Icon(Icons.x)` or a Widget-param `icon: Icon(Icons.x)`
+  to `AppIcon`, never a bare `icon: Icons.x` param.
   **The `surfaceContainer*` ladder is hand-specified too** (lowest →
   highest) in all three schemes — left unspecified, Flutter computes them
   with its own tint and the murk comes back. Light: lowest is pure white
@@ -332,9 +470,10 @@ over ~100 lines.
 - **Motion (ADR-0003)**: every animation uses `AppMotion` tokens (durations,
   curves, stagger) — never magic numbers. This includes scroll-to
   animations (`animateTo`/`ensureVisible`), `AnimatedContainer`/`AnimatedPositioned`
-  durations, image fade-ins, and list stagger formulas (the sweep is DONE —
-  chat/feed/articles/groups/AI/wallet/notifications/shell all use tokens;
-  `Future.delayed`/`Timer` network debounces are NOT animations and stay
+  durations, image fade-ins (OctoImage `fadeInDuration` too), and list
+  stagger formulas. **The sweep is 100% DONE — zero non-token UI animation
+  durations remain in lib/** (`Future.delayed`/`Timer` network debounces,
+  toast display durations, and connect waits are NOT animations and stay
   as-is). Cheap approaches first: Hero +
   implicit animations + go_router `appTransitionPage` (0 KB);
   `flutter_animate` for staggered entrances (`StaggeredListItem` for list
@@ -1060,9 +1199,131 @@ over ~100 lines.
   (tiers, standings, subscribe invoice). All `.autoDispose` FutureProviders;
   mutations invalidate the relevant providers after publishing.
 
+## Event pipeline (ADR-0005 — relays → dispatch → store → projections)
+
+The layered pipeline that replaced ad-hoc per-screen subscriptions. Design +
+phasing: `docs/ADR-0005-event-pipeline.md`; findings:
+`docs/PERFORMANCE-ANALYSIS.md`, `docs/AUDIT-feed-profile-upload.md`;
+notifications roadmap: `docs/ADR-0006-push-notifications.md`.
+
+- **L2 dispatch — `EventBus`** (`core/nostr/event_bus.dart`): ONE hub for
+  relay subscriptions. Providers register filter "specs"; identical filters
+  across screens are ref-counted into a single relay REQ, and events are
+  deduped across specs (`matchesEvent` is local). Social, DM and feed-tail
+  subs go through it — NEVER open a raw `relayPool.subscribe` for a new
+  listener without checking the bus first.
+- **Flood gate**: the bus drops bursts that can't be UI-relevant before they
+  reach the store (per-kind/sender rate gates), so a spammy relay can't jank
+  the main thread.
+- **L4 write path — `ingestPipelineProvider`** (`core/providers/
+  ingest_pipeline_providers.dart`): the SINGLE path every event takes into
+  `EventStore` (feed pages, live tail, social, engagement). It owns the
+  debounced `engagementVersionProvider` tick (one bump per batch, not per
+  event). Never write to `EventStore` from a feature directly.
+- **Store v2** (`core/db/event_store.dart`): adds `thread_edges` (parent→
+  reply rows written at ingest — thread assembly is a local query,
+  `threadReplies(rootId)`) and `seen_on` (relay provenance, buffered by the
+  relay layer via `markSeenOn`, flushed in batches — `seenOnRelays(id)`).
+  The `db` getter is race-free (shares one `_opening` future, never caches
+  a failed open). `feedPage()` does SQL reply-exclusion + keyset paging;
+  `feedPage(authors: [])` is deliberately UNFILTERED — the feed layer must
+  guard empty follows itself (the "Following tab leaked global" bug).
+- **Projections over the store** (L5): trending is local candidates from
+  `trendingCandidates(window)` painted first, then a relay discovery fetch
+  merges in (switching 1h/24h/7d is a local re-query, not a refetch).
+  `userInteractionsFor` (did-I-like/repost) and `searchProfiles` are local
+  SQL — per-card relay queries and search waterfalls are banned.
+- **Profile cache hierarchy** (`SocialRepository`): memory LRU → SQLite →
+  relays, stale-while-revalidate, write-through on kind-0. Survives restart;
+  `_refreshProfileFromRelays` races concurrent first-non-empty legs.
+- **Verify dedup** (`relay_pool.dart`): a 5k-entry LRU of already-verified
+  event ids — the same event arriving from N relays is signature-checked
+  ONCE (schnorr verify was the top CPU item; ~90% of it was duplicates).
+- **Browse screens = keepAlive + TTL AsyncNotifiers**: trending/hashtags/
+  notifications/communities/articles/bookmarks/lists/calendar/market/live/
+  videos/hashtagFeed/dms keep their state; the TTL gates natural rebuilds
+  and `ref.invalidate` still forces a refetch. Empty results are NOT
+  TTL-cached (an empty fetch must be retryable). autoDispose stays only on
+  per-card family providers.
+- **Background catch-up** (`core/services/background_sync.dart`):
+  `BackgroundSyncService.syncNow()` = reconnect + feed restart + wallet
+  resync + DM gap-fill; Settings toggle `backgroundSyncEnabledProvider`
+  (default ON). Scheduled via workmanager `registerPeriodicTask` (1 h,
+  network-connected, `ExistingPeriodicWorkPolicy.keep`). Push is ADR-0006:
+  a push/silent-push is just another trigger into `syncNow()`.
+  **Phase 4 sync window (ADR-0007)**: the opt-in heavier tier — Settings
+  toggle `syncWindowEnabledProvider` (default OFF, Android-only via
+  `syncWindowSupported`). `scheduleSyncWindow()` queues an expedited one-off
+  workmanager task promoted to a `dataSync` FGS (`ForegroundServiceConfig`)
+  — NO native code/manifest/BOOT_COMPLETED (Android-15-safe), and it
+  self-reschedules while the toggle stays on, degrading to the hourly
+  catch-up under quota/Doze. The dispatcher routes `window` inputData to a
+  bounded `_runSyncWindow` (syncNow every 2 min for `windowDuration` 20 min).
+
+- **In-app local relay (ADR-0007, phases 0–5 DONE)**: the app embeds a real
+  NIP-01 relay. `core/nostr/filter.dart` = ONE oracle-tested compiled-filter
+  engine (empty list = match nothing, hex case-insensitive, NIP-01 `&&`/`||`);
+  `core/db/event_store.dart` v3 = `tags`/`deletions` tables + lifecycle
+  (ephemeral skip, replaceable/addressable newest-wins, NIP-09 e/a deletes +
+  late-copy rejection, NIP-40 exclusion) + generic `queryByFilters`;
+  `core/relay/relay_core.dart` = `LocalRelay` (REQ/EVENT/CLOSE→OK/EOSE/…,
+  inverted-index live monitor); `core/relay/relay_server.dart` = real ws on
+  `127.0.0.1` (random port + per-boot token + request caps — loopback is
+  SHARED on Android, the token is what makes it private);
+  `core/relay/relay_transport.dart` = `MergedRelayTransport` feeding the
+  EventBus (local live + remote, deduped) behind `localRelayEnabledProvider`
+  (off = exact old behavior); the ingest pipeline mirrors every stored event
+  into the relay (`localRelayProvider`). Remote pool still owns publishes +
+  NIP-65 outbox. **All reads local-first (phase 3c)**: `RelayPool.query` is
+  local-first merged via `core/relay/local_first_query.dart` — local store +
+  remote relays in parallel, deduped, remote ingested back; ONE choke point
+  covers every repository read (feed/engagement/profiles/notifications/
+  comments/threads/articles/market/live/calendar/groups/lists/bookmarks/
+  videos/hashtags). Per-filter NIP-01 limit union. Uppercase NIP-22 `A`/`E`
+  scopes + `NostrFilter.remoteOnly` go remote-only (store indexes
+  single-letter first-values only). Rollback `relayPool.localFirstEnabled=false`.
+  Ingests are serialized through a queue (sqflite txns aren't re-entrant).
+  **NIP-77 sync (phase 5)**: `core/nostr/sync/negentropy.dart`
+  = faithful port of hoytech's reference negentropy (initiator/responder,
+  varint/bound/fingerprint codecs); `negentropy_sync.dart` = NEG-OPEN/MSG/
+  CLOSE client (injected transport, downloads missing, NEG-ERR→null
+  fallback); `negentropy_sync_service.dart` = per-relay service called from
+  `BackgroundSyncService.syncNow` (NEG-unsupported relays skipped silently);
+  `negentropy_transport.dart` = the real-ws transport. Never add a second
+  filter engine or a raw `feedPage`-style SQL filter — go through the
+  compiled engine + `queryByFilters`.
+
 ## Testing
 
 - Unit/widget tests in `test/` mirror the `lib/` structure
   (`test/models/`, `test/core/utils/`, `test/core/widgets/`, …).
 - Tests must be deterministic — mock/avoid network. Live-relay tests belong
   in `integration_test/`.
+- **EventStore tests**: use `sqflite_common_ffi` with `inMemoryDatabasePath`
+  ONLY — a named path opens a real file that persists across tests and
+  causes "passes alone, fails in the suite" flakes. Hooks:
+  `EventStore.debugOpenOverride` / `debugReset` / `debugFlushSeenOn`.
+  `flutter pub get` only works with `--offline` in this environment.
+
+---
+
+## Flutter AI agent rules (official)
+
+### Proactive Flutter Hot Reload Rule
+
+Whenever you edit or modify any `.dart` file under `lib/` in this project:
+
+1. **When to Skip**:
+   - **Files Outside `lib/`**: Only trigger hot reload or hot restart for edits under `lib/`. Do not trigger when modifying files in other directories (e.g., `test/**`, `integration_test/**`, `benchmark/**`, `test_driver/**` or `example/**`).
+   - **Comments & Documentation**: Do not trigger hot reload or hot restart when changes only affect comments, docstrings, or whitespace.
+
+2. **Discover & Connect**:
+   - Discover active running application instances using the `dtd` MCP Tool (or `list_running_apps` / `vm_service`) from the Dart MCP server.
+
+3. **Trigger Hot Reload / Hot Restart**:
+   - Execute the `hot_reload` MCP tool immediately after making changes to UI widgets (including `build` methods of stateful widgets) or simple methods.
+   - Execute the `hot_restart` MCP tool if fundamental logic, state initialization (e.g., `initState`), global/static state, or `main()` was modified.
+
+### Available Flutter/Dart agent skills
+
+The official Flutter and Dart agent skills are installed globally (`~/.agents/skills/`) and cover: widget tests, integration tests, widget previews, responsive layouts, layout-issue fixes, architecture best practices, JSON serialization, declarative routing (`go_router`), localization, the `http` package, Dart unit tests, mock generation (mockito), static analysis, coverage, pattern matching, primary constructors, FFI, path handling, documentation, and more. Invoke the matching skill before performing these tasks.

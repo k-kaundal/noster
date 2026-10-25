@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:nostrfeed_mobile/features/wallet/data/lnbits_service.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/widgets/invoice_qr.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 // ── Payments list ────────────────────────────────────────────────────────
@@ -63,8 +64,7 @@ class _PaymentsListState extends ConsumerState<PaymentsList> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline,
-                  size: 48, color: colorScheme.error),
+              AppIcon('eye_off', size: 48, color: colorScheme.error),
               const SizedBox(height: 12),
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 12),
@@ -80,8 +80,7 @@ class _PaymentsListState extends ConsumerState<PaymentsList> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.receipt_long,
-                size: 48, color: colorScheme.onSurfaceVariant),
+            AppIcon('article', size: 48, color: colorScheme.onSurfaceVariant),
             const SizedBox(height: 12),
             Text('No payments yet',
                 style: TextStyle(color: colorScheme.onSurfaceVariant)),
@@ -151,8 +150,7 @@ class _PaymentsListState extends ConsumerState<PaymentsList> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.qr_code_rounded,
-                          size: 12, color: Colors.orange.shade700),
+                      AppIcon('qr', size: 12, color: Colors.orange.shade700),
                       const SizedBox(width: 3),
                       Text(
                         'Pending · tap for QR',
