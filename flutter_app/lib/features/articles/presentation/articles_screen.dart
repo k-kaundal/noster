@@ -7,6 +7,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
@@ -91,6 +93,12 @@ class _ArticleCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // Content filter (Play compliance): spam/explicit articles hide — the
+    // same verdict PostCard applies, articles were the unfiltered gap.
+    final verdict = filteredEventVerdict(ref, event);
+    if (verdict.action == FilterAction.hide) {
+      return const SizedBox.shrink();
+    }
     final title = event.getTag('title') ?? 'Untitled';
     // Use markdownToText for a clean summary without formatting artifacts
     final summary =

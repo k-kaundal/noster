@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/kinds.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
@@ -19,6 +20,23 @@ import 'package:timeago/timeago.dart' as timeago;
 
 /// Notification filter selection.
 final notificationFilterProvider = StateProvider.autoDispose<String>((ref) => 'all');
+
+/// Resolves the event a notification's engagement happened ON (the post that
+/// was liked/reposted/zapped), store-first, then a bounded relay fetch. Used
+/// by the tile preview (show the target's content, not the engagement's).
+final _targetEventProvider =
+    FutureProvider.family.autoDispose<NostrEvent?, String>((ref, id) async {
+  final cached = await EventStore.instance.eventById(id);
+  if (cached != null) return cached;
+  try {
+    final nostr = ref.read(nostrServiceProvider);
+    final ev = await nostr.fetchEventById(id);
+    if (ev != null) await EventStore.instance.ingest([ev]);
+    return ev;
+  } catch (_) {
+    return null;
+  }
+});
 
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
@@ -313,6 +331,22 @@ class _NotificationTile extends ConsumerWidget {
   final NostrEvent event;
   const _NotificationTile({required this.event});
 
+  /// The content preview under the action line. For engagement events
+  /// (like/repost/zap), the event's own content is EMPTY (a like carries
+  /// nothing) or wrong (a repost embeds the original JSON) — so we show the
+  /// TARGET post's content, resolved store-first. For content kinds
+  /// (comment/mention/reply), the event IS the content.
+  String? _previewFor(WidgetRef ref) {
+    final isContentKind = event.kind == 1 || event.kind == 1111;
+    if (isContentKind) {
+      return event.content.isNotEmpty ? event.content : null;
+    }
+    final targetId = event.getTag('e') ?? event.getTag('a');
+    if (targetId == null) return null;
+    final target = ref.watch(_targetEventProvider(targetId)).valueOrNull;
+    return target?.content.isNotEmpty == true ? target!.content : null;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
@@ -326,6 +360,7 @@ class _NotificationTile extends ConsumerWidget {
       notificationCenterProvider.select((s) => s.lastRead),
     );
     final isUnread = event.createdAt >= lastRead;
+    final preview = _previewFor(ref);
 
     final (iconName, color, action) = switch (type) {
       'reaction' => (
@@ -441,10 +476,10 @@ class _NotificationTile extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    if (event.content.isNotEmpty) ...[
+                    if (preview != null) ...[
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        event.content,
+                        preview,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
@@ -472,48 +507,66 @@ class _NotificationTile extends ConsumerWidget {
   }
 
   void _open(BuildContext context, WidgetRef ref, NostrEvent event) {
+    HapticFeedback.lightImpact();
     final type = _typeFor(event);
     switch (type) {
       case 'dm':
-        // DM notification: the sender is the event author (for kind 4) or the
-        // ephemeral wrapper (for kind 1059). Navigate to the chat thread with
-        // the sender — for 1059 we need to decrypt to get the real sender.
-        // The peer is always the event author for incoming DMs.
         _openDmThread(context, ref, event);
-      case 'mention':
-      case 'comment':
-      case 'article_mention':
-        // Navigate to the thread/post where the mention happened.
-        final rootId = event.getTag('e') ?? event.getTag('a');
-        if (rootId != null) {
-          context.push('/thread', extra: event);
-        } else {
-          context.push('/profile/${event.pubkey}');
-        }
-      case 'reaction':
-      case 'repost':
-      case 'zap':
-        // Navigate to the post that was liked/reposted/zapped.
-        final targetId = event.getTag('e') ?? event.getTag('a');
-        if (targetId != null) {
-          context.push('/thread', extra: event);
-        } else {
-          context.push('/profile/${event.pubkey}');
-        }
+        return;
       case 'follow':
         // New follower → open THEIR profile.
         context.push('/profile/${event.pubkey}');
-      case 'rsvp':
-        // Navigate to the calendar event.
-        final eventId = event.getTag('e') ?? event.getTag('a');
-        if (eventId != null) {
-          context.push('/thread', extra: event);
-        } else {
-          context.push('/profile/${event.pubkey}');
-        }
+        return;
       default:
-        // Fallback: go to the author's profile, not our own.
-        context.push('/profile/${event.pubkey}');
+        _openTargetThread(context, ref, event);
+        return;
+    }
+  }
+
+  /// Reactions / reposts / zaps / comments / mentions / RSVPs: navigate to
+  /// the POST the action happened on — NOT the engagement event itself.
+  ///
+  /// The bug this fixes: every one of these pushed `/thread` with the
+  /// ENGAGEMENT event as the root, so the thread screen showed "Alice
+  /// reposted your note" as the post (a like with empty content renders as
+  /// an empty card — the "tap a like, see a broken thread" complaint). The
+  /// thread must open on the TARGET (your note), resolved store-first, then
+  /// a bounded relay fetch; only when the target can't be resolved do we
+  /// fall back to the author's profile (better than a broken thread).
+  Future<void> _openTargetThread(
+    BuildContext context,
+    WidgetRef ref,
+    NostrEvent event,
+  ) async {
+    // Mentions/comments: the event IS content — its own thread is the answer
+    // (its rootId chain resolves inside the thread screen). For those, and
+    // for any engagement event, resolve the target first.
+    final isContentKind = event.kind == 1 || event.kind == 1111;
+    final targetId = event.getTag('e') ?? event.getTag('a');
+
+    NostrEvent? target;
+    if (!isContentKind && targetId != null) {
+      target = await EventStore.instance.eventById(targetId);
+      if (target == null) {
+        try {
+          final nostr = ref.read(nostrServiceProvider);
+          target = await nostr.fetchEventById(targetId);
+          if (target != null) {
+            await EventStore.instance.ingest([target]);
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!context.mounted) return;
+    if (isContentKind) {
+      context.push('/thread', extra: event);
+    } else if (target != null) {
+      context.push('/thread', extra: target);
+    } else {
+      // Target unresolvable (deleted/unreachable) — the author's profile is
+      // a better answer than a broken thread.
+      context.push('/profile/${event.pubkey}');
     }
   }
 
@@ -522,11 +575,8 @@ class _NotificationTile extends ConsumerWidget {
       // NIP-04: the peer is the event author.
       context.push('/chat/${event.pubkey}');
     } else if (event.kind == 1059) {
-      // NIP-17: we need to decrypt to find the real sender. The chat screen
-      // will handle decryption via DmStore.prime().
-      // For now, navigate to the chat list — the conversation should appear
-      // there once decrypted. In the future we could decrypt here and push
-      // directly to the thread.
+      // NIP-17: the sender is hidden behind an ephemeral wrapper — the chat
+      // list resolves the conversation via DmStore.prime().
       context.go('/chat');
     } else {
       context.go('/chat');

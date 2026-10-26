@@ -9,6 +9,7 @@ import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/features/auth/data/key_backup_service.dart';
+import 'package:nostrfeed_mobile/features/auth/presentation/onboarding_screen.dart';
 
 /// Auth flow inspired by Damus, Amethyst, X, and Threads:
 /// - Hero brand section on top (gradient, logo, tagline)
@@ -54,13 +55,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await action();
       if (mounted) {
         AppToast.success(context, 'Welcome to NostrFeed');
-        context.go('/feed');
+        await _goPostAuth();
       }
     } catch (e) {
       if (mounted) AppToast.error(context, '$errorPrefix: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Where to land after auth: onboarding for a first-run install (once),
+  /// the feed otherwise. Returning users never see onboarding again.
+  Future<void> _goPostAuth() async {
+    final needs = await OnboardingScreen.needsOnboarding();
+    if (!mounted) return;
+    context.go(needs ? '/onboarding' : '/feed');
   }
 
   // ── Login ────────────────────────────────────────────────────────────
@@ -121,7 +130,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _step = _AuthStep.backup;
         });
       } else {
-        context.go('/feed');
+        await _goPostAuth();
       }
     } catch (e) {
       if (mounted) AppToast.error(context, 'Failed to generate keys: $e');
@@ -184,7 +193,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
     if (mounted) {
       AppToast.success(context, 'Your account is ready. Welcome to NostrFeed');
-      context.go('/feed');
+      // Signup just backed up its key (step 1 of onboarding) — land on the
+      // interest + notification steps, not the full flow.
+      await _goPostAuth();
     }
   }
 

@@ -281,6 +281,12 @@ class YouScreen extends ConsumerWidget {
             subtitle: 'Guides and how-tos',
             onTap: () => context.push('/docs'),
           ),
+          _YouRow(
+            icon: 'zap',
+            title: 'Support NostrFeed',
+            subtitle: 'Zap or donate — keeps the relays running',
+            onTap: () => context.push('/support'),
+          ),
           if (auth.isLoggedIn)
             _YouRow(
               icon: 'back',

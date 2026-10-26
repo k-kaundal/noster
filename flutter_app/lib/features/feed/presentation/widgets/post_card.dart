@@ -13,7 +13,9 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/core/widgets/engagement_burst.dart';
 import 'package:nostrfeed_mobile/core/widgets/report_dialog.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
@@ -95,6 +97,14 @@ class _PostCardState extends ConsumerState<PostCard> {
   bool? _optimisticLiked;
   bool? _optimisticReposted;
 
+  // Activation-burst triggers (2026 micro-delight): bumped ONLY on a user
+  // tap that ACTIVATES the action — un-likes don't burst, and a rebuild
+  // that merely shows an already-liked post doesn't burst. See
+  // EngagementBurst for why this is an event, not a state.
+  int? _likeBurst;
+  int? _repostBurst;
+  int? _zapBurst;
+
   @override
   void initState() {
     super.initState();
@@ -113,6 +123,9 @@ class _PostCardState extends ConsumerState<PostCard> {
     // Reset optimistic state when the event changes
     _optimisticLiked = null;
     _optimisticReposted = null;
+    _likeBurst = null;
+    _repostBurst = null;
+    _zapBurst = null;
   }
 
   @override
@@ -272,6 +285,21 @@ class _PostCardState extends ConsumerState<PostCard> {
         onTap: widget.isThreadView
             ? null
             : () => context.push('/thread', extra: displayEvent),
+        // Long-press → the quick-action sheet (copy / share / mute / report)
+        // — the fast path mainstream-app users expect (Threads/X), so they
+        // never have to find the 3-dot menu.
+        onLongPress: widget.isThreadView
+            ? null
+            : () {
+                HapticFeedback.mediumImpact();
+                _showQuickActions(
+                  context,
+                  ref,
+                  auth,
+                  displayEvent,
+                  isBookmarked: isBookmarked,
+                );
+              },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Column(
@@ -311,19 +339,23 @@ class _PostCardState extends ConsumerState<PostCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // LEFT: avatar column (tappable → profile)
-                  GestureDetector(
-                    onTap: () =>
-                        context.push('/profile/${displayEvent.pubkey}'),
-                    child: SafeAvatar(
-                      imageUrl: authorPicture,
-                      radius: avatarRadius,
-                      backgroundColor: colorScheme.primaryContainer,
-                      fallback: Text(
-                        firstGrapheme(authorName),
-                        style: TextStyle(
-                          color: colorScheme.onPrimaryContainer,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                  Semantics(
+                    label: '$authorName\'s profile',
+                    button: true,
+                    child: GestureDetector(
+                      onTap: () =>
+                          context.push('/profile/${displayEvent.pubkey}'),
+                      child: SafeAvatar(
+                        imageUrl: authorPicture,
+                        radius: avatarRadius,
+                        backgroundColor: colorScheme.primaryContainer,
+                        fallback: Text(
+                          firstGrapheme(authorName),
+                          style: TextStyle(
+                            color: colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ),
@@ -457,6 +489,7 @@ class _PostCardState extends ConsumerState<PostCard> {
                             _ActionButton(
                               icon: 'comment',
                               count: replyCount,
+                              semanticLabel: 'Replies',
                               onTap: widget.isThreadView
                                   ? null
                                   : () => context.push(
@@ -467,9 +500,12 @@ class _PostCardState extends ConsumerState<PostCard> {
                             _ActionButton(
                               icon: 'repost',
                               count: repostCount,
+                              semanticLabel: 'Repost',
+                              isActive: isReposted,
                               color: isReposted
                                   ? AppActionColors.repost(brightness)
                                   : null,
+                              burstKey: _repostBurst,
                               onTap: () => _handleRepost(
                                 context,
                                 ref,
@@ -480,15 +516,19 @@ class _PostCardState extends ConsumerState<PostCard> {
                             _ActionButton(
                               icon: isLiked ? 'heart_filled' : 'heart',
                               count: reactionCount,
+                              semanticLabel: 'Like',
+                              isActive: isLiked,
                               color: isLiked
                                   ? AppActionColors.like(brightness)
                                   : null,
+                              burstKey: _likeBurst,
                               onTap: () =>
                                   _handleLike(context, ref, auth, displayEvent),
                             ),
                             _ActionButton(
                               icon: 'zap',
                               count: zapCount,
+                              semanticLabel: 'Zap',
                               label: zapSats > 0
                                   ? '${_formatSats(zapSats)} sats'
                                   : null,
@@ -496,6 +536,7 @@ class _PostCardState extends ConsumerState<PostCard> {
                               // active or not (Refined muted, AA per mode).
                               color: AppActionColors.zapFor(brightness),
                               tooltip: 'Tap: zap options · Hold: quick zap',
+                              burstKey: _zapBurst,
                               onTap: () =>
                                   _handleZap(context, ref, auth, displayEvent),
                               onLongPress: () => _handleQuickZap(
@@ -510,6 +551,8 @@ class _PostCardState extends ConsumerState<PostCard> {
                                   ? 'bookmark_filled'
                                   : 'bookmark',
                               count: 0,
+                              semanticLabel: 'Bookmark',
+                              isActive: isBookmarked,
                               color: isBookmarked
                                   ? AppActionColors.bookmark
                                   : null,
@@ -524,6 +567,7 @@ class _PostCardState extends ConsumerState<PostCard> {
                             _ActionButton(
                               icon: 'share',
                               count: 0,
+                              semanticLabel: 'Share',
                               onTap: () =>
                                   _handleShare(context, ref, displayEvent),
                             ),
@@ -559,7 +603,44 @@ class _PostCardState extends ConsumerState<PostCard> {
       );
     }
 
-    if (!widget.isThreadView) return result;
+    if (!widget.isThreadView) {
+      // Swipe actions (Threads/X muscle memory): right = bookmark, left =
+      // share. confirmDismiss returns false — the card springs back, only
+      // the action fires. Dismissible's controller idles between swipes
+      // (like InkWell's splash), so this is feed-safe.
+      return Dismissible(
+        key: ValueKey('swipe-${widget.event.id}'),
+        direction: DismissDirection.horizontal,
+        // A real drag needs intent, not a slight horizontal fling during a
+        // vertical scroll — the threshold keeps scroll-vs-swipe unambiguous.
+        dismissThresholds: const {
+          DismissDirection.startToEnd: 0.35,
+          DismissDirection.endToStart: 0.35,
+        },
+        confirmDismiss: (direction) async {
+          HapticFeedback.mediumImpact();
+          if (direction == DismissDirection.startToEnd) {
+            _handleBookmark(context, ref, auth, isBookmarked, displayEvent);
+          } else {
+            _handleShare(context, ref, displayEvent);
+          }
+          return false; // never actually dismiss the card
+        },
+        background: _SwipeHint(
+          alignment: Alignment.centerLeft,
+          icon: isBookmarked ? 'bookmark_filled' : 'bookmark',
+          label: isBookmarked ? 'Remove bookmark' : 'Bookmark',
+          color: AppActionColors.bookmark,
+        ),
+        secondaryBackground: const _SwipeHint(
+          alignment: Alignment.centerRight,
+          icon: 'share',
+          label: 'Share',
+          color: null, // uses onSurfaceVariant
+        ),
+        child: result,
+      );
+    }
     return result.animate().fadeIn(
       duration: AppMotion.normal,
       curve: AppMotion.curve,
@@ -593,7 +674,11 @@ class _PostCardState extends ConsumerState<PostCard> {
 
     // Optimistic UI update; the actual publish/delete + provider refresh
     // is handled by the PostActions controller.
-    setState(() => _optimisticReposted = !currentlyReposted);
+    setState(() {
+      _optimisticReposted = !currentlyReposted;
+      // Burst only when the tap REPOSTS (activates) — removing is quiet.
+      if (!currentlyReposted) _repostBurst = (_repostBurst ?? 0) + 1;
+    });
     ref
         .read(postActionsProvider)
         .toggleRepost(
@@ -624,7 +709,11 @@ class _PostCardState extends ConsumerState<PostCard> {
         _optimisticLiked ??
         (interactionsAsync.valueOrNull?.likes[displayEvent.id] ?? false);
 
-    setState(() => _optimisticLiked = !currentlyLiked);
+    setState(() {
+      _optimisticLiked = !currentlyLiked;
+      // Burst only when the tap LIKES (activates) — un-liking is quiet.
+      if (!currentlyLiked) _likeBurst = (_likeBurst ?? 0) + 1;
+    });
     ref
         .read(postActionsProvider)
         .toggleLike(event: displayEvent, currentlyLiked: currentlyLiked);
@@ -636,11 +725,17 @@ class _PostCardState extends ConsumerState<PostCard> {
     AuthState auth,
     NostrEvent displayEvent,
   ) async {
-    await showZapDialog(
+    final paid = await showZapDialog(
       context: context,
       targetEvent: displayEvent,
       targetPubkey: displayEvent.pubkey,
     );
+    // Zap celebration: flash the bolt when the sheet completed a payment
+    // (null/false = cancelled or unpaid — no burst for a closed sheet).
+    if (paid == true && mounted) {
+      setState(() => _zapBurst = (_zapBurst ?? 0) + 1);
+      HapticFeedback.mediumImpact();
+    }
     // After the zap sheet closes, refresh zap receipts so the count updates
     ref.read(postActionsProvider).refreshZaps(displayEvent.id);
   }
@@ -681,6 +776,7 @@ class _PostCardState extends ConsumerState<PostCard> {
     switch (result) {
       case QuickZapResult.sent:
         HapticFeedback.heavyImpact();
+        if (mounted) setState(() => _zapBurst = (_zapBurst ?? 0) + 1);
         AppToast.success(context, '⚡ Zapped $amount sats!');
         ref.read(postActionsProvider).refreshZaps(displayEvent.id);
       case QuickZapResult.noWallet:
@@ -753,6 +849,115 @@ class _PostCardState extends ConsumerState<PostCard> {
 
   void _showLoginPrompt(BuildContext context) {
     AppToast.info(context, 'Log in to interact with posts');
+  }
+
+  /// Long-press quick actions — the fast path to the actions that usually
+  /// hide behind the 3-dot menu (Threads/X long-press pattern).
+  void _showQuickActions(
+    BuildContext context,
+    WidgetRef ref,
+    AuthState auth,
+    NostrEvent displayEvent, {
+    required bool isBookmarked,
+  }) {
+    final nostr = ref.read(nostrServiceProvider);
+    final isBlocked =
+        ref.read(blockedAuthorsProvider).contains(displayEvent.pubkey);
+
+    AppSheet.show<void>(
+      context,
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            _QuickAction(
+              icon: 'article',
+              label: 'Quote post',
+              onTap: () {
+                Navigator.pop(context);
+                if (!auth.isLoggedIn || auth.isReadOnly) {
+                  AppToast.info(context, 'Log in to quote posts');
+                  return;
+                }
+                context.push('/compose', extra: displayEvent);
+              },
+            ),
+            _QuickAction(
+              icon: isBookmarked ? 'bookmark_filled' : 'bookmark',
+              label: isBookmarked ? 'Remove bookmark' : 'Bookmark',
+              onTap: () {
+                Navigator.pop(context);
+                _handleBookmark(context, ref, auth, isBookmarked, displayEvent);
+              },
+            ),
+            _QuickAction(
+              icon: 'share',
+              label: 'Share',
+              onTap: () {
+                Navigator.pop(context);
+                _handleShare(context, ref, displayEvent);
+              },
+            ),
+            _QuickAction(
+              icon: 'edit',
+              label: 'Copy text',
+              onTap: () {
+                Navigator.pop(context);
+                Clipboard.setData(ClipboardData(text: displayEvent.content));
+                AppToast.success(context, 'Text copied');
+              },
+            ),
+            _QuickAction(
+              icon: 'repost',
+              label: 'Copy link',
+              onTap: () {
+                Navigator.pop(context);
+                final note1 = nostr.authService.encodeNote(displayEvent.id);
+                Clipboard.setData(ClipboardData(text: 'nostr:$note1'));
+                AppToast.success(context, 'Link copied');
+              },
+            ),
+            _QuickAction(
+              icon: isBlocked ? 'plus' : 'eye_off',
+              label: isBlocked ? 'Unblock author' : 'Mute author',
+              onTap: () async {
+                Navigator.pop(context);
+                final notifier = ref.read(blockedAuthorsProvider.notifier);
+                if (isBlocked) {
+                  await notifier.remove(displayEvent.pubkey);
+                  if (context.mounted) {
+                    AppToast.success(context, 'Author unblocked');
+                  }
+                } else {
+                  await notifier.add(displayEvent.pubkey);
+                  if (context.mounted) {
+                    AppToast.success(
+                      context,
+                      'Author muted — their posts are hidden',
+                    );
+                  }
+                }
+              },
+            ),
+            _QuickAction(
+              icon: 'target',
+              label: 'Report post',
+              destructive: true,
+              onTap: () {
+                Navigator.pop(context);
+                showReportDialog(
+                  context,
+                  eventId: displayEvent.id,
+                  pubkey: displayEvent.pubkey,
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   String _formatSats(int n) {
@@ -881,7 +1086,7 @@ class _PostOptionsMenu extends ConsumerWidget {
                 Icon(
                   Icons.rocket_launch_outlined,
                   size: 18,
-                  color: Colors.amber,
+                  color: AppActionColors.zap,
                 ),
                 SizedBox(width: 10),
                 Text('Boost post'),
@@ -1068,14 +1273,31 @@ class _ActionButton extends StatelessWidget {
   final String? tooltip;
   final Color? color;
 
+  /// Set on a user-tap that ACTIVATES the action (never on un-like, never
+  /// on first render) — a new value plays the activation burst once.
+  /// See EngagementBurst.
+  final int? burstKey;
+
+  /// Accessibility label for the action (e.g. 'Like'); the count is appended
+  /// automatically ('Like, 12 likes'). Without this TalkBack/VoiceOver read
+  /// the action row as "button, button, button".
+  final String semanticLabel;
+
+  /// Whether the action is currently active (liked/reposted/bookmarked) —
+  /// read out as the toggle state.
+  final bool? isActive;
+
   const _ActionButton({
     required this.icon,
     required this.count,
+    required this.semanticLabel,
     this.label,
     this.onTap,
     this.onLongPress,
     this.tooltip,
     this.color,
+    this.burstKey,
+    this.isActive,
   });
 
   @override
@@ -1083,43 +1305,66 @@ class _ActionButton extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final effectiveColor = color ?? colorScheme.onSurfaceVariant;
 
+    // The accessible name: action + state + count, so a screen reader says
+    // "Like, liked, 12 likes" instead of "button".
+    final countText = label ?? (count > 0 ? _formatCount(count) : null);
+    final fullLabel = StringBuffer(semanticLabel);
+    if (isActive != null) fullLabel.write(isActive! ? ', active' : ', not active');
+    if (countText != null) fullLabel.write(', $countText');
+
     // FEED-PERF RULE: no per-card AnimationController — 6 of these buttons
     // per PostCard × ~15 cards in viewport+cache = ~90 live tickers vsyncing
     // every frame (battery + frame pressure, worse as the keep-alive tab
     // grows). The tap "pop" is a fire-and-forget implicit animation instead:
     // the only per-button State object exists for AppMotion.fast (150 ms)
     // during an actual tap, not for the card's whole lifetime.
-    final child = InkWell(
-      onTap: onTap != null
-          ? () {
-              HapticFeedback.lightImpact();
-              onTap!();
-            }
-          : null,
-      onLongPress: onLongPress != null
-          ? () {
-              HapticFeedback.mediumImpact();
-              onLongPress!();
-            }
-          : null,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _PopIcon(icon: icon, color: effectiveColor),
-            if (count > 0) ...[
-              const SizedBox(width: 5),
-              Text(
-                label ?? _formatCount(count),
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: effectiveColor,
-                      fontWeight: FontWeight.w500,
-                    ),
+    final child = Semantics(
+      label: fullLabel.toString(),
+      button: true,
+      toggled: isActive,
+      child: InkWell(
+        onTap: onTap != null
+            ? () {
+                HapticFeedback.lightImpact();
+                onTap!();
+              }
+            : null,
+        onLongPress: onLongPress != null
+            ? () {
+                HapticFeedback.mediumImpact();
+                onLongPress!();
+              }
+            : null,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          // 44dp minimum VERTICAL touch target (Apple HIG / Material a11y) —
+          // the height is the a11y requirement; horizontal stays tight so
+          // the 6-button action row still fits a 320dp screen. Visual is
+          // unchanged; only the hit area grows.
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Activation burst wraps the pop icon: a tap still pops (the
+              // _PopIcon tap-down), and an ACTIVATE tap additionally plays the
+              // ring pulse once (burstKey). Inactive/no burst → plain icon.
+              EngagementBurst(
+                color: effectiveColor,
+                burstKey: burstKey,
+                child: _PopIcon(icon: icon, color: effectiveColor),
               ),
+              if (count > 0) ...[
+                const SizedBox(width: 5),
+                Text(
+                  label ?? _formatCount(count),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: effectiveColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1173,6 +1418,91 @@ class _PopIconState extends State<_PopIcon> {
         builder: (context, value, child) =>
             Transform.scale(scale: value, child: child),
         child: AppIcon(widget.icon, size: AppIconSize.md, color: widget.color),
+      ),
+    );
+  }
+}
+
+// ─── Swipe hint (the background revealed during a swipe) ─────────────
+
+/// The action hint that slides in behind a card as you swipe — icon + label
+/// in the action's accent, anchored to the swipe side.
+class _SwipeHint extends StatelessWidget {
+  final Alignment alignment;
+  final String icon;
+  final String label;
+  final Color? color;
+
+  const _SwipeHint({
+    required this.alignment,
+    required this.icon,
+    required this.label,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final effective = color ?? scheme.onSurfaceVariant;
+    final isLeft = alignment == Alignment.centerLeft;
+    return Container(
+      alignment: alignment,
+      padding: EdgeInsets.only(left: isLeft ? 20 : 0, right: isLeft ? 0 : 20),
+      color: effective.withValues(alpha: 0.08),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isLeft)
+            Text(label, style: _style(context, effective)),
+          if (!isLeft) const SizedBox(width: 8),
+          AppIcon(icon, size: AppIconSize.lg, color: effective),
+          if (isLeft) const SizedBox(width: 8),
+          if (isLeft) Text(label, style: _style(context, effective)),
+        ],
+      ),
+    );
+  }
+
+  TextStyle? _style(BuildContext context, Color color) =>
+      Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w600,
+          );
+}
+
+// ─── Quick-action sheet row ──────────────────────────────────────────
+
+/// One row in the long-press quick-action sheet.
+class _QuickAction extends StatelessWidget {
+  final String icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool destructive;
+
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = destructive ? scheme.error : scheme.onSurface;
+    return Semantics(
+      button: true,
+      label: label,
+      child: ListTile(
+        leading: AppIcon(icon, size: AppIconSize.lg, color: color),
+        title: Text(
+          label,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: color),
+        ),
+        onTap: onTap,
+        // 48dp row = a comfortable touch target (Material list default).
+        minVerticalPadding: 0,
+        visualDensity: VisualDensity.compact,
       ),
     );
   }

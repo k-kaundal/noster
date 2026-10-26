@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/connectivity_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
+import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -50,53 +51,62 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
     final aiAvailable = ref.watch(aiAvailableProvider);
 
     return Scaffold(
-      body: Column(
+      body: Stack(
         children: [
-          Material(
-            color: colorScheme.surface,
-            child: Row(
-              children: [
-                Expanded(
-                  child: TabBar(
-                    controller: _tabController,
-                    tabs: const [
-                      Tab(text: 'For You'),
-                      Tab(text: 'Following'),
-                    ],
-                  ),
-                ),
-                // Home AI shortcut — a compact ✨ chip on the tab row. The
-                // avatar lives in the shell AppBar now (→/you), so it's
-                // removed here — just the AI icon remains.
-                if (aiAvailable)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: IconButton(
-                      icon: AppIcon(
-                        'sparkle',
-                        size: AppIconSize.lg,
-                        color: colorScheme.primary,
+          Column(
+            children: [
+              Material(
+                color: colorScheme.surface,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TabBar(
+                        controller: _tabController,
+                        tabs: const [
+                          Tab(text: 'For You'),
+                          Tab(text: 'Following'),
+                        ],
                       ),
-                      tooltip: 'AI Assistant',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () {
-                        HapticFeedback.lightImpact();
-                        context.push('/ai');
-                      },
                     ),
-                  ),
-              ],
-            ),
+                    // Home AI shortcut — a compact ✨ chip on the tab row. The
+                    // avatar lives in the shell AppBar now (→/you), so it's
+                    // removed here — just the AI icon remains.
+                    if (aiAvailable)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: IconButton(
+                          icon: AppIcon(
+                            'sparkle',
+                            size: AppIconSize.lg,
+                            color: colorScheme.primary,
+                          ),
+                          tooltip: 'AI Assistant',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            context.push('/ai');
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: const [
+                    _FeedTab(following: false),
+                    _FeedTab(following: true),
+                  ],
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: const [
-                _FeedTab(following: false),
-                _FeedTab(following: true),
-              ],
-            ),
-          ),
+          // Support side shortcut — a small edge tab on the LEFT, vertically
+          // centered, that opens the Support page. Semi-quiet so it never
+          // competes with the feed; dismissible (one tap hides it for the
+          // session).
+          const _SupportSideShortcut(),
         ],
       ),
       floatingActionButton: auth.isLoggedIn && !auth.isReadOnly
@@ -114,6 +124,99 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+}
+
+// ─── Support side shortcut (left-center edge tab) ────────────────────
+
+/// A small vertical edge tab on the LEFT side of the feed, vertically
+/// centered, that opens `/support`. Semi-transparent + hairline so it never
+/// competes with the posts; one tap on the × hides it for the session (the
+/// /you row still reaches the page).
+class _SupportSideShortcut extends StatefulWidget {
+  const _SupportSideShortcut();
+
+  @override
+  State<_SupportSideShortcut> createState() => _SupportSideShortcutState();
+}
+
+class _SupportSideShortcutState extends State<_SupportSideShortcut> {
+  bool _hidden = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_hidden) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final top = MediaQuery.sizeOf(context).height * 0.42;
+
+    return Positioned(
+      left: 0,
+      top: top,
+      child: Semantics(
+        button: true,
+        label: 'Support NostrFeed',
+        child: Material(
+          color: scheme.surfaceContainerHigh.withValues(alpha: 0.92),
+          borderRadius: const BorderRadius.horizontal(
+            right: Radius.circular(14),
+          ),
+          elevation: 2,
+          child: InkWell(
+            borderRadius: const BorderRadius.horizontal(
+              right: Radius.circular(14),
+            ),
+            onTap: () {
+              HapticFeedback.lightImpact();
+              context.push('/support');
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.horizontal(
+                  right: Radius.circular(14),
+                ),
+                border: Border(
+                  top: BorderSide(color: scheme.outlineVariant, width: 0.5),
+                  right: BorderSide(color: scheme.outlineVariant, width: 0.5),
+                  bottom: BorderSide(color: scheme.outlineVariant, width: 0.5),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(
+                    'zap',
+                    size: AppIconSize.md,
+                    color: AppActionColors.zapFor(scheme.brightness),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Support',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 10,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  GestureDetector(
+                    onTap: () => setState(() => _hidden = true),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: AppIcon(
+                        'back',
+                        size: 10,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -274,7 +377,12 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                     physics: const AlwaysScrollableScrollPhysics(),
                     children: [
                       SizedBox(
-                        height: 400,
+                        height: 420,
+                        // Empty state → ACTION, never a dead end (NN/g empty-
+                        // state rule): an error gets retry; a brand-new
+                        // Following tab gets "discover people" (the feed
+                        // fills from who you follow — a dead message here
+                        // was the new-user retention leak).
                         child: EmptyState(
                           icon: widget.following
                               ? Icons.people_outline
@@ -282,15 +390,31 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                           title: feed.error != null
                               ? 'Could not load the feed — pull to retry'
                               : (widget.following
-                                  ? 'No posts from people you follow yet'
+                                  ? 'Your feed is quiet'
                                   : 'No posts yet'),
+                          subtitle: widget.following && feed.error == null
+                              ? 'Follow some people and their posts show up here.'
+                              : null,
                           iconColor: Colors.grey,
-                          action: FilledButton.tonalIcon(
-                            onPressed: () =>
-                                ref.read(_provider.notifier).refresh(),
-                            icon: const AppIcon('repost'),
-                            label: const Text('Refresh'),
-                          ),
+                          action: feed.error != null
+                              ? FilledButton.tonalIcon(
+                                  onPressed: () =>
+                                      ref.read(_provider.notifier).refresh(),
+                                  icon: const AppIcon('repost'),
+                                  label: const Text('Refresh'),
+                                )
+                              : (widget.following
+                                  ? FilledButton.tonalIcon(
+                                      onPressed: () => context.go('/explore'),
+                                      icon: const AppIcon('sparkle'),
+                                      label: const Text('Discover people'),
+                                    )
+                                  : FilledButton.tonalIcon(
+                                      onPressed: () =>
+                                          ref.read(_provider.notifier).refresh(),
+                                      icon: const AppIcon('repost'),
+                                      label: const Text('Refresh'),
+                                    )),
                         ),
                       ),
                     ],

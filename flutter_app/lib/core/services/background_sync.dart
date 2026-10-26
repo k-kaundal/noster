@@ -1,12 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/sync/negentropy_sync_service.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/services/local_notification_service.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_gap_fill.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
+import 'package:nostrfeed_mobile/features/notifications/application/notification_center.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_live_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/wallet_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -142,6 +146,145 @@ class BackgroundSyncService {
     // DMs sent while dead — gap-fill fetches exactly the gap (the live
     // sub can't deliver retroactively). New arrivals notify via DmNotifier.
     await _ref.read(dmGapFillProvider).fillGap();
+
+    // Social engagement (zaps, replies, follows, likes, reposts, comments)
+    // that arrived while the app was CLOSED — the live listener only runs
+    // in the foreground, so without this a closed app silently missed every
+    // zap/follow until next opened. This is the closed-app notification
+    // half (Insta/FB-style) of the catch-up: fetch the gap since the last
+    // read watermark, notify the genuinely-new ones (dedup + burst-collapse
+    // + recipient-awareness are handled by the notification service), and
+    // persist them into the durable notification history.
+    await _notifySocialEngagementSinceLastRead();
+  }
+
+  /// Watermark for the closed-app social check — a SEPARATE key from the
+  /// NotificationCenter's (that one is "user opened the bell"; this one is
+  /// "we last notified in the background"), so a background notification
+  /// doesn't mark the bell's unread count read, and reading the bell
+  /// doesn't stop the background check from re-notifying what the user
+  /// never saw.
+  static const _bgNotifiedWatermarkKey = 'bg_social_notified_watermark_v1';
+
+  Future<void> _notifySocialEngagementSinceLastRead() async {
+    try {
+      final auth = _ref.read(authStateProvider);
+      if (!auth.isLoggedIn || auth.pubkey == null) return;
+      final nostr = _ref.read(nostrServiceProvider);
+      if (!nostr.isInitialized) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      // First run: a 24h lookback, not "everything ever" (a fresh install
+      // would otherwise notify a week of old likes as if they were new).
+      final watermark = prefs.getInt(_bgNotifiedWatermarkKey) ?? (now - 86400);
+
+      final events = await nostr.relayPool.query(
+        [
+          NostrFilter(
+            kinds: const [1, 3, 6, 7, 16, 1111, 9735],
+            tagFilters: {
+              'p': [auth.pubkey!],
+            },
+            since: watermark,
+            limit: 100,
+          ),
+        ],
+        timeout: const Duration(seconds: 6),
+      );
+      if (events.isEmpty) return;
+
+      final center = _ref.read(notificationCenterProvider.notifier);
+      final notifs = LocalNotificationService.instance;
+      var newest = watermark;
+
+      for (final event in events) {
+        if (event.createdAt > newest) newest = event.createdAt;
+        // Notify ONLY genuinely-for-me events from OTHERS, newer than the
+        // watermark — recipient-awareness (a kind-3's big p-tag list only
+        // notifies when someone ELSE follows me; a zap receipt only when
+        // its request p-tags me) mirrors the foreground listener exactly.
+        if (event.createdAt <= watermark) continue;
+        if (!center.isNotificationForMe(event, auth.pubkey!)) continue;
+
+        final name = await _nameFor(event.pubkey);
+        final targetEventId = event.getTag('e') ?? event.getTag('a');
+        switch (event.kind) {
+          case 3:
+            unawaited(notifs.showFollow(
+              followerName: name,
+              eventId: event.id,
+              authorPubkey: event.pubkey,
+            ));
+          case 9735:
+            unawaited(notifs.showZap(
+              zapperName: name,
+              sats: _zapSats(event),
+              eventId: event.id,
+              authorPubkey: event.pubkey,
+              targetEventId: targetEventId,
+            ));
+          default:
+            unawaited(notifs.showSocial(
+              text: '$name ${NotificationCenter.actionText(event)}',
+              eventId: event.id,
+              authorPubkey: event.pubkey,
+              targetEventId: targetEventId,
+            ));
+        }
+        // Persist into the durable notification history (the bell shows it
+        // on next open even if the phone notification was dismissed).
+        center.ingest(event);
+      }
+
+      await prefs.setInt(_bgNotifiedWatermarkKey, newest);
+    } catch (_) {
+      // Best-effort — a failed check never breaks the rest of the sync.
+    }
+  }
+
+  Future<String> _nameFor(String pubkey) async {
+    try {
+      final profile = await _ref.read(profileProvider(pubkey).future);
+      return profile?.displayNameOrName ?? '${pubkey.substring(0, 8)}…';
+    } catch (_) {
+      return '${pubkey.substring(0, 8)}…';
+    }
+  }
+
+  /// Sats amount from a kind-9735 zap receipt (mirrors NotificationCenter's
+  /// zapSats: description-tag amount first, bolt11 prefix fallback).
+  static int _zapSats(NostrEvent receipt) {
+    final desc = receipt.getTag('description');
+    if (desc != null) {
+      try {
+        final req = jsonDecode(desc) as Map<String, dynamic>;
+        for (final tag in (req['tags'] as List? ?? [])) {
+          if (tag is List && tag.isNotEmpty && tag[0] == 'amount') {
+            return (int.tryParse('${tag[1]}') ?? 0) ~/ 1000;
+          }
+        }
+      } catch (_) {}
+    }
+    final bolt11 = receipt.getTag('bolt11');
+    if (bolt11 != null) {
+      final match = RegExp(r'^lnbc(\d+)([munp]?)', caseSensitive: false)
+          .firstMatch(bolt11);
+      if (match != null) {
+        final value = BigInt.parse(match.group(1)!);
+        final mult = match.group(2) ?? '';
+        const satsPerBtc = 100000000;
+        final sats = switch (mult.toLowerCase()) {
+          'm' => value * BigInt.from(satsPerBtc) ~/ BigInt.from(1000),
+          'u' => value * BigInt.from(satsPerBtc) ~/ BigInt.from(1000000),
+          'n' => value * BigInt.from(satsPerBtc) ~/ BigInt.from(1000000000),
+          'p' => value * BigInt.from(satsPerBtc) ~/ BigInt.from(1000000000000),
+          _ => value * BigInt.from(satsPerBtc),
+        };
+        return sats.toInt();
+      }
+    }
+    return 0;
   }
 
   /// The scheduler seam — registers the periodic OS task. `syncNow` runs on
@@ -168,10 +311,12 @@ class BackgroundSyncService {
   }
 
   static const _taskName = 'nostrfeed-bg-sync';
-  // OS-enforced minimum for periodic work is 15 min; an hour is the honest
-  // battery-cheap cadence for catch-up (the research-backed tier — see the
-  // class doc). Tighten only with a product call.
-  static const _syncInterval = Duration(hours: 1);
+  // OS-enforced minimum for periodic work is 15 min — that's the cadence
+  // now, so a closed app notifies within ~15 min of a zap/DM/follow (the
+  // closed-app-notification tier; true instant = the relay-side FCM push
+  // service, ADR-0006). Still battery-cheap: one bounded catch-up per tick,
+  // no persistent socket.
+  static const _syncInterval = Duration(minutes: 15);
 
   // ── Phase 4 (ADR-0007): the bounded sync window (dataSync FGS) ─────────
   //

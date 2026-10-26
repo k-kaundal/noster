@@ -9,6 +9,7 @@ import 'package:nostrfeed_mobile/core/widgets/app_shell.dart';
 import 'package:nostrfeed_mobile/features/ai/presentation/ai_chat_screen.dart';
 import 'package:nostrfeed_mobile/features/articles/presentation/articles_screen.dart';
 import 'package:nostrfeed_mobile/features/auth/presentation/login_screen.dart';
+import 'package:nostrfeed_mobile/features/auth/presentation/onboarding_screen.dart';
 import 'package:nostrfeed_mobile/features/bookmarks/presentation/bookmarks_screen.dart';
 import 'package:nostrfeed_mobile/features/bounties/presentation/bounties_screen.dart';
 import 'package:nostrfeed_mobile/features/calendar/presentation/calendar_screen.dart';
@@ -42,6 +43,7 @@ import 'package:nostrfeed_mobile/features/reels/presentation/reels_screen.dart';
 import 'package:nostrfeed_mobile/features/sats_drops/presentation/sats_drops_screen.dart';
 import 'package:nostrfeed_mobile/features/search/presentation/search_screen.dart';
 import 'package:nostrfeed_mobile/features/settings/presentation/settings_screen.dart';
+import 'package:nostrfeed_mobile/features/settings/presentation/support_screen.dart';
 import 'package:nostrfeed_mobile/features/studio/presentation/studio_screen.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/buy_name_screen.dart';
 import 'package:nostrfeed_mobile/features/wallet/presentation/cashu_wallet_screen.dart';
@@ -104,6 +106,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       // Auth — no shell, full-screen
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      // First-run onboarding (once, post-login) — no shell.
+      GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
 
       // Main app shell with bottom nav — ONLY the 4 primary tabs.
       // Detail screens push on top and hide the bottom nav.
@@ -136,6 +140,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             _ => Nip19HandlerPage(identifier: id),
           };
         },
+      ),
+
+      // Notification deep-link aliases (phone-notification payloads): raw
+      // hex event/pubkey ids — the NIP-19 paths above take bech32, these
+      // take the raw hex a notification carries.
+      GoRoute(
+        path: '/note/:eventId([0-9a-f]{64})',
+        builder: (_, state) =>
+            _EventLoader(eventId: state.pathParameters['eventId']!),
+      ),
+      GoRoute(
+        path: '/npub/:pubkey([0-9a-f]{64})',
+        builder: (_, state) =>
+            ProfileScreen(pubkey: state.pathParameters['pubkey']!),
       ),
 
       // Thread / post detail
@@ -222,6 +240,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/bookmarks', builder: (_, _) => const BookmarksScreen()),
       GoRoute(path: '/identity', builder: (_, _) => const IdentityScreen()),
       GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+      GoRoute(path: '/support', builder: (_, _) => const SupportScreen()),
       GoRoute(path: '/studio', builder: (_, _) => const StudioScreen()),
       GoRoute(path: '/bounties', builder: (_, _) => const BountiesScreen()),
       GoRoute(path: '/memberships', builder: (_, _) => const MembershipsScreen()),

@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_badge.dart';
@@ -41,9 +44,33 @@ class LiveScreen extends ConsumerWidget {
           ),
         ),
         data: (events) {
-          final live = events.where((e) => e.isLive).toList();
-          final planned = events.where((e) => e.isPlanned).toList();
-          final ended = events.where((e) => e.isEnded).toList();
+          // Content filter (Play compliance): a live event's title/summary/
+          // hashtags carry the same text signals the filter judges — drop
+          // spam/NSFW streams before they render as full cards. LiveEvent
+          // wraps the source event, so judge a filter-shaped event rebuilt
+          // from the host + text fields (title/summary/hashtags).
+          final filter = ref.read(contentFilterProvider);
+          final filtered = events.where((e) {
+            final verdict = filter.verdictForEvent(
+              NostrEvent(
+                id: e.id,
+                pubkey: e.hostPubkey,
+                createdAt: e.updatedAt,
+                kind: 30311,
+                tags: [
+                  for (final h in e.hashtags) ['t', h],
+                  if (e.title.isNotEmpty) ['title', e.title],
+                  if (e.summary.isNotEmpty) ['summary', e.summary],
+                ],
+                content: '${e.title}\n${e.summary}',
+                sig: '',
+              ),
+            );
+            return verdict.action != FilterAction.hide;
+          }).toList();
+          final live = filtered.where((e) => e.isLive).toList();
+          final planned = filtered.where((e) => e.isPlanned).toList();
+          final ended = filtered.where((e) => e.isEnded).toList();
 
           if (events.isEmpty) {
             return const EmptyState(

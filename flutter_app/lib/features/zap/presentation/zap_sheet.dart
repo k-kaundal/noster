@@ -15,14 +15,15 @@ import 'package:nostrfeed_mobile/features/zap/application/quick_zap.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 /// Shows a zap dialog for a Nostr event or profile.
-/// Returns the invoice if the recipient has a lightning address, else null.
-Future<void> showZapDialog({
+/// Returns true when an in-app wallet paid the zap (the caller can celebrate);
+/// false/null = cancelled, QR shown for an external wallet, or unpaid.
+Future<bool> showZapDialog({
   required BuildContext context,
   required NostrEvent targetEvent,
   String? targetPubkey, // For profile zaps where event is a kind 0
   int? eventKind,
 }) {
-  return showModalBottomSheet(
+  return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
@@ -33,7 +34,7 @@ Future<void> showZapDialog({
       targetPubkey: targetPubkey,
       eventKind: eventKind,
     ),
-  );
+  ).then((paid) => paid ?? false);
 }
 
 class _ZapSheet extends ConsumerStatefulWidget {
@@ -214,7 +215,9 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
       if (!mounted) return;
       if (wallet != null) {
         AppToast.success(context, '⚡ Zap of $amount sats sent!');
-        Navigator.pop(context);
+        // Pop with `true` so the caller (post card, profile) can celebrate
+        // the activation — see EngagementBurst.
+        Navigator.pop(context, true);
         return;
       }
 
@@ -480,7 +483,7 @@ class _ZapSheetState extends ConsumerState<_ZapSheet> {
           '${_amountController.text} sats',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: Colors.amber.shade700,
+                color: AppActionColors.zapFor(Theme.of(context).brightness),
               ),
         ),
         const SizedBox(height: 16),

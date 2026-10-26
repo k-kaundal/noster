@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
@@ -182,23 +183,32 @@ class _EarningsSectionState extends ConsumerState<_EarningsSection> {
           data: (data) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // The sats hero — the money number is the DISPLAY type on this
+              // screen (M3E emphasized-type rule: the figure the screen exists
+              // for gets scale, the chart + stats stay quiet). Count-up on
+              // window change so a new total feels earned, not swapped.
+              _EarningsHero(
+                sats: data.sats,
+                days: _days,
+                changePercent: data.changePercent,
+              ),
+              AppSpacing.gapSm,
               Row(
                 children: [
-                  _Stat(
-                    label: 'sats',
-                    value: _format(data.sats),
-                    delta: data.changePercent == null
-                        ? null
-                        : '${data.changePercent! >= 0 ? '+' : ''}'
-                            '${data.changePercent}% vs prev',
-                  ),
-                  AppSpacing.gapSm,
                   _Stat(label: 'payments', value: '${data.payments}'),
                   AppSpacing.gapSm,
                   _Stat(
                     label: 'zappers',
                     value: '${data.zappers}',
                     delta: '${data.repeatZappers} repeat',
+                  ),
+                  AppSpacing.gapSm,
+                  _Stat(
+                    label: 'per zap',
+                    value: data.payments > 0
+                        ? _format(data.sats ~/ data.payments)
+                        : '0',
+                    delta: 'avg',
                   ),
                 ],
               ),
@@ -221,6 +231,107 @@ class _EarningsSectionState extends ConsumerState<_EarningsSection> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The earnings hero card — the sats total as display type with a count-up
+/// animation on change. M3E emphasized-type: the number the screen exists
+/// for is the biggest thing on it; everything else stays a quiet hairline.
+class _EarningsHero extends StatelessWidget {
+  final int sats;
+  final int days;
+  final int? changePercent;
+  const _EarningsHero({
+    required this.sats,
+    required this.days,
+    this.changePercent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final up = (changePercent ?? 0) >= 0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        borderRadius: AppShapes.radiusLg,
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'EARNINGS · ${days}D',
+            style: textTheme.labelSmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              letterSpacing: 1.1,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Count-up on change (TweenAnimationBuilder — implicit, no
+              // per-screen AnimationController). First build starts at the
+              // value (no animation); a window switch tweens old → new.
+              TweenAnimationBuilder<double>(
+                key: ValueKey('$days-$sats'),
+                tween: Tween(begin: 0, end: sats.toDouble()),
+                duration: AppMotion.slow,
+                curve: AppMotion.curve,
+                builder: (context, v, _) => Text(
+                  _format(v.round()),
+                  style: textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: AppActionColors.zapFor(
+                      Theme.of(context).brightness,
+                    ),
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    height: 1.0,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'sats',
+                  style: textTheme.titleMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (changePercent != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                AppIcon(
+                  up ? 'trending' : 'arrow_down',
+                  size: AppIconSize.sm,
+                  color: up ? AppStatusColors.success : AppStatusColors.error,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${up ? '+' : ''}$changePercent% vs previous ${days}d',
+                  style: textTheme.labelMedium?.copyWith(
+                    color:
+                        up ? AppStatusColors.success : AppStatusColors.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

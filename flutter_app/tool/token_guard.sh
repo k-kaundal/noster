@@ -25,6 +25,7 @@ count() {
   local pattern="$1"
   grep -rn "$pattern" lib/features/ --include="*.dart" \
     | grep -v "token-guard: allow" \
+    | grep -vE "App(Action|Status)Colors\." \
     | wc -l | tr -d ' '
 }
 

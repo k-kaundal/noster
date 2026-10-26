@@ -127,6 +127,15 @@ over ~100 lines.
 - **Post interactions** (like/repost/bookmark/zap refresh): go through
   `postActionsProvider` (`features/feed/providers/post_actions.dart`) — never
   inside widgets.
+- **Swipe actions + long-press quick sheet (Threads/X muscle memory)**: a
+  feed card swipes **right → bookmark, left → share** (`Dismissible` with
+  `confirmDismiss` returning false — the card springs back, only the action
+  fires; its controller idles between swipes like InkWell's splash, so it's
+  feed-safe). Threshold 0.35 keeps vertical-scroll-vs-swipe unambiguous.
+  **Long-press a card** → the quick-action sheet (`_showQuickActions` via
+  `AppSheet`): Quote / Bookmark / Share / Copy text / Copy link / Mute author
+  / Report — the fast path so users never hunt the 3-dot menu. Both are
+  feed-only (never in `isThreadView`).
 - **Post rendering** (`features/feed/widgets/note_content.dart` + friends):
   - Media URLs are classified by `MediaUtils.classify` (image/video/audio/
     other) — extensionless Blossom/media hosts default to image.
@@ -171,6 +180,17 @@ over ~100 lines.
     `dmThreadLastRead`, `dmTotalUnread`, `markDmThreadRead`, `recomputeDmUnread`,
     `enqueueDmOutbox`/`dmOutboxPending`/`updateDmOutboxState`/`removeDmOutbox`.
     Typed records in `core/db/db_models.dart` (DbMessage/DbThread/DbOutboxMessage).
+- **Notification routing — deep-link to the TARGET, never the engagement**:
+  a like/repost/zap/comment's thread opens the POST it happened on (the
+  target `e`/`a` tag, resolved store-first → bounded relay fetch), NOT the
+  engagement event itself — pushing the engagement event showed "Alice
+  reposted your note" as a broken empty thread. `_NotificationTile` previews
+  the TARGET's content (a like's own content is empty/wrong). Phone
+  notifications + the in-app banner deep-link via `/note/<hexId>` (→
+  `_EventLoader` → thread) and `/npub/<hexPk>` (→ profile; a new follower's
+  profile); only unresolvable targets fall back to the author's profile
+  (better than a broken thread). Background-sync notifications pass
+  `targetEventId` the same way.
 - **Notifications (ADR-0008 P2 — now a STORE projection)**: the bell is no
   longer a 200-entry memory list — every engagement event also persists to the
   `notifications` table (`NotificationCenter.ingest` → `upsertNotification`,
@@ -318,6 +338,21 @@ over ~100 lines.
   (`_clampReadEvents`) — without it the live subscription re-delivers them
   and re-fires unread counts + banners (the "opening chat re-notifies" bug).
   The DM banner only alerts on genuinely unread messages (`isUnreadFrom`).
+- **First-run onboarding** (`features/auth/presentation/onboarding_screen.dart`):
+  shown ONCE after a fresh install's first login (stamp
+  `onboarding_completed_v1`, checked by `OnboardingScreen.needsOnboarding()` in
+  the login flow's `_goPostAuth` — returning users never see it). Three
+  skippable screens: **key backup** (`KeyBackupService.saveKeyFile` — the one
+  thing a user can lose forever), **interest chips → seed follows** (trending
+  community authors from `trendingProvider(24)`, same source as Explore's
+  People-to-follow — NO hardcoded celebrity list; the hub syncs their content
+  so the Following tab is alive on day one), **notifications**
+  (`LocalNotificationService.init`). Always one-tap "Skip" — forced onboarding
+  reads as an ad. Route: `/onboarding` (no shell).
+- **Empty state → ACTION, never a dead end**: the Following tab's empty state
+  offers "Discover people" (→ `/explore`) instead of a dead "no posts" message
+  for a brand-new account; errors offer retry. Per NN/g empty-state guidance —
+  every empty container answers "what do I do next".
 - **Auth race guard**: `AuthNotifier._init` restores the session async; it
   MUST NOT overwrite state if `state != _initial` when the read resolves
   (an explicit login/logout/test-write beat it). Keep this guard. The user's
@@ -512,7 +547,16 @@ over ~100 lines.
   GROW beyond the recorded baseline (`tool/.token_guard_baseline`) — run it
   before committing UI changes; migrate DOWN with each screen touch. Rare
   deliberate escapes (QR white backgrounds, video scrims) take an inline
-  `// token-guard: allow` comment.
+  `// token-guard: allow` comment. **The grep EXCLUDES
+  `AppActionColors.*`/`AppStatusColors.*`** (those ARE the tokens — the
+  naive `Colors\.[a-zA-Z]` regex used to count them as violations and
+  punished token migrations; tightened 2026-10). Re-baseline DOWN only.
+- **Studio earnings hero (M3E emphasized type)**: the Studio earnings screen
+  leads with `_EarningsHero` — the sats total as `displaySmall` (the number
+  the screen exists for is the biggest thing on it) with a **count-up
+  animation** on window change (`TweenAnimationBuilder`, implicit — no
+  per-screen controller), zap-amber, trend delta in success/error. Money
+  moments get display type; the chart + stat row stay quiet hairlines.
 - **Design tokens**: spacing → `AppSpacing`; timeouts → `AppDurations`;
   status colors → `AppStatusColors`; engagement action accents (zap amber,
   like rose, repost green, bookmark blue — the MUTED Refined palette) →
@@ -635,6 +679,20 @@ over ~100 lines.
   feed-performance rule below); feed images Hero-fly to fullscreen (SVGs
   excluded). Rive is deferred (≤2 signature moments, NDK pinned) — do NOT
   add it without an ADR change.
+- **Engagement micro-animations (2026 micro-delight)**: like / repost / zap
+  play an **activation burst** on the tap that ACTIVATES them — an icon pop
+  (emphasis overshoot) + a thin ring pulse in the action's accent (like rose,
+  repost green, zap amber). `core/widgets/engagement_burst.dart`
+  (`EngagementBurst`) wraps each action icon via `_ActionButton.burstKey`.
+  **The burst is an EVENT, not a state** — the card bumps a counter ONLY on a
+  user tap that activates (never on un-like, never on a rebuild that merely
+  shows an already-liked post), so a feed of pre-liked posts does NOT replay
+  15 bursts on every scroll. Zap bursts fire on a completed payment
+  (`showZapDialog` returns `true` when an in-app wallet pays) and on
+  quick-zap `sent`. Feed-perf rule kept: **no per-card AnimationController**
+  — each burst is a self-disposing `TweenAnimationBuilder` that mounts, plays
+  ~450 ms, disposes (zero idle tickers). Un-activate taps stay quiet (X's
+  exact rule).
 - **Feed performance (scroll jank)**: a feed `PostCard` rebuilds on EVERY
   provider fan-out (engagement, zaps, profiles landing as pages arrive), so
   anything expensive per-build must be memoized per event or it re-runs
@@ -693,6 +751,16 @@ over ~100 lines.
   call" button launches the `bala://` URI; it only joins when the owning
   app is installed, otherwise it tells the user and copies the offer
   (never a silent no-op). Don't fake native call support.
+- **Feed window cap is DIRECTION-AWARE** (`FeedNotifier._capWindow`): the
+  400-event in-memory cap drops from the correct end per operation —
+  **refresh + the "N new posts" pill keep the NEWEST** (`anchoredAtTop:
+  true`), **loadMore keeps the OLDEST** (`anchoredAtTop: false`, so the
+  pagination cursor `events.last.createdAt` survives). The old always-drop-
+  from-top rule caused the "index-0 stuck / new posts never show" bug: after
+  scrolling past 400 events, a refresh merged the newest page at the top and
+  the cap immediately discarded it (and the pill's posts vanished on tap).
+  Dropped events stay in the SQLite store, so pagination back-fills
+  seamlessly. Pinned by `test/features/feed/feed_window_cap_test.dart`.
 - **Feed ordering clamps future timestamps** (`FeedNotifier._orderTs`): a
   post with a future `created_at` (clock skew or a manipulated/boosted
   post) is clamped to now+tolerance (15 min) for ORDERING — naive
@@ -913,6 +981,31 @@ over ~100 lines.
   high surrogate (the avatar-initial crash). Use `firstGrapheme(name)` from
   `text_sanitize.dart` (takes the full surrogate pair) — every avatar
   fallback uses it.
+- **Support page** (`features/settings/presentation/support_screen.dart`):
+  donation addresses (BTC bech32 + Taproot, Solana, EVM — build-time
+  constants, NEVER relay-read: a relay could redirect them) with QR codes
+  (BIP-21 / Solana Pay / EIP-681 URIs) + copy buttons, and a **Lightning
+  card** (`kk@getzap.me`) whose "Pay support" opens the **zap-style amount
+  picker** (`_SupportAmountSheet` — Primal preset grid 👍21 🚀420 ☕1k 🍻5k
+  🍷10k 👑100k + custom field) → LNURL resolve → invoice → shared
+  `showPayInvoiceSheet`. Wired at `/support` + the /you row + a small
+  **left-center edge shortcut on the home feed** (`_SupportSideShortcut` —
+  quiet hairline tab, × hides it for the session).
+- **Accessibility (a11y — store-review checks this)**:
+  - **Semantics on every interactive element**: action buttons carry
+    `semanticLabel` + `isActive` (`_ActionButton` in post_card) so a screen
+    reader says "Like, active, 12 likes" — never a bare icon. Avatars announce
+    "$name's profile"; images announce NIP-92 `alt` text (or "Photo in post")
+    + `button: true` (tappable). Never ship a bare `GestureDetector`/`InkWell`
+    with no `Semantics` on a new interactive element.
+  - **Touch targets ≥ 44dp vertically** (Apple HIG / Material) — the VISUAL
+    stays small, only the hit area grows (`padding` on the InkWell, not the
+    icon). Action-row buttons: `vertical: 10` (44dp tall) but tight horizontal
+    so 6 buttons still fit a 320dp screen.
+  - **Dynamic type**: post body text respects `MediaQuery.textScalerOf`,
+    clamped to 1.0–1.3 (a larger-text user gets a bigger feed; a 2× setting
+    can't explode the dense card layout). Never hardcode a font size that
+    ignores the system scaler on reading surfaces.
 - **Async safety**: guard `setState`/context use after async gaps with
   `mounted`; wrap fire-and-forget futures in `unawaited()`.
 - **Event signature verification (trust boundary)**: relays are UNTRUSTED
@@ -1270,6 +1363,16 @@ over ~100 lines.
   pubkey (`lnbits:tokens:<pubkey>`), so each Nostr account gets its own
   LNbits session + its own active-wallet choice.
 
+## Feed author-list chunking
+
+- **`feed_repository.fetchFeed`**: relays cap filter list size (strfry
+  `maxReqFilterSize = 200`) — a Following feed with a large follow list in
+  ONE authors filter is REJECTED, surfacing as "no posts / could not fetch"
+  on exactly the accounts with big follows (and fresh installs whose
+  follows just resolved). Author lists > 150 are chunked into parallel
+  sub-queries and merged (same pattern as `prefetchProfiles`'s 40-chunks).
+  Never pass an unbounded `authors:` list into a single NostrFilter.
+
 ## Content moderation (NSFW / spam filtering)
 
 - **Library**: `core/moderation/content_filter.dart` — pure, testable
@@ -1287,9 +1390,15 @@ over ~100 lines.
   `contentFilterProvider`, `filteredEventVerdict(ref, event, {authorProfile})`.
 - **Hook points**: `PostCard` (hide + NIP-36 warn cover `_ContentWarningCover`),
   `ProfileScreen` (blocked/NSFW placeholder), `SearchScreen` people+posts
-  tabs, `ExploreScreen` hashtag chips + People-to-follow. Block actions:
-  post 3-dot menu → "Block author"; profile 3-dot menu → "Block account";
-  manage lists in Settings → Content filters.
+  tabs, `ExploreScreen` hashtag chips + People-to-follow, **ArticlesScreen**
+  (`_ArticleCard` hide), **ReelsScreen** (`_ReelPage` hide — a reel is a
+  video post carrying the same text/hashtag signals), **LiveScreen** (live
+  list filters title/summary/hashtags), **CommunitiesScreen**
+  (`_CommunityCard` hide — community detail posts render via PostCard,
+  already covered). Block actions: post 3-dot menu → "Block author";
+  profile 3-dot menu → "Block account"; manage lists in Settings → Content
+  filters. **Every new content surface applies `filteredEventVerdict`
+  before rendering — an unfiltered screen is a Play-compliance hole.**
 - **Spam links**: `search.html`-class search-spam paths, known spam hosts
   (t.me spam waves, postimg QR spam), link dumps (>3 URLs or >60% link
   characters) hide outright.
@@ -1509,12 +1618,20 @@ notifications roadmap: `docs/ADR-0006-push-notifications.md`.
   and `ref.invalidate` still forces a refetch. Empty results are NOT
   TTL-cached (an empty fetch must be retryable). autoDispose stays only on
   per-card family providers.
-- **Background catch-up** (`core/services/background_sync.dart`):
-  `BackgroundSyncService.syncNow()` = reconnect + feed restart + wallet
-  resync + DM gap-fill; Settings toggle `backgroundSyncEnabledProvider`
-  (default ON). Scheduled via workmanager `registerPeriodicTask` (1 h,
-  network-connected, `ExistingPeriodicWorkPolicy.keep`). Push is ADR-0006:
-  a push/silent-push is just another trigger into `syncNow()`.
+- **Background catch-up — closed-app notifications (Insta/FB tier)**:
+  `BackgroundSyncService.syncNow()` runs every **15 min** (the OS-enforced
+  periodic minimum) and notifies for BOTH: **DMs** (`dmGapFill`) AND
+  **social engagement** (zaps/replies/follows/likes/reposts/comments) via
+  `_notifySocialEngagementSinceLastRead()` — fetches kind 1/3/6/7/16/1111/
+  9735 `#p`=me since a SEPARATE background watermark
+  (`bg_social_notified_watermark_v1`, so background notify ≠ marking the
+  bell read). Dedup + burst-collapse + recipient-awareness ride the same
+  `LocalNotificationService`/`NotificationCenter` paths as the foreground
+  listener. iOS: `UIBackgroundModes` (fetch/processing) +
+  `BGTaskSchedulerPermittedIdentifiers` in `ios/Runner/Info.plist`.
+  Settings toggle `backgroundSyncEnabledProvider` (default ON). True
+  INSTANT push = ADR-0006 Tier 3 (relay-side FCM/APNS bridge on
+  relay.nostrfeed.com) — push is just another trigger into `syncNow()`.
   **Phase 4 sync window (ADR-0007)**: the opt-in heavier tier — Settings
   toggle `syncWindowEnabledProvider` (default OFF, Android-only via
   `syncWindowSupported`). `scheduleSyncWindow()` queues an expedited one-off

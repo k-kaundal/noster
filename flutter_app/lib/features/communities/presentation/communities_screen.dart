@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
@@ -294,6 +296,12 @@ class _CommunityCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // Content filter (Play compliance): a community's name/description are
+    // user-generated text — apply the same verdict as posts.
+    final verdict = filteredEventVerdict(ref, event);
+    if (verdict.action == FilterAction.hide) {
+      return const SizedBox.shrink();
+    }
     // Sanitize relay data — malformed UTF-16 crashes the text engine.
     final name = sanitizeText(event.getTag('name')).isEmpty
         ? 'Unnamed Community'

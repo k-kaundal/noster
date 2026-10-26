@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
@@ -338,6 +340,21 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Content filter (Play compliance): spam/explicit reels hide — a reel is
+    // a video post and carries the same text/hashtag signals the filter
+    // judges; without this a NSFW video auto-played full-screen.
+    final verdict = filteredEventVerdict(ref, widget.event);
+    if (verdict.action == FilterAction.hide) {
+      return Container(
+        color: Colors.black, // token-guard: allow — immersive video surface
+        child: const Center(
+          child: Text(
+            'Hidden by content filter',
+            style: TextStyle(color: Colors.white54), // token-guard: allow — immersive video surface
+          ),
+        ),
+      );
+    }
     final profileAsync = ref.watch(profileProvider(widget.event.pubkey));
     final engagementAsync = ref.watch(engagementProvider(widget.event.id));
 

@@ -445,6 +445,9 @@ final socialLiveListenerProvider = Provider<void>((ref) {
                 ?.displayNameOrName ??
             '${event.pubkey.substring(0, 8)}…';
         final notifs = LocalNotificationService.instance;
+        // The POST the action happened on — the notification deep-links to
+        // it (a tap lands on the thread, not just the bell).
+        final targetEventId = event.getTag('e') ?? event.getTag('a');
         switch (event.kind) {
           case 3:
             notifs.showFollow(
@@ -458,12 +461,14 @@ final socialLiveListenerProvider = Provider<void>((ref) {
               sats: socialEvent.zapSats,
               eventId: event.id,
               authorPubkey: event.pubkey,
+              targetEventId: targetEventId,
             );
           default:
             notifs.showSocial(
               text: '$name ${NotificationCenter.actionText(event)}',
               eventId: event.id,
               authorPubkey: event.pubkey,
+              targetEventId: targetEventId,
             );
         }
       }

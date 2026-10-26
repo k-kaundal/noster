@@ -107,10 +107,17 @@ class NoteContent extends ConsumerWidget {
     // Refined reading type: 13.5px post body with a 1.5 line-height — dense
     // enough to scan, comfortable for long reading sessions. (The M3 ramp's
     // bodyMedium stays 14 for sheets/cards; this is the feed-only style.)
+    //
+    // Accessibility: the size RESPECTS the system text scaler, clamped to
+    // 1.0–1.3 — a user who sets larger text gets a bigger feed (their need),
+    // but a 2× system setting can't explode the card layout (the feed is
+    // dense by design; 1.3× is the readable ceiling here).
+    final scaler = MediaQuery.textScalerOf(context);
+    final clampedScale = scaler.scale(1.0).clamp(1.0, 1.3);
     final defaultStyle =
         textStyle ??
         Theme.of(context).textTheme.bodyMedium!.copyWith(
-              fontSize: 13.5,
+              fontSize: 13.5 * clampedScale,
               height: 1.5,
               letterSpacing: -0.05,
             );
@@ -1494,9 +1501,22 @@ class _NetworkImageTileState extends State<_NetworkImageTile> {
     );
 
     final sized = fill ? SizedBox.expand(child: tile) : tile;
-    if (_isSvg) return sized;
 
-    return Hero(tag: _heroTag, child: sized);
+    // Accessibility: the image announces itself (NIP-92 alt text when the
+    // author provided it, a generic label otherwise) and that it's tappable
+    // — a screen-reader user otherwise hears nothing for a whole photo.
+    final semantic = Semantics(
+      label: widget.alt != null && widget.alt!.isNotEmpty
+          ? widget.alt!
+          : 'Photo in post',
+      image: true,
+      button: true,
+      child: sized,
+    );
+
+    if (_isSvg) return semantic;
+
+    return Hero(tag: _heroTag, child: semantic);
   }
 
   Widget _buildSvgImage(BuildContext context) {

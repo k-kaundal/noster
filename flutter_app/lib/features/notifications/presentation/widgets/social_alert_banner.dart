@@ -59,7 +59,18 @@ class SocialAlertBanner extends ConsumerWidget {
             onTap: () {
               ref.read(socialAlertProvider.notifier).state = null;
               // Banner lives ABOVE the router — navigate via routerProvider.
-              ref.read(routerProvider).push('/notifications');
+              // Deep-link to the POST the action happened on (like tapping
+              // the phone notification), not just the bell.
+              final targetEventId = event.getTag('e') ?? event.getTag('a');
+              final router = ref.read(routerProvider);
+              if (event.kind == 3) {
+                // New follower → their profile.
+                router.push('/npub/${event.pubkey}');
+              } else if (targetEventId != null) {
+                router.push('/note/$targetEventId');
+              } else {
+                router.push('/notifications');
+              }
             },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

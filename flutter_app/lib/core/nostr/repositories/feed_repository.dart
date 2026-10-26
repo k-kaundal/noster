@@ -23,8 +23,40 @@ class FeedRepository {
   }) async {
     // Include: text notes, reposts, generic reposts, pictures, videos,
     // articles, polls (NIP-88 kind 1068 renders via PollCard).
+    const kinds = [1, 6, 16, 20, 21, 22, 30023, 1068];
+
+    // Relays cap filter list size (strfry maxReqFilterSize = 200) — a
+    // 500-follow Following feed in ONE filter is REJECTED, which surfaced
+    // as "no posts / could not fetch" on exactly the accounts with large
+    // follow lists (and fresh installs whose follows just resolved). Chunk
+    // the author list so the query is always servable, then merge.
+    if (authors != null && authors.length > _authorChunkSize) {
+      final merged = <String, NostrEvent>{};
+      for (var i = 0; i < authors.length; i += _authorChunkSize) {
+        final end = i + _authorChunkSize > authors.length
+            ? authors.length
+            : i + _authorChunkSize;
+        final chunk = authors.sublist(i, end);
+        final events = await relayPool.query([
+          NostrFilter(
+            kinds: kinds,
+            limit: limit,
+            since: since,
+            until: until,
+            authors: chunk,
+          ),
+        ], timeout: const Duration(seconds: 8));
+        for (final e in events) {
+          merged[e.id] = e;
+        }
+      }
+      final out = merged.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return out.length > limit ? out.sublist(0, limit) : out;
+    }
+
     final filter = NostrFilter(
-      kinds: [1, 6, 16, 20, 21, 22, 30023, 1068],
+      kinds: kinds,
       limit: limit,
       since: since,
       until: until,
@@ -36,6 +68,11 @@ class FeedRepository {
     events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return events;
   }
+
+  /// Authors per feed query — under every relay's filter list cap
+  /// (strfry maxReqFilterSize = 200). Profile prefetch uses 40 (smaller
+  /// payload); the feed can afford 150 (bigger pages, fewer round-trips).
+  static const _authorChunkSize = 150;
 
   Future<List<NostrEvent>> fetchFollowingFeed(
     List<String> followedPubkeys, {

@@ -29,12 +29,26 @@ background delivery** once the OS suspends the app.
 
 ## 2. Decision (three tiers, ship in order)
 
-### Tier 1 — Periodic catch-up (ADR-0005 P5) — code-complete, scheduler pending
-`BackgroundSyncService.syncNow()` runs reconnect + feed restart + wallet
-resync + DM gap-fill (which fires local notifications for new arrivals).
-The only missing piece is the OS scheduler: `workmanager` (Android
-WorkManager / iOS BGTaskScheduler), a ~20-line registration once pub.dev is
-reachable. Battery-cheap; latency = OS schedule (≥15 min).
+### Tier 1 — Periodic catch-up (ADR-0005 P5) — ✅ SHIPPED (2026-10-26)
+`BackgroundSyncService.syncNow()` runs every **15 min** (the OS-enforced
+minimum for periodic work) and now covers BOTH notification classes:
+
+- **DMs** — `dmGapFill` fetches the gap → DmNotifier fires (was the only
+  class before).
+- **Social engagement** (zaps, replies, follows, likes, reposts, comments)
+  — `_notifySocialEngagementSinceLastRead()` fetches kind 1/3/6/7/16/1111/
+  9735 `#p`=me since a SEPARATE background watermark
+  (`bg_social_notified_watermark_v1` — not the bell's, so background
+  notifying doesn't mark the bell read, and reading the bell doesn't stop
+  background re-notify). Dedup + burst-collapse + recipient-awareness run
+  through the same `LocalNotificationService`/`NotificationCenter` paths as
+  the foreground listener; events also persist into the durable
+  notification history for the bell.
+
+iOS configuration shipped: `UIBackgroundModes` (`fetch`, `processing`) +
+`BGTaskSchedulerPermittedIdentifiers` in `ios/Runner/Info.plist`.
+Battery-cheap: one bounded catch-up per tick, no persistent socket.
+Latency = OS schedule (~15 min, stretched under Doze).
 
 ### Tier 2 — Android foreground service (opt-in, default OFF)
 Amethyst's model: `flutter_background_service` in `isForegroundMode: true`
@@ -73,9 +87,9 @@ service is the *opt-in exception*, not the default.
 
 ## 4. Phasing
 
-| Step | Scope | Blocker |
+| Step | Scope | Status |
 |---|---|---|
-| **T1** | workmanager registration for `BackgroundSyncService` | pub.dev network (code written, in `registerPeriodicSync`) |
+| **T1** | Periodic catch-up (workmanager, 15 min) — DMs + social engagement notifications | ✅ **SHIPPED 2026-10-26** (incl. iOS Info.plist) |
 | **T2** | Android foreground service (opt-in) | `flutter_background_service` package + on-device testing |
 | **T3a** | Push-bridge server on relay.nostrfeed.com (watch #p, send APNS/FCM) | server work (not app code) |
 | **T3b** | Client token registration (NIP-98) + silent-push handler | T3a + APNS/FCM credentials |

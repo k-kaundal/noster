@@ -290,7 +290,9 @@ class FeedNotifier extends Notifier<FeedState> {
       // "same post every few minutes" junk) before it reaches the list.
       fresh = _applyFlood(fresh);
 
-      final merged = _merge(state.events, fresh);
+      // Refresh anchors at the TOP: keep the newest — the fresh page must
+      // survive the window cap (the "refresh discards itself" bug).
+      final merged = _merge(state.events, fresh, anchoredAtTop: true);
       state = state.copyWith(
         events: merged,
         isRefreshing: false,
@@ -355,7 +357,10 @@ class FeedNotifier extends Notifier<FeedState> {
       older = older.where(_isFeedPost).toList();
       older = _applyFlood(older);
 
-      final merged = _merge(state.events, older);
+      // loadMore anchors at the BOTTOM: keep the oldest — the pagination
+      // cursor (`events.last.createdAt`) must survive the cap to keep
+      // scrolling back through history.
+      final merged = _merge(state.events, older, anchoredAtTop: false);
       state = state.copyWith(
         events: merged,
         isLoadingMore: false,
@@ -429,7 +434,9 @@ class FeedNotifier extends Notifier<FeedState> {
   void showNewPosts() {
     final pending = _pending;
     if (pending.isEmpty) return;
-    final merged = _merge(state.events, pending);
+    // The pill's posts are the NEWEST — keep them (a tap that made them
+    // vanish into the window cap was the "pill does nothing" bug).
+    final merged = _merge(state.events, pending, anchoredAtTop: true);
     _pending = [];
     _pendingIds.clear();
     state = state.copyWith(
@@ -581,18 +588,21 @@ class FeedNotifier extends Notifier<FeedState> {
   /// list — that's the "feed jumps while scrolling" bug.
   static List<NostrEvent> _merge(
     List<NostrEvent> current,
-    List<NostrEvent> incoming,
-  ) {
+    List<NostrEvent> incoming, {
+    required bool anchoredAtTop,
+  }) {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     if (current.isEmpty) {
       final sorted = [...incoming]
         ..sort((a, b) => _orderTs(b, now).compareTo(_orderTs(a, now)));
-      return _capWindow(_dedupe(sorted));
+      return _capWindow(_dedupe(sorted), anchoredAtTop: anchoredAtTop);
     }
     final existingIds = current.map((e) => e.id).toSet();
     final newOnes =
         incoming.where((e) => !existingIds.contains(e.id)).toList();
-    if (newOnes.isEmpty) return _capWindow(current);
+    if (newOnes.isEmpty) {
+      return _capWindow(current, anchoredAtTop: anchoredAtTop);
+    }
 
     // Insert each new event at its time-sorted position (future-clamped).
     // Existing events never move relative to one another.
@@ -615,7 +625,7 @@ class FeedNotifier extends Notifier<FeedState> {
       }
       result.insert(lo, e);
     }
-    return _capWindow(result);
+    return _capWindow(result, anchoredAtTop: anchoredAtTop);
   }
 
   /// In-memory feed window cap. Without it `state.events` grew by ~50 per
@@ -624,18 +634,31 @@ class FeedNotifier extends Notifier<FeedState> {
   /// keyed elements alive in the ListView. THAT is the "scroll gets stuck
   /// after a while" smoking gun.
   ///
-  /// We drop from the TOP (newest) and keep the OLDEST events, because the
-  /// `loadMore` pagination cursor is `state.events.last.createdAt` — keeping
-  /// the tail preserves infinite scroll back through history. Dropped newest
-  /// posts are still in the SQLite store and reappear on the next refresh
-  /// (a refresh always fetches the newest page) or via the live tail's "N
-  /// new posts" pill. 400 ≈ 8 pages — plenty of scroll-back head-room while
-  /// bounding memory and rebuild cost.
+  /// The cap is DIRECTION-AWARE — the old rule always dropped from the TOP
+  /// (newest), which created the "index-0 stuck / new posts never show"
+  /// bug: after scrolling past 400 events, a refresh merged the new page at
+  /// the top and the cap immediately discarded it, so the top post stayed
+  /// pinned and the "N new posts" pill's posts vanished on tap.
+  ///
+  ///  - **anchoredAtTop (refresh + pill)** → keep the NEWEST. The user is at
+  ///    the top looking at fresh content; the oldest fall out of memory (they
+  ///    stay in the SQLite store, so pagination back-fills them seamlessly).
+  ///  - **loadMore (scrolling down)** → keep the OLDEST. The pagination
+  ///    cursor is `state.events.last.createdAt`, so the tail must survive to
+  ///    scroll back through history; the newest drop out (re-fetched on the
+  ///    next refresh).
+  ///
+  /// 400 ≈ 8 pages — plenty of scroll-back head-room while bounding memory.
   static const _maxInMemoryEvents = 400;
 
-  static List<NostrEvent> _capWindow(List<NostrEvent> events) {
+  static List<NostrEvent> _capWindow(
+    List<NostrEvent> events, {
+    required bool anchoredAtTop,
+  }) {
     if (events.length <= _maxInMemoryEvents) return events;
-    return events.sublist(events.length - _maxInMemoryEvents);
+    return anchoredAtTop
+        ? events.take(_maxInMemoryEvents).toList()
+        : events.sublist(events.length - _maxInMemoryEvents);
   }
 
   static List<NostrEvent> _dedupe(List<NostrEvent> events) {

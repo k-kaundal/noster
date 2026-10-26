@@ -287,12 +287,15 @@ class LocalNotificationService {
     required String text,
     String? eventId,
     String? authorPubkey,
+    String? targetEventId,
   }) =>
       show(
         type: AppNotificationType.social,
         title: 'NostrFeed',
         body: text,
-        route: '/notifications',
+        // Deep-link to the POST the action happened on (nip19 note id), not
+        // just the bell — a tap should land on the thread, like FB/Insta.
+        route: targetEventId != null ? '/note/$targetEventId' : '/notifications',
         eventId: eventId,
         collapseKey: authorPubkey,
       );
@@ -301,19 +304,21 @@ class LocalNotificationService {
         type: AppNotificationType.follows,
         title: 'New follower',
         body: '$followerName started following you',
-        route: '/notifications',
+        // Deep-link to the NEW FOLLOWER's profile.
+        route: authorPubkey != null ? '/npub/$authorPubkey' : '/notifications',
         eventId: eventId,
         collapseKey: authorPubkey,
       );
 
-  Future<void> showZap({required String zapperName, required int sats, String? eventId, String? authorPubkey}) =>
+  Future<void> showZap({required String zapperName, required int sats, String? eventId, String? authorPubkey, String? targetEventId}) =>
       show(
         type: AppNotificationType.zaps,
         title: '⚡ Zap received',
         body: sats > 0
             ? '$zapperName zapped you $sats sats'
             : '$zapperName zapped you',
-        route: '/notifications',
+        // Deep-link to the zapped POST.
+        route: targetEventId != null ? '/note/$targetEventId' : '/notifications',
         eventId: eventId,
         collapseKey: authorPubkey,
       );
