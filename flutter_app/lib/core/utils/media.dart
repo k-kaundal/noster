@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:nostrfeed_mobile/core/db/db_models.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 
 /// Media classification for URLs found in note content (NIP-92 aware).
@@ -162,5 +166,39 @@ class MediaUtils {
   static (String, ImetaInfo?) withImeta(String url, NostrEvent event) {
     final map = parseImeta(event);
     return (url, map[url]);
+  }
+
+  /// ADR-0008 P4: persist an event's imeta set to the `media` table so the
+  /// NEXT render lays the tile out BEFORE the bytes download (dimensions +
+  /// blurhash, no layout jump). Fire-and-forget on the writer lane —
+  /// best-effort (a failed persist just means the tile self-measures again).
+  ///
+  /// Called at render after [parseImeta] (the parse is memoized per event;
+  /// the persist is an idempotent INSERT OR REPLACE, so re-parsing the same
+  /// event just refreshes the same rows).
+  static void persistImeta(NostrEvent event) {
+    final imeta = parseImeta(event);
+    if (imeta.isEmpty) return;
+    final list = [
+      for (final info in imeta.values)
+        DbMedia(
+          url: info.url,
+          eventId: event.id,
+          kind: _dbKindFor(info.mimeType),
+          width: info.dimensions?.$1,
+          height: info.dimensions?.$2,
+          blurhash: info.blurhash,
+          mime: info.mimeType,
+        ),
+    ];
+    unawaited(EventStore.instance.upsertMediaBatch(list).catchError((_) {}));
+  }
+
+  static DbMediaKind _dbKindFor(String? mime) {
+    if (mime == null) return DbMediaKind.other;
+    if (mime.startsWith('image/')) return DbMediaKind.image;
+    if (mime.startsWith('video/')) return DbMediaKind.video;
+    if (mime.startsWith('audio/')) return DbMediaKind.audio;
+    return DbMediaKind.other;
   }
 }

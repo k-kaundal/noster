@@ -12,7 +12,18 @@
         android:label="Nostr Feed"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:largeHeap="true"
         android:networkSecurityConfig="@xml/network_security_config">
+        <!-- largeHeap: the image-heavy feed decodes up-to-1200px bitmaps;
+             Android's default heap (192-256 MB) GC-thrashed and evicted the
+             whole 48-96 MB image cache mid-scroll (iOS has no such cap).
+             Rendering A/B: Impeller scroll-janks on many Android GPUs
+             (flutter/flutter#168788) — EnableImpeller=false pins Skia, which
+             measured smoother on affected devices. Flip to true/remove to
+             re-test on newer Flutter engines. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

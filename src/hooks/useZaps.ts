@@ -60,10 +60,13 @@ export function useZaps(target: Event | Event[], onZapSuccess?: () => void) {
   const [isZapping, setIsZapping] = useState(false);
   const [invoice, setInvoice] = useState<string | null>(null);
 
+  // Hub model: the zap request names where the sender's lightning server
+  // should publish the receipt. Our hub is covered by `config.relays` above;
+  // these are the largest clients' default write relays so receipts zapped
+  // from other clients land where we read tallies (see RECEIPT_RELAYS).
   const defaultRelays = [
-    'wss://relay.primal.net',
     'wss://relay.damus.io',
-    'wss://nostr.wine',
+    'wss://relay.primal.net',
   ];
 
   /**

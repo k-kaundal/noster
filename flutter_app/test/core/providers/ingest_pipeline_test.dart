@@ -8,6 +8,7 @@ import 'package:nostrfeed_mobile/core/nostr/event_bus.dart';
 import 'package:nostrfeed_mobile/core/providers/content_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/ingest_pipeline_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/nostr_service_providers.dart';
+import 'package:nostrfeed_mobile/core/providers/store_invalidation.dart';
 import 'package:sqflite_common_ffi/sqflite_common_ffi.dart';
 
 void main() {
@@ -33,10 +34,10 @@ void main() {
     EventStore.debugOpenOverride = () => databaseFactoryFfi.openDatabase(
           inMemoryDatabasePath,
           options: OpenDatabaseOptions(
-            version: 2,
+            version: 8,
             onCreate: (db, v) async {
               await EventStore.debugCreateV1(db);
-              await EventStore.debugOnUpgrade(db, 1, 2);
+              await EventStore.debugOnUpgrade(db, 1, 8);
             },
           ),
         );
@@ -56,6 +57,10 @@ void main() {
         (ref) => EventBus(subscribe: (_) => feed.stream),
       ),
     ]);
+    // ADR-0008 P5: wire the invalidation bus → the store's writer-lane hook,
+    // so ingest reports its changed tables (engagementVersionProvider now
+    // DERIVES from StoreTable.eventRefs via the bus, not a manual poke).
+    container.read(storeInvalidationWiringProvider);
     // The bus only ingests from ACQUIRED specs — acquire one so the fake
     // feed is plumbed in (mirrors a real consumer).
     bus = container.read(eventBusProvider);
@@ -74,8 +79,15 @@ void main() {
 
     final e = ev(id: 'aa' * 32, kind: 1);
     feed.add(e);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
 
+    // Ingest is batched (150 ms window) — poll for the row with a deadline
+    // instead of one fixed sleep (timers are real here, and a loaded CI
+    // machine can fire the flush late).
+    final deadline = DateTime.now().add(const Duration(seconds: 3));
+    while ((await EventStore.instance.eventById('aa' * 32)) == null &&
+        DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 25));
+    }
     expect((await EventStore.instance.eventById('aa' * 32))?.id, 'aa' * 32);
   });
 

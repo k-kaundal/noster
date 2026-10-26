@@ -194,6 +194,9 @@ class _PostCardState extends ConsumerState<PostCard> {
     final followsAsync = ref.watch(followsProvider);
     final bookmarkedIdsAsync = ref.watch(bookmarkedIdsProvider);
     final auth = ref.watch(authStateProvider);
+    // Watched ONCE here (was duplicated per branch below) — read by the
+    // sensitive-content cover branches in the content column.
+    final sensitiveMode = ref.watch(sensitiveModeProvider);
 
     final profile = profileAsync.valueOrNull;
     final authorName =
@@ -423,14 +426,13 @@ class _PostCardState extends ConsumerState<PostCard> {
                         // card that opens the full reader — never the full
                         // markdown inline. Sensitive-content display mode
                         // (user preference): hide / blur-until-tapped /
-                        // allow. Default blur.
+                        // allow. Default blur. (ONE watch for both branches —
+                        // a per-branch duplicate rebuilt the card twice.)
                         if (verdict.action == FilterAction.warn &&
-                            ref.watch(sensitiveModeProvider) ==
-                                SensitiveContentMode.hide)
+                            sensitiveMode == SensitiveContentMode.hide)
                           const SizedBox.shrink()
                         else if (verdict.action == FilterAction.warn &&
-                            ref.watch(sensitiveModeProvider) ==
-                                SensitiveContentMode.blur)
+                            sensitiveMode == SensitiveContentMode.blur)
                           _ContentWarningCover(
                             reason: verdict.reason,
                             child: displayEvent.kind == 30023
@@ -1055,7 +1057,7 @@ class _FollowButton extends ConsumerWidget {
 // ─── Action Button ─────────────────────────────────────────────────
 
 class _ActionButton extends StatelessWidget {
-  /// Refined stroke-icon asset name (assets/icons/<icon>.svg).
+  /// Refined stroke-icon asset name (assets/icons/`icon`.svg).
   final String icon;
   final int count;
   final String? label;
@@ -1141,7 +1143,7 @@ class _ActionButton extends StatelessWidget {
 /// [TweenAnimationBuilder]'s shared ticker machinery rather than a
 /// dedicated per-button vsync callback.
 class _PopIcon extends StatefulWidget {
-  /// Refined stroke-icon asset name (assets/icons/<icon>.svg).
+  /// Refined stroke-icon asset name (assets/icons/`icon`.svg).
   final String icon;
   final Color color;
 

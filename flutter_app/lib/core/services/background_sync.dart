@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/nostr/sync/negentropy_sync_service.dart';
@@ -40,12 +41,44 @@ class BackgroundSyncService {
   final Ref _ref;
 
   static const _enabledKey = 'settings:background_sync_enabled';
+  static const _wifiOnlyKey = 'settings:sync_wifi_only';
 
   /// Master switch for the periodic catch-up (default ON — it's the
   /// battery-cheap tier; the persistent-socket tier is the opt-in one).
   Future<bool> isEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_enabledKey) ?? true;
+  }
+
+  /// ADR-0008 P6: Wi-Fi-only toggle for the HEAVY sync work (NIP-77
+  /// negentropy + its download/upload halves). Default OFF (sync on any
+  /// connection) — metered users opt in to skip the bandwidth-heavy
+  /// reconciliation on cellular. The light steps (feed refresh, DM gap-fill)
+  /// always run; only the big set-reconciliation is gated.
+  Future<bool> isWifiOnly() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_wifiOnlyKey) ?? false;
+  }
+
+  Future<void> setWifiOnly(bool wifiOnly) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_wifiOnlyKey, wifiOnly);
+  }
+
+  /// Whether the current connection is unmetered (Wi-Fi/ethernet). Cellular
+  /// counts as metered; an empty/unknown result defaults to METERED (safe:
+  /// the Wi-Fi-only toggle then skips the heavy sync, the conservative
+  /// choice for a user who opted in to save data).
+  Future<bool> _onUnmetered() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      if (results.isEmpty) return false; // unknown → assume metered
+      return results.any(
+        (r) => r == ConnectivityResult.wifi || r == ConnectivityResult.ethernet,
+      );
+    } catch (_) {
+      return false; // can't tell → assume metered (conservative)
+    }
   }
 
   Future<void> setEnabled(bool enabled) async {
@@ -75,8 +108,16 @@ class BackgroundSyncService {
     // (bandwidth ∝ the DIFFERENCE, not the window). Relays without NEG
     // support are skipped silently — the feed refresh below still covers
     // them via the classic windowed REQ path.
+    //
+    // ADR-0008 P6: gated by the Wi-Fi-only toggle — on a metered (cellular)
+    // connection with the toggle ON, SKIP the bandwidth-heavy reconciliation
+    // (its download/upload halves move the most bytes of any sync step) and
+    // let the light feed-refresh path cover the gap instead.
+    final wifiOnly = await isWifiOnly();
+    final onWifi = await _onUnmetered();
+    final heavySyncAllowed = !wifiOnly || onWifi;
     final connected = nostr.relayPool.connectedUrls;
-    if (connected.isNotEmpty) {
+    if (connected.isNotEmpty && heavySyncAllowed) {
       unawaited(
         _ref.read(negentropySyncServiceProvider).syncFeedScope(connected),
       );
@@ -93,6 +134,10 @@ class BackgroundSyncService {
     // Money moved while away (zaps, credits on another device).
     unawaited(_ref.read(walletSyncServiceProvider).syncNow());
     _ref.read(lnbitsLiveServiceProvider).resync();
+
+    // ADR-0008 P4: retry publishes that failed while offline/dead-socketed
+    // (durable `publish_outbox`) — posts/replies/DMs/zaps land eventually.
+    unawaited(nostr.retryPublishOutbox());
 
     // DMs sent while dead — gap-fill fetches exactly the gap (the live
     // sub can't deliver retroactively). New arrivals notify via DmNotifier.
@@ -287,5 +332,23 @@ class BackgroundSyncEnabledNotifier extends AsyncNotifier<bool> {
   Future<void> toggle(bool enabled) async {
     state = AsyncData(enabled);
     await ref.read(backgroundSyncServiceProvider).setEnabled(enabled);
+  }
+}
+
+/// Reactive view of the Wi-Fi-only sync toggle (ADR-0008 P6) — metered users
+/// opt in to skip the bandwidth-heavy NIP-77 reconciliation on cellular.
+final syncWifiOnlyProvider =
+    AsyncNotifierProvider<SyncWifiOnlyNotifier, bool>(
+  SyncWifiOnlyNotifier.new,
+);
+
+class SyncWifiOnlyNotifier extends AsyncNotifier<bool> {
+  @override
+  Future<bool> build() =>
+      ref.read(backgroundSyncServiceProvider).isWifiOnly();
+
+  Future<void> toggle(bool wifiOnly) async {
+    state = AsyncData(wifiOnly);
+    await ref.read(backgroundSyncServiceProvider).setWifiOnly(wifiOnly);
   }
 }

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nostrfeed_mobile/core/db/db_models.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/services/local_notification_service.dart';
@@ -114,6 +116,12 @@ class NotificationCenter extends Notifier<NotificationCenterState> {
   List<SocialEvent> get events => List.unmodifiable(_events);
 
   /// Ingest one live event. Returns true when it was new.
+  ///
+  /// ADR-0008 P2: ALSO persisted to the `notifications` table (durable —
+  /// the bell shows history from the store on cold start instead of an
+  /// empty relay-first list). Persistence is fire-and-forget on the writer
+  /// lane; the in-memory list stays the session's source of truth for the
+  /// unread COUNT until P5's invalidation bus.
   bool ingest(NostrEvent event) {
     if (!_isEngagementKind(event.kind)) return false;
     if (event.isExpired) return false;
@@ -132,8 +140,42 @@ class NotificationCenter extends Notifier<NotificationCenterState> {
       ref.invalidate(engagementProvider(target));
       ref.invalidate(userInteractionsProvider(target));
     }
+    // Persist to the store (durable notification history).
+    unawaited(_persistNotification(event, arrived));
     return true;
   }
+
+  /// Map an engagement event to its store row + write it (best-effort).
+  Future<void> _persistNotification(NostrEvent event, int arrived) async {
+    try {
+      final auth = ref.read(authStateProvider);
+      final recipient = auth.pubkey;
+      if (recipient == null) return;
+      final n = DbNotification(
+        id: event.id,
+        recipient: recipient,
+        type: _dbTypeFor(event),
+        actor: event.pubkey,
+        targetId: event.getTag('e'),
+        eventJson: jsonEncode(event.toJson()),
+        createdAt: arrived,
+      );
+      await EventStore.instance.upsertNotification(n);
+    } catch (_) {
+      // Best-effort — the in-memory list still shows the event.
+    }
+  }
+
+  /// Map a Nostr kind to the store's notification type (mirrors actionText).
+  static DbNotificationType _dbTypeFor(NostrEvent e) => switch (e.kind) {
+        7 => DbNotificationType.like,
+        6 || 16 => DbNotificationType.repost,
+        1 => DbNotificationType.reply,
+        1111 => DbNotificationType.reply, // comment → reply bucket
+        9735 => DbNotificationType.zap,
+        3 => DbNotificationType.follow,
+        _ => DbNotificationType.mention,
+      };
 
   /// Whether an event is a *notification for me* — the p-tag pointing at me
   /// must name ME as the recipient, not just appear anywhere in the event.
@@ -220,6 +262,16 @@ class NotificationCenter extends Notifier<NotificationCenterState> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_lastReadPrefKey, _lastRead);
     } catch (_) {}
+    // ADR-0008 P2: stamp the store's read_at too (durable read state).
+    final auth = ref.read(authStateProvider);
+    final recipient = auth.pubkey;
+    if (recipient != null) {
+      unawaited(
+        EventStore.instance
+            .markAllNotificationsRead(recipient, watermark)
+            .catchError((_) {}),
+      );
+    }
   }
 
   /// Wipe in-memory state (logout / account switch / tests). The next
@@ -234,6 +286,15 @@ class NotificationCenter extends Notifier<NotificationCenterState> {
     SharedPreferences.getInstance()
         .then((p) => p.remove(_lastReadPrefKey))
         .ignore();
+    // ADR-0008 P2: wipe the durable notification history too — the next
+    // account must never inherit the previous one's notifications.
+    final auth = ref.read(authStateProvider);
+    final recipient = auth.pubkey;
+    if (recipient != null) {
+      unawaited(
+        EventStore.instance.clearNotifications(recipient).catchError((_) {}),
+      );
+    }
   }
 
   Future<void> _restoreLastRead() async {

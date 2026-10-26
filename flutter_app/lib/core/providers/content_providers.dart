@@ -7,6 +7,7 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/relay/relay_pool.dart';
 import 'package:nostrfeed_mobile/core/providers/auth_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/nostr_service_providers.dart';
+import 'package:nostrfeed_mobile/core/providers/store_invalidation.dart';
 import 'package:nostrfeed_mobile/features/compose/data/upload_service.dart';
 import 'package:nostrfeed_mobile/features/explore/domain/feed_ranking.dart';
 
@@ -20,7 +21,16 @@ final relayStatusProvider = StateProvider<Map<String, RelayState>>((ref) => {});
 ///
 /// ADR-0005 P3: lives in core (was in feed_notifier) because the ingest
 /// pipeline bumps it from the bus — the pipeline is core, not feed feature.
-final engagementVersionProvider = StateProvider<int>((ref) => 0);
+///
+/// ADR-0008 P5: now DERIVES from the per-table invalidation bus
+/// (`StoreTable.eventRefs`) instead of being hand-bumped by the pipeline.
+/// Same counter semantics (one number, bumps when engagement lands), but
+/// sourced from the writer lane's table report — a DM/notification/profile
+/// write no longer bumps this (they have their OWN table counters), so
+/// engagement rebuilds stay scoped to engagement writes.
+final engagementVersionProvider = Provider<int>((ref) {
+  return ref.watch(tableVersionProvider(StoreTable.eventRefs));
+});
 
 /// Local engagement counts for one event, straight from the SQLite index.
 /// Replaces the per-event `engagementProvider` relay query in the feed.

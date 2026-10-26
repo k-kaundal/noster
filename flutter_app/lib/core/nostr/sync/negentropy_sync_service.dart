@@ -38,23 +38,41 @@ class NegentropySyncService {
   /// Reconcile [filter] against every relay in [relayUrls]. Returns the
   /// per-relay outcomes (null per unsupported/unreachable relay — never
   /// throws). Downloaded events land in the store by the client.
+  ///
+  /// ADR-0008 P6 — **bounded-parallel**: relays reconcile CONCURRENTLY (was
+  /// sequential — each relay's up-to-40s worst case serialized, so a slow
+  /// relay stalled the whole pass). One bad relay never kills the others;
+  /// [parallelism] caps how many sockets open at once (a phone shouldn't
+  /// hold 9 NEG sockets simultaneously).
   Future<List<NegentropySyncResult?>> syncAll(
     List<String> relayUrls,
-    NostrFilter filter,
-  ) async {
-    final outcomes = <NegentropySyncResult?>[];
-    for (final url in relayUrls) {
-      try {
-        final result = await _client.syncWithRelay(
-          wsUrl: url,
-          filter: filter,
-          connect: (uri) => WsNegTransport.connect(uri),
-        );
-        outcomes.add(result);
-      } catch (_) {
-        outcomes.add(null); // one bad relay never kills the pass
+    NostrFilter filter, {
+    int parallelism = 4,
+    bool uploadMissing = true,
+  }) async {
+    final outcomes = List<NegentropySyncResult?>.filled(relayUrls.length, null);
+    var index = 0;
+    // Bounded worker pool: at most [parallelism] reconciliations in flight.
+    Future<void> worker() async {
+      while (true) {
+        final i = index++;
+        if (i >= relayUrls.length) return;
+        try {
+          outcomes[i] = await _client.syncWithRelay(
+            wsUrl: relayUrls[i],
+            filter: filter,
+            connect: (uri) => WsNegTransport.connect(uri),
+            uploadMissing: uploadMissing,
+          );
+        } catch (_) {
+          outcomes[i] = null; // one bad relay never kills the pass
+        }
       }
     }
+
+    await Future.wait([
+      for (var w = 0; w < parallelism && w < relayUrls.length; w++) worker(),
+    ]);
     return outcomes;
   }
 

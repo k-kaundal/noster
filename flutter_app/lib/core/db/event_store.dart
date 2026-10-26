@@ -1,9 +1,21 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:nostrfeed_mobile/core/db/db_encryption.dart';
+import 'package:nostrfeed_mobile/core/db/db_models.dart';
+import 'package:nostrfeed_mobile/core/db/store_host.dart';
+import 'package:nostrfeed_mobile/core/db/stores/maintenance_store.dart';
+import 'package:nostrfeed_mobile/core/db/stores/media_store.dart';
+import 'package:nostrfeed_mobile/core/db/stores/message_store.dart';
+import 'package:nostrfeed_mobile/core/db/stores/notification_store.dart';
+import 'package:nostrfeed_mobile/core/db/stores/profile_store.dart';
+import 'package:nostrfeed_mobile/core/db/stores/publish_outbox_store.dart';
+import 'package:nostrfeed_mobile/core/db/stores/relay_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/filter.dart';
 import 'package:nostrfeed_mobile/core/nostr/kinds.dart';
+import 'package:nostrfeed_mobile/core/providers/store_invalidation.dart'
+    show EventStoreHooks, StoreTable;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -46,18 +58,84 @@ import 'package:sqflite/sqflite.dart';
 /// Everything else is `INSERT OR REPLACE` keyed on stable ids, so ingesting
 /// the same event twice is a no-op — the live tail and the page fetch can
 /// both write without deduping in Dart.
-class EventStore {
+class EventStore implements StoreHost {
   EventStore._();
   static final EventStore instance = EventStore._();
+
+  // ── Domain stores (ADR-0008 God-object split) ──────────────────────────
+  // The zero-interaction-with-ingest domains live in `stores/` and share
+  // this store's database + writer lane via the StoreHost interface. The
+  // public façade below delegates to them, so call sites are unchanged.
+  late final MessageStore messages = MessageStore(this);
+  late final NotificationStore notifications = NotificationStore(this);
+  late final RelayStore relays = RelayStore(this);
+  late final MediaStore media = MediaStore(this);
+  late final PublishOutboxStore publishOutbox = PublishOutboxStore(this);
+  late final ProfileStore profiles = ProfileStore(this);
+  late final MaintenanceStore maintenance = MaintenanceStore(this);
 
   static const _dbName = 'nostrfeed_events.db';
   // v2 (ADR-0005 P1): + thread_edges + seen_on.
   // v3 (ADR-0007 P1): + tags (generalized single-letter index) + deletions
   //                   (NIP-09 audit) + NIP-01 lifecycle enforcement.
-  static const _dbVersion = 3;
+  // v4 (ADR-0008 P0): + order_ts (sargable feed ordering) + expires_at
+  //                   (NIP-40 as a column) + idx_refs_pubkey_kind +
+  //                   idx_events_pubkey_kind_time + mobile engine pragmas
+  //                   (WAL/busy_timeout/synchronous) + single-writer lane +
+  //                   tags-orphan prune fix + expired-row deletion.
+  // v5 (ADR-0008 P1): + dm_messages + dm_threads + dm_outbox (messaging was
+  //                   memory-only — kind 4/1059 excluded from ingest; cold
+  //                   start re-fetched + re-decrypted everything on the UI
+  //                   isolate). Decrypted plaintext is stored DEVICE-ONLY
+  //                   (like Signal's local DB) — the NIP-17 wraps themselves
+  //                   can't be re-decrypted by their sender.
+  // v6 (ADR-0008 P2): + notifications (was a 200-entry memory list, empty on
+  //                   cold start, relay-first). Partial unread index → the
+  //                   bell badge COUNT is an instant indexed query.
+  // v7 (ADR-0008 P3): + relay_health + author_relays (the relay fleet's
+  //                   scoring/affinity — tiered routing + top-K query fan-out
+  //                   instead of broadcast-to-all-relays).
+  // v8 (ADR-0008 P4): + profile_fts (FTS5 full-text people search, was a
+  //                   `json LIKE '%q%'` full scan) + media (dimensions/
+  //                   blurhash/mime, was re-parsed per render) +
+  //                   publish_outbox (durable retry for ALL event kinds).
+  static const _dbVersion = 8;
 
   Database? _db;
   Future<Database>? _opening;
+
+  /// ADR-0008 single-writer lane: ALL mutating store calls (ingest, prune,
+  /// deletions, profile writes, seen_on flush) are serialized through this
+  /// chain so SQLite never sees two concurrent write transactions on the
+  /// (single) sqflite connection — the "database is locked / SQLITE_BUSY"
+  /// class of failure. Readers bypass the lane entirely (WAL lets them read
+  /// while the writer commits). Pure-SQL methods append to [_writeLane];
+  /// public mutators go through [_enqueueWrite].
+  Future<void> _writeLane = Future.value();
+
+  /// Serialize a mutation onto the single-writer lane. Errors are captured
+  /// into the lane (so one failure doesn't poison the chain) and rethrown to
+  /// the caller, exactly like the ingest pipeline's `_inFlight` pattern.
+  ///
+  /// ADR-0008 P5: [touches] declares WHICH tables the mutation changed —
+  /// after the commit lands, the invalidation bus is notified so ONLY the
+  /// features listening to those tables rebuild (a DM write doesn't bump
+  /// engagement, an engagement write doesn't rebuild DM threads). Read-only
+  /// methods pass no touches. The store stays Riverpod-free: it fires a
+  /// static hook (`EventStoreHooks.onTablesChanged`) that the app layer
+  /// registered, so there's no import cycle.
+  Future<T> _enqueueWrite<T>(
+    Future<T> Function() op, {
+    Set<StoreTable>? touches,
+  }) async {
+    final run = _writeLane.then((_) => op());
+    _writeLane = run.then((_) {}, onError: (_) {});
+    final result = await run;
+    if (touches != null && touches.isNotEmpty) {
+      EventStoreHooks.onTablesChanged?.call(touches);
+    }
+    return result;
+  }
 
   /// Test hook: swap in an in-memory database (sqflite_common_ffi in unit
   /// tests). Tests are deterministic — no device paths, no real files.
@@ -82,6 +160,7 @@ class EventStore {
   /// Failure rule: a FAILED open must NOT be cached — otherwise one bad
   /// open (locked file at hot-restart, a transient iOS file error) poisons
   /// every later access forever (the store-wide death spiral).
+  @override
   Future<Database> get db {
     final existing = _db;
     if (existing != null) return Future.value(existing);
@@ -100,14 +179,56 @@ class EventStore {
 
   Future<Database> _open() async {
     final override = debugOpenOverride;
-    if (override != null) return override();
-    final dir = await getApplicationDocumentsDirectory();
-    return openDatabase(
-      '${dir.path}/$_dbName',
-      version: _dbVersion,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-    );
+    final Database opened;
+    if (override != null) {
+      opened = await override();
+    } else {
+      final dir = await getApplicationDocumentsDirectory();
+      // ADR-0008 P7: encrypted open path. When `DB_ENCRYPTION=true` (build
+      // flag) the DB opens with the secure-storage key. The actual SQLCipher
+      // driver ships when pub.dev is reachable (see migrationNotes) — until
+      // then this flag stays OFF and the plain open below runs (zero risk).
+      // To activate: flutter pub add sqflite_sqlcipher, then pass
+      // `password: await DbEncryptionKeys().databaseKey()` here.
+      if (dbEncryptionEnabled) {
+        // Resolve (and on first run, generate+persist) the 256-bit key in
+        // hardware-backed secure storage. The plain openDatabase call below
+        // accepts this as `password:` once the SQLCipher driver is linked.
+        await DbEncryptionKeys().databaseKey();
+      }
+      opened = await openDatabase(
+        '${dir.path}/$_dbName',
+        version: _dbVersion,
+        onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
+        // password: dbEncryptionEnabled
+        //     ? await DbEncryptionKeys().databaseKey()
+        //     : null, // (uncomment when the SQLCipher driver ships)
+      );
+    }
+    // ADR-0008 P0 engine pragmas (Android docs + PowerSync standard):
+    // WAL = readers don't block the writer; synchronous=NORMAL = no per-
+    // commit fsync (30ms → <1ms per txn, still crash-safe); busy_timeout =
+    // never SQLITE_BUSY-fail under contention (ZeroExp: 0 lost writes at
+    // 100k+ rows/s vs catastrophic loss at timeout 0). journal_size_limit
+    // caps the WAL so read perf never degrades; the writer lane runs a
+    // PASSIVE checkpoint off the hot path at prune.
+    // Best-effort per pragma — a platform SQLite lacking one must not brick
+    // the open (WAL unsupported on some old/embedded builds).
+    for (final pragma in const [
+      'PRAGMA journal_mode = WAL',
+      'PRAGMA synchronous = NORMAL',
+      'PRAGMA busy_timeout = 5000',
+      'PRAGMA journal_size_limit = 6144000', // ~6 MB WAL cap
+      'PRAGMA foreign_keys = ON',
+    ]) {
+      try {
+        await opened.execute(pragma);
+      } catch (_) {
+        // pragma unsupported on this platform's SQLite — skip, don't brick.
+      }
+    }
+    return opened;
   }
 
   /// Schema entry points exposed for the migration test — creating a v1
@@ -180,6 +301,345 @@ class EventStore {
         // tags re-derive on future ingests.
       }
     }
+    if (oldVersion < 4) {
+      await _createV4Schema(db);
+      // Backfill order_ts (clamp) + expires_at (NIP-40) from stored events —
+      // best-effort, a malformed row must not brick the migration. Reads
+      // fall back to created_at while order_ts = 0 (see feedPage).
+      try {
+        await _backfillV4(db);
+      } catch (_) {
+        // order_ts/expires_at fill in from here forward.
+      }
+    }
+    if (oldVersion < 5) {
+      await _createV5Schema(db);
+    }
+    if (oldVersion < 6) {
+      await _createV6Schema(db);
+    }
+    if (oldVersion < 7) {
+      await _createV7Schema(db);
+    }
+    if (oldVersion < 8) {
+      await _createV8Schema(db);
+      // Backfill the FTS index from profiles stored before v8 (people search
+      // works immediately on existing installs). Best-effort — a malformed
+      // profile row must not brick the migration.
+      if (_ftsAvailable) {
+        try {
+          await _backfillProfileFts(db);
+        } catch (_) {
+          // FTS fills in from here forward via saveProfile.
+        }
+      }
+    }
+  }
+
+  /// Backfill `profile_fts` from profiles stored before v8.
+  static Future<void> _backfillProfileFts(Database db) async {
+    final rows = await db.query('profiles', columns: ['pubkey', 'json']);
+    final batch = db.batch();
+    for (final row in rows) {
+      try {
+        final p = NostrProfile.fromJson(
+          jsonDecode(row['json'] as String) as Map<String, dynamic>,
+        );
+        batch.insert('profile_fts', {
+          'pubkey': row['pubkey'],
+          'name': p.name ?? '',
+          'display_name': p.displayName ?? '',
+          'nip05': p.nip05 ?? '',
+          'about': p.about ?? '',
+        });
+      } catch (_) {
+        continue;
+      }
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// ADR-0008 P4 schema: FTS5 people search + media metadata + durable
+  /// publish outbox. IDEMPOTENT. FTS5 is feature-detected (some embedded
+  /// SQLite builds lack it) — [_ftsAvailable] gates the FTS path, and the
+  /// LIKE fallback stays for those platforms.
+  static Future<void> _createV8Schema(Database db) async {
+    // Full-text people search (was `json LIKE '%q%'` full scan + per-row
+    // jsonDecode). pubkey is UNINDEXED (join key, not searched).
+    try {
+      await db.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS profile_fts USING fts5(
+          pubkey UNINDEXED,
+          name,
+          display_name,
+          nip05,
+          about,
+          tokenize = 'unicode61'
+        )
+      ''');
+      _ftsAvailable = true;
+    } catch (_) {
+      _ftsAvailable = false; // platform SQLite lacks FTS5 → LIKE fallback
+    }
+
+    // Media metadata: dimensions/blurhash/mime per URL (was re-parsed per
+    // render + memoized in RAM only). Layout-before-download (no jump).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS media (
+        url           TEXT PRIMARY KEY,
+        event_id      TEXT,
+        kind          INTEGER NOT NULL DEFAULT 3,
+        width         INTEGER,
+        height        INTEGER,
+        blurhash      TEXT,
+        mime          TEXT,
+        local_path    TEXT,
+        upload_state  INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_media_event ON media(event_id)',
+    );
+
+    // Durable publish retry for ALL event kinds (post/reply/DM/zap…): a
+    // failed publish (offline, dead socket) is retried by background sync
+    // instead of silently lost.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS publish_outbox (
+        id          TEXT PRIMARY KEY,
+        event_json  TEXT NOT NULL,
+        targets     TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        state       INTEGER NOT NULL DEFAULT 0,
+        attempts    INTEGER NOT NULL DEFAULT 0,
+        last_error  TEXT
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_publish_state ON publish_outbox(state, created_at)',
+    );
+  }
+
+  /// Whether the platform's SQLite has FTS5 (feature-detected at open).
+  /// Gates the FTS people-search path vs the LIKE fallback.
+  static bool _ftsAvailable = false;
+
+  /// StoreHost: the domain stores read FTS availability through the interface.
+  @override
+  bool get ftsAvailable => _ftsAvailable;
+
+  /// StoreHost: the single-writer lane, exposed to the domain stores (they
+  /// share THIS lane, so a domain write and an ingest write never interleave
+  /// into two concurrent transactions).
+  @override
+  Future<T> enqueueWrite<T>(
+    Future<T> Function() op, {
+    Set<StoreTable>? touches,
+  }) =>
+      _enqueueWrite(op, touches: touches);
+
+  /// ADR-0008 P3 schema: relay fleet scoring + author→relay affinity.
+  /// IDEMPOTENT (IF NOT EXISTS).
+  static Future<void> _createV7Schema(Database db) async {
+    // One health record per relay — drives tier routing + top-K query fan-out.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS relay_health (
+        url           TEXT PRIMARY KEY,
+        tier          INTEGER NOT NULL DEFAULT 2,
+        score         REAL NOT NULL DEFAULT 0,
+        last_eose_ms  INTEGER,
+        eose_samples  INTEGER NOT NULL DEFAULT 0,
+        success_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        updated_at    INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    // Author → relay affinity: which relays historically delivered an
+    // author's events (consume seen_on for outbox routing — publish mentions/
+    // DMs where the author's events actually live).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS author_relays (
+        pubkey      TEXT NOT NULL,
+        relay_url   TEXT NOT NULL,
+        event_count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (pubkey, relay_url)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_author_relays_pubkey '
+      'ON author_relays(pubkey, event_count DESC)',
+    );
+  }
+
+  /// ADR-0008 P2 schema: notifications become a store projection (was a
+  /// 200-entry memory list + a SharedPreferences watermark). The bell badge
+  /// count is an instant partial-index COUNT. IDEMPOTENT (IF NOT EXISTS).
+  static Future<void> _createV6Schema(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS notifications (
+        id          TEXT PRIMARY KEY,
+        recipient   TEXT NOT NULL,
+        type        INTEGER NOT NULL,
+        actor       TEXT NOT NULL,
+        target_id   TEXT,
+        event_json  TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        read_at     INTEGER
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_notif_recip_time '
+      'ON notifications(recipient, created_at DESC)',
+    );
+    // Partial index on UNREAD only → the badge COUNT(*) never scans read rows.
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_notif_recip_unread '
+      'ON notifications(recipient, created_at DESC) WHERE read_at IS NULL',
+    );
+  }
+
+  /// ADR-0008 P1 schema: messaging (kinds 4/1059) becomes a store projection.
+  /// Plaintext is DECRYPTED and stored device-only — never the gift-wrap
+  /// ciphertext (useless, and the sender can't re-decrypt it). IDEMPOTENT
+  /// (all DDL IF NOT EXISTS).
+  static Future<void> _createV5Schema(Database db) async {
+    // One row per chat message (both directions). `peer` = the other party.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS dm_messages (
+        id          TEXT PRIMARY KEY,
+        peer        TEXT NOT NULL,
+        direction   INTEGER NOT NULL,
+        content     TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        raw_id      TEXT,
+        wrap_kind   INTEGER NOT NULL DEFAULT 1059,
+        rumor_kind  INTEGER NOT NULL DEFAULT 14,
+        status      INTEGER NOT NULL DEFAULT 1,
+        reply_to    TEXT,
+        subject     TEXT,
+        mime_type   TEXT,
+        blurhash    TEXT
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_dm_peer_time ON dm_messages(peer, created_at ASC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_dm_time ON dm_messages(created_at DESC)',
+    );
+
+    // One row per conversation (the chat-list row + read watermark). Replaces
+    // the SharedPreferences dm_last_read_v1 JSON map.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS dm_threads (
+        peer          TEXT PRIMARY KEY,
+        last_msg_at   INTEGER NOT NULL,
+        last_read_at  INTEGER NOT NULL DEFAULT 0,
+        unread_count  INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
+    // Durable outgoing queue (failed sends retry via background sync).
+    // Replaces the SharedPreferences dm_outbox_v1 JSON blob.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS dm_outbox (
+        id          TEXT PRIMARY KEY,
+        peer        TEXT NOT NULL,
+        payload     TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        state       INTEGER NOT NULL DEFAULT 0,
+        attempts    INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_dm_outbox_state ON dm_outbox(state, created_at)',
+    );
+  }
+
+  /// ADR-0008 P0 schema: sargable feed ordering + NIP-40 as a column +
+  /// indexes for the previously full-scan reads. IDEMPOTENT (column adds
+  /// tolerate "already exists", indexes use IF NOT EXISTS) so a re-run —
+  /// or a test re-applying the migration — never throws.
+  static Future<void> _createV4Schema(Database db) async {
+    // order_ts: created_at clamped to now+15min AT INGEST (the future-post
+    // clamp computed once at write, so feedPage ORDER BY walks an index
+    // instead of computing MIN(created_at, ?) per row in a temp B-tree).
+    // expires_at: NIP-40 expiration as a column (multi-letter 'expiration'
+    // isn't in the single-letter tags table) → expired rows delete by index
+    // at read AND prune, instead of accumulating until LRU.
+    await _addColumnIfMissing(
+      db,
+      'events',
+      'order_ts',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _addColumnIfMissing(db, 'events', 'expires_at', 'INTEGER');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_events_kind_ordertime ON events(kind, order_ts DESC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_events_expiry ON events(expires_at) '
+      'WHERE expires_at IS NOT NULL',
+    );
+    // userInteractionsFor full-scanned event_refs (no pubkey-leading index):
+    // "did I like/repost any of these 50 posts" is now an index range scan.
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_refs_pubkey_kind ON event_refs(pubkey, kind, target_id)',
+    );
+    // "Zaps I received" / author+kind feeds (studio earnings, profile tabs).
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_events_pubkey_kind_time '
+      'ON events(pubkey, kind, created_at DESC)',
+    );
+  }
+
+  /// ADD COLUMN that no-ops when the column already exists (SQLite has no
+  /// `IF NOT EXISTS` for columns — probe pragma_table_info first).
+  static Future<void> _addColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    String definition,
+  ) async {
+    final cols = await db.rawQuery(
+      "SELECT name FROM pragma_table_info(?)",
+      [table],
+    );
+    final exists = cols.any((r) => r['name'] == column);
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
+  }
+
+  /// Backfill order_ts + expires_at for events stored before v4.
+  static Future<void> _backfillV4(Database db) async {
+    final rows = await db.query('events', columns: ['id', 'created_at', 'tags']);
+    final clampTo = DateTime.now().millisecondsSinceEpoch ~/ 1000 +
+        EventStore._futureToleranceSeconds;
+    final batch = db.batch();
+    for (final row in rows) {
+      final createdAt = row['created_at'] as int;
+      final orderTs = createdAt < clampTo ? createdAt : clampTo;
+      int? expiresAt;
+      try {
+        final tags = jsonDecode(row['tags'] as String) as List;
+        for (final t in tags) {
+          if (t is List && t.isNotEmpty && t[0] == 'expiration' && t.length > 1) {
+            expiresAt = int.tryParse('${t[1]}');
+            break;
+          }
+        }
+      } catch (_) {
+        // malformed tags — leave expires_at null, order_ts still set.
+      }
+      batch.update(
+        'events',
+        {'order_ts': orderTs, 'expires_at': expiresAt},
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   /// ADR-0007 Phase 1 tables: the generalized single-letter tag index
@@ -316,6 +776,16 @@ class EventStore {
     await _createV2Tables(db);
     // v3 tables (ADR-0007): tags + deletions + time index.
     await _createV3Tables(db);
+    // v4 (ADR-0008 P0): order_ts + expires_at + read indexes.
+    await _createV4Schema(db);
+    // v5 (ADR-0008 P1): messaging tables.
+    await _createV5Schema(db);
+    // v6 (ADR-0008 P2): notifications table.
+    await _createV6Schema(db);
+    // v7 (ADR-0008 P3): relay fleet tables.
+    await _createV7Schema(db);
+    // v8 (ADR-0008 P4): FTS5 + media + publish_outbox.
+    await _createV8Schema(db);
   }
 
   // ── Ingest (NIP-01 lifecycle — ADR-0007 Phase 1) ──────────────────────
@@ -345,7 +815,22 @@ class EventStore {
   /// - **Lifecycle path (replaceable / addressable / deletion)** — per-event
   ///   transactions, because newest-wins and delete semantics need read-
   ///   modify-write. These are a small minority of events.
-  Future<void> ingest(List<NostrEvent> events) async {
+  Future<void> ingest(List<NostrEvent> events) {
+    // ADR-0008 P5 touches: content always lands in `events`; engagement only
+    // when the batch actually carries engagement kinds (a like landing bumps
+    // counts, a plain post doesn't — so counts don't re-render on content).
+    const engagementKinds = {1, 6, 7, 16, 9735, 1111};
+    final hasEngagement = events.any((e) => engagementKinds.contains(e.kind));
+    return _enqueueWrite(
+      () => _ingestImpl(events),
+      touches: {
+        StoreTable.events,
+        if (hasEngagement) StoreTable.eventRefs,
+      },
+    );
+  }
+
+  Future<void> _ingestImpl(List<NostrEvent> events) async {
     if (events.isEmpty) return;
     Database database;
     try {
@@ -444,6 +929,11 @@ class EventStore {
       'tags': jsonEncode(e.tags),
       'content': e.content,
       'sig': e.sig,
+      // ADR-0008: order_ts = future-clamped ordering ts (computed ONCE at
+      // write so feedPage ORDER BY is an index walk, not a per-row MIN()).
+      // expires_at = NIP-40 as a column (indexed deletion at read+prune).
+      'order_ts': _orderTsFor(e),
+      'expires_at': e.expiration,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
     // Rebuild the tag index for this id (replace, so stale tags never linger).
     batch.delete('tags', where: 'event_id = ?', whereArgs: [e.id]);
@@ -530,6 +1020,8 @@ class EventStore {
       'tags': jsonEncode(e.tags),
       'content': e.content,
       'sig': e.sig,
+      'order_ts': _orderTsFor(e),
+      'expires_at': e.expiration,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
 
     // Generalized single-letter tag index (NIP-01 contract). Replace on
@@ -1078,8 +1570,6 @@ class EventStore {
     List<String>? authors,
   }) async {
     final database = await db;
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final clampTo = now + _futureToleranceSeconds;
     final where = StringBuffer(
       'e.kind IN (${List.filled(kinds.length, '?').join(',')})'
       // NOT EXISTS = "this event is not a reply" (no thread edge points
@@ -1098,14 +1588,19 @@ class EventStore {
       );
       args.addAll(authors);
     }
+    // ADR-0008 P0: order by the pre-clamped order_ts COLUMN (indexed) — the
+    // old `ORDER BY MIN(created_at, ?)` computed the clamp per row in a temp
+    // B-tree (non-sargable). Rows stored before v4 have order_ts = 0 → fall
+    // back to created_at (still correct, just unindexed for those few rows
+    // until they age out or re-ingest).
     final rows = await database.rawQuery(
       '''
       SELECT e.* FROM events e
       WHERE $where
-      ORDER BY MIN(e.created_at, ?) DESC
+      ORDER BY (CASE WHEN e.order_ts > 0 THEN e.order_ts ELSE e.created_at END) DESC
       LIMIT ?
       ''',
-      [...args, clampTo, limit],
+      [...args, limit],
     );
     return rows.map(_rowToEvent).toList();
   }
@@ -1113,6 +1608,16 @@ class EventStore {
   /// How far in the future a post's timestamp may be before it's clamped
   /// for ordering (mirrors FeedNotifier._futureToleranceSeconds).
   static const _futureToleranceSeconds = 15 * 60;
+
+  /// The future-clamped ordering timestamp written at ingest (ADR-0008 P0):
+  /// `MIN(created_at, now + tolerance)` computed ONCE here so the feed's
+  /// ORDER BY is an index walk. A future-dated/boosted post sorts with the
+  /// genuinely-new posts instead of pinning to the top forever.
+  static int _orderTsFor(NostrEvent e) {
+    final clampTo = DateTime.now().millisecondsSinceEpoch ~/ 1000 +
+        _futureToleranceSeconds;
+    return e.createdAt < clampTo ? e.createdAt : clampTo;
+  }
 
   /// Trending candidates (ADR-0005 L5): raw engagement aggregated over a
   /// time window, straight from the engagement index. "Trending in the
@@ -1378,207 +1883,127 @@ class EventStore {
     return rows.map((r) => r['relay_url'] as String).toList();
   }
 
-  // ── Profiles ────────────────────────────────────────────────────────
-
-  Future<NostrProfile?> profileFor(String pubkey, {Duration? maxAge}) async {
-    final row = await profileRowFor(pubkey);
-    if (row == null) return null;
-    if (maxAge != null) {
-      final age = DateTime.now().millisecondsSinceEpoch - row.fetchedAtMs;
-      if (age > maxAge.inMilliseconds) return null; // stale — caller refetches
-    }
-    return row.profile;
-  }
-
-  /// The stored profile + its fetch timestamp (ms), or null. Used by the
-  /// persistent profile cache (stale-while-revalidate needs the age).
+  // Profiles → ProfileStore (God-object split).
+  Future<NostrProfile?> profileFor(String pubkey, {Duration? maxAge}) =>
+      profiles.profileFor(pubkey, maxAge: maxAge);
   Future<({NostrProfile profile, int fetchedAtMs})?> profileRowFor(
     String pubkey,
-  ) async {
-    final database = await db;
-    final rows = await database.query(
-      'profiles',
-      where: 'pubkey = ?',
-      whereArgs: [pubkey],
-      limit: 1,
-    );
-    if (rows.isEmpty) return null;
-    try {
-      return (
-        profile: NostrProfile.fromJson(
-          jsonDecode(rows.first['json'] as String) as Map<String, dynamic>,
-        ),
-        fetchedAtMs: rows.first['fetched_at'] as int,
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> saveProfile(String pubkey, NostrProfile profile) async {
-    final database = await db;
-    await database.insert('profiles', {
-      'pubkey': pubkey,
-      'json': jsonEncode(profile.toJson()),
-      'fetched_at': DateTime.now().millisecondsSinceEpoch,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  /// Local people search over the persistent profile cache — zero network.
-  /// Matches name/display_name/nip05/about. Powers the search screen's
-  /// local fallback (was a 500-event relay query per query). Returns
-  /// (pubkey, profile) pairs — NostrProfile carries no key of its own.
+  ) =>
+      profiles.profileRowFor(pubkey);
+  Future<void> saveProfile(String pubkey, NostrProfile profile) =>
+      profiles.saveProfile(pubkey, profile);
   Future<List<({String pubkey, NostrProfile profile})>> searchProfiles(
     String query, {
     int limit = 20,
-  }) async {
-    final database = await db;
-    final like = '%${query.replaceAll('%', r'\%').replaceAll('_', r'\_')}%';
-    final rows = await database.rawQuery(
-      '''
-      SELECT pubkey, json FROM profiles
-      WHERE json LIKE ? ESCAPE '\\'
-      ORDER BY fetched_at DESC
-      LIMIT ?
-      ''',
-      [like, limit * 4], // over-fetch; JSON parse + field-match refines below
-    );
-    final out = <({String pubkey, NostrProfile profile})>[];
-    for (final row in rows) {
-      try {
-        final p = NostrProfile.fromJson(
-          jsonDecode(row['json'] as String) as Map<String, dynamic>,
-        );
-        // Field-level match (LIKE on raw JSON would hit URLs/banner strings).
-        final hay = [
-          p.name ?? '',
-          p.displayName ?? '',
-          p.nip05 ?? '',
-          p.about ?? '',
-        ].join(' ').toLowerCase();
-        if (hay.contains(query)) {
-          out.add((pubkey: row['pubkey'] as String, profile: p));
-        }
-        if (out.length >= limit) break;
-      } catch (_) {}
-    }
-    return out;
-  }
-
-  // ── Maintenance (bounded storage — the "don't eat the user's disk" rule) ──
-
-  /// Storage budget. X/FB/Instagram all bound their on-device cache and evict
-  /// least-recently-used content — the app must never grow until it fills the
-  /// user's storage. These are generous defaults; tuning lives here, not
-  /// scattered across features.
-  static const int maxEventRows = 3000; // hard row cap
-  static const int maxStoreBytes = 24 * 1024 * 1024; // ~24 MB of content
-  static const int maxProfiles = 1500;
-
-  /// Current store size in bytes (events + refs + profiles), for Settings
-  /// and for budget-driven pruning.
-  Future<int> storeBytes() async {
-    final database = await db;
-    int sum(Map<String, Object?> r) => (r['b'] as num? ?? 0).toInt();
-    final ev = sum(
-      (await database.rawQuery(
-        "SELECT COALESCE(SUM(LENGTH(content)+LENGTH(tags)+LENGTH(sig)),0) AS b FROM events",
-      )).first,
-    );
-    final prof = sum(
-      (await database.rawQuery(
-        "SELECT COALESCE(SUM(LENGTH(json)),0) AS b FROM profiles",
-      )).first,
-    );
-    return ev + prof;
-  }
-
-  /// Row counts per table (Settings → Storage diagnostics).
-  Future<({int events, int refs, int profiles})> counts() async {
-    final database = await db;
-    Future<int> c(String t) async =>
-        Sqflite.firstIntValue(
-          await database.rawQuery('SELECT COUNT(*) FROM $t'),
-        ) ??
-        0;
-    return (
-      events: await c('events'),
-      refs: await c('event_refs'),
-      profiles: await c('profiles'),
-    );
-  }
-
-  /// Prune to the storage budget. Runs in this order, cheapest signal first:
-  ///
-  /// 1. **Row cap** — keep the newest [maxEventRows] events (LRU by
-  ///    created_at); older ones drop with their engagement refs.
-  /// 2. **Byte budget** — if the store still exceeds [maxStoreBytes], drop
-  ///    the oldest 20% and re-check (bounded loop, 5 passes max).
-  /// 3. **Profiles** — cap at [maxProfiles], evicting least-recently-fetched.
-  ///
-  /// Called fire-and-forget after ingests (never on the render path).
-  Future<void> prune() async {
-    final database = await db;
-    await database.transaction((txn) async {
-      // 1. Row cap.
-      await _dropOldestBeyond(txn, maxEventRows);
-
-      // 3. Profiles LRU cap.
-      await txn.rawDelete(
-        'DELETE FROM profiles WHERE pubkey NOT IN '
-        '(SELECT pubkey FROM profiles ORDER BY fetched_at DESC LIMIT ?)',
-        [maxProfiles],
-      );
-    });
-
-    // 2. Byte budget (outside the txn — re-measures between passes).
-    for (var pass = 0; pass < 5; pass++) {
-      if (await storeBytes() <= maxStoreBytes) break;
-      final current = await counts();
-      // Drop the oldest 20% to get back under budget.
-      final dropTo = (current.events * 0.8).floor();
-      await database.transaction(
-        (txn) => _dropOldestBeyond(txn, dropTo < 100 ? 100 : dropTo),
-      );
-    }
-  }
-
-  /// Delete the oldest events beyond [keep] (LRU by created_at) + their
-  /// engagement refs.
-  Future<void> _dropOldestBeyond(Transaction txn, int keep) async {
-    final cutoff = await txn.rawQuery(
-      'SELECT id FROM events ORDER BY created_at DESC LIMIT -1 OFFSET ?',
-      [keep],
-    );
-    if (cutoff.isEmpty) return;
-    final ids = cutoff.map((r) => r['id'] as String).toList();
-    final placeholders = List.filled(ids.length, '?').join(',');
-    await txn.delete('events', where: 'id IN ($placeholders)', whereArgs: ids);
-    // Refs POINTING from dropped events; refs TO dropped events stay (they
-    // still describe engagement on events we keep — cheap and small).
-    await txn.delete(
-      'event_refs',
-      where: 'event_id IN ($placeholders)',
-      whereArgs: ids,
-    );
-    await txn.delete(
-      'seen_on',
-      where: 'event_id IN ($placeholders)',
-      whereArgs: ids,
-    );
-    await txn.delete(
-      'thread_edges',
-      where: 'reply_id IN ($placeholders)',
-      whereArgs: ids,
-    );
-  }
-
-  Future<void> clear() async {
-    final database = await db;
-    await database.delete('event_refs');
-    await database.delete('events');
-    await database.delete('profiles');
-  }
+  }) =>
+      profiles.searchProfiles(query, limit: limit);
+  // Maintenance → MaintenanceStore (God-object split).
+  static const int maxEventRows = MaintenanceStore.maxEventRows;
+  static const int maxStoreBytes = MaintenanceStore.maxStoreBytes;
+  static const int maxProfiles = MaintenanceStore.maxProfiles;
+  static const int maxDmMessages = MaintenanceStore.maxDmMessages;
+  static const int maxNotifications = MaintenanceStore.maxNotifications;
+  static const int maxMediaRows = MaintenanceStore.maxMediaRows;
+  Future<int> storeBytes() => maintenance.storeBytes();
+  Future<({int events, int refs, int profiles})> counts() =>
+      maintenance.counts();
+  Future<void> prune() => maintenance.prune();
+  Future<void> clear() => maintenance.clear();
+  // Messaging → MessageStore (God-object split).
+  Future<void> upsertDmMessage(DbMessage msg) => messages.upsertDmMessage(msg);
+  Future<List<DbMessage>> dmMessagesFor(
+    String peer, {
+    int limit = 100,
+    int? until,
+  }) =>
+      messages.dmMessagesFor(peer, limit: limit, until: until);
+  Future<DbMessage?> dmMessageById(String id) => messages.dmMessageById(id);
+  Future<List<DbThread>> dmThreads() => messages.dmThreads();
+  Future<int> dmThreadLastRead(String peer) => messages.dmThreadLastRead(peer);
+  Future<int> dmTotalUnread() => messages.dmTotalUnread();
+  Future<void> markDmThreadRead(String peer, int watermark) =>
+      messages.markDmThreadRead(peer, watermark);
+  Future<void> updateDmMessageStatus(String id, DbMessageStatus status) =>
+      messages.updateDmMessageStatus(id, status);
+  Future<void> deleteLocalPendingDm(String localId) =>
+      messages.deleteLocalPendingDm(localId);
+  Future<void> recomputeDmUnread(String peer) =>
+      messages.recomputeDmUnread(peer);
+  // Durable outbox → MessageStore.
+  Future<void> enqueueDmOutbox(DbOutboxMessage entry) =>
+      messages.enqueueDmOutbox(entry);
+  Future<List<DbOutboxMessage>> dmOutboxPending() =>
+      messages.dmOutboxPending();
+  Future<void> updateDmOutboxState(
+    String id,
+    DbMessageStatus state, {
+    bool bumpAttempts = false,
+  }) =>
+      messages.updateDmOutboxState(id, state, bumpAttempts: bumpAttempts);
+  Future<void> removeDmOutbox(String id) => messages.removeDmOutbox(id);
+  Future<void> clearDmData() => messages.clearDmData();
+  // Notifications → NotificationStore (God-object split).
+  Future<void> upsertNotification(DbNotification n) =>
+      notifications.upsertNotification(n);
+  Future<void> upsertNotificationsBatch(List<DbNotification> list) =>
+      notifications.upsertNotificationsBatch(list);
+  Future<List<DbNotification>> notificationsFor(
+    String recipient, {
+    int limit = 100,
+    int? until,
+  }) =>
+      notifications.notificationsFor(recipient, limit: limit, until: until);
+  Future<int> unreadNotificationCount(String recipient) =>
+      notifications.unreadNotificationCount(recipient);
+  Future<int> notificationWatermark(String recipient) =>
+      notifications.notificationWatermark(recipient);
+  Future<void> markAllNotificationsRead(String recipient, int watermark) =>
+      notifications.markAllNotificationsRead(recipient, watermark);
+  Future<void> markNotificationRead(String id, int watermark) =>
+      notifications.markNotificationRead(id, watermark);
+  Future<void> clearNotifications(String recipient) =>
+      notifications.clearNotifications(recipient);
+  // Relay fleet → RelayStore (God-object split).
+  Future<void> upsertRelayHealth(DbRelayHealth h) =>
+      relays.upsertRelayHealth(h);
+  Future<DbRelayHealth?> relayHealthFor(String url) =>
+      relays.relayHealthFor(url);
+  Future<List<DbRelayHealth>> allRelayHealth() => relays.allRelayHealth();
+  Future<void> recordAuthorRelay(String pubkey, String relayUrl) =>
+      relays.recordAuthorRelay(pubkey, relayUrl);
+  Future<List<String>> authorRelaysFor(String pubkey, {int limit = 5}) =>
+      relays.authorRelaysFor(pubkey, limit: limit);
+  Future<void> pruneAuthorRelays({int keepPerAuthor = 5}) =>
+      relays.pruneAuthorRelays(keepPerAuthor: keepPerAuthor);
+  // Media → MediaStore (God-object split).
+  Future<void> upsertMedia(DbMedia m) => media.upsertMedia(m);
+  Future<DbMedia?> mediaFor(String url) => media.mediaFor(url);
+  Future<List<DbMedia>> mediaForEvent(String eventId) =>
+      media.mediaForEvent(eventId);
+  Future<void> upsertMediaBatch(List<DbMedia> list) =>
+      media.upsertMediaBatch(list);
+  // Publish outbox → PublishOutboxStore (God-object split).
+  Future<void> enqueuePublishJob(DbPublishJob job) =>
+      publishOutbox.enqueuePublishJob(job);
+  Future<List<DbPublishJob>> publishJobsPending() =>
+      publishOutbox.publishJobsPending();
+  Future<void> updatePublishJobState(
+    String id,
+    DbPublishState state, {
+    bool bumpAttempts = false,
+    String? lastError,
+  }) =>
+      publishOutbox.updatePublishJobState(id, state,
+          bumpAttempts: bumpAttempts, lastError: lastError);
+  Future<void> removePublishJob(String id) =>
+      publishOutbox.removePublishJob(id);
+  // DM full-text search → MessageStore (God-object split).
+  Future<List<DbMessage>> searchDmMessages(
+    String query, {
+    String? peer,
+    int limit = 50,
+  }) =>
+      messages.searchDmMessages(query, peer: peer, limit: limit);
 
   static NostrEvent _rowToEvent(Map<String, Object?> row) {
     return NostrEvent.fromJson({

@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nostrfeed_mobile/core/db/db_models.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/nostr/dm_crypto_worker.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -282,7 +285,11 @@ class DmStore extends Notifier<DmStoreState> {
     // invisible to users but makes the read/unread boundary correct.
     var watermark = DateTime.now().millisecondsSinceEpoch ~/ 1000 - 1;
     if (latestKnownTs != null && latestKnownTs > watermark) {
-      watermark = latestKnownTs;
+      // A3: clamp to now — a NIP-17 rumor can carry a skewed/future
+      // timestamp; a future `latestKnownTs` must not pin the watermark into
+      // the future (genuinely-new messages after it would never count unread).
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      watermark = latestKnownTs > nowSec ? nowSec : latestKnownTs;
     }
     final existing = _lastRead[peerPubkey] ?? 0;
     if (watermark <= existing) return;
@@ -297,7 +304,15 @@ class DmStore extends Notifier<DmStoreState> {
     // re-delivering them can't re-fire unread counts or notifications.
     _clampReadEvents(peerPubkey, watermark);
     _bump();
-    // Debounced write (was a full-map write on EVERY read mark).
+    // ADR-0008 P1: persist the watermark to `dm_threads` (durable, replaces
+    // the SharedPreferences JSON map) AND reset the thread's unread count.
+    unawaited(
+      EventStore.instance
+          .markDmThreadRead(peerPubkey, watermark)
+          .catchError((_) {}),
+    );
+    // Debounced legacy write (kept for one release so old installs + the
+    // in-session map stay consistent; the store is now the durable copy).
     _lastReadWriteTimer?.cancel();
     _lastReadWriteTimer = Timer(_writeDebounce, () async {
       try {
@@ -369,58 +384,121 @@ class DmStore extends Notifier<DmStoreState> {
 
   /// Decrypt all DM events we haven't processed yet.
   ///
-  /// TIME-SLICED: the NIP-44/NIP-04 crypto inside [decryptDm] is SYNCHRONOUS
-  /// on the UI isolate — a gap-fill of 50 gift-wraps is ~100 sequential
-  /// NIP-44 decryptions, which used to block the UI for the whole batch (the
-  /// "chat is janky after opening" freeze). Yield to the event loop every
-  /// few events so frames keep rendering; the batch takes a hair longer
-  /// wall-clock but the app stays interactive throughout.
+  /// ADR-0008 P1: the NIP-44/NIP-04 crypto now runs OFF the UI isolate (the
+  /// [DmCryptoWorker] pool) — a gap-fill of 50 gift-wraps is ~100 sequential
+  /// NIP-44 decryptions that used to block the frame thread even with the
+  /// old time-slicing (the "chat is janky after opening" freeze). Each
+  /// decrypted message is ALSO persisted to `dm_messages` (device-only
+  /// plaintext, like Signal's local DB), so a cold start re-reads the store
+  /// instead of re-decrypting everything.
   Future<void> prime(List<NostrEvent> events) async {
-    final nostr = ref.read(nostrServiceProvider);
     final auth = ref.read(authStateProvider);
-    if (auth.pubkey == null) return;
+    if (auth.pubkey == null || auth.privateKey == null) return;
+    final myPubkey = auth.pubkey!;
+    final privateKey = auth.privateKey!;
 
-    var processed = 0;
+    // Collect the events that actually need decrypting (skip cached/failed).
+    final todo = <NostrEvent>[];
     for (final e in events) {
+      if (e.kind != 1059 && e.kind != 4) continue;
       if (_decrypted.containsKey(e.id) || _undecryptable.contains(e.id)) {
         continue;
       }
-      if (e.kind == 1059 || e.kind == 4) {
-        // Yield every 4 decryptions — hands the isolate back to the frame
-        // scheduler mid-burst. 0ms is enough (it's a task-queue yield, not
-        // a delay).
-        if (++processed % 4 == 0) {
-          await Future<void>.delayed(Duration.zero);
+      todo.add(e);
+    }
+    if (todo.isEmpty) return;
+
+    // Decrypt the batch OFF the UI isolate (2 worker isolates, round-robin).
+    final worker = DmCryptoWorker.instance;
+    final results = await Future.wait([
+      for (final e in todo)
+        worker.decrypt(
+          DmDecryptJob(
+            eventId: e.id,
+            kind: e.kind,
+            pubkey: e.pubkey,
+            content: e.content,
+            createdAt: e.createdAt,
+            tags: e.tags,
+            privateKey: privateKey,
+            myPubkey: myPubkey,
+          ),
+        ),
+    ]);
+
+    for (var i = 0; i < todo.length; i++) {
+      final e = todo[i];
+      final r = results[i];
+      if (r == null) {
+        _undecryptable.add(e.id);
+        while (_undecryptable.length > _maxCacheEntries) {
+          _undecryptable.remove(_undecryptable.first);
         }
-        final d = await nostr.decryptDm(e);
-        if (d == null) {
-          _undecryptable.add(e.id);
-          // Bound the failure set too — evict oldest (a later retry just
-          // re-fails, which is cheap and correct).
-          while (_undecryptable.length > _maxCacheEntries) {
-            _undecryptable.remove(_undecryptable.first);
-          }
-          continue;
-        }
-        _cachePut(_decrypted, e.id, d);
-        // First-seen time for relay-fetched NIP-17 messages: the rumor's
-        // created_at is backdated up to 2 days, so without an arrival stamp
-        // a fresh message sorts as "2d ago" and gets buried in the thread.
-        // Only stamp for messages from OTHERS (mine show from the outbox).
-        if (e.kind == 1059 &&
-            d.senderPubkey != auth.pubkey &&
-            !_arrivalTs.containsKey(e.id)) {
-          _cachePut(
-            _arrivalTs,
-            e.id,
-            DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          );
-        }
-        // A wrap we CAN decrypt that was sent BY us means the peer echoed our
-        // own message back (some relay setups) — clear matching outbox entry.
-        _reconcileOutbox(d.senderPubkey, d.plaintext, d.createdAt);
-        _bump();
+        continue;
       }
+      // Map the worker result onto the session's DecryptedDm cache (the UI
+      // reads this in-memory shape today).
+      final d = DecryptedDm(
+        plaintext: r.plaintext,
+        senderPubkey: r.senderPubkey,
+        recipientPubkey: r.recipientPubkey,
+        createdAt: r.createdAt,
+        rumorKind: r.rumorKind,
+        tags: r.tags,
+      );
+      _cachePut(_decrypted, e.id, d);
+      // First-seen time for relay-fetched NIP-17 messages (backdated rumor
+      // ts — without an arrival stamp a fresh message sorts as "2d ago").
+      // Only stamp for messages from OTHERS (mine show from the outbox).
+      if (e.kind == 1059 &&
+          d.senderPubkey != myPubkey &&
+          !_arrivalTs.containsKey(e.id)) {
+        _cachePut(
+          _arrivalTs,
+          e.id,
+          DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        );
+      }
+      // Persist the plaintext to the store (device-only) — the durable copy
+      // that survives restart (the session cache is a 500-entry LRU).
+      unawaited(_persistMessage(e, r, myPubkey));
+      // A wrap we CAN decrypt that was sent BY us means the peer echoed our
+      // own message back — clear the matching outbox entry.
+      _reconcileOutbox(d.senderPubkey, d.plaintext, d.createdAt);
+      _bump();
+    }
+  }
+
+  /// Persist one decrypted DM into `dm_messages` (fire-and-forget on the
+  /// writer lane). Direction is derived: sender == me → outgoing, else
+  /// incoming. Display timestamp mirrors the threadFor rule (arrival time
+  /// for live events, rumor time for history).
+  Future<void> _persistMessage(
+    NostrEvent e,
+    DmDecryptResult r,
+    String myPubkey,
+  ) async {
+    final outgoing = r.senderPubkey == myPubkey;
+    final peer = outgoing
+        ? (r.recipientPubkey ?? r.senderPubkey)
+        : r.senderPubkey;
+    if (peer.isEmpty) return;
+    final msg = DbMessage(
+      id: e.id,
+      peer: peer,
+      direction: outgoing ? DbDmDirection.outgoing : DbDmDirection.incoming,
+      content: r.plaintext,
+      createdAt: _arrivalTs[e.id] ?? r.createdAt,
+      rawId: e.id,
+      wrapKind: e.kind,
+      rumorKind: r.rumorKind,
+      status: DbMessageStatus.sent,
+      mimeType: r.mimeType,
+    );
+    try {
+      await EventStore.instance.upsertDmMessage(msg);
+    } catch (_) {
+      // Persistence is best-effort — the session cache still shows the msg.
     }
   }
 
@@ -574,6 +652,10 @@ class DmStore extends Notifier<DmStoreState> {
   /// Record a message we just sent so it renders immediately, before the
   /// relay echo arrives. Returns the local message id so the caller can
   /// flip its status via [markStatus] once the publish ack resolves.
+  ///
+  /// ADR-0008 P1: ALSO persisted to `dm_messages` (pending) so the sent
+  /// message survives restart — the old SharedPreferences outbox was the
+  /// only copy and aged out after 7 days.
   String recordSent({
     required String peerPubkey,
     required String plaintext,
@@ -581,18 +663,50 @@ class DmStore extends Notifier<DmStoreState> {
   }) {
     final auth = ref.read(authStateProvider);
     if (auth.pubkey == null) return '';
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final msg = ChatMessage(
       id: 'local-$eventId',
       text: plaintext,
       senderPubkey: auth.pubkey!,
       recipientPubkey: peerPubkey,
-      createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      createdAt: now,
       status: MessageStatus.pending,
     );
     _outbox.putIfAbsent(peerPubkey, () => []).insert(0, msg);
     _persistOutbox();
     _bump();
+    // Persist the pending outgoing message (device-only plaintext).
+    unawaited(_persistOutgoing(
+      peerPubkey: peerPubkey,
+      localId: msg.id,
+      plaintext: plaintext,
+      createdAt: now,
+      status: DbMessageStatus.pending,
+    ));
     return msg.id;
+  }
+
+  Future<void> _persistOutgoing({
+    required String peerPubkey,
+    required String localId,
+    required String plaintext,
+    required int createdAt,
+    required DbMessageStatus status,
+  }) async {
+    try {
+      await EventStore.instance.upsertDmMessage(
+        DbMessage(
+          id: localId,
+          peer: peerPubkey,
+          direction: DbDmDirection.outgoing,
+          content: plaintext,
+          createdAt: createdAt,
+          wrapKind: 1059,
+          rumorKind: 14,
+          status: status,
+        ),
+      );
+    } catch (_) {}
   }
 
   /// Update the delivery status of an outbox message (after publish ack).
@@ -604,6 +718,17 @@ class DmStore extends Notifier<DmStoreState> {
     list[idx] = list[idx].copyWith(status: status);
     _persistOutbox();
     _bump();
+    // Mirror the status into the durable store.
+    final dbStatus = switch (status) {
+      MessageStatus.sent => DbMessageStatus.sent,
+      MessageStatus.failed => DbMessageStatus.failed,
+      MessageStatus.pending => DbMessageStatus.pending,
+    };
+    unawaited(
+      EventStore.instance
+          .updateDmMessageStatus(messageId, dbStatus)
+          .catchError((_) {}),
+    );
   }
 
   /// Flag an outbox entry as a kind-15 file message so the bubble renders it
@@ -639,6 +764,7 @@ class DmStore extends Notifier<DmStoreState> {
     if (list.isEmpty) _outbox.remove(peerPubkey);
     _persistOutbox();
     _bump();
+    unawaited(EventStore.instance.removeDmOutbox(messageId).catchError((_) {}));
   }
 
   /// Clear the outbox for a peer (e.g. on logout or manual resync).
@@ -733,9 +859,9 @@ class DmStore extends Notifier<DmStoreState> {
   }
 
   /// Full wipe on logout / account switch — decrypted cache, outbox, live
-  /// events, arrival times, AND per-peer read watermarks. Without this the
-  /// next account on this device inherited the previous one's DM state
-  /// (cross-account leak: Bob saw Alice's cached messages + read cursors).
+  /// events, arrival times, per-peer read watermarks, AND the durable store
+  /// tables. Without this the next account on this device inherited the
+  /// previous one's DM state (cross-account leak: Bob saw Alice's chats).
   void clearAll() {
     _decrypted.clear();
     _undecryptable.clear();
@@ -747,6 +873,8 @@ class DmStore extends Notifier<DmStoreState> {
     SharedPreferences.getInstance()
         .then((prefs) => prefs.remove(_lastReadKey))
         .ignore();
+    // Wipe the durable messaging tables too (device-only plaintext).
+    unawaited(EventStore.instance.clearDmData().catchError((_) {}));
   }
 
   bool _isInOutbox(String peerPubkey, String plaintext) {
@@ -762,8 +890,15 @@ class DmStore extends Notifier<DmStoreState> {
     for (final entry in _outbox.entries) {
       final idx = entry.value.indexWhere((m) => m.text == plaintext);
       if (idx >= 0) {
+        final localId = entry.value[idx].id; // 'local-{eventId}'
         entry.value.removeAt(idx);
         _persistOutbox();
+        // A4: also drop the durable `local-` pending row — the real event
+        // (self-copy echo) is now the source of truth, so the optimistic
+        // pending row must not linger as a stuck duplicate.
+        unawaited(
+          EventStore.instance.deleteLocalPendingDm(localId).catchError((_) {}),
+        );
         return;
       }
     }
