@@ -17,8 +17,12 @@ import { normalizeRelayUrl } from '@/lib/relay';
  * connections, only for identity lookups.
  */
 export const INDEXER_RELAYS = [
+  // Our hub first — it carries the community slice's kind 0/10002, synced
+  // backend-side. The pure indexer covers out-of-community users whose
+  // metadata never enters the hub. relay.nostr.band was the classic second
+  // indexer but is long dead — never re-add it.
+  'wss://relay.nostrfeed.com',
   'wss://purplepag.es',
-  'wss://relay.nostr.band',
 ];
 
 /** Profile metadata and relay lists — the kinds worth asking an indexer for. */
@@ -46,8 +50,12 @@ const ZAP_RECEIPT_KIND = 9735;
  * about receipts, so a feed does not drag them into every page.
  */
 export const RECEIPT_RELAYS = [
+  // Hub first: community zaps are synced into it. The rest are the default
+  // write relays of the largest clients (the places most zap requests name) —
+  // asked only for pure receipt queries (earnings totals, goal tallies), so
+  // the wider net costs a handful of requests, not feed traffic.
+  'wss://relay.nostrfeed.com',
   'wss://relay.damus.io',
-  'wss://relay.nostr.band',
   'wss://nos.lol',
   'wss://relay.primal.net',
 ];

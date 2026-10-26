@@ -122,9 +122,17 @@ interface NostrProviderProps {
   children: React.ReactNode;
 }
 
-/** Cap on relays contacted per request, so a long list can't stall a query. */
-const MAX_READ_RELAYS = 10;
-const MAX_WRITE_RELAYS = 8;
+/**
+ * Cap on relays contacted per request, so a long list can't stall a query.
+ *
+ * Hub model: the house relay holds the synced community slice, so a query
+ * needs the hub + at most a couple of fallbacks/author-hint relays — not a
+ * wide fan-out (the hub IS the wide net, backend-side). Identity and zap-
+ * receipt requests still widen via INDEXER_RELAYS / RECEIPT_RELAYS beyond
+ * this cap (deliberate, bounded, purpose-built screens only).
+ */
+const MAX_READ_RELAYS = 4;
+const MAX_WRITE_RELAYS = 3;
 
 
 const NostrProvider: React.FC<NostrProviderProps> = (props) => {

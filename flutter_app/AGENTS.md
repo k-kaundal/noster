@@ -89,7 +89,15 @@ over ~100 lines.
   on reconnect (`_resubscribeAll`); on app resume, `reconnectDead()` resets
   backoff and reconnects dead relays. Never assume a socket stays alive —
   always go through the pool's reconnect path, and never block resume on a
-  single dead relay.
+  single dead relay. **One-shot queries are NOT persistent**: query-style
+  REQs (feed pages, engagement batches, profile lookups) pass
+  `subscribeWithEose(..., oneShot: true)` so a reconnect does NOT replay
+  them — replaying hundreds of stale one-shots on every reconnect was the
+  REQ burst behind the hub's "too many concurrent REQs" rejections.
+  **Good-enough query completion**: `_queryRemote` resolves as soon as ALL
+  EOSE arrive OR every platform (T0 hub) relay answered (the hub's synced
+  slice IS the complete answer) OR timeout — never blocked by the slowest
+  fallback relay (divine-mobile #2669).
 
 - **Imports**: always `package:nostrfeed_mobile/...` (never relative).
 - **State**: Riverpod. All `FutureProvider`s use `.autoDispose`. All state
@@ -134,11 +142,131 @@ over ~100 lines.
   - Polls (kind 1068, NIP-88) render via `PollCard` with voting + tallied
     results (`PollResults.tally` follows NIP-88 counting rules).
   - A lone plain link in a short post gets a `LinkPreviewCard`.
-- **Chat / DMs**: all DM decryption + conversation/thread assembly goes
-  through `dmStoreProvider` (`features/chat/providers/dm_store.dart`). NIP-17
-  gift wraps can NOT be decrypted by their sender and have randomized
-  timestamps — so sent messages must be shown from the store's local outbox,
-  never by re-fetching from relays. `MessageBubble` is presentational only.
+- **Chat / DMs (ADR-0008 P1 — now a STORE projection)**: all DM decryption +
+  conversation/thread assembly goes through `dmStoreProvider`
+  (`features/chat/providers/dm_store.dart`). NIP-17 gift wraps can NOT be
+  decrypted by their sender and have randomized timestamps — so sent messages
+  must be shown from the store's local outbox, never by re-fetching from
+  relays. `MessageBubble` is presentational only.
+  **v5 rules (messaging store)**:
+  - **Decryption runs OFF the UI isolate** via `DmCryptoWorker`
+    (`core/nostr/dm_crypto_worker.dart`, 2 isolates) — `DmStore.prime` submits
+    the batch off-thread, never `nostr.decryptDm` per-event on the frame
+    thread (the "chat janky after opening" freeze).
+  - **Decrypted plaintext is persisted DEVICE-ONLY** to `dm_messages` (like
+    Signal's local DB — the wrap can't be re-decrypted by its sender). Every
+    decrypted message → `EventStore.upsertDmMessage` (fire-and-forget on the
+    writer lane). Direction = sender==me ? outgoing : incoming.
+  - **`dm_threads`** = the conversation-list projection (peer, last_msg_at,
+    last_read_at, unread_count). Incoming messages bump unread_count in ONE
+    UPSERT; `markThreadRead` persists the watermark + resets unread. The chat
+    badge = `dmTotalUnread()`. Outgoing messages never bump unread.
+  - **Outgoing is durable**: `recordSent` → `dm_messages`(pending);
+    `markStatus` → sent/failed (survives restart — the old SharedPreferences
+    outbox aged out after 7 days). `dm_outbox` holds the signed wraps for
+    failed-send retry (background sync).
+  - **`clearAll` (logout) wipes `clearDmData()`** — the next account must
+    never inherit the previous one's chats (cross-account plaintext leak).
+  - Read methods: `dmMessagesFor(peer, until:)` (keyset-paged), `dmThreads()`,
+    `dmThreadLastRead`, `dmTotalUnread`, `markDmThreadRead`, `recomputeDmUnread`,
+    `enqueueDmOutbox`/`dmOutboxPending`/`updateDmOutboxState`/`removeDmOutbox`.
+    Typed records in `core/db/db_models.dart` (DbMessage/DbThread/DbOutboxMessage).
+- **Notifications (ADR-0008 P2 — now a STORE projection)**: the bell is no
+  longer a 200-entry memory list — every engagement event also persists to the
+  `notifications` table (`NotificationCenter.ingest` → `upsertNotification`,
+  fire-and-forget on the writer lane). The badge COUNT is an instant partial-
+  index query (`WHERE read_at IS NULL`). `markAllRead` →
+  `markAllNotificationsRead` (durable `read_at` stamp); `reset` →
+  `clearNotifications` (no cross-account leak). Per-recipient rows
+  (`recipient` col) are multi-account ready. Kinds map to `DbNotificationType`
+  (7=like, 6/16=repost, 1/1111=reply, 9735=zap, 3=follow, else=mention).
+  Recipient-awareness (`isNotificationForMe`) and the phone-notification
+  dedup (`notified_event_ids_v1`) are UNCHANGED (separate concerns). Read
+  methods: `notificationsFor(recipient, until:)`, `unreadNotificationCount`,
+  `notificationWatermark`, `markAllNotificationsRead`, `markNotificationRead`,
+  `clearNotifications`. Typed record `DbNotification` in `core/db/db_models.dart`.
+- **Relay fleet (ADR-0008 P3 — tiered + scored + budgeted)**: relays are no
+  longer a flat map broadcast-to-all. `RelayHealthTracker`
+  (`core/nostr/relay/relay_health.dart`) assigns every relay a **tier**
+  (T0 platform `relay.nostrfeed.com`+paid / T1 user / T2 curated / T3 ad-hoc)
+  and an **EWMA score** (connect success 1.0/0.0, EOSE latency ∝ speed, events
+  delivered; `score = 0.7·score + 0.3·sample`), persisted to `relay_health`
+  (v7). Fleet hooks (`onConnectSuccess/Failure/onEose/onEventDelivered`) are
+  connection-level callbacks wired by the pool's `_newConnection` factory —
+  the connection stays transport-only. **`_queryRemote` is top-K fan-out**
+  (`queryFanoutK = 4`): platform relay + top-K healthiest connected read
+  relays, NOT all 9 — cuts server load + the client verify/merge flood (a slow
+  relay self-demotes out of the K). **Ad-hoc (T3) pool is bounded** (≤4, LRU
+  on a monotonic `_adhocSeq` — NOT wall-clock, which ties within a ms and
+  evicts the wrong relay; platform/curated never evicted). **Author affinity**
+  (`author_relays`): `recordAuthorRelay` on every dispatched event →
+  `authorRelaysFor(pubkey)` outbox hint. Health flushes via `health.flush()`
+  on backgrounding. Tests: `relay_health_test`, `relay_pool_adhoc_test`.
+- **Search + media + publish outbox (ADR-0008 P4)**:
+  - **FTS5 people search** (`profile_fts`, v8): `saveProfile` indexes name/
+    display_name/nip05/about; `searchProfiles` uses FTS5 `MATCH` (indexed,
+    prefix-aware) with a LIKE fallback on platforms without FTS5
+    (`EventStore.ftsAvailable` feature-detects). Never a `json LIKE '%q%'`
+    full scan — the FTS path is an indexed MATCH.
+  - **Media metadata** (`media` table): `MediaUtils.persistImeta(event)` is
+    called at render (note_content) after `parseImeta` — it writes dims/
+    blurhash/mime so the NEXT render lays the tile out BEFORE the bytes load
+    (no layout jump). Read via `mediaFor(url)` / `mediaForEvent(id)`.
+  - **Publish outbox** (`publish_outbox`): `NostrService.publishWithAck` on
+    failure (no relay acked) queues the signed event durably; background sync
+    calls `retryPublishOutbox()` (bounded attempts, cap 10) so a failed
+    post/reply/DM/zap eventually lands. Never silently lost.
+  - **DM full-text search**: `EventStore.searchDmMessages(query, peer:)` —
+    searches the DECRYPTED plaintext in `dm_messages` (local device copy
+    only). Records: `DbMedia`/`DbPublishJob` in `core/db/db_models.dart`.
+- **Per-table invalidation bus (ADR-0008 P5)** — rebuilds are SCOPED, never
+  global. ONE global `engagementVersionProvider` used to bump on EVERY write
+  (a DM write rebuilt feed cards). Now: per-table version counters
+  (`StoreTable.events/eventRefs/profiles/dmMessages/dmThreads/notifications/
+  relayHealth/media`) in `core/providers/store_invalidation.dart`.
+  - **How it flows**: the writer lane's `_enqueueWrite(touches:)` declares
+    WHICH tables changed → static `EventStoreHooks.onTablesChanged` (the
+    Riverpod-free seam) → the bus bumps ONLY those counters (debounced 300ms
+    per table — a sync burst = ONE bump). Wired at app root via
+    `storeInvalidationWiringProvider` (BEFORE the ingest pipeline).
+  - **How to listen**: a provider watches `tableVersionProvider(StoreTable.x)`
+    — it rebuilds ONLY when THAT table's counter changes. `engagementVersionProvider`
+    now DERIVES from `StoreTable.eventRefs` (same counter, sourced from the
+    commit) — NEVER hand-poke a version (`…VersionProvider.notifier.state++`
+    is the banned pattern); declare `touches:` on the store write instead.
+  - **The result**: a like landing rebuilds ONE card's count (`eventRefs`), a
+    DM landing rebuilds ONE thread (`dmMessages`), and NEITHER rebuilds the
+    other — 60fps kept while writes land.
+  - Tests: `store_invalidation_test` (DM≠engagement, engagement≠DM, burst =
+    ONE bump, `bumpNow` immediate for user-initiated writes).
+- **Negentropy sync (ADR-0008 P6)** — NIP-77 set reconciliation is now
+  SYMMETRIC + PARALLEL + metered-aware (`core/nostr/sync/`):
+  - **Upload half**: `_uploadMissing` publishes events WE have that the relay
+    lacks (`haveIds` — it was computed then DROPPED before, one-way sync).
+    Bounded by `NegentropySyncClient.uploadCap = 256` (a huge diff is a
+    backfill job, not a sync). `uploadMissing:` toggle per call.
+  - **Bounded-parallel**: `NegentropySyncService.syncAll` runs relays
+    CONCURRENTLY via a worker pool (`parallelism = 4`) — was sequential (a
+    slow relay's 40s worst case stalled the whole pass). One bad relay → null,
+    never kills the others.
+  - **Wi-Fi-only toggle**: `syncWifiOnlyProvider` (Settings). On metered
+    (cellular) with the toggle ON, `syncNow` SKIPS the bandwidth-heavy NIP-77
+    reconciliation; the light feed-refresh covers the gap. Empty/unknown
+    connectivity = METERED (conservative). Background sync's other steps
+    (feeds, DMs, wallet, publish-retry) always run.
+  - Tests: `negentropy_p6_test` (upload delivers haveIds, uploadMissing off,
+    parallel + bad-relay-tolerant, uploadCap bounds).
+- **DB encryption-at-rest (ADR-0008 P7 — integration-ready, flag OFF)**:
+  `core/db/db_encryption.dart`. SQLCipher is NOT vendored (offline + ADR-0004
+  size budget), so this is the TESTED abstraction, not a native dep:
+  `DbEncryptionKeys` (256-bit DB key in hardware-backed secure storage —
+  generate/persist/rotate/destroy, never logged/backed up) + the
+  `DB_ENCRYPTION` dart-define flag wired into `EventStore._open` +
+  `migrationNotes` (the `sqlcipher_export` plain→encrypted path, never
+  rewrite-in-place). To activate when pub.dev is reachable:
+  `flutter pub add sqflite_sqlcipher`, set `DB_ENCRYPTION=true`, uncomment
+  the `password:` line in `_open`. Default OFF = plain open (zero risk to
+  existing installs). The 100k ops plan is `docs/RELAY-SCALING-RUNBOOK.md`.
 - **NIP-17 chat kinds**: rumor kinds are 14 (chat), 15 (file), 7 (reaction) —
   `unwrapGiftWrap` accepts all three. Replies use an `e` tag to the parent
   rumor (`createNip17Dm(replyToId:)`), room names use the `subject` tag,
@@ -203,6 +331,17 @@ over ~100 lines.
   publish via `nostr.publishEvent(event)` — it acks on our relays AND
   republishes to tagged users' read relays in the background. Never call
   `nostr.publish()` for events with p-tags.
+- **Tier-aware DM delivery** (`core/nostr/relay/dm_delivery.dart`): NIP-17
+  gift-wrap routing is admission-aware. **Paid↔Paid** (BOTH parties admitted
+  to `paid.nostrfeed.com`, checked + sticky-cached per session) → the wrap
+  goes to the PAID relay only — premium DMs never touch the free hub or
+  public relays. **Everyone else** → recipient's kind-10050 inbox (1–3
+  relays) or the small `fallbackDmRelays` set (primal/damus/our hub).
+  Admitted users auto-connect to the paid relay at startup
+  (`paidRelayAutoConnectProvider`, watched at app root) so paid-lane DMs
+  arrive LIVE — the paid relay previously only connected when the Premium
+  screen was opened, so incoming premium DMs waited for a manual refresh.
+  A new admission invalidates the routing cache (`DmDelivery.invalidate`).
 - **NIP-17 self-copy**: `signGiftWrap` seals EACH wrap to its own target
   (recipient copy → recipient, sender copy → sender). Never share one seal
   between wraps — the sender can't decrypt it (this caused "unable to decrypt").
@@ -610,17 +749,21 @@ over ~100 lines.
   the composer has a Post/Poll `SegmentedButton` (question + 2–4 options,
   single/multiple, duration). Voting already existed (kind 1018 → the
   poll's declared relays). The feed fetches kind 1068 so polls show inline.
-- **Default relays** (`core/config/env.dart`): our own relay
-  (`wss://relay.nostrfeed.com`) FIRST, then a curated set of HEALTHY, free,
-  well-run relays (damus, nos.lol, primal, snort, nostr.mom, offchain,
-  ditto, oxtr) — sourced from the health-checked awesome-nostr-relays
-  catalogue + nostr.watch + NostrMash activity rankings. Deliberately
-  excludes adult-oriented relays (store compliance) AND dead relays:
-  **relay.nostr.band has been offline a long time** — never re-add it (a
-  relay that never connects is a top reason a fresh setup looks broken;
-  metadata indexing moved to purplepag.es / indexer.coracle / yabu). Users
-  add more from Settings → Relays (read/write toggles + NIP-65 sync);
-  NIP-65 outbox routing layers per-user relays on top.
+- **Default relays — HUB MODEL** (`core/config/env.dart`): the app does NOT
+  fan out to a fleet of public relays. Our house relay
+  (`wss://relay.nostrfeed.com`) syncs the community slice with the public
+  network BACKEND-SIDE (strfry router pulls from damus/nos.lol, pushes our
+  users' events out — see `docs/RELAY_HUB_SYNC_ARCHITECTURE.md`). The
+  default fleet is: our hub FIRST, plus nos.lol + damus as FALLBACK-ONLY
+  (T2 curated, health-demoted below the T0 platform hub — they serve only
+  when the hub is down/slow). The paid relay (`wss://paid.nostrfeed.com`)
+  connects separately after Lightning admission
+  (`connectPaidRelayProvider`), never in the default fleet. Users add their
+  own relays in Settings → Relays (T1, read/write toggles + NIP-65 sync);
+  NIP-65 outbox routing reaches OUT-OF-COMMUNITY users' relays ad-hoc (T3,
+  bounded ≤4) — profiles/DMs of people whose events aren't synced into the
+  hub. Deliberately excludes dead relays: **relay.nostr.band has been
+  offline a long time** — never re-add it.
 - **Image CDN optimization** (`MediaUtils.optimizedImageUrl`): media URLs on
   resize-capable FREE Nostr CDNs (nostr.build / blossom.band, `?w=` param)
   are rewritten to a resized variant before load — ~80-90% less bandwidth
@@ -774,12 +917,13 @@ over ~100 lines.
   `mounted`; wrap fire-and-forget futures in `unawaited()`.
 - **Event signature verification (trust boundary)**: relays are UNTRUSTED
   transport — a relay can inject a forged post under anyone's pubkey. Every
-  incoming EVENT is verified at the pool (`RelayConnection._handleMessage`)
-  BEFORE it reaches a screen: `NostrEvent.isValid` recomputes the id
-  (commits to the exact content) AND Schnorr-verifies the signature
-  (BIP-340). Forged/tampered events are dropped silently. Never render an
-  event that hasn't crossed this boundary; never verify on the render path
-  (too late). Tests pin genuine-valid + forged/tampered/malformed-rejected.
+  incoming EVENT is verified BEFORE it reaches a screen: `NostrEvent.isValid`
+  recomputes the id (commits to the exact content) AND Schnorr-verifies the
+  signature (BIP-340). Forged/tampered events are dropped silently. Never
+  render an event that hasn't crossed this boundary; never verify on the
+  render path (too late). Tests pin genuine-valid + forged/tampered/malformed-
+  rejected. **The verify runs OFF the UI isolate** — see the relay frame
+  processor entry below (ADR-0005 L2 hardening).
 - **Key storage (the nsec IS the identity — no reset, no support desk)**:
   `flutter_secure_storage` (hardware-backed), iOS Keychain item is
   `KeychainAccessibility.unlocked` (device-only, NOT migrated to a new
@@ -962,11 +1106,17 @@ over ~100 lines.
   and restart the live tail + silently refresh both feeds. App RESUME does
   the same via `didChangeAppLifecycleState` (feeds + `restartLive`).
   **Android gotcha**: Android reports an EMPTY connectivity list on radio
-  hand-off/VPN churn, and `every()` on an empty list is TRUE — so
-  `_isOfflineResults` treats empty as OFFLINE (the old code read empty as
-  online → the "internet on/off checker wrong on Android" bug). The watcher
-  also tracks the last offline state across the listener so a null/empty
-  `previous` doesn't swallow the first real recovery.
+  hand-off/VPN churn (wifi → `[]` → cellular). Empty is NOT "offline" for
+  the banner (`_isOfflineResults` returns false — a transient unknown, not
+  proof of being offline, so the banner never lies). But the relay sockets
+  DID die in the gap, so the watcher ALSO fires the full recovery
+  (reconnect relays + restart live tails + refresh feeds + evict parked
+  image failures) when a route the device actually HAD is lost and regained
+  (`hadRoute`/`routeWasLost`) — without it the feed stayed dead after every
+  Android network blip until a manual pull (the "feed stuck on Android,
+  fine on iOS" bug — iOS never emits an empty list). The watcher tracks the
+  last offline state across the listener so a null/empty `previous` doesn't
+  swallow the first real recovery.
 - **Android image/scroll quirks**: (1) every network image sends a real
   browser `User-Agent` + `Accept` header — some CDNs/hosts 403 the default
   Dart (empty) UA on Android but serve iOS fine (a top cause of "images
@@ -975,15 +1125,41 @@ over ~100 lines.
   `SmartNetworkImage`, `SafeAvatar`, and every raw `CachedNetworkImage`
   (profile banner, communities, articles, video cards, live, market).
   NEVER add a raw `CachedNetworkImage` without `httpHeaders: kImageHttpHeaders`.
+  **(1b) memCache: width-ONLY, never both W+H** — every working image in
+  the app (avatars, feed tiles, article/video cards) constrains decode by
+  `memCacheWidth` only. Setting BOTH `memCacheWidth` AND `memCacheHeight`
+  on a wide-short image (a profile banner / cover photo) distorts the
+  decode on some Android codecs → "Invalid image data" → silent grey
+  fallback while iOS shows fine (the "banner shows on iOS, not Android"
+  bug). The profile banner uses raw `CachedNetworkImage` with width-only
+  memCache + `BoxFit.cover` crops the height — never `SmartNetworkImage`
+  (which sets both) for cover photos.
   (2) the feed `ListView` uses explicit `AlwaysScrollableScrollPhysics` +
   a guarded infinite-scroll trigger (`maxScrollExtent > 0`, clamped pixels).
+  (3) the manifest sets `android:largeHeap="true"` (feed bitmaps up to
+  ~1200 px; the default 192-256 MB heap GC-thrashed the image cache
+  mid-scroll — iOS has no such cap) and `EnableImpeller=false` (Impeller
+  scroll-janks on many Android GPUs — flutter/flutter#168788; flip/remove
+  to A/B on newer engines). Feed tiles decode at `memCacheWidth: 1200`
+  (NOT `1200 * dpr` — 3600 px decodes exceeded the whole 48 MB image cache
+  on one portrait photo → eviction thrash → re-decode mid-scroll, the
+  Android jank iOS masked with its bigger heap). The image cache is 96 MB
+  on Android / 48 MB elsewhere (`main.dart`).
 - **Feed refresh never hangs** (`feed_notifier.dart`): `_refresh`/`_loadMore`
   run under a 15s `_refreshTimeout` — a hung relay fetch (dead socket,
   emulator's flaky route) resets `isRefreshing`/`isLoadingMore` instead of
   leaving it true forever (the spinner-spins-forever + retry-blocked
   "feed stuck" bug). Pull-to-refresh goes through `refreshFromPull()`, which
-  clears a stuck flag from a prior hung fetch first so a user pull ALWAYS
-  gets a fresh attempt.
+  clears a stuck flag from a prior hung fetch first AND drops the serialized
+  `_inFlight` queue (a pull queued behind a hung 13s Android relay wait felt
+  like "pull does nothing") so a user pull ALWAYS gets a fresh attempt. The
+  abandoned fetch's stale merge is harmless (time-ordered, deduped).
+- **Ingest pipeline is BATCHED** (`ingest_pipeline_providers.dart`): bus
+  events buffer for 150 ms and land in ONE SQLite transaction (a page
+  replay / reconnect resubscribe burst — much bigger on Android, which
+  kills idle sockets — used to run one txn + deletion-check PER event,
+  janking the UI isolate). `_ingestBatchMax` 200 splits huge replays. The
+  engagement tick stays debounced (500 ms, one version bump per burst).
 - **Feed images self-heal** (`_NetworkImageTile` in `note_content.dart`):
   a failed load auto-walks the NIP-92 `fallback` URLs, then shows a
   tap-to-retry tile (evicts the parked failure + re-resolves) — a flaky
@@ -1235,14 +1411,57 @@ notifications roadmap: `docs/ADR-0006-push-notifications.md`.
   `EventStore` (feed pages, live tail, social, engagement). It owns the
   debounced `engagementVersionProvider` tick (one bump per batch, not per
   event). Never write to `EventStore` from a feature directly.
-- **Store v2** (`core/db/event_store.dart`): adds `thread_edges` (parent→
-  reply rows written at ingest — thread assembly is a local query,
-  `threadReplies(rootId)`) and `seen_on` (relay provenance, buffered by the
-  relay layer via `markSeenOn`, flushed in batches — `seenOnRelays(id)`).
-  The `db` getter is race-free (shares one `_opening` future, never caches
-  a failed open). `feedPage()` does SQL reply-exclusion + keyset paging;
+- **Store structure (ADR-0008 God-object split)**: `core/db/event_store.dart`
+  is the FAÇADE + the interlinked core (schema v1–v8 + migrations, NIP-01
+  ingest lifecycle, feed/engagement/thread/seen-on queries). The domains with
+  ZERO interaction with ingest are split into `core/db/stores/` — `MessageStore`
+  (DMs+outbox+search), `NotificationStore`, `RelayStore` (fleet+affinity),
+  `MediaStore`, `PublishOutboxStore`, `ProfileStore` (+FTS), `MaintenanceStore`
+  (prune/clear/diagnostics). They share ONE database + ONE writer lane via
+  `core/db/store_host.dart` (`StoreHost`: `db` + `enqueueWrite(touches:)` +
+  `ftsAvailable`) — NO import cycle (a domain store never imports
+  `event_store.dart`; `EventStore implements StoreHost` and injects itself).
+  `EventStore.instance.<method>` still works (the façade delegates), and
+  `EventStore.instance.messages/.notifications/.relays/.media/.publishOutbox/
+  .profiles/.maintenance` expose the domain stores directly. New feature
+  storage goes in a NEW store under `stores/` (never re-grow event_store.dart).
+- **Store v4** (`core/db/event_store.dart`, ADR-0008 P0): schema v2 added
+  `thread_edges` (parent→reply rows at ingest — `threadReplies(rootId)`)
+  and `seen_on` (relay provenance, buffered via `markSeenOn`). v3 added
+  `tags` + `deletions` (NIP-01 lifecycle). **v4 adds** `order_ts` +
+  `expires_at` columns + `idx_refs_pubkey_kind` + `idx_events_pubkey_kind_time`,
+  and the engine is now tuned for mobile. The `db` getter is race-free
+  (shares one `_opening` future, never caches a failed open).
   `feedPage(authors: [])` is deliberately UNFILTERED — the feed layer must
   guard empty follows itself (the "Following tab leaked global" bug).
+  **v4 rules (ADR-0008)**:
+  - **Engine pragmas** on open: `journal_mode=WAL` (readers don't block the
+    writer), `synchronous=NORMAL` (no per-commit fsync), `busy_timeout=5000`
+    (never SQLITE_BUSY), `journal_size_limit≈6MB`, `foreign_keys=ON`.
+  - **Single-writer lane**: ALL mutations (ingest/prune/clear/deletions/
+    profile writes) serialize through `_enqueueWrite` — SQLite never sees
+    two concurrent write txns. Readers bypass (WAL). Never open a second
+    write path; go through the lane.
+  - **feedPage ORDER BY is sargable**: `order_ts` = `MIN(created_at,
+    now+15min)` computed ONCE at ingest (the future-clamp), so ORDER BY is
+    an index walk on `idx_events_kind_ordertime` — NOT the old non-sargable
+    `MIN(created_at,?)` per-row temp-B-tree. Pre-v4 rows (order_ts=0) fall
+    back to created_at.
+  - **NIP-40 as a column**: `expires_at` (the multi-letter `expiration` tag
+    isn't in the single-letter `tags` table) → expired rows delete by index
+    at read AND prune (they used to accumulate until LRU).
+  - **Prune fixes**: deletes the `tags` rows of evicted events (the old
+    ORPHAN LEAK grew the index table unboundedly), deletes expired rows, and
+    runs a PASSIVE WAL checkpoint off the hot path. `clear()` now wipes ALL
+    tables (tags/thread_edges/seen_on/deletions too — logout must not leak
+    stale provenance into a fresh account).
+  - **Migration is idempotent** (`_addColumnIfMissing` probes pragma_table_info
+    — SQLite has no `IF NOT EXISTS` for columns). Tests migrate in-memory
+    DBs to v4 (`debugOnUpgrade(db, 1, 4)`).
+  - **Canonical storage records**: `core/db/db_models.dart` — typed
+    fromRow/toRow per feature table (DbMessage/DbThread/DbNotification/
+    DbPublishJob/DbMedia/DbRelayHealth/DbDraft). A schema change touches ONE
+    method, not every feature. (Tables for these land in P1+.)
 - **Projections over the store** (L5): trending is local candidates from
   `trendingCandidates(window)` painted first, then a relay discovery fetch
   merges in (switching 1h/24h/7d is a local re-query, not a refetch).
@@ -1251,9 +1470,39 @@ notifications roadmap: `docs/ADR-0006-push-notifications.md`.
 - **Profile cache hierarchy** (`SocialRepository`): memory LRU → SQLite →
   relays, stale-while-revalidate, write-through on kind-0. Survives restart;
   `_refreshProfileFromRelays` races concurrent first-non-empty legs.
-- **Verify dedup** (`relay_pool.dart`): a 5k-entry LRU of already-verified
-  event ids — the same event arriving from N relays is signature-checked
-  ONCE (schnorr verify was the top CPU item; ~90% of it was duplicates).
+- **Relay frame processor (off-isolate parse+verify + backpressure)**:
+  `core/nostr/relay/relay_frame_processor.dart`. Every WebSocket frame from
+  EVERY relay is JSON-decoded AND Schnorr-verified on a pool of persistent
+  worker isolates (default 2, cap 4), NOT on the UI isolate — the "Android
+  jank" mechanism (a 50-post page × 9 relays = up to 450 `jsonDecode` +
+  `bip340.verify` calls on the frame thread; iOS's fast core masked it).
+  This is the standard high-throughput Nostr-client architecture (Amethyst
+  PR #2769 parallel-verify + bounded ingest channel; nostrfy
+  `verify_signatures_parallel`, thread-capped, fail-closed). Design:
+  - `RelayFrameProcessor` — the worker pool. Frames go in as raw strings,
+    come out as typed `RelayFrame`s (`Event/Eose/Ok/Auth/Closed/Ignored`)
+    via a two-port handshake. Sync fallback on web / spawn failure (still
+    correct, just not off-thread). Fail-closed on any error.
+  - **`VerifyLru`** (per-worker, 6k ids) — the cross-relay verify dedup:
+    first copy of an id pays the Schnorr, later copies skip it, but EVERY
+    copy still DISPATCHES (`markSeenOn` provenance needs every relay's
+    copy). (Moved here from the old pool-level `markVerified` LRU, gone.)
+  - **`FrameSequencer`** (per-connection) — restores socket frame ORDER:
+    the pool completes frames out of order across workers, and an
+    EOSE/CLOSED/OK must never overtake the EVENTs that preceded it on the
+    same socket (query() unsubscribes on EOSE — reordering would drop
+    events). Reset on every reconnect.
+  - **Backpressure** — pure `backpressureSignal` watermark state machine
+    (saturate > highWater 768, drain ≤ lowWater 192, hysteresis gap stops
+    flapping). `RelayPool` listens and `pauseSocket()`/`resumeSocket()`
+    every connection — TCP flow control slows the relays at the SOURCE
+    instead of our memory ballooning (Amethyst's bounded-channel pattern).
+  - `RelayConnection._handleMessage` just submits to the sequencer; the
+    UI-isolate `_dispatchFrame` only reassembles the already-decoded,
+    already-verified event (no decode, no crypto) + routes EOSE/OK/AUTH/
+    CLOSED exactly as before. Tests: `relay_frame_processor_test.dart`
+    (parse/verify/fail-closed/flood/order/reset/backpressure watermarks),
+    `verify_dedup_test.dart` (the LRU contract).
 - **Browse screens = keepAlive + TTL AsyncNotifiers**: trending/hashtags/
   notifications/communities/articles/bookmarks/lists/calendar/market/live/
   videos/hashtagFeed/dms keep their state; the TTL gates natural rebuilds

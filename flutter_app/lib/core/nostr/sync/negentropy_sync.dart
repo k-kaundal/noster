@@ -40,6 +40,7 @@ class NegentropySyncClient {
     required NostrFilter filter,
     required Future<NegTransport> Function(Uri url) connect,
     bool downloadMissing = true,
+    bool uploadMissing = true,
   }) async {
     // 1. Our record set for the filter scope.
     final records = await store.syncRecords(filter);
@@ -136,7 +137,57 @@ class NegentropySyncClient {
     if (downloadMissing && outcome.needIds.isNotEmpty) {
       await _downloadMissing(transport: null, wsUrl: wsUrl, ids: outcome.needIds, connect: connect);
     }
+
+    // 4. ADR-0008 P6 — the UPLOAD half: publish events WE have that the
+    // relay lacks (`haveIds`), so the relay's copy of the user's content
+    // converges too. NIP-77 is symmetric; before this the protocol's
+    // bandwidth savings only ran one way (download). Bounded: skipped when
+    // the set is huge (a big upload is a separate decision — see
+    // [uploadCap]), and each event is sent once (the relay dedupes by id).
+    if (uploadMissing && outcome.haveIds.isNotEmpty) {
+      outcome.uploadedCount = await _uploadMissing(
+        wsUrl: wsUrl,
+        ids: outcome.haveIds,
+        connect: connect,
+      );
+    }
     return outcome;
+  }
+
+  /// Publish the events the relay is missing ([ids]) to it. Reads each from
+  /// the store, reuses the same ws batching as the download path, returns
+  /// the count actually sent. Bounded by [uploadCap] — a reconciliation that
+  /// finds thousands to upload is a backfill job, not a sync, so we cap it.
+  static const uploadCap = 256;
+
+  Future<int> _uploadMissing({
+    required String wsUrl,
+    required List<String> ids,
+    required Future<NegTransport> Function(Uri url) connect,
+  }) async {
+    final toUpload = ids.length > uploadCap ? ids.sublist(0, uploadCap) : ids;
+    final events = await store.eventsById(toUpload);
+    if (events.isEmpty) return 0;
+    final NegTransport t;
+    try {
+      t = await connect(Uri.parse(wsUrl));
+    } catch (_) {
+      return 0;
+    }
+    var sent = 0;
+    try {
+      for (final e in events) {
+        try {
+          t.send(jsonEncode(['EVENT', e.toJson()]));
+          sent++;
+        } catch (_) {
+          break; // socket died mid-upload — return what we sent
+        }
+      }
+    } finally {
+      await t.close();
+    }
+    return sent;
   }
 
   /// Fetch the events we learned we're missing, straight into the store.
@@ -203,19 +254,23 @@ class NegentropySyncClient {
 
 /// Outcome of one successful reconciliation.
 class NegentropySyncResult {
-  const NegentropySyncResult({
+  NegentropySyncResult({
     required this.haveIds,
     required this.needIds,
     required this.relay,
+    this.uploadedCount = 0,
   });
 
-  /// Event ids WE have that the relay doesn't (candidates to upload).
+  /// Event ids WE have that the relay doesn't (uploaded by the client).
   final List<String> haveIds;
 
   /// Event ids the RELAY has that we don't (downloaded by the client).
   final List<String> needIds;
 
   final String relay;
+
+  /// How many events the client actually uploaded to the relay (P6).
+  int uploadedCount;
 }
 
 /// The ws plumbing, injected so tests can substitute an in-memory relay.

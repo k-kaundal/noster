@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:nostrfeed_mobile/core/db/db_models.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_context.dart';
 import 'package:nostrfeed_mobile/core/nostr/profile_cache.dart';
@@ -191,8 +193,85 @@ class NostrService {
 
   /// Publish and wait for at least one relay to accept the event.
   /// Use this for anything the user expects to be delivered (DMs, posts).
-  Future<bool> publishWithAck(NostrEvent event) =>
-      relayPool.publishWithAck(event);
+  ///
+  /// ADR-0008 P4: on failure (no relay acked — offline, dead sockets), the
+  /// signed event is queued to the durable `publish_outbox` and retried by
+  /// background sync, instead of being silently lost. The caller still gets
+  /// `false` immediately (the send didn't land YET); the retry delivers it.
+  Future<bool> publishWithAck(NostrEvent event) async {
+    final ok = await relayPool.publishWithAck(event);
+    if (!ok) {
+      await _enqueuePublishRetry(event, 'no relay acked');
+    } else {
+      // A previously-queued copy of this event is now delivered — drop it.
+      unawaited(
+        EventStore.instance.removePublishJob(event.id).catchError((_) {}),
+      );
+    }
+    return ok;
+  }
+
+  /// Queue a failed publish for durable retry (best-effort).
+  Future<void> _enqueuePublishRetry(NostrEvent event, String reason) async {
+    try {
+      await EventStore.instance.enqueuePublishJob(
+        DbPublishJob(
+          id: event.id,
+          eventJson: jsonEncode(event.toJson()),
+          targets: relayPool.relayUrls,
+          createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          state: DbPublishState.failed,
+          lastError: reason,
+        ),
+      );
+    } catch (_) {
+      // Retry-queue persistence is best-effort — never fail the send flow.
+    }
+  }
+
+  /// Retry every pending/failed publish job (background sync entry point).
+  /// Returns the count re-published successfully. Bounded attempts (a job
+  /// past [_publishRetryCap] is dropped as undeliverable).
+  static const _publishRetryCap = 10;
+
+  Future<int> retryPublishOutbox() async {
+    var delivered = 0;
+    List<DbPublishJob> pending;
+    try {
+      pending = await EventStore.instance.publishJobsPending();
+    } catch (_) {
+      return 0;
+    }
+    for (final job in pending) {
+      if (job.attempts >= _publishRetryCap) {
+        await EventStore.instance.removePublishJob(job.id);
+        continue;
+      }
+      NostrEvent event;
+      try {
+        event = NostrEvent.fromJson(
+          jsonDecode(job.eventJson) as Map<String, dynamic>,
+        );
+      } catch (_) {
+        await EventStore.instance.removePublishJob(job.id); // unparseable
+        continue;
+      }
+      await EventStore.instance
+          .updatePublishJobState(job.id, DbPublishState.pending, bumpAttempts: true);
+      final ok = await relayPool.publishWithAck(event);
+      if (ok) {
+        await EventStore.instance.removePublishJob(job.id);
+        delivered++;
+      } else {
+        await EventStore.instance.updatePublishJobState(
+          job.id,
+          DbPublishState.failed,
+          lastError: 'retry: no relay acked',
+        );
+      }
+    }
+    return delivered;
+  }
 
   /// NIP-71 video event (kind 22 = short-form portrait / reel, kind 21 =
   /// landscape). The playable URL + poster + metadata live in the `imeta`

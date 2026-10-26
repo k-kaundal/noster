@@ -15,10 +15,10 @@ void main() {
     EventStore.debugOpenOverride = () => databaseFactoryFfi.openDatabase(
           inMemoryDatabasePath,
           options: OpenDatabaseOptions(
-            version: 3,
+            version: 4,
             onCreate: (db, v) async {
               await EventStore.debugCreateV1(db);
-              await EventStore.debugOnUpgrade(db, 1, 3);
+              await EventStore.debugOnUpgrade(db, 1, 4);
             },
           ),
         );

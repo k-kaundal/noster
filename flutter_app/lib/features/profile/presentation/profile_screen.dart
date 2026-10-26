@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -414,17 +415,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                 profile!.banner!.trim(),
                                 width: 1200,
                               );
-                              return SmartNetworkImage(
+                              // NOT SmartNetworkImage here: it passes BOTH
+                              // memCacheWidth AND memCacheHeight (width × dpr,
+                              // height × dpr). For a wide-short cover photo
+                              // that dual memCache constraint distorts the
+                              // decode on some Android codecs — the bitmap
+                              // fails "Invalid image data" and the banner
+                              // silently renders as the grey fallback while
+                              // the avatar (width-only) and every feed tile
+                              // (memCacheWidth-only) load fine. Width-only
+                              // memCache matches every working image in the
+                              // app — the cover decodes at screen width and
+                              // BoxFit.cover crops the height.
+                              final dpr = MediaQuery.devicePixelRatioOf(context);
+                              return CachedNetworkImage(
                                 // Keyed on the URL so a re-upload to the same
                                 // path still re-resolves (stale-pixels guard).
                                 key: ValueKey(bannerUrl),
-                                url: bannerUrl,
-                                // Display-size decode (ADR-0004): the banner
-                                // is short and screen-wide on every phone —
-                                // never decode the native bitmap.
+                                imageUrl: bannerUrl,
                                 width: MediaQuery.sizeOf(context).width,
                                 height: bannerHeight,
                                 fit: BoxFit.cover,
+                                memCacheWidth:
+                                    (MediaQuery.sizeOf(context).width * dpr)
+                                        .round(),
+                                // A real browser UA — some hosts 403 the
+                                // default Dart (empty) UA on Android.
+                                httpHeaders: kImageHttpHeaders,
                                 placeholder: (_, _) => Container(
                                   color: scheme.surfaceContainerHighest,
                                 ),

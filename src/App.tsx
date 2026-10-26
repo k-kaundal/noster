@@ -81,18 +81,21 @@ void warmEventStore().then(() => {
 const defaultConfig: AppConfig = {
   theme: "system",
   accent: "violet",
-  // Our own relay is primary: the routers put it first and never truncate it
-  // away, so it is the one relay every read and every publish is guaranteed
-  // to reach. A note written here should be on the relay this app runs.
+  // HUB MODEL (docs/RELAY_HUB_SYNC_ARCHITECTURE.md): our own relay syncs the
+  // community slice with the public network backend-side (strfry router pulls
+  // from damus/nos.lol, pushes our users' events out). It is primary: the
+  // routers put it first and never truncate it away, so every read and every
+  // publish is guaranteed to reach it.
   relayUrl: "wss://relay.nostrfeed.com",
-  // Reads fan out across all of these; writes go to the ones marked write
+  // The hub carries the community; the two public relays below are
+  // FALLBACK-ONLY (health-demoted behind the hub — they serve when it is
+  // down/slow), and relay.nostr.band is gone (dead for a long time). Users
+  // add their own relays in the relay page; NIP-65 outbox routing reaches
+  // out-of-community authors ad-hoc.
   relays: [
     { url: "wss://relay.nostrfeed.com", read: true, write: true },
-    { url: "wss://relay.nostr.band", read: true, write: true },
-    { url: "wss://relay.primal.net", read: true, write: true },
     { url: "wss://nos.lol", read: true, write: true },
-    { url: "wss://nostr.wine", read: true, write: true },
-    { url: "wss://offchain.pub", read: true, write: false },
+    { url: "wss://relay.damus.io", read: true, write: true },
   ],
 };
 
@@ -112,15 +115,15 @@ const defaultConfig: AppConfig = {
  * and a list like this cannot keep up.
  */
 const presetRelays = [
-  // Suggested: our own first, then well-run general relays
-  { url: 'wss://relay.nostrfeed.com', name: 'NostrFeed', active: true },
-  { url: 'wss://relay.nostr.band', name: 'Nostr.Band', active: true },
-  { url: 'wss://relay.primal.net', name: 'Primal', active: true },
-  { url: 'wss://nos.lol', name: 'nos.lol', active: true },
-  { url: 'wss://offchain.pub', name: 'Offchain', active: true },
+  // Suggested: our own first (the hub — syncs the network backend-side),
+  // then our paid relay and the two fallbacks already in the default set.
+  { url: 'wss://relay.nostrfeed.com', name: 'NostrFeed (hub)', active: true },
+  { url: 'wss://paid.nostrfeed.com', name: 'NostrFeed Paid', active: true },
+  { url: 'wss://nos.lol', name: 'nos.lol (fallback)', active: true },
+  { url: 'wss://relay.damus.io', name: 'Damus (fallback)', active: true },
 
   // Paid and filtered: spam and adult content are far rarer behind a fee
-  { url: 'wss://nostr.wine', name: 'Nostr.Wine (paid)', active: true },
+  { url: 'wss://nostr.wine', name: 'Nostr.Wine (paid)' },
   { url: 'wss://filter.nostr.wine', name: 'Filter.Nostr.Wine (paid)' },
   { url: 'wss://relay.nostrplebs.com', name: 'NostrPlebs (paid)' },
   { url: 'wss://eden.nostr.land', name: 'Eden (paid)' },
@@ -128,6 +131,8 @@ const presetRelays = [
   { url: 'wss://puravida.nostr.land', name: 'PuraVida (paid)' },
 
   // Available, not suggested. Open relays with no moderation of their own.
+  { url: 'wss://relay.primal.net', name: 'Primal' },
+  { url: 'wss://offchain.pub', name: 'Offchain' },
   { url: 'wss://relay.snort.social', name: 'Snort' },
   { url: 'wss://ditto.pub/relay', name: 'Ditto' },
   { url: 'wss://nostr.oxtr.dev', name: 'Oxtr' },

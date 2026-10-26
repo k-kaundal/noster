@@ -68,6 +68,27 @@ final admissionFeeProvider = FutureProvider.autoDispose<int>((ref) async {
   return quoted ?? AdmissionService.fallbackAdmissionSats;
 });
 
+/// Auto-connect admitted users to the paid relay at startup — the
+/// WhatsApp-level real-time half of the premium DM lane.
+///
+/// Without this the paid relay only connected when the user opened the
+/// Premium screen, so an admitted user never *listened* on the premium lane:
+/// a paid↔paid DM routed to `paid.nostrfeed.com` (see DmDelivery) only
+/// showed up on the next manual refresh. Watched once at the app root; the
+/// admission check is sticky-cached so it costs one HTTP request per
+/// session, and a non-admitted / unknown user costs nothing (no connect).
+final paidRelayAutoConnectProvider = FutureProvider.autoDispose<void>((ref) async {
+  final auth = ref.watch(authStateProvider);
+  if (!auth.isLoggedIn || auth.pubkey == null) return;
+  final nostr = ref.read(nostrServiceProvider);
+  if (!nostr.isInitialized) await nostr.init();
+  if (nostr.relayPool.connectedUrls.contains(Env.paidRelay)) return;
+  final state = await ref.read(admissionServiceProvider).check(auth.pubkey!);
+  if (state != AdmissionState.admitted) return;
+  // NIP-42 auth happens automatically via the pool's authHandler.
+  await nostr.relayPool.addRelay(Env.paidRelay);
+});
+
 /// Paid relay status: admission state + whether the app is connected to the
 /// premium relay (wss://paid.nostrfeed.com) via NIP-42 auth.
 final paidRelayStatusProvider = FutureProvider.autoDispose<PaidRelayStatus>((

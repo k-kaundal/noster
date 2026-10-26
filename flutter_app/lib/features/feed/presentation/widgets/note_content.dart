@@ -310,6 +310,11 @@ class _ParsedNote {
         : _ContentParser.parse(text);
     final render = _ContentParser.splitForRender(segments, event);
     final imeta = MediaUtils.parseImeta(event);
+    // ADR-0008 P4: persist the imeta set to the `media` table so the NEXT
+    // render lays the tile out before the bytes download (dims + blurhash).
+    // Idempotent (INSERT OR REPLACE) + fire-and-forget — cheap per unique
+    // event (this parse path is already memoized per event).
+    MediaUtils.persistImeta(event);
     final quotes = _extractQuotes(event, segments);
     return _ParsedNote._(text, render, imeta, quotes, encryptedKind, event.content.length, event.tags.length);
   }
@@ -1519,10 +1524,13 @@ class _NetworkImageTileState extends State<_NetworkImageTile> {
   }
 
   Widget _buildRasterImage(BuildContext context) {
-    // Decode at display size (ADR-0004): the feed tile is at most ~1200 px
-    // wide on any phone — decode to that, not the source's 4000 px. The
-    // fullscreen view decodes separately at full size.
-    final dpr = MediaQuery.devicePixelRatioOf(context);
+    // Decode at display size (ADR-0004): the feed tile displays ~380-420 dp
+    // wide and the CDN variant below is already capped at 1080w — decoding
+    // at 1200 px covers a 3x phone exactly. The old `(1200 * dpr)` decoded
+    // 3600 px wide: one portrait photo (3600×5400 RGBA ≈ 78 MB) exceeded the
+    // ENTIRE image cache, evicted every other image, and re-decoded them
+    // mid-scroll — the Android scroll jank (iOS's bigger heap masked it).
+    // The fullscreen view decodes separately at full size.
     // Ask the CDN for a resized variant when the host supports it (nostr.
     // build `?w=`): ~80-90% less bandwidth per image — the difference
     // between a feed that loads instantly and one that crawls on mobile.
@@ -1535,7 +1543,7 @@ class _NetworkImageTileState extends State<_NetworkImageTile> {
       height: widget.height == double.infinity ? null : widget.height,
       width: double.infinity,
       fit: BoxFit.cover,
-      memCacheWidth: (1200 * dpr).round(),
+      memCacheWidth: 1200,
       placeholder: (_, _) => _buildLoadingPlaceholder(context),
       errorWidget: (_, _, _) {
         _onError();

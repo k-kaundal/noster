@@ -46,6 +46,10 @@ class ArticleCard extends StatelessWidget {
                 height: 160,
                 width: double.infinity,
                 fit: BoxFit.cover,
+                // Decode-cap the cover (ADR-0004): a 4000px source decoded
+                // full-res for a 160dp strip (~48 MB bitmap) — the Android
+                // cache-thrash jank. 1200px covers a 3x phone width.
+                memCacheWidth: 1200,
                 errorWidget: (_, _, _) => const SizedBox.shrink(),
                 placeholder: (_, _) => Container(
                   height: 160,

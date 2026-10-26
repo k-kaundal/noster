@@ -24,12 +24,13 @@ class RelayRouter {
 
   /// Well-known indexer relays where kind-10002 / kind-0 events are
   /// commonly aggregated — used to LOOK UP relay lists themselves.
+  /// Hub model: our relay carries the community slice; the two pure
+  /// indexers resolve OUT-OF-COMMUNITY users' relay lists (their 10002
+  /// isn't synced into the hub). Kept in sync with Env.indexerRelays.
   static const indexerRelays = [
     'wss://relay.nostrfeed.com',
     'wss://purplepag.es',
-    'wss://relay.primal.net',
     'wss://indexer.coracle.social',
-    'wss://directory.yabu.me',
   ];
 
   /// Parse a kind-10002 event into (write, read) relay URL lists.

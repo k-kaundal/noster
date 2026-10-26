@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/db/db_models.dart';
 import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_frame_processor.dart';
+import 'package:nostrfeed_mobile/core/nostr/relay/relay_health.dart';
 import 'package:nostrfeed_mobile/core/relay/local_first_query.dart';
 import 'package:nostrfeed_mobile/features/settings/application/relay_settings_providers.dart'
     show readRelayUrls, writeRelayUrls;
@@ -82,14 +85,21 @@ class RelayConnection {
   Timer? _reconnectTimer;
   bool _intentionallyClosed = false;
 
-  RelayConnection(this.url, {bool Function(String eventId)? verifiedMarker})
-      // ignore: prefer_initializing_formals
-      : _verifiedMarker = verifiedMarker;
+  RelayConnection(this.url, {this.processor});
 
-  /// Pool-shared "already verified" marker — set when this connection is
-  /// owned by a RelayPool. Null for ad-hoc standalone connections (they
-  /// verify every copy, the old behavior).
-  final bool Function(String eventId)? _verifiedMarker;
+  /// (The old `verifiedMarker` constructor param is GONE: cross-relay
+  /// verify dedup now lives in the frame processor's per-worker LRU. The
+  /// pool's `markVerified`/`_verifiedIds` below are retained as a public
+  /// utility but no longer gate dispatch.)
+
+  /// ADR-0008 P3 fleet hooks — set by the owning RelayPool so it can score
+  /// this relay's health WITHOUT the connection knowing the tracker exists
+  /// (clean separation: connection = transport, pool = fleet management).
+  /// Null for ad-hoc standalone connections.
+  void Function()? onConnectSuccess;
+  void Function()? onConnectFailure;
+  void Function(int ms)? onEose;
+  void Function()? onEventDelivered;
 
   bool get isConnected => state == RelayState.connected;
 
@@ -103,7 +113,11 @@ class RelayConnection {
       await _channel!.ready.timeout(const Duration(seconds: 10));
       _reconnectAttempts = 0;
       _setState(RelayState.connected);
-      _channel!.stream.listen(
+      onConnectSuccess?.call(); // fleet health: a good socket
+      // Fresh socket: reset the frame sequencer so in-flight completions
+      // from the DEAD socket (stale seq ids) can't corrupt the new order.
+      _sequencer.reset();
+      _socketSub = _channel!.stream.listen(
         _handleMessage,
         onError: _handleError,
         onDone: _handleDone,
@@ -113,6 +127,7 @@ class RelayConnection {
     } catch (e) {
       lastError = e.toString();
       _setState(RelayState.error);
+      onConnectFailure?.call(); // fleet health: a failed socket
       _scheduleReconnect();
     }
   }
@@ -160,73 +175,86 @@ class RelayConnection {
     _reconnectTimer?.cancel();
   }
 
-  void _handleMessage(dynamic raw) {
-    try {
-      final data = jsonDecode(raw as String) as List;
-      final type = data[0] as String;
+  /// Raw socket frame → off-isolate parse+verify pipeline. The expensive
+  /// work (`jsonDecode` + Schnorr verify) happens on a worker isolate; the
+  /// sequenced dispatch below runs on the UI isolate but only reassembles
+  /// the already-decoded, already-verified event (no decode, no crypto).
+  /// The sequencer restores per-socket frame ORDER so an EOSE/CLOSED/OK can
+  /// never overtake the EVENTs that preceded it on this socket.
+  late final FrameSequencer _sequencer = FrameSequencer(_dispatchFrame);
+  late final RelayFrameProcessor _processor =
+      processor ?? RelayFrameProcessor.instance;
 
-      switch (type) {
-        case 'EVENT':
-          final subId = data[1] as String;
-          final event = NostrEvent.fromJson(data[2] as Map<String, dynamic>);
-          if (event.isExpired) break;
-          // SECURITY: verify the event's id + signature BEFORE it reaches
-          // any screen. A relay is untrusted transport — it can inject a
-          // forged post under anyone's pubkey, and without verification the
-          // feed would render it as real. Cheap enough at feed volume
-          // (Schnorr verify ~100µs) and it's the only thing standing
-          // between the user and relay-served forgeries.
-          // C4: cross-relay verify dedup — the same event arrives on every
-          // connected relay; only the FIRST copy pays the Schnorr cost.
-          final alreadyVerified = _verifiedMarker?.call(event.id) ?? false;
-          if (!alreadyVerified && !event.isValid) break;
-          // Record provenance (ADR-0005 L4): which relay delivered this
-          // event — relay hints for thread/backfill fetches later. Buffered
-          // in the store (no per-frame I/O).
-          EventStore.instance.markSeenOn(event.id, url);
-          // Advance the sliding cursor for resubscribe — this sub's
-          // next re-issue only asks for events NEWER than this one.
-          final persistent = _persistentSubs[subId];
-          if (persistent != null && event.createdAt > persistent.newestSeen) {
-            persistent.newestSeen = event.createdAt;
-          }
-          _subs[subId]?.add(event);
-          break;
-        case 'EOSE':
-          final subId = data[1] as String;
-          final completer = _eoseCompleters[subId];
-          if (completer != null && !completer.isCompleted) {
-            completer.complete();
-          }
-          break;
-        case 'OK':
-          // ["OK", <event_id>, <true|false>, <message>]
-          if (data.length >= 3) {
-            final eventId = data[1] as String;
-            final accepted = data[2] as bool;
-            final completer = _publishAcks.remove(eventId);
-            if (completer != null && !completer.isCompleted) {
-              completer.complete(accepted);
-            }
-          }
-          break;
-        case 'AUTH':
-          _authChallenge = data[1] as String;
-          _setState(RelayState.authRequired);
-          _respondToAuth();
-          break;
-        case 'NOTICE':
-          break;
-        case 'CLOSED':
-          final subId = data[1] as String;
-          final completer = _eoseCompleters[subId];
-          if (completer != null && !completer.isCompleted) {
-            completer.complete();
-          }
-          _subs.remove(subId)?.close();
-          break;
-      }
-    } catch (_) {}
+  /// Optional processor override (tests); defaults to the shared pool.
+  final RelayFrameProcessor? processor;
+
+  /// The socket stream subscription — held so backpressure can pause it
+  /// (TCP flow control slows the relay) when the frame pipeline saturates.
+  StreamSubscription<dynamic>? _socketSub;
+
+  void _handleMessage(dynamic raw) {
+    if (raw is! String) return;
+    _sequencer.submit(_processor, raw);
+  }
+
+  /// Pause reading from the socket (backpressure — the relay's send buffer
+  /// and TCP window fill, throttling IT instead of our memory ballooning).
+  void pauseSocket() {
+    if (!(_socketSub?.isPaused ?? false)) _socketSub?.pause();
+  }
+
+  /// Resume a backpressure-paused socket.
+  void resumeSocket() {
+    if (_socketSub?.isPaused ?? false) _socketSub?.resume();
+  }
+
+  /// UI-isolate dispatch of an already-parsed, already-verified frame. Runs
+  /// in original socket order (via the sequencer). No JSON decode, no
+  /// crypto — those happened on the worker isolate.
+  void _dispatchFrame(RelayFrame frame) {
+    switch (frame) {
+      case EventRelayFrame(:final subId, :final eventJson):
+        final event = NostrEvent.fromJson(eventJson);
+        // Record provenance (ADR-0005 L4): which relay delivered this
+        // event — relay hints for thread/backfill fetches later. Buffered
+        // in the store (no per-frame I/O). EVERY copy is dispatched (not
+        // just the first verified one) precisely so provenance is complete.
+        EventStore.instance.markSeenOn(event.id, url);
+        onEventDelivered?.call(); // fleet health: this relay is producing
+        // ADR-0008 P3 author affinity: which relays deliver this author's
+        // events (outbox routing hint — publish where their content lives).
+        // Buffered by the store; cheap (one UPSERT per distinct pair).
+        EventStore.instance.recordAuthorRelay(event.pubkey, url);
+        // Advance the sliding cursor for resubscribe — this sub's next
+        // re-issue only asks for events NEWER than this one.
+        final persistent = _persistentSubs[subId];
+        if (persistent != null && event.createdAt > persistent.newestSeen) {
+          persistent.newestSeen = event.createdAt;
+        }
+        _subs[subId]?.add(event);
+      case EoseRelayFrame(:final subId):
+        final completer = _eoseCompleters[subId];
+        if (completer != null && !completer.isCompleted) {
+          completer.complete();
+        }
+      case OkRelayFrame(:final eventId, :final accepted):
+        final completer = _publishAcks.remove(eventId);
+        if (completer != null && !completer.isCompleted) {
+          completer.complete(accepted);
+        }
+      case AuthRelayFrame(:final challenge):
+        _authChallenge = challenge;
+        _setState(RelayState.authRequired);
+        _respondToAuth();
+      case ClosedRelayFrame(:final subId):
+        final completer = _eoseCompleters[subId];
+        if (completer != null && !completer.isCompleted) {
+          completer.complete();
+        }
+        _subs.remove(subId)?.close();
+      case IgnoredRelayFrame():
+        break; // NOTICE / malformed / forged / expired — dropped upstream
+    }
   }
 
   Future<void> _respondToAuth() async {
@@ -239,9 +267,17 @@ class RelayConnection {
   }
 
   /// Subscribe and get a stream + EOSE future.
+  ///
+  /// [oneShot] marks this as a query-style REQ that completes at EOSE — it is
+  /// NOT registered as a persistent sub, so a reconnect does NOT re-issue it.
+  /// Before this flag existed, EVERY one-shot query (feed pages, engagement
+  /// batches, profile lookups) was registered persistent, so after each
+  /// reconnect the relay got a burst of hundreds of stale replayed REQs — the
+  /// pressure behind the hub's "too many concurrent REQs" rejections.
   ({String id, Stream<NostrEvent> stream, Future<void> eose}) subscribeWithEose(
-    List<NostrFilter> filters,
-  ) {
+    List<NostrFilter> filters, {
+    bool oneShot = false,
+  }) {
     final id = _uuid.v4().substring(0, 8);
     final controller = StreamController<NostrEvent>.broadcast();
     final eoseCompleter = Completer<void>();
@@ -250,11 +286,18 @@ class RelayConnection {
 
     // Track for re-issue on reconnect (streaming subs only — one-shot
     // queries complete via EOSE and don't need persistence).
-    _persistentSubs[id] = _PersistentSub(id, filters, controller);
+    if (!oneShot) {
+      _persistentSubs[id] = _PersistentSub(id, filters, controller);
+    }
 
     if (state == RelayState.connected) {
       final msg = jsonEncode(['REQ', id, ...filters.map((f) => f.toJson())]);
       _channel?.sink.add(msg);
+      // Fleet health: time this REQ's EOSE (a fast EOSE = a healthy relay).
+      final issuedAt = DateTime.now().millisecondsSinceEpoch;
+      eoseCompleter.future.then((_) {
+        onEose?.call(DateTime.now().millisecondsSinceEpoch - issuedAt);
+      }).catchError((_) {});
     } else {
       // Not connected — complete EOSE immediately so queries don't hang
       if (!eoseCompleter.isCompleted) eoseCompleter.complete();
@@ -352,32 +395,72 @@ class RelayPool {
   final Map<String, RelayConnection> _relays = {};
   List<String> relayUrls;
 
-  /// Bounded LRU of recently-verified event ids. The same event is delivered
-  /// by EVERY connected relay (a page of 50 posts × 9 relays = up to 450
-  /// Schnorr verifications for 50 unique events), and `_handleMessage`
-  /// verifies each copy on the UI isolate (~100µs each — a burst stalls
-  /// frames). Verifying is idempotent for a given event bytes, so copies
-  /// after the first SKIP the crypto entirely. 5k entries ≈ a few minutes
-  /// of traffic; a stale hit is impossible (id commits to exact bytes).
-  final Set<String> _verifiedIds = <String>{};
-  static const _verifiedCap = 5000;
-
-  /// Shared by every connection in the pool: has this event id already
-  /// passed signature verification (on any relay)? Records it if not.
-  bool markVerified(String eventId) {
-    if (_verifiedIds.contains(eventId)) return true;
-    _verifiedIds.add(eventId);
-    if (_verifiedIds.length > _verifiedCap) {
-      _verifiedIds.remove(_verifiedIds.first); // evict oldest (LinkedHashSet)
-    }
-    return false;
-  }
-
   /// Auth signer callback — set by auth service.
   Future<NostrEvent> Function(String relayUrl, String challenge)? authHandler;
 
-  RelayPool({List<String>? relays})
-      : relayUrls = List.from(relays ?? Env.defaultRelays);
+  /// The shared off-isolate frame parse+verify pipeline. All connections
+  /// feed it; its backpressure signals pause/resume the sockets.
+  late final RelayFrameProcessor frameProcessor;
+
+  /// ADR-0008 P3: the fleet's tier + EWMA health scoring (persisted to
+  /// `relay_health`). Drives top-K query fan-out + ad-hoc pool bounds.
+  final RelayHealthTracker health = RelayHealthTracker();
+
+  /// Ad-hoc (T3 outbox-discovery) connection pool: url → monotonic last-used
+  /// sequence number. Bounded (≤ [_maxAdhocConnections]) with LRU eviction —
+  /// these relays are ephemeral (per-user NIP-65 write/read relays discovered
+  /// at publish/query time), so they must not accumulate one socket per
+  /// contact forever.
+  ///
+  /// Ordering uses a monotonic counter, NOT wall-clock time: several touches
+  /// inside one millisecond would otherwise tie and evict the wrong relay
+  /// (the flaky-test bug). A counter is deterministic — higher = more recent.
+  final Map<String, int> _adhocLastUsed = {};
+  int _adhocSeq = 0;
+  static const _maxAdhocConnections = 4;
+
+  /// Mark an ad-hoc connection as used now (bump its sequence), and if the
+  /// ad-hoc pool is over budget, disconnect + drop the least-recently-used
+  /// one (lowest sequence). Only T3 (ad-hoc/outbox) relays are bounded —
+  /// platform/user/curated relays are persistent and never evicted this way.
+  void _touchAdhoc(String url) {
+    if (health.tierOf(url) != DbRelayTier.adhoc) return; // only T3 is bounded
+    _adhocLastUsed[url] = ++_adhocSeq;
+    if (_adhocLastUsed.length <= _maxAdhocConnections) return;
+    // Evict the lowest-sequence ad-hoc connection (not the one just used).
+    String? lruUrl;
+    var lruSeq = _adhocSeq;
+    for (final e in _adhocLastUsed.entries) {
+      if (e.key != url && e.value < lruSeq) {
+        lruSeq = e.value;
+        lruUrl = e.key;
+      }
+    }
+    if (lruUrl != null) {
+      _adhocLastUsed.remove(lruUrl);
+      _relays.remove(lruUrl)?.disconnect();
+    }
+  }
+
+  RelayPool({List<String>? relays, RelayFrameProcessor? frameProcessor})
+      : relayUrls = List.from(relays ?? Env.defaultRelays) {
+    this.frameProcessor = frameProcessor ?? RelayFrameProcessor.instance;
+    // Backpressure: when the pipeline saturates (a multi-relay flood faster
+    // than the workers drain), pause every socket — TCP flow control slows
+    // the relays at the SOURCE instead of our memory ballooning. Resume
+    // when it drains. This is the standard bounded-ingest pattern
+    // (Amethyst's 1024-cap channel, nostrfy's bounded worker queue).
+    this.frameProcessor.onSaturated.listen((_) {
+      for (final c in _relays.values) {
+        c.pauseSocket();
+      }
+    });
+    this.frameProcessor.onDrained.listen((_) {
+      for (final c in _relays.values) {
+        c.resumeSocket();
+      }
+    });
+  }
 
   /// ADR-0007: when false, [query] is remote-only (pre-ADR behavior) — the
   /// rollback switch for the local-first merged read path.
@@ -414,13 +497,29 @@ class RelayPool {
     }
   }
 
+  /// Create a connection with the fleet's health hooks wired (ADR-0008 P3).
+  /// One factory so every creation site (connectAll/addRelay/ensureConnection/
+  /// queryOnRelay/publish/publishWithAckTo) scores identically.
+  RelayConnection _newConnection(String url) {
+    final conn = RelayConnection(url, processor: frameProcessor);
+    conn.onAuthChallenge = authHandler != null
+        ? (challenge) => authHandler!(url, challenge)
+        : null;
+    // Fleet health hooks → the tracker (persisted `relay_health`).
+    conn.onConnectSuccess = () => health.recordConnectSuccess(url);
+    conn.onConnectFailure = () => health.recordConnectFailure(url);
+    conn.onEose = (ms) => health.recordEose(url, ms);
+    conn.onEventDelivered = () => health.recordEventDelivered(url);
+    return conn;
+  }
+
   Future<void> connectAll() async {
+    // ADR-0008 P3: load persisted fleet health once so a cold start ranks
+    // relays by learned behavior (not blind).
+    await health.load();
     final futures = relayUrls.map((url) {
       if (!_relays.containsKey(url)) {
-        final conn = RelayConnection(url, verifiedMarker: markVerified);
-        conn.onAuthChallenge = authHandler != null
-            ? (challenge) => authHandler!(url, challenge)
-            : null;
+        final conn = _newConnection(url);
         _relays[url] = conn;
         return conn.connect();
       }
@@ -479,39 +578,80 @@ class RelayPool {
 
   /// The remote-only query path (pre-ADR-0007 behavior, and the remote leg
   /// of the merged query).
+  ///
+  /// ADR-0008 P3 **top-K fan-out**: a query goes to the platform relay(s) +
+  /// the top-K healthiest connected read relays (K=[queryFanoutK]) — NOT to
+  /// ALL of them. Broadcasting every query to 9 relays was the "too many
+  /// events at once" flood on BOTH the server (9× sockets × queries) and the
+  /// client's verify/merge pipeline (9× duplicate frames). The local store
+  /// + top-K healthy relays answers the same query with a fraction of the
+  /// traffic; a slow/failing relay self-demotes out of the K via the score.
+  static const queryFanoutK = 4;
+
   Future<List<NostrEvent>> _queryRemote(
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 5),
   }) async {
     final events = <NostrEvent>[];
     final seen = <String>{};
-    final eoseFutures = <Future<void>>[];
+    final allEose = <Future<void>>[];
+    final platformEose = <Future<void>>[];
     final subscriptions = <(RelayConnection, String)>[];
 
-    for (final relay in _relays.values) {
-      // Honor the read-intent set when one exists (empty = first run).
+    // Candidate read relays (honor the user's read-intent set when one
+    // exists — empty = first run, everything allowed).
+    final candidates = _relays.values.where((relay) {
       if (readRelayUrls.isNotEmpty &&
           !readRelayUrls.contains(normalizeRelayUrl(relay.url))) {
-        continue;
+        return false;
       }
-      if (relay.isConnected) {
-        final sub = relay.subscribeWithEose(filters);
-        subscriptions.add((relay, sub.id));
-        eoseFutures.add(sub.eose);
+      return relay.isConnected;
+    }).toList();
 
-        sub.stream.listen((event) {
-          if (seen.add(event.id)) {
-            events.add(event);
-          }
-        });
+    // Top-K by (tier, score): platform always in, healthiest fill the rest.
+    final fanoutUrls = health
+        .topK(candidates.map((r) => r.url), k: queryFanoutK)
+        .toSet();
+    final targets = candidates.where((r) => fanoutUrls.contains(r.url));
+
+    for (final relay in targets) {
+      final sub = relay.subscribeWithEose(filters, oneShot: true);
+      subscriptions.add((relay, sub.id));
+      allEose.add(sub.eose);
+      if (health.tierOf(relay.url) == DbRelayTier.platform) {
+        platformEose.add(sub.eose);
       }
+
+      sub.stream.listen((event) {
+        if (seen.add(event.id)) {
+          events.add(event);
+        }
+      });
     }
 
     if (subscriptions.isEmpty) return events;
 
-    // Wait for all EOSE or timeout
+    /**
+     * "Good-enough" completion — don't let the slowest relay stall the UI.
+     *
+     * The old behavior waited for EVERY target's EOSE (or the full timeout),
+     * so one slow/dead relay stretched EVERY screen (feed, profiles,
+     * notifications) to the timeout even when the hub had already answered
+     * fully (the divine-mobile #2669 failure mode). Now a query resolves
+     * early when EITHER:
+     *
+     *  1. **All** EOSE arrived (ideal, unchanged), or
+     *  2. **Every platform (T0) relay answered** — our hub holds the synced
+     *     community slice, so its answer IS the complete answer; the
+     *     fallbacks only add out-of-slice extras that aren't worth blocking
+     *     the frame for, or
+     *  3. The timeout hit (fallback, unchanged).
+     *
+     * Stragglers' sockets are unsubscribed right after, so nothing leaks.
+     */
     await Future.any([
-      Future.wait(eoseFutures),
+      Future.wait(allEose),
+      if (platformEose.isNotEmpty) Future.wait(platformEose),
       Future.delayed(timeout),
     ]);
 
@@ -539,14 +679,12 @@ class RelayPool {
         final normalized = normalizeRelayUrl(url);
         var conn = _relays[normalized];
         if (conn == null) {
-          conn = RelayConnection(normalized, verifiedMarker: markVerified);
-          conn.onAuthChallenge = authHandler != null
-              ? (challenge) => authHandler!(normalized, challenge)
-              : null;
+          conn = _newConnection(normalized);
           _relays[normalized] = conn;
           // Fire-and-forget connect; the subscription will be used once connected
           conn.connect().catchError((_) {});
         }
+        _touchAdhoc(normalized);
         targetRelays.add(conn);
       }
     } else {
@@ -619,16 +757,15 @@ class RelayPool {
         final normalized = normalizeRelayUrl(url);
         var conn = _relays[normalized];
         if (conn == null) {
-          conn = RelayConnection(normalized, verifiedMarker: markVerified);
-          conn.onAuthChallenge = authHandler != null
-              ? (challenge) => authHandler!(normalized, challenge)
-              : null;
+          conn = _newConnection(normalized);
           _relays[normalized] = conn;
+          _touchAdhoc(normalized);
           conn.connect().then((_) {
             conn?.publish(event);
           }).catchError((_) {});
           continue;
         }
+        _touchAdhoc(normalized);
         if (conn.isConnected) {
           conn.publish(event);
         } else {
@@ -654,10 +791,7 @@ class RelayPool {
     final normalized = normalizeRelayUrl(url);
     if (!_relays.containsKey(normalized)) {
       relayUrls.add(normalized);
-      final conn = RelayConnection(normalized, verifiedMarker: markVerified);
-      conn.onAuthChallenge = authHandler != null
-          ? (challenge) => authHandler!(normalized, challenge)
-          : null;
+      final conn = _newConnection(normalized);
       _relays[normalized] = conn;
       await conn.connect();
     }
@@ -669,13 +803,11 @@ class RelayPool {
   void ensureConnection(String url) {
     final normalized = normalizeRelayUrl(url);
     if (!_relays.containsKey(normalized)) {
-      final conn = RelayConnection(normalized, verifiedMarker: markVerified);
-      conn.onAuthChallenge = authHandler != null
-          ? (challenge) => authHandler!(normalized, challenge)
-          : null;
+      final conn = _newConnection(normalized);
       _relays[normalized] = conn;
       conn.connect().catchError((_) {});
     }
+    _touchAdhoc(normalized);
   }
 
   /// Query a SINGLE relay (ad-hoc connection created if needed) with EOSE
@@ -690,13 +822,11 @@ class RelayPool {
     final normalized = normalizeRelayUrl(url);
     var conn = _relays[normalized];
     if (conn == null) {
-      conn = RelayConnection(normalized, verifiedMarker: markVerified);
-      conn.onAuthChallenge = authHandler != null
-          ? (challenge) => authHandler!(normalized, challenge)
-          : null;
+      conn = _newConnection(normalized);
       _relays[normalized] = conn;
       conn.connect().catchError((_) {});
     }
+    _touchAdhoc(normalized);
     final connection = conn;
 
     // Wait for connection (bounded).
@@ -708,7 +838,7 @@ class RelayPool {
 
     final events = <NostrEvent>[];
     final seen = <String>{};
-    final sub = connection.subscribeWithEose(filters);
+    final sub = connection.subscribeWithEose(filters, oneShot: true);
     final listener = sub.stream.listen((e) {
       if (seen.add(e.id)) events.add(e);
     });
@@ -735,13 +865,11 @@ class RelayPool {
       final normalized = normalizeRelayUrl(url);
       var conn = _relays[normalized];
       if (conn == null) {
-        conn = RelayConnection(normalized, verifiedMarker: markVerified);
-        conn.onAuthChallenge = authHandler != null
-            ? (challenge) => authHandler!(normalized, challenge)
-            : null;
+        conn = _newConnection(normalized);
         _relays[normalized] = conn;
         conn.connect().catchError((_) {});
       }
+      _touchAdhoc(normalized);
       targets.add(conn);
     }
 

@@ -5,6 +5,7 @@ import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/connectivity_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/ingest_pipeline_providers.dart';
+import 'package:nostrfeed_mobile/core/providers/store_invalidation.dart';
 import 'package:nostrfeed_mobile/core/services/background_sync.dart';
 import 'package:nostrfeed_mobile/core/services/local_notification_service.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
@@ -12,6 +13,7 @@ import 'package:nostrfeed_mobile/features/chat/application/dm_notifier.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
 import 'package:nostrfeed_mobile/features/notifications/application/notification_center.dart';
 import 'package:nostrfeed_mobile/features/notifications/presentation/widgets/social_alert_banner.dart';
+import 'package:nostrfeed_mobile/features/premium/application/premium_providers.dart';
 import 'package:nostrfeed_mobile/features/settings/application/app_update_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/lnbits_live_providers.dart';
 import 'package:nostrfeed_mobile/features/wallet/application/wallet_sync_service.dart';
@@ -71,8 +73,16 @@ class _NostrFeedAppState extends ConsumerState<NostrFeedApp>
     // Real-time DM subscription: ingests incoming DMs from all relays into
     // the store (messages arrive live, not just on manual refresh).
     ref.watch(dmLiveListenerProvider);
+    // Premium DM lane: admitted users auto-connect to the paid relay at
+    // startup so paid↔paid DMs arrive live (see DmDelivery tier routing).
+    ref.watch(paidRelayAutoConnectProvider);
     // Real-time social engagement: likes, comments, reposts, zaps, follows.
     ref.watch(socialLiveListenerProvider);
+    // ADR-0008 P5 invalidation bus: points the store's writer-lane hook at
+    // the per-table version counters, so writes rebuild ONLY the features
+    // listening to the changed tables (a DM write doesn't bump engagement).
+    // Must be watched BEFORE the ingest pipeline (the bus feeds it).
+    ref.watch(storeInvalidationWiringProvider);
     // ADR-0005 ingest pipeline: every gated bus event lands in the local
     // store exactly once; engagement counts tick live (debounced). This is
     // the single write path behind store-first feeds/threads/counts.

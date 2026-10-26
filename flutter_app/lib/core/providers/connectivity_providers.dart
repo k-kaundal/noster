@@ -44,14 +44,37 @@ final connectivityWatcherProvider = Provider<void>((ref) {
   // `previous` (app start, or Android's empty-list transition) doesn't
   // swallow the first real offline→online recovery.
   var lastOffline = false;
+  // Android drops to an EMPTY connectivity list during radio hand-off / VPN
+  // churn (wifi → [] → cellular). Empty isn't "offline" for the banner, but
+  // the relay sockets DID die in the gap — so losing a route we actually had
+  // and getting one back needs the SAME recovery as offline→online. Without
+  // this the feed's live tail stayed dead after every Android network blip
+  // until a manual pull (the "feed stuck on Android, fine on iOS" bug —
+  // iOS doesn't kill sockets this way and never emits an empty list).
+  var hadRoute = false;
+  var routeWasLost = false;
   ref.listen<AsyncValue<List<ConnectivityResult>>>(
     connectivityProvider,
     (previous, next) {
-      final nowOffline = _isOfflineResults(next.valueOrNull);
-      final wasOffline = lastOffline;
-      lastOffline = nowOffline;
+      final results = next.valueOrNull;
+      if (results == null) return; // stream hasn't produced yet
+      final nowOffline = _isOfflineResults(results);
+      final hasRoute = results.isNotEmpty && !nowOffline;
 
-      if (wasOffline && !nowOffline) {
+      if (!hasRoute) {
+        // Only a route we actually HAD counts as a loss — an app started
+        // with no network must not fire a redundant recovery on first route.
+        if (hadRoute) routeWasLost = true;
+        lastOffline = nowOffline;
+        return;
+      }
+
+      final recovered = lastOffline || routeWasLost;
+      hadRoute = true;
+      routeWasLost = false;
+      lastOffline = false;
+
+      if (recovered) {
         // Back online: reconnect dead relays immediately (not after their
         // backoff) so the feed/notifications resume at once.
         final nostr = ref.read(nostrServiceProvider);

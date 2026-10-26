@@ -215,6 +215,14 @@ class FeedNotifier extends Notifier<FeedState> {
   Future<void> refreshFromPull() {
     if (state.isRefreshing || state.isLoadingMore) {
       state = state.copyWith(isRefreshing: false, isLoadingMore: false);
+      // Drop the serialized queue too: the flags were stuck because the
+      // in-flight fetch HUNG (Android kills idle sockets — a 5s relay-init
+      // wait + 8s query ≈ the 15s timeout). Queuing this pull behind the
+      // hung fetch made pulls "do nothing" until it timed out (the "feed
+      // stuck on Android" bug — iOS sockets survive, so the chain never
+      // grew there). The hung future still completes on its own; its stale
+      // merge is harmless (time-ordered, deduped).
+      _inFlight = Future.value();
     }
     showNewPosts();
     return refresh();
@@ -390,9 +398,11 @@ class FeedNotifier extends Notifier<FeedState> {
           limit: 1000,
         ),
       ], timeout: const Duration(seconds: 6));
+      // The ingest reports its changed tables (StoreTable.eventRefs) to the
+      // invalidation bus via the writer lane — `engagementVersionProvider`
+      // derives from that, so listeners recount automatically. No manual
+      // version poke here anymore (ADR-0008 P5).
       await _events.ingest(engagementEvents);
-      // Tell listeners the counts are fresh.
-      ref.read(engagementVersionProvider.notifier).state++;
     } catch (_) {
       // Best-effort: counts from the last sync still render.
     }

@@ -20,6 +20,11 @@ export interface AppConfig {
    * removal.
    */
   seededHouseRelay?: boolean;
+  /**
+   * One-time hub-model migration stamp. Absent/≠1 means the stored list
+   * predates the hub model and gets migrated once (see parseAppConfig).
+   */
+  relayMigrationV?: number;
 }
 
 export interface AppContextType {
@@ -31,6 +36,30 @@ export interface AppContextType {
 
 /** This platform's own relay, which every install should be reading from. */
 export const HOUSE_RELAY = 'wss://relay.nostrfeed.com';
+
+/**
+ * The hub-model default set (docs/RELAY_HUB_SYNC_ARCHITECTURE.md): our hub
+ * syncs the network backend-side; the two public relays are fallback-only.
+ */
+const HUB_DEFAULT_RELAYS: RelayEntry[] = [
+  { url: HOUSE_RELAY, read: true, write: true },
+  { url: 'wss://nos.lol', read: true, write: true },
+  { url: 'wss://relay.damus.io', read: true, write: true },
+];
+
+/**
+ * Relays the pre-hub default config handed out. A stored list holding ONLY
+ * these (plus the house relay) means the user never customized anything, so
+ * the hub migration swaps the whole set. `relay.nostr.band` is long dead —
+ * it is dropped from EVERY list, customized or not.
+ */
+const OLD_DEFAULT_URLS = new Set([
+  'wss://relay.nostr.band',
+  'wss://relay.primal.net',
+  'wss://nostr.wine',
+  'wss://offchain.pub',
+]);
+const DEAD_RELAY = 'wss://relay.nostr.band';
 
 /** Whether a string is a URL at all. Relay URLs are `wss:`, not `https:`. */
 function isUrl(value: unknown): value is string {
@@ -105,9 +134,29 @@ export function parseAppConfig(value: unknown): AppConfig {
    * from a NIP-65 list, so this runs on read rather than only on write, and
    * the result is written back.
    */
-  const relays = dedupeRelays(
+  let relays = dedupeRelays(
     listed.length ? listed : [{ url: relayUrl, read: true, write: true }]
   );
+
+  /**
+   * One-time hub-model migration (2026-10).
+   *
+   * - Never customized (list = old defaults only): swapped wholesale for the
+   *   hub set — their relay page was showing defaults, not choices.
+   * - Customized: kept as-is, minus the dead relay.nostr.band, which only
+   *   ever produced connection failures.
+   *
+   * Runs once (stamped); a user who afterwards adds any of these back keeps
+   * them — the stamp says the migration already happened.
+   */
+  if (stored.relayMigrationV !== 1) {
+    const custom = relays.filter(
+      (relay) => relay.url !== HOUSE_RELAY && !OLD_DEFAULT_URLS.has(relay.url)
+    );
+    relays = custom.length === 0
+      ? HUB_DEFAULT_RELAYS.map((entry) => ({ ...entry }))
+      : relays.filter((relay) => relay.url !== DEAD_RELAY);
+  }
 
   const needsHouseRelay =
     stored.seededHouseRelay !== true &&
@@ -118,6 +167,7 @@ export function parseAppConfig(value: unknown): AppConfig {
     accent: typeof stored.accent === 'string' ? stored.accent : DEFAULT_ACCENT,
     relayUrl,
     seededHouseRelay: true,
+    relayMigrationV: 1,
     // Seeded at the head, since the routers treat list order as priority
     relays: needsHouseRelay
       ? [{ url: HOUSE_RELAY, read: true, write: true }, ...relays]

@@ -878,13 +878,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         );
       }
 
-      // ── Targeted delivery (NIP-17: 1–3 relays, not a spray) ────────
-      // Publish immediately to OUR connected relays (for the self-copy and
-      // our own history) + the small fallback DM set. The recipient's
-      // kind-10050 inbox lookup runs in the background as a targeted boost.
+      // ── Tier-aware targeted delivery (NIP-17: 1–3 relays, not a spray) ──
+      // Paid↔Paid pairs go to the paid relay (premium lane); everyone else
+      // goes to our connected relays + the small fallback DM set. The
+      // recipient's kind-10050 inbox lookup runs in the background as a
+      // targeted boost for external users.
       final selfWrap = giftWraps.length > 1 ? giftWraps[1] : null;
+      final myPubkey = auth.pubkey;
+      final deliveryTargets = myPubkey != null
+          ? await nostr.dmDelivery.deliveryRelaysFor(
+              peerPubkey,
+              senderPubkey: myPubkey,
+            )
+          : <String>[];
       final immediateTargets = {
         ...nostr.relayPool.connectedUrls,
+        ...deliveryTargets,
         ...DmDelivery.fallbackDmRelays,
       }.toList();
       final delivered = await nostr.relayPool.publishWithAckTo(
@@ -912,9 +921,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       // kind-10050, 1–3 relays) + their NIP-65 read relays — not already-
       // covered ones, capped at 4. This is how a Primal/Damus/Amethyst user
       // on different relays still gets the message, without spraying 8.
+      // (Skipped for paid↔paid pairs — the premium lane already delivered.)
       Future(() async {
         try {
-          final inbox = await nostr.dmDelivery.deliveryRelaysFor(peerPubkey);
+          final inbox = await nostr.dmDelivery.deliveryRelaysFor(
+            peerPubkey,
+            senderPubkey: myPubkey,
+          );
           final readRelays = await nostr.relayRouter.getReadRelays(peerPubkey);
           final extra = {...inbox, ...readRelays}
               .where((u) => !nostr.relayPool.connectedUrls.contains(u))

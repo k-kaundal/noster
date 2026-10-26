@@ -181,6 +181,9 @@ class _DirectVideoTile extends StatelessWidget {
                 httpHeaders: kImageHttpHeaders,
                 imageUrl: thumb,
                 fit: BoxFit.cover,
+                // Decode-cap the thumbnail (ADR-0004): full-res poster
+                // frames for a 200dp tile thrashed the Android image cache.
+                memCacheWidth: 1200,
                 errorWidget: (_, _, _) => const SizedBox.shrink(),
               ),
             Center(

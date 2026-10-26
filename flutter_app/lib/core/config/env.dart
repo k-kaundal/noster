@@ -136,44 +136,36 @@ class Env {
   );
 
   // ── Default Relays ─────────────────────────────────────────────────
-  // Our own relay FIRST (best latency + we control retention), then a
-  // curated set of HEALTHY, free, well-run general relays. Sources: the
-  // health-checked awesome-nostr-relays catalogue + nostr.watch + NostrMash
-  // activity rankings. Deliberately excludes adult-oriented relays (store
-  // compliance) AND dead relays — relay.nostr.band has been offline for a
-  // long time (many stale guides still list it; a relay that never
-  // connects is a top reason a fresh setup looks broken). Users can add
-  // more from Settings → Relays; NIP-65 outbox routing layers per-user
-  // relays on top.
+  // HUB MODEL (docs/RELAY_HUB_SYNC_ARCHITECTURE.md): our house relay syncs
+  // the community slice with the public network BACKEND-SIDE (strfry router
+  // pulls from damus/nos.lol, pushes our users' events out). The app no
+  // longer fans out to 9 public relays — it connects to OUR relays only:
+  //
+  //   1. `relay.nostrfeed.com` — free hub, holds the synced community slice
+  //      (posts/profiles/reactions/zaps of our active users + their mentions).
+  //   2. `paid.nostrfeed.com` — connected separately after Lightning admission
+  //      (`connectPaidRelayProvider`), never in the default fleet.
+  //
+  // Two public relays stay as FALLBACK-ONLY: the health tracker scores them
+  // as curated (T2) below the platform relay (T0), so they only serve
+  // traffic when the house relay is unreachable or slow (graceful
+  // degradation). Users can still add their own relays in Settings → Relays
+  // (T1), and NIP-65 outbox routing reaches external users' relays ad-hoc
+  // (T3, bounded ≤4) for profiles/DMs of people outside our community slice.
   static const defaultRelays = [
-    'wss://relay.nostrfeed.com', // our own relay — primary
-    'wss://relay.damus.io', // most popular, fast, US
-    'wss://nos.lol', // reliable, high activity share
-    'wss://relay.primal.net', // highest activity share (NostrMash #1)
-    'wss://relay.snort.social', // Snort's relay
-    'wss://nostr.mom', // community-run, steady
-    'wss://offchain.pub', // healthy, good coverage
-    'wss://ditto.pub', // healthy, rising
-    'wss://nostr.oxtr.dev', // healthy, open
+    'wss://relay.nostrfeed.com', // our hub — primary, syncs the network
+    'wss://nos.lol', // fallback only (when the hub is down)
+    'wss://relay.damus.io', // fallback only (when the hub is down)
   ];
 
-  /// Indexer relays for kind 0 / 10002 lookups (NIP-50 search + metadata).
-  /// nostr.band was the classic indexer but is dead — purplepag.es +
-  /// coracle + yabu carry metadata indexing now.
+  /// Indexer relays for kind 0 / 10002 lookups of users OUTSIDE our
+  /// community slice (their metadata isn't synced into the hub). Hub first;
+  /// the two pure indexers carry external profile lookups. Kept minimal —
+  /// metadata only, no feed traffic.
   static const indexerRelays = [
-    'wss://relay.nostrfeed.com', // our own relay first
-    'wss://relay.primal.net',
-    'wss://purplepag.es',
-    'wss://indexer.coracle.social',
-    'wss://directory.yabu.me',
-  ];
-
-  /// Receipt relays for kind 9735 zap receipt queries.
-  static const receiptRelays = [
-    'wss://relay.primal.net',
-    'wss://relay.damus.io',
-    'wss://nos.lol',
-    'wss://nostr.mom',
+    'wss://relay.nostrfeed.com', // our hub first (community profiles)
+    'wss://purplepag.es', // pure kind-0 indexer (external users)
+    'wss://indexer.coracle.social', // kind-0 + 10002 indexer (external users)
   ];
 
   /// Blossom upload servers (fallback defaults).
