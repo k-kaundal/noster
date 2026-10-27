@@ -4,16 +4,16 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 
 /// All calendar events (NIP-52 kind 31922/31923), newest first.
-final calendarEventsProvider =
-    FutureProvider.autoDispose<List<NostrEvent>>((ref) async {
-  final nostr = ref.read(nostrServiceProvider);
-  if (!nostr.isInitialized) await nostr.init();
-  return nostr.fetchCalendarEvents();
+///
+/// Delegates to the core keepAlive+TTL `calendarProvider` so the calendar
+/// screen re-enters instantly from cache instead of re-fetching on every
+/// visit (the old autoDispose provider threw the list away per visit).
+final calendarEventsProvider = FutureProvider<List<NostrEvent>>((ref) async {
+  return ref.watch(calendarProvider.future);
 });
 
 /// Upcoming events only (start >= now), sorted by start time ascending.
-final upcomingEventsProvider =
-    FutureProvider.autoDispose<List<NostrEvent>>((ref) async {
+final upcomingEventsProvider = FutureProvider<List<NostrEvent>>((ref) async {
   final events = await ref.watch(calendarEventsProvider.future);
   final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   final upcoming = events.where((e) {

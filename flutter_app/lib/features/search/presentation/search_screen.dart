@@ -157,8 +157,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             filled: true,
             fillColor: colorScheme.surfaceContainerHighest,
             isDense: true,
-            contentPadding:
-                const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            contentPadding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
             border: OutlineInputBorder(
               borderRadius: AppShapes.radiusFull,
               borderSide: BorderSide.none,
@@ -194,7 +193,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
-                        color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                        color: colorScheme.outlineVariant.withValues(
+                          alpha: 0.3,
+                        ),
                       ),
                     ),
                   ),
@@ -204,9 +205,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                     unselectedLabelColor: colorScheme.onSurfaceVariant,
                     indicatorColor: colorScheme.primary,
                     indicatorWeight: 3,
-                    labelStyle: Theme.of(context)
-                        .textTheme
-                        .titleSmall
+                    labelStyle: Theme.of(context).textTheme.titleSmall
                         ?.copyWith(fontWeight: FontWeight.w600),
                     tabs: const [
                       Tab(text: 'Posts'),
@@ -255,11 +254,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   color: colorScheme.primaryContainer.withValues(alpha: 0.3),
                   shape: BoxShape.circle,
                 ),
-                child: AppIcon(
-                  'search',
-                  size: 56,
-                  color: colorScheme.primary,
-                ),
+                child: AppIcon('search', size: 56, color: colorScheme.primary),
               ),
               const SizedBox(height: 24),
               Text(
@@ -313,10 +308,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           ),
         ),
         for (final q in _recentSearches)
-          _RecentSearchTile(
-            query: q,
-            onTap: () => _useRecentSearch(q),
-          ),
+          _RecentSearchTile(query: q, onTap: () => _useRecentSearch(q)),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
           child: Text(
@@ -335,10 +327,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             runSpacing: 10,
             children: [
               for (final tag in _commonHashtags)
-                _HashtagChip(
-                  tag: tag,
-                  onTap: () => _useRecentSearch('#$tag'),
-                ),
+                _HashtagChip(tag: tag, onTap: () => _useRecentSearch('#$tag')),
             ],
           ),
         ),
@@ -387,13 +376,14 @@ class _RecentSearchTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   query,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
+                  style: Theme.of(context).textTheme.titleSmall
                       ?.copyWith(fontWeight: FontWeight.w500),
                 ),
               ),
-              AppIcon('chevron_r', size: 14, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+              AppIcon(
+                'chevron_r',
+                size: 14,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
               ),
             ],
           ),
@@ -422,7 +412,9 @@ class _HashtagChip extends StatelessWidget {
         borderRadius: AppShapes.radiusXl,
         child: Container(
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.sm - 2),
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm - 2,
+          ),
           decoration: BoxDecoration(
             color: colorScheme.primaryContainer.withValues(alpha: 0.5),
             borderRadius: AppShapes.radiusXl,
@@ -433,18 +425,14 @@ class _HashtagChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AppIcon(
-                'hash',
-                size: AppIconSize.sm,
-                color: colorScheme.primary,
-              ),
+              AppIcon('hash', size: AppIconSize.sm, color: colorScheme.primary),
               const SizedBox(width: AppSpacing.xxs),
               Text(
                 tag,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.primary,
-                    ),
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.primary,
+                ),
               ),
             ],
           ),
@@ -478,12 +466,13 @@ class _PostsTab extends ConsumerWidget {
           separatorBuilder: (_, _) => Divider(
             height: 1,
             indent: 80,
-            color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: Theme.of(context).colorScheme.outlineVariant
+                .withValues(alpha: 0.3),
           ),
           itemBuilder: (context, i) => _PostTile(event: events[i]),
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const SkeletonList(itemCount: 6),
       error: (e, _) => EmptyState(
         icon: Icons.error_outline_rounded,
         title: 'Search failed: $e',
@@ -503,14 +492,13 @@ class _PostTile extends ConsumerWidget {
     final profile = ref.watch(profileProvider(event.pubkey)).value;
 
     // Content filter: spam/NSFW/blocked posts do not appear in search.
-    final verdict =
-        filteredEventVerdict(ref, event, authorProfile: profile);
+    final verdict = filteredEventVerdict(ref, event, authorProfile: profile);
     if (verdict.action == FilterAction.hide) {
       return const SizedBox.shrink();
     }
 
-    final name = profile?.displayNameOrName ??
-        '${event.pubkey.substring(0, 8)}…';
+    final name =
+        profile?.displayNameOrName ?? '${event.pubkey.substring(0, 8)}…';
     final time = DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
 
     return Material(
@@ -538,9 +526,7 @@ class _PostTile extends ConsumerWidget {
                       name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
+                      style: Theme.of(context).textTheme.titleSmall
                           ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: AppSpacing.xxs),
@@ -595,7 +581,8 @@ class _PeopleTab extends ConsumerWidget {
           separatorBuilder: (_, _) => Divider(
             height: 1,
             indent: 80,
-            color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+            color: Theme.of(context).colorScheme.outlineVariant
+                .withValues(alpha: 0.3),
           ),
           itemBuilder: (context, i) => _PersonTile(event: events[i]),
         );
@@ -629,8 +616,8 @@ class _PersonTile extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    final name = profile?.displayNameOrName ??
-        '${event.pubkey.substring(0, 8)}…';
+    final name =
+        profile?.displayNameOrName ?? '${event.pubkey.substring(0, 8)}…';
     final auth = ref.watch(authStateProvider);
     final follows = ref.watch(followsProvider).value ?? [];
     final isFollowing = follows.contains(event.pubkey);
@@ -663,9 +650,7 @@ class _PersonTile extends ConsumerWidget {
                             name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
+                            style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.w700),
                           ),
                         ),
@@ -687,9 +672,7 @@ class _PersonTile extends ConsumerWidget {
                         profile.nip05!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelMedium
+                        style: Theme.of(context).textTheme.labelMedium
                             ?.copyWith(
                               color: colorScheme.primary,
                               fontWeight: FontWeight.w500,
@@ -703,9 +686,7 @@ class _PersonTile extends ConsumerWidget {
                         profile.about!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
+                        style: Theme.of(context).textTheme.bodySmall
                             ?.copyWith(color: colorScheme.onSurfaceVariant),
                       ),
                     ],
@@ -717,13 +698,10 @@ class _PersonTile extends ConsumerWidget {
                 FilledButton.tonal(
                   onPressed: () {
                     HapticFeedback.mediumImpact();
-                    final nostr = ref.read(nostrServiceProvider);
-                    final updated = isFollowing
-                        ? follows.where((p) => p != event.pubkey).toList()
-                        : [...follows, event.pubkey];
-                    final ev = nostr.updateFollows(updated);
-                    nostr.publishEvent(ev);
-                    ref.invalidate(followsProvider);
+                    // Optimistic toggle — the button flips instantly.
+                    ref
+                        .read(followsProvider.notifier)
+                        .toggleFollow(event.pubkey);
                   },
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
@@ -774,7 +752,8 @@ class _HashtagsTab extends ConsumerWidget {
     // Merge live trending hashtags from the relay with the static list,
     // then filter by the query. Live tags come first (sorted by usage).
     final trendingAsync = ref.watch(trendingHashtagsProvider);
-    final liveTags = trendingAsync.valueOrNull
+    final liveTags =
+        trendingAsync.valueOrNull
             ?.map((s) => s.tag)
             .where((t) => cleaned.isEmpty || t.contains(cleaned))
             .toList() ??
@@ -796,7 +775,8 @@ class _HashtagsTab extends ConsumerWidget {
     }
 
     final counts = {
-      for (final s in trendingAsync.valueOrNull ?? <HashtagStat>[]) s.tag: s.count,
+      for (final s in trendingAsync.valueOrNull ?? <HashtagStat>[])
+        s.tag: s.count,
     };
 
     return ListView.separated(
@@ -805,7 +785,8 @@ class _HashtagsTab extends ConsumerWidget {
       separatorBuilder: (_, _) => Divider(
         height: 1,
         indent: 60,
-        color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+        color: Theme.of(context).colorScheme.outlineVariant
+            .withValues(alpha: 0.3),
       ),
       itemBuilder: (context, i) {
         final tag = merged[i];
@@ -821,10 +802,14 @@ class _HashtagsTab extends ConsumerWidget {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+                      color: Theme.of(context).colorScheme.primaryContainer
+                          .withValues(alpha: 0.5),
                       shape: BoxShape.circle,
                     ),
-                    child: AppIcon('hash', size: 20, color: Theme.of(context).colorScheme.primary,
+                    child: AppIcon(
+                      'hash',
+                      size: 20,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -834,9 +819,7 @@ class _HashtagsTab extends ConsumerWidget {
                       children: [
                         Text(
                           '#$tag',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
+                          style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 2),
@@ -844,9 +827,7 @@ class _HashtagsTab extends ConsumerWidget {
                           count != null && count > 0
                               ? '$count recent post${count == 1 ? '' : 's'}'
                               : 'View posts with this hashtag',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
+                          style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: Theme.of(context)
                                     .colorScheme
@@ -856,7 +837,11 @@ class _HashtagsTab extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  AppIcon('chevron_r', size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  AppIcon(
+                    'chevron_r',
+                    size: 14,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant
+                        .withValues(alpha: 0.5),
                   ),
                 ],
               ),
@@ -887,11 +872,10 @@ class _Avatar extends StatelessWidget {
       fallback: Text(
         initial,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: colorScheme.onPrimaryContainer,
-              fontWeight: FontWeight.w600,
-            ),
+          color: colorScheme.onPrimaryContainer,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
 }
-

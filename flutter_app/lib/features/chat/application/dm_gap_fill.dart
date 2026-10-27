@@ -47,6 +47,11 @@ class DmGapFill {
     if (since == 0) {
       // Cold start: bounded lookback, not "everything ever".
       since = now.millisecondsSinceEpoch ~/ 1000 - _coldLookbackSecs;
+    } else {
+      // NIP-17 gift wraps are backdated up to 2 days — a naive `newestSeen`
+      // cursor misses wraps whose randomized `created_at` falls below it.
+      // Subtract the full backdate window to catch them (deduped in DmStore).
+      since -= 2 * 24 * 3600;
     }
 
     try {

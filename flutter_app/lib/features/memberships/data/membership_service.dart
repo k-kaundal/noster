@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart';
 import 'package:nostrfeed_mobile/core/nostr/usecases/zap_receipts.dart';
@@ -15,26 +17,61 @@ class MembershipService {
   const MembershipService(this.nostr);
 
   /// Every tier a creator offers (kind 37001, newest revision per slug).
+  ///
+  /// STORE-FIRST: tier definitions in the store paint instantly; the relay
+  /// fetch backfills behind (ingested for next time).
   Future<List<Tier>> fetchTiers(String creator) async {
-    final events = await nostr.relayPool.query(
-      [
-        NostrFilter(kinds: [tierKind], authors: [creator], limit: 50),
-      ],
-      timeout: const Duration(seconds: 8),
+    final filter = NostrFilter(
+      kinds: [tierKind],
+      authors: [creator],
+      limit: 50,
     );
+    final stored = await EventStore.instance.queryByFilters([filter]);
+    if (stored.isNotEmpty) {
+      unawaited(() async {
+        try {
+          final fresh = await nostr.relayPool.query([
+            filter,
+          ], timeout: const Duration(seconds: 8));
+          if (fresh.isNotEmpty) await EventStore.instance.ingest(fresh);
+        } catch (_) {}
+      }());
+      return rankTiers(stored);
+    }
+    final events = await nostr.relayPool.query([
+      filter,
+    ], timeout: const Duration(seconds: 8));
+    if (events.isNotEmpty) unawaited(EventStore.instance.ingest(events));
     return rankTiers(events);
   }
 
-  /// Receipts naming a tier, deduplicated on the receipt id. A subscriber's
-  /// client chooses the relays, so no single relay holds them all — the pool
-  /// asks every connected one.
+  /// Receipts naming a tier, deduplicated on the receipt id.
+  ///
+  /// STORE-FIRST: receipts in the store tally instantly; relay backfills.
   Future<List<NostrEvent>> fetchTierReceipts(Tier tier) async {
-    final receipts = await nostr.relayPool.query(
-      [
-        NostrFilter(kinds: [zapReceiptKind], aTags: [tierAddress(tier)], limit: 200),
-      ],
-      timeout: const Duration(seconds: 8),
+    final filter = NostrFilter(
+      kinds: [zapReceiptKind],
+      aTags: [tierAddress(tier)],
+      limit: 200,
     );
+    final stored = await EventStore.instance.queryByFilters([filter]);
+    List<NostrEvent> receipts;
+    if (stored.isNotEmpty) {
+      unawaited(() async {
+        try {
+          final fresh = await nostr.relayPool.query([
+            filter,
+          ], timeout: const Duration(seconds: 8));
+          if (fresh.isNotEmpty) await EventStore.instance.ingest(fresh);
+        } catch (_) {}
+      }());
+      receipts = stored;
+    } else {
+      receipts = await nostr.relayPool.query([
+        filter,
+      ], timeout: const Duration(seconds: 8));
+      if (receipts.isNotEmpty) unawaited(EventStore.instance.ingest(receipts));
+    }
 
     final seen = <String>{};
     return receipts.where((r) => seen.add(r.id)).toList();

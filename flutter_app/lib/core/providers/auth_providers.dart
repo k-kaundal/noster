@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/nostr_service_providers.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
@@ -58,7 +61,10 @@ class AuthNotifier extends Notifier<AuthState> {
     await _nostr.authService.saveStoredProfile(relayProfile);
     // Keep the account switcher's cached name/avatar fresh too.
     if (state.pubkey != null) {
-      await _nostr.authService.updateAccountProfile(state.pubkey!, relayProfile);
+      await _nostr.authService.updateAccountProfile(
+        state.pubkey!,
+        relayProfile,
+      );
     }
   }
 
@@ -171,23 +177,16 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> toggleFollow(String targetPubkey) async {
     if (!state.isLoggedIn || state.privateKey == null) return;
-    final currentFollows = await _nostr.fetchFollows(state.pubkey!);
-    final isFollowing = currentFollows.contains(targetPubkey);
-    final newFollows = isFollowing
-        ? currentFollows.where((pk) => pk != targetPubkey).toList()
-        : [...currentFollows, targetPubkey];
-    final event = _nostr.updateFollows(newFollows);
-    _nostr.publish(event);
-
-    // Invalidate follow-dependent providers so counts/lists update everywhere.
-    ref.invalidate(followsProvider);
-    ref.invalidate(followersProvider);
+    // The optimistic FollowsNotifier flips state instantly + publishes
+    // behind (the UI never waits on the kind-3 relay round-trip).
+    await ref.read(followsProvider.notifier).toggleFollow(targetPubkey);
   }
 }
 
 /// All saved accounts (multi-account switcher data), freshest first.
-final savedAccountsProvider =
-    FutureProvider.autoDispose<List<SavedAccount>>((ref) async {
+final savedAccountsProvider = FutureProvider.autoDispose<List<SavedAccount>>((
+  ref,
+) async {
   // Re-fetch when auth changes (a login/logout/switch changes the set).
   ref.watch(authStateProvider);
   return ref.read(nostrServiceProvider).authService.savedAccounts();
@@ -208,13 +207,74 @@ final profileProvider = FutureProvider.family<NostrProfile?, String>((
   return nostr.fetchProfile(pubkey);
 });
 
-/// User follows
-final followsProvider = FutureProvider.autoDispose<List<String>>((ref) async {
-  final nostr = await initNostr(ref);
-  final auth = ref.watch(authStateProvider);
-  if (!auth.isLoggedIn || auth.pubkey == null) return [];
-  return nostr.fetchFollows(auth.pubkey!);
-});
+/// User follows — keepAlive AsyncNotifier with OPTIMISTIC toggleFollow.
+///
+/// Was `FutureProvider.autoDispose`: every follow/unfollow did
+/// `ref.invalidate(followsProvider)` → the value dropped → every Follow
+/// button in the app flickered to "Follow" and back while the kind-3
+/// re-fetched from relays. Now the button flips INSTANTLY (optimistic
+/// state update), the kind-3 publishes in the background, and a failed
+/// publish rolls the state back.
+///
+/// The service-level `followsCache` is also updated optimistically by
+/// `updateFollows`, so this notifier's initial read is already correct
+/// after an action (no stale flash on the next screen).
+final followsProvider = AsyncNotifierProvider<FollowsNotifier, List<String>>(
+  FollowsNotifier.new,
+);
+
+class FollowsNotifier extends AsyncNotifier<List<String>> {
+  @override
+  Future<List<String>> build() async {
+    final nostr = await initNostr(ref);
+    final auth = ref.watch(authStateProvider);
+    if (!auth.isLoggedIn || auth.pubkey == null) return [];
+    return nostr.fetchFollows(auth.pubkey!);
+  }
+
+  /// Follow or unfollow [targetPubkey]. OPTIMISTIC: the list flips now;
+  /// the kind-3 publishes behind; a failed publish rolls back. Every
+  /// follow-dependent surface (profile button, search button, Following
+  /// feed, For You personalization, follow-count stats) updates in the
+  /// same frame — real-time, as the user asked.
+  Future<void> toggleFollow(String targetPubkey) async {
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.privateKey == null || auth.pubkey == null) {
+      return;
+    }
+    final current = state.valueOrNull ?? [];
+    final isFollowing = current.contains(targetPubkey);
+    final optimistic = isFollowing
+        ? current.where((pk) => pk != targetPubkey).toList()
+        : [...current, targetPubkey];
+
+    // 1. Flip the UI instantly.
+    state = AsyncData(optimistic);
+
+    // 2. Publish the kind-3 behind (updateFollows optimistically writes the
+    // service cache too, so a re-read in the propagation window stays right).
+    try {
+      final nostr = ref.read(nostrServiceProvider);
+      final event = nostr.updateFollows(optimistic);
+      await nostr.relayPool.publishWithAck(event);
+      // Refresh followers counts for both parties (cheap, behind).
+      ref.invalidate(followersProvider);
+    } catch (_) {
+      // 3. Publish failed — roll the optimistic flip back so the button
+      // doesn't lie about a follow that never landed.
+      state = AsyncData(current);
+      rethrow;
+    }
+  }
+
+  /// Silent refresh (pull-to-refresh / reconnect): relay truth merges.
+  Future<void> refresh() async {
+    final nostr = await initNostr(ref);
+    final auth = ref.read(authStateProvider);
+    if (!auth.isLoggedIn || auth.pubkey == null) return;
+    state = AsyncData(await nostr.fetchFollows(auth.pubkey!));
+  }
+}
 
 /// Followers count
 final followersProvider = FutureProvider.family.autoDispose<int, String>((
@@ -237,21 +297,51 @@ final followersProvider = FutureProvider.family.autoDispose<int, String>((
 /// Fetches the full displayable set (notes, picture/video posts, articles)
 /// — picture-first accounts post kind 20/21/22, and a kind-1-only fetch is
 /// why those profiles looked EMPTY. The tabs filter per kind from this set.
+///
+/// STORE-FIRST: paint the SQLite store instantly (offline + no skeleton),
+/// then the relay fetch merges behind it. Same offline-first pattern as
+/// the feed + notifications.
 final userPostsProvider = FutureProvider.family<List<NostrEvent>, String>((
   ref,
   pubkey,
 ) async {
-  final nostr = await initNostr(ref);
-  return nostr.relayPool.query([
+  // 1. Instant store paint (offline + no skeleton).
+  final stored = await EventStore.instance.queryByFilters([
     NostrFilter(
       kinds: const [1, 6, 16, 20, 21, 22, 30023],
       authors: [pubkey],
       limit: 50,
     ),
-  ], timeout: const Duration(seconds: 8)).then(
-    (events) =>
-        events..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
-  );
+  ]);
+  if (stored.isNotEmpty) {
+    stored.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  // 2. Relay backfill (network truth).
+  try {
+    final nostr = await initNostr(ref);
+    final fresh = await nostr.relayPool.query([
+      NostrFilter(
+        kinds: const [1, 6, 16, 20, 21, 22, 30023],
+        authors: [pubkey],
+        limit: 50,
+      ),
+    ], timeout: const Duration(seconds: 8));
+    if (fresh.isNotEmpty) {
+      unawaited(EventStore.instance.ingest(fresh));
+      // Merge stored + fresh (dedup by id, newest-first).
+      if (stored.isNotEmpty) {
+        final seen = stored.map((e) => e.id).toSet();
+        return [...stored, ...fresh.where((e) => !seen.contains(e.id))]
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      }
+      fresh.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return fresh;
+    }
+  } catch (_) {
+    // Offline / dead relays — the stored paint (if any) stands.
+  }
+  return stored;
 });
 
 /// The Following feed lives on `followingFeedNotifierProvider` (SQLite-

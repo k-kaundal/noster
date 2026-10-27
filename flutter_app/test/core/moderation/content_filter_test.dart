@@ -71,6 +71,58 @@ void main() {
     });
   });
 
+  group('media posts (reels/pictures)', () {
+    // A reel's content IS a URL (the video) — the link-dump ratio must not
+    // judge it, or every reel hides (the "all reels hidden by content
+    // filter" bug).
+    test('video + poster URLs do NOT hide a media post', () {
+      // The reel-content case: 2 links covering ~98% of the post — this IS
+      // the one the link-dump ratio catches without the media flag.
+      final e = event(
+        content:
+            'https://cdn.example/v/abc.mp4 https://cdn.example/v/abc.jpg',
+      );
+      expect(
+        filter.verdictForEvent(e, isMediaPost: true).action,
+        FilterAction.show,
+      );
+      // …but WITHOUT the media flag, that same shape hides as mostly-links.
+      expect(
+        filter.verdictForEvent(e, isMediaPost: false).action,
+        FilterAction.hide,
+      );
+    });
+
+    test('explicit text in a reel caption still hides', () {
+      final e = event(content: 'watch this porn https://cdn.example/x.mp4');
+      expect(
+        filter.verdictForEvent(e, isMediaPost: true).action,
+        FilterAction.hide,
+      );
+    });
+
+    test('hashtag stuffing on a reel still hides', () {
+      final e = event(
+        content: '#a #b #c #d #e #f https://cdn.example/x.mp4',
+        tags: const [],
+      );
+      expect(
+        filter.verdictForEvent(e, isMediaPost: true).action,
+        FilterAction.hide,
+      );
+    });
+
+    test('a reel caption with a few hashtags shows', () {
+      final e = event(
+        content: 'gm #bitcoin https://cdn.example/x.mp4',
+      );
+      expect(
+        filter.verdictForEvent(e, isMediaPost: true).action,
+        FilterAction.show,
+      );
+    });
+  });
+
   group('event verdicts', () {
     test('clean post shows', () {
       expect(

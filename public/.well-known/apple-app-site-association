@@ -1,0 +1,18 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appID": "REPLACE_WITH_TEAM_ID.com.nostrfeed.nostrfeed_mobile",
+        "components": [
+          { "/": "/note1*" },
+          { "/": "/nevent1*" },
+          { "/": "/naddr1*" },
+          { "/": "/npub1*" },
+          { "/": "/nprofile1*" },
+          { "/": "/note/*" },
+          { "/": "/npub/*" }
+        ]
+      }
+    ]
+  }
+}

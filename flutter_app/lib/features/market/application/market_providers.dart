@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/market/domain/listing.dart';
@@ -16,16 +19,16 @@ final listingsProvider = FutureProvider.autoDispose<List<Listing>>((ref) async {
     final existing = byD[d];
     if (existing == null || e.createdAt > existing.createdAt) byD[d] = e;
   }
-  final listings = byD.values
-      .map(Listing.fromEvent)
-      .where((l) => l.isActive)
-      .toList()
-    ..sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
+  final listings =
+      byD.values.map(Listing.fromEvent).where((l) => l.isActive).toList()
+        ..sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
   return listings;
 });
 
 /// Listings by the current user ("My listings").
-final myListingsProvider = FutureProvider.autoDispose<List<Listing>>((ref) async {
+final myListingsProvider = FutureProvider.autoDispose<List<Listing>>((
+  ref,
+) async {
   final auth = ref.watch(authStateProvider);
   if (!auth.isLoggedIn || auth.pubkey == null) return [];
   final all = await ref.watch(listingsProvider.future);
@@ -33,11 +36,34 @@ final myListingsProvider = FutureProvider.autoDispose<List<Listing>>((ref) async
 });
 
 /// P2P trade orders (NIP-69 kind 38383), pending first.
-final p2pOrdersProvider =
-    FutureProvider.autoDispose<List<NostrEvent>>((ref) async {
+///
+/// STORE-FIRST: orders in the store paint instantly; the relay fetch
+/// backfills behind (ingested for next time). keepAlive-ish via a manual
+/// TTL is unnecessary here — orders go stale fast, so the provider stays
+/// autoDispose but never blocks first paint on the relay.
+final p2pOrdersProvider = FutureProvider.autoDispose<List<NostrEvent>>((
+  ref,
+) async {
   final nostr = ref.read(nostrServiceProvider);
   if (!nostr.isInitialized) await nostr.init();
-  return nostr.fetchP2POrders(limit: 100);
+
+  final filter = NostrFilter(kinds: [38383], limit: 100);
+  final stored = await EventStore.instance.queryByFilters([filter]);
+  if (stored.isNotEmpty) {
+    // Refresh behind: relay merge lands on the next rebuild.
+    unawaited(() async {
+      try {
+        final fresh = await nostr.fetchP2POrders(limit: 100);
+        if (fresh.isNotEmpty) await EventStore.instance.ingest(fresh);
+      } catch (_) {}
+    }());
+    stored.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return stored;
+  }
+
+  final fresh = await nostr.fetchP2POrders(limit: 100);
+  if (fresh.isNotEmpty) unawaited(EventStore.instance.ingest(fresh));
+  return fresh;
 });
 
 /// Controller for listing + order creation.
@@ -62,7 +88,9 @@ class MarketController {
         .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
         .replaceAll(RegExp(r'^-+|-+$'), '');
     final event = nostr.createListing(
-      dTag: dTag.isEmpty ? 'listing-${DateTime.now().millisecondsSinceEpoch}' : dTag,
+      dTag: dTag.isEmpty
+          ? 'listing-${DateTime.now().millisecondsSinceEpoch}'
+          : dTag,
       title: title,
       description: description,
       summary: summary,
@@ -74,6 +102,9 @@ class MarketController {
       hashtags: hashtags,
     );
     await nostr.publishEvent(event);
+    // Optimistic insert so the listing appears instantly (the core
+    // marketProvider paints from the store on next rebuild).
+    _ref.invalidate(marketProvider);
     _ref.invalidate(listingsProvider);
     _ref.invalidate(myListingsProvider);
   }

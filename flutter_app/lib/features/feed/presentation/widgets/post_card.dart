@@ -12,6 +12,7 @@ import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/utils/share_links.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_sheet.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
@@ -30,6 +31,15 @@ import 'package:nostrfeed_mobile/features/zap/application/quick_zap.dart';
 import 'package:nostrfeed_mobile/features/zap/presentation/zap_sheet.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:timeago/timeago.dart' as timeago;
+
+/// Zap receipts for a post, read from the LOCAL store (the engagement batch
+/// already ingested them) — NOT a per-card relay query. Recomputes when the
+/// engagement version bumps, so a fresh zap lands live.
+final _localZapReceiptsProvider = FutureProvider.family
+    .autoDispose<List<NostrEvent>, String>((ref, targetId) async {
+      ref.watch(engagementVersionProvider);
+      return EventStore.instance.receiptsFor(targetId);
+    });
 
 /// Resolve the event a kind-6/16 repost points to when the repost's own
 /// content is EMPTY (NIP-18 allows empty repost content — the target lives
@@ -239,13 +249,15 @@ class _PostCardState extends ConsumerState<PostCard> {
         _optimisticReposted ??
         (interactions?.reposts[displayEvent.id] ?? false);
 
-    // Zap count comes from the local index too (9735 receipts were ingested
-    // with the rest of the engagement batch). The sats total still needs the
-    // receipts themselves — that stays a relay fetch, but only when the zap
-    // button shows amounts.
+    // Zap count comes from the local index (9735 receipts were ingested with
+    // the engagement batch). The sats TOTAL: read the ingested receipts from
+    // the store instead of a per-card relay query (the old zapReceiptsProvider
+    // fired one relay fetch per zapped post — the store-first rule bans
+    // per-card relay reads; sats only refresh on the next engagement sync,
+    // which is the honest cadence).
     final zapCount = counts.zaps;
     final zapReceiptsAsync = zapCount > 0
-        ? ref.watch(zapReceiptsProvider(displayEvent.id))
+        ? ref.watch(_localZapReceiptsProvider(displayEvent.id))
         : null;
     final zapReceipts = zapReceiptsAsync?.valueOrNull ?? [];
     final zapSats = zapReceipts.fold<int>(
@@ -320,7 +332,8 @@ class _PostCardState extends ConsumerState<PostCard> {
                       Expanded(
                         child: Text(
                           '$reposterName reposted',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -837,13 +850,18 @@ class _PostCardState extends ConsumerState<PostCard> {
   ) {
     final nostr = ref.read(nostrServiceProvider);
     final note1 = nostr.authService.encodeNote(displayEvent.id);
+    // Universal https:// link — opens the app to this thread when installed
+    // (Android App Link / iOS Universal Link), a web preview otherwise
+    // (`/api/preview`). The old `nostr:note1…` text was a dead string in
+    // WhatsApp/Telegram/browsers.
+    final url = ShareLinks.forNote(note1);
     // sharePositionOrigin is required on iOS to anchor the share sheet
     final box = context.findRenderObject() as RenderBox?;
     final origin = box != null
         ? box.localToGlobal(Offset.zero) & box.size
         : const Rect.fromLTWH(0, 0, 100, 100);
     SharePlus.instance.share(
-      ShareParams(text: 'nostr:$note1', sharePositionOrigin: origin),
+      ShareParams(text: url, sharePositionOrigin: origin),
     );
   }
 
@@ -861,8 +879,9 @@ class _PostCardState extends ConsumerState<PostCard> {
     required bool isBookmarked,
   }) {
     final nostr = ref.read(nostrServiceProvider);
-    final isBlocked =
-        ref.read(blockedAuthorsProvider).contains(displayEvent.pubkey);
+    final isBlocked = ref
+        .read(blockedAuthorsProvider)
+        .contains(displayEvent.pubkey);
 
     AppSheet.show<void>(
       context,
@@ -914,7 +933,9 @@ class _PostCardState extends ConsumerState<PostCard> {
               onTap: () {
                 Navigator.pop(context);
                 final note1 = nostr.authService.encodeNote(displayEvent.id);
-                Clipboard.setData(ClipboardData(text: 'nostr:$note1'));
+                Clipboard.setData(
+                  ClipboardData(text: ShareLinks.forNote(note1)),
+                );
                 AppToast.success(context, 'Link copied');
               },
             ),
@@ -1097,7 +1118,10 @@ class _PostOptionsMenu extends ConsumerWidget {
           value: 'report',
           child: Row(
             children: [
-              AppIcon('target', size: 18, color: Theme.of(context).colorScheme.error,
+              AppIcon(
+                'target',
+                size: 18,
+                color: Theme.of(context).colorScheme.error,
               ),
               const SizedBox(width: 10),
               Text(
@@ -1237,24 +1261,22 @@ class _FollowButton extends ConsumerWidget {
       return;
     }
 
-    final nostr = ref.read(nostrServiceProvider);
-    final follows = ref.read(followsProvider).valueOrNull ?? [];
-
-    final updated = isFollowing
-        ? follows.where((pk) => pk != pubkey).toList()
-        : [...follows, pubkey];
-
-    final event = nostr.updateFollows(updated);
-    nostr.publish(event);
-    ref.invalidate(followsProvider);
-
-    // Confirmation — a follow/unfollow that only flips a label is easy to
-    // miss; the toast carries the result (Primal toasts too).
-    if (context.mounted) {
-      AppToast.success(
-        context,
-        isFollowing ? 'Unfollowed' : 'Following — their posts join your feed',
-      );
+    // Optimistic toggle — the button flips INSTANTLY, the kind-3 publishes
+    // behind, a failure rolls the flip back.
+    try {
+      await ref.read(followsProvider.notifier).toggleFollow(pubkey);
+      // Confirmation — a follow/unfollow that only flips a label is easy to
+      // miss; the toast carries the result (Primal toasts too).
+      if (context.mounted) {
+        AppToast.success(
+          context,
+          isFollowing ? 'Unfollowed' : 'Following — their posts join your feed',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        AppToast.error(context, 'Failed to update follow: $e');
+      }
     }
   }
 }
@@ -1309,7 +1331,8 @@ class _ActionButton extends StatelessWidget {
     // "Like, liked, 12 likes" instead of "button".
     final countText = label ?? (count > 0 ? _formatCount(count) : null);
     final fullLabel = StringBuffer(semanticLabel);
-    if (isActive != null) fullLabel.write(isActive! ? ', active' : ', not active');
+    if (isActive != null)
+      fullLabel.write(isActive! ? ', active' : ', not active');
     if (countText != null) fullLabel.write(', $countText');
 
     // FEED-PERF RULE: no per-card AnimationController — 6 of these buttons
@@ -1358,9 +1381,9 @@ class _ActionButton extends StatelessWidget {
                 Text(
                   label ?? _formatCount(count),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: effectiveColor,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    color: effectiveColor,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ],
@@ -1452,8 +1475,7 @@ class _SwipeHint extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!isLeft)
-            Text(label, style: _style(context, effective)),
+          if (!isLeft) Text(label, style: _style(context, effective)),
           if (!isLeft) const SizedBox(width: 8),
           AppIcon(icon, size: AppIconSize.lg, color: effective),
           if (isLeft) const SizedBox(width: 8),
@@ -1464,10 +1486,8 @@ class _SwipeHint extends StatelessWidget {
   }
 
   TextStyle? _style(BuildContext context, Color color) =>
-      Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: color,
-            fontWeight: FontWeight.w600,
-          );
+      Theme.of(context).textTheme.labelLarge
+          ?.copyWith(color: color, fontWeight: FontWeight.w600);
 }
 
 // ─── Quick-action sheet row ──────────────────────────────────────────

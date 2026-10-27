@@ -31,8 +31,15 @@ class _PersistentSub {
 
   /// Filters to send on (re)issue: original, but with `since` advanced to
   /// the newest event we've already received (when the filter has a since).
+  ///
+  /// NIP-17 gift wraps carry a randomized `created_at` up to 2 days in the
+  /// past for privacy. Sliding `since` to `newestSeen` (wall-clock now)
+  /// filters genuinely NEW wraps out of the resubscribe — live DMs die
+  /// after the first socket reconnect. For kind-1059 filters, cap the slide
+  /// at `now - 2 days` so the full backdate window is always covered.
   List<NostrFilter> effectiveFilters() {
     if (newestSeen == 0) return filters;
+    final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     return [
       for (final f in filters)
         if (f.since != null && newestSeen > f.since!)
@@ -41,7 +48,13 @@ class _PersistentSub {
             authors: f.authors,
             kinds: f.kinds,
             tagFilters: f.tagFilters,
-            since: newestSeen,
+            // Cap the slide for NIP-17 wraps: never filter beyond the
+            // 2-day backdate window, or new wraps vanish on reconnect.
+            since: (f.kinds?.contains(1059) ?? false)
+                ? (newestSeen > nowSec - 2 * 24 * 3600
+                    ? nowSec - 2 * 24 * 3600
+                    : newestSeen)
+                : newestSeen,
             until: f.until,
             limit: f.limit,
             search: f.search,
@@ -68,6 +81,13 @@ class RelayConnection {
 
   /// NIP-42 auth challenge
   String? _authChallenge;
+
+  /// REQs queued while the relay's NIP-42 AUTH handshake is in flight.
+  /// Flushed by [_respondToAuth] once the relay accepts our auth event —
+  /// a REQ sent before AUTH completes gets dropped by auth-required relays
+  /// (strfry `restrictReadToInvolvedPubkey`), which surfaced as "DMs never
+  /// load on our hub while the same account works on Damus/Primal".
+  final List<(String, List<NostrFilter>)> _pendingReqsAfterAuth = [];
 
   /// Pending publish confirmations: eventId → completer for the relay's OK.
   final Map<String, Completer<bool>> _publishAcks = {};
@@ -101,7 +121,12 @@ class RelayConnection {
   void Function(int ms)? onEose;
   void Function()? onEventDelivered;
 
-  bool get isConnected => state == RelayState.connected;
+  /// True when the socket is usable — `connected` OR mid-AUTH-handshake
+  /// (`authRequired`). Treating `authRequired` as usable lets DM queries
+  /// queue their REQs (flushed when AUTH completes) instead of being
+  /// skipped as "offline" — the "hub returns empty DM history" bug.
+  bool get isConnected =>
+      state == RelayState.connected || state == RelayState.authRequired;
 
   Future<void> connect() async {
     if (state == RelayState.connected) return;
@@ -263,6 +288,19 @@ class RelayConnection {
       final authEvent = await onAuthChallenge!(_authChallenge!);
       _channel?.sink.add(jsonEncode(['AUTH', authEvent.toJson()]));
       _setState(RelayState.connected);
+      // Flush REQs queued during the AUTH handshake — the relay now knows
+      // our pubkey, so `restrictReadToInvolvedPubkey` lets our DM reads
+      // through (kind 4/1059).
+      final queued = List.of(_pendingReqsAfterAuth);
+      _pendingReqsAfterAuth.clear();
+      for (final (id, filters) in queued) {
+        try {
+          final msg = jsonEncode(['REQ', id, ...filters.map((f) => f.toJson())]);
+          _channel?.sink.add(msg);
+        } catch (_) {}
+      }
+      // Re-issue persistent subs too (they were silenced pre-auth as well).
+      _resubscribeAll();
     } catch (_) {}
   }
 
@@ -298,6 +336,14 @@ class RelayConnection {
       eoseCompleter.future.then((_) {
         onEose?.call(DateTime.now().millisecondsSinceEpoch - issuedAt);
       }).catchError((_) {});
+    } else if (state == RelayState.authRequired) {
+      // NIP-42 auth in flight — queue the REQ to fire once auth completes.
+      // Without this, DM queries against auth-required relays (our hub
+      // restricts kind 4/1059 reads to involved pubkeys) return empty
+      // because the REQ raced the AUTH handshake.
+      _pendingReqsAfterAuth.add((id, filters));
+      // The EOSE completer resolves when the queued REQ's EOSE arrives
+      // (the sub is already registered in _subs/_eoseCompleters above).
     } else {
       // Not connected — complete EOSE immediately so queries don't hang
       if (!eoseCompleter.isCompleted) eoseCompleter.complete();
@@ -354,6 +400,15 @@ class RelayConnection {
     NostrEvent event, {
     Duration timeout = const Duration(seconds: 10),
   }) async {
+    // authRequired counts as usable (isConnected) but publishes must wait
+    // for the AUTH handshake — a kind-1059 gift wrap sent before AUTH
+    // completes gets dropped by `restrictReadToInvolvedPubkey` relays.
+    if (state == RelayState.authRequired) {
+      // Wait for auth to complete (bounded — the handshake is fast).
+      for (var i = 0; i < 30 && state == RelayState.authRequired; i++) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+    }
     if (state != RelayState.connected) return false;
     final completer = Completer<bool>();
     _publishAcks[event.id] = completer;

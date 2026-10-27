@@ -7,8 +7,10 @@ import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
+
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/market/application/market_providers.dart';
 import 'package:nostrfeed_mobile/features/p2p/domain/p2p_order.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -55,7 +57,7 @@ class _P2PScreenState extends ConsumerState<P2PScreen>
         ],
       ),
       body: ordersAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const SkeletonList(itemCount: 4),
         error: (err, _) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,

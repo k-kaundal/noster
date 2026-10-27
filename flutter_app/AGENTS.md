@@ -127,6 +127,19 @@ over ~100 lines.
 - **Post interactions** (like/repost/bookmark/zap refresh): go through
   `postActionsProvider` (`features/feed/providers/post_actions.dart`) — never
   inside widgets.
+- **Every user action that changes a count/list MUST ingest into the store**:
+  publishing to relays alone does nothing for the local SQL projections — the
+  like/repost count didn't move until a relay round trip (the 2026-10 "like
+  it, count stays" bug). `post_actions.toggleLike/toggleRepost` ingests the
+  reaction AND the kind-5 deletion (the store lifecycle removes it from
+  `event_refs`); `compose_screen` optimistically inserts new posts; replies
+  already insert (the model). Counts recount instantly via the invalidation
+  bus. Audit: `docs/AUDIT-pages-flows-features-2026-10-26.md`.
+- **Every scrollable list of relay data MUST have pull-to-refresh** —
+  including the empty + error states (a failed fetch must be retryable by
+  gesture). Covered: feed/explore/trending/notifications/chat/articles/
+  bookmarks/lists/communities/calendar/groups/live/reels/profile-tabs/
+  memberships. Search re-queries per term (no gesture needed).
 - **Swipe actions + long-press quick sheet (Threads/X muscle memory)**: a
   feed card swipes **right → bookmark, left → share** (`Dismissible` with
   `confirmDismiss` returning false — the card springs back, only the action
@@ -751,6 +764,42 @@ over ~100 lines.
   call" button launches the `bala://` URI; it only joins when the owning
   app is installed, otherwise it tells the user and copies the offer
   (never a silent no-op). Don't fake native call support.
+- **Three feed tabs — For You / Following / Global** (`FeedMode` enum in
+  `feed_notifier.dart`, `FeedScreen` TabController length 3):
+  - **For You** (`forYouFeedProvider`, FIRST tab = the default home) —
+    personalized: the global candidate pool (3× page size) ranked by
+    `trendingScore × personalizationBoost`, blended ~40% followed authors /
+    ~60% discovery, per-author cap 3. Ranking uses the LOCAL engagement
+    index (`engagementFor` — now with `COUNT(DISTINCT pubkey)` unique
+    engagers), never a relay round-trip per candidate; the engagement
+    batch refreshes behind via `_warmPage` as usual. Logged-out / empty
+    profile → honest fallback to the global feed (nothing to personalize
+    with). The store paint is ranked too (cold start is personalized), and
+    the pill's pending posts are re-ranked with the boost before merging.
+  - **Following** — unchanged (only followed authors; the empty-store-read
+    leak + stuck-refresh skeleton bugs are fixed).
+  - **Global** — the unfiltered firehose (the old "For You").
+  **Personalization signals** (`features/feed/application/
+  personalization_service.dart`, ALL derived WITHOUT any location
+  permission): country via the chain `relay.nostrfeed.com/api/geo` (our
+  endpoint — the relay sees the client IP anyway; country-only, 24h disk
+  cache) → device locale region (`en_IN` → IN); languages from the device
+  locales; interests mined ON-DEVICE from the store (the user's own kind
+  1/6/7/16 events → hashtags + authors of the posts they actually engage
+  with, targets weigh 2×). Boost factors: followed author ×2.6, engaged
+  author ×1.8, interest hashtag ×1.7, country hashtag ×1.35, language
+  script match ×1.5, unreadable non-Latin script ×0.45 (rank DOWN, never
+  hide — the Global tab still carries those posts). Script detection
+  (`core/utils/language_detect.dart`) is Unicode-script based (pure,
+  testable): Devanagari/Arabic/Cyrillic/CJK/kana/Hangul/Thai/Indic scripts
+  detected; Latin is the lingua-franca family. `personalizationBoost`
+  multiplies onto the ANTI-MANIPULATION trending score — personalization
+  re-orders genuine content, it never inflates bot clusters.
+  **Never use third-party client-side geo APIs** (ip_country_lookup & co):
+  they leak user IPs to unknown services (our model promises "client IP
+  only ever seen by our relay"), pull dio, and violate the ApiHttpClient
+  rule. The relay geo endpoint is the primary leg by design. Tests:
+  `language_detect_test.dart`, `personalization_boost_test.dart`.
 - **Feed window cap is DIRECTION-AWARE** (`FeedNotifier._capWindow`): the
   400-event in-memory cap drops from the correct end per operation —
   **refresh + the "N new posts" pill keep the NEWEST** (`anchoredAtTop:
@@ -981,6 +1030,27 @@ over ~100 lines.
   high surrogate (the avatar-initial crash). Use `firstGrapheme(name)` from
   `text_sanitize.dart` (takes the full surrogate pair) — every avatar
   fallback uses it.
+- **AI — Chat vs Agent modes + feed entry bar + thread summarization**:
+  the AI screen has a **Chat / Agent segmented toggle**. Chat = normal
+  assistant; **Agent = a bounded tool-calling loop** (OpenRouter function
+  calling, max 4 rounds) with READ-ONLY Nostr tools
+  (`ai_agent_tools.dart`: `search_relay`, `fetch_thread`, `fetch_profile`,
+  `fetch_hashtag_feed`) — Grok-on-X style: the model searches/reads/summarizes
+  real relay data, never guesses. Steps stream LIVE into a panel
+  (`liveAgentSteps`, "Searching X… ✓") and the answer keeps an expandable
+  `_AgentStepsTrail`. The model NEVER sees a private key; write tools (when
+  added) go through human-in-the-loop confirmation only (see
+  `docs/DEEP-LINKS-AND-AI-AGENT-2026-10-26.md`). `AiFeedBar`
+  (`features/feed/presentation/widgets/ai_feed_bar.dart`) is a NATIVE search-
+  bar input pinned at row 0 of the For You tab ONLY (never mid-feed, never in
+  Following — a feature entry point like WhatsApp's Meta AI bar, NOT a promo
+  card; the old ad-style `_AiPromoCard` stays banned). Its suggestion chips
+  prefill the AI composer (`/ai` with `extra: {'prompt': …}` →
+  `AiChatScreen(initialPrompt:)`). The thread screen has a ✨ AppBar
+  "Summarize thread" action (gated on `aiAvailableProvider`) — the prompt
+  carries `nostr:note1<root>` so `AiContextService._fetchThread` pulls the
+  whole conversation (root + replies) from the user's relays and the digest
+  is real, not hallucinated.
 - **Support page** (`features/settings/presentation/support_screen.dart`):
   donation addresses (BTC bech32 + Taproot, Solana, EVM — build-time
   constants, NEVER relay-read: a relay could redirect them) with QR codes
@@ -1231,9 +1301,11 @@ over ~100 lines.
   a guarded infinite-scroll trigger (`maxScrollExtent > 0`, clamped pixels).
   (3) the manifest sets `android:largeHeap="true"` (feed bitmaps up to
   ~1200 px; the default 192-256 MB heap GC-thrashed the image cache
-  mid-scroll — iOS has no such cap) and `EnableImpeller=false` (Impeller
-  scroll-janks on many Android GPUs — flutter/flutter#168788; flip/remove
-  to A/B on newer engines). Feed tiles decode at `memCacheWidth: 1200`
+  mid-scroll — iOS has no such cap) and **`EnableImpeller=true`** (Impeller
+  on Vulkan is the default + mature on Flutter 3.47 — shaders pre-compile
+  ahead-of-time, so the old first-scroll jank is gone; the previous
+  `EnableImpeller=false` Skia pin was a leftover from a 2024 engine and
+  forced the slower legacy renderer). Feed tiles decode at `memCacheWidth: 1200`
   (NOT `1200 * dpr` — 3600 px decodes exceeded the whole 48 MB image cache
   on one portrait photo → eviction thrash → re-decode mid-scroll, the
   Android jank iOS masked with its bigger heap). The image cache is 96 MB
@@ -1534,6 +1606,21 @@ notifications roadmap: `docs/ADR-0006-push-notifications.md`.
   `EventStore.instance.messages/.notifications/.relays/.media/.publishOutbox/
   .profiles/.maintenance` expose the domain stores directly. New feature
   storage goes in a NEW store under `stores/` (never re-grow event_store.dart).
+- **UI loading + cold-start paint (offline-first)**: every data screen paints
+  from the STORE instantly (never a skeleton while a relay fetch runs) and
+  merges the network result behind it — the same pattern as the feed.
+  `conversationListProvider` and `dmThreadProvider` (chat) and
+  `notificationsProvider` are **StreamProviders that yield TWICE**: (1) the
+  durable store rows (decrypted DM plaintext / notification history already
+  on disk), then (2) the merged relay result. Loading states use the shared
+  skeleton kit (`core/widgets/skeleton.dart`: `SkeletonList`/`SkeletonBox`/
+  `SkeletonLine`/`SkeletonCircle`/`SkeletonTheme`) — NEVER a bare
+  `CircularProgressIndicator` on a data screen (the chat list + thread still
+  show skeleton only on a genuinely empty first-ever load). Images decode at
+  display size: EVERY `CachedNetworkImage` sets `memCacheWidth` (feed tiles
+  1200, card covers/thumbnails 800) + `httpHeaders: kImageHttpHeaders` — a
+  raw `Image.network` is banned (no cache, no headers, no decode cap; it 403s
+  on Android and decodes full-res).
 - **Store v4** (`core/db/event_store.dart`, ADR-0008 P0): schema v2 added
   `thread_edges` (parent→reply rows at ingest — `threadReplies(rootId)`)
   and `seen_on` (relay provenance, buffered via `markSeenOn`). v3 added
@@ -1612,12 +1699,39 @@ notifications roadmap: `docs/ADR-0006-push-notifications.md`.
     CLOSED exactly as before. Tests: `relay_frame_processor_test.dart`
     (parse/verify/fail-closed/flood/order/reset/backpressure watermarks),
     `verify_dedup_test.dart` (the LRU contract).
-- **Browse screens = keepAlive + TTL AsyncNotifiers**: trending/hashtags/
-  notifications/communities/articles/bookmarks/lists/calendar/market/live/
-  videos/hashtagFeed/dms keep their state; the TTL gates natural rebuilds
-  and `ref.invalidate` still forces a refetch. Empty results are NOT
-  TTL-cached (an empty fetch must be retryable). autoDispose stays only on
-  per-card family providers.
+- **Browse screens = keepAlive + TTL AsyncNotifiers + STORE-FIRST paint**:
+  trending/hashtags/notifications/communities/articles/bookmarks/lists/
+  calendar/market/live/videos/hashtagFeed/dms keep their state; the TTL
+  gates natural rebuilds and `ref.invalidate` still forces a refetch.
+  Empty results are NOT TTL-cached (an empty fetch must be retryable).
+  autoDispose stays only on per-card family providers.
+  **Store-first paint (2026-10-27)**: every browse Notifier now reads the
+  SQLite store BEFORE awaiting the relay — `queryByFilters` with the
+  screen's kind(s) paints instantly on re-entry (and offline), the relay
+  fetch merges behind via `_refreshBehind()` (fire-and-forget, updates
+  state when it lands). Feature screens that used to define their own
+  autoDispose relay-first providers now delegate to the core providers:
+  Market/Live/Calendar/Lists screens use `marketProvider`/`liveStreamsProvider`/
+  `calendarProvider`/`listsProvider` (parsing to domain models at the screen).
+  Groups has its own `GroupsNotifier` (same pattern). Search is local-first:
+  FTS5 profile search + local content LIKE + local tag query paint before
+  the relay NIP-50 search merges. Community detail feed is store-first with
+  parallel relay queries (was 2 sequential). Reels engagement reads
+  `localEngagementProvider` (SQL) instead of `engagementProvider` (relay),
+  and reel likes go through `postActionsProvider` (store-ingesting) instead
+  of raw publish. `myGroupsProvider` batches member checks (was N sequential
+  relay calls). `joinedCommunityCoordsProvider` is keepAlive + store-first.
+  **Second pass (2026-10-27b)**: profile tabs (joined/created communities)
+  store-first + parallel coordinate resolution (was 1+N sequential relay
+  queries); Studio earnings + zap goals + membership tiers/receipts read the
+  store first with relay backfill (the dashboard no longer awaits 10s relay
+  legs); P2P orders store-first; Bounties delegate to the core
+  `marketProvider` (same kind-30402 dataset, filtered); article comments +
+  addressable engagement store-first (local tally instantly); group chat
+  persists messages to the store (store-first paint on room re-open +
+  optimistic send persisted + live sub ingests); profile-tab loading states
+  use `SkeletonList` (never a bare spinner on a data surface); explore
+  hashtag row uses skeleton chips.
 - **Background catch-up — closed-app notifications (Insta/FB tier)**:
   `BackgroundSyncService.syncNow()` runs every **15 min** (the OS-enforced
   periodic minimum) and notifies for BOTH: **DMs** (`dmGapFill`) AND

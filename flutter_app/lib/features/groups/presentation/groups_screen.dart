@@ -46,36 +46,14 @@ class GroupsScreen extends ConsumerWidget {
               ref.invalidate(groupsProvider);
               ref.invalidate(myGroupsProvider);
             },
-            child: ListView(
+            // ListView.builder (was a non-builder ListView with for-loops) —
+            // virtualizes card build/dispose so a long groups feed doesn't
+            // compose every card eagerly.
+            child: ListView.builder(
               padding: const EdgeInsets.all(12),
-              children: [
-                // ── My Groups ──
-                if (myGroups.isNotEmpty) ...[
-                  _SectionHeader(title: 'My Groups (${myGroups.length})'),
-                  for (final g in myGroups)
-                    _GroupCard(group: g, isMember: true),
-                  const SizedBox(height: 16),
-                ],
-
-                // ── Discover ──
-                _SectionHeader(title: myGroups.isEmpty ? 'Groups' : 'Discover'),
-                if (groups.isEmpty)
-                  const EmptyState(
-                    icon: Icons.group_outlined,
-                    title: 'No groups found',
-                    subtitle: 'Relay-hosted groups will appear here.',
-                  )
-                else if (discover.isEmpty && myGroups.isNotEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(
-                      child: Text('You joined all available groups 🎉'),
-                    ),
-                  )
-                else
-                  for (final g in discover)
-                    _GroupCard(group: g, isMember: false),
-              ],
+              itemCount: _groupItems(myGroups, discover, groups).length,
+              itemBuilder: (context, i) =>
+                  _groupItems(myGroups, discover, groups)[i],
             ),
           );
         },
@@ -94,6 +72,40 @@ class GroupsScreen extends ConsumerWidget {
           : null,
     );
   }
+}
+
+/// The flat widget list for the groups feed — computed once so
+/// ListView.builder can virtualize card build/dispose.
+List<Widget> _groupItems(
+  List<GroupInfo> myGroups,
+  List<GroupInfo> discover,
+  List<GroupInfo> groups,
+) {
+  return [
+    if (myGroups.isNotEmpty) ...[
+      _SectionHeader(title: 'My Groups (${myGroups.length})'),
+      for (final g in myGroups)
+        _GroupCard(key: ValueKey(g.groupId), group: g, isMember: true),
+      const SizedBox(height: 16),
+    ],
+    _SectionHeader(title: myGroups.isEmpty ? 'Groups' : 'Discover'),
+    if (groups.isEmpty)
+      const EmptyState(
+        icon: Icons.group_outlined,
+        title: 'No groups found',
+        subtitle: 'Relay-hosted groups will appear here.',
+      )
+    else if (discover.isEmpty && myGroups.isNotEmpty)
+      const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(
+          child: Text('You joined all available groups 🎉'),
+        ),
+      )
+    else
+      for (final g in discover)
+        _GroupCard(key: ValueKey(g.groupId), group: g, isMember: false),
+  ];
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -119,7 +131,7 @@ class _SectionHeader extends StatelessWidget {
 class _GroupCard extends ConsumerWidget {
   final GroupInfo group;
   final bool isMember;
-  const _GroupCard({required this.group, required this.isMember});
+  const _GroupCard({super.key, required this.group, required this.isMember});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 
 /// Shows all posts tagged with a specific hashtag.
@@ -20,7 +22,7 @@ class HashtagScreen extends ConsumerWidget {
         title: Text('#$tag'),
       ),
       body: feedAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const SkeletonList(itemCount: 6),
         error: (err, _) => ErrorView(
           message: 'Failed to load posts',
           onRetry: () => ref.invalidate(hashtagFeedProvider(tag)),

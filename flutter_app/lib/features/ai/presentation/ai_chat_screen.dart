@@ -15,15 +15,20 @@ import 'package:nostrfeed_mobile/features/ai/application/ai_chat_notifier.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_gateway.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_models.dart';
+import 'package:nostrfeed_mobile/features/ai/presentation/widgets/agent_steps_panel.dart';
 import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_generated_media.dart';
-import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_model_picker.dart';
+import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_header.dart';
 import 'package:nostrfeed_mobile/features/ai/presentation/widgets/ai_top_up_sheet.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// The AI assistant chat screen — streaming, markdown answers, per-model
 /// sats pricing (upstream cost × operator margin).
 class AiChatScreen extends ConsumerStatefulWidget {
-  const AiChatScreen({super.key});
+  const AiChatScreen({super.key, this.initialPrompt});
+
+  /// A prompt prefill from an entry point (e.g. the feed's suggestion
+  /// chips) — dropped into the composer so the user just taps send.
+  final String? initialPrompt;
 
   @override
   ConsumerState<AiChatScreen> createState() => _AiChatScreenState();
@@ -33,6 +38,17 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   var _privacyNoticeShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialPrompt != null && widget.initialPrompt!.isNotEmpty) {
+      _inputController.text = widget.initialPrompt!;
+      _inputController.selection = TextSelection.collapsed(
+        offset: widget.initialPrompt!.length,
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -64,12 +80,15 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         notifier.clearError();
       }
     });
-    ref.listen(aiChatNotifierProvider.select((s) => s.failedText),
-        (_, failedText) {
+    ref.listen(aiChatNotifierProvider.select((s) => s.failedText), (
+      _,
+      failedText,
+    ) {
       if (failedText != null && failedText.isNotEmpty) {
         _inputController.text = failedText;
-        _inputController.selection =
-            TextSelection.collapsed(offset: failedText.length);
+        _inputController.selection = TextSelection.collapsed(
+          offset: failedText.length,
+        );
       }
     });
 
@@ -98,92 +117,110 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       body: configAsync.isLoading
           ? const Center(child: CircularProgressIndicator())
           : !available
-              ? const EmptyState(
-                  icon: Icons.smart_toy_outlined,
-                  title: 'AI not configured',
-                  subtitle:
-                      'This build has no AI provider key. Run with --dart-define-from-file=.env',
-                )
-              : Column(
-                  children: [
-                    if (!_privacyNoticeShown && chatState.messages.isEmpty)
-                      const _PrivacyBanner(),
-                    if (selectedModel != null)
-                      _ModelSelectorButton(model: selectedModel),
-                    Expanded(
-                      child: chatState.messages.isEmpty
-                          ? _WelcomeView(
-                              onPrompt: (prompt) {
-                                if (selectedModel != null) {
-                                  notifier.send(prompt, model: selectedModel);
-                                }
-                              },
-                              onFill: (text) {
-                                // Suggestions that need user input (a note
-                                // link) prefill the composer instead of
-                                // sending an instruction as the message.
-                                _inputController.text = text;
-                                _inputController.selection =
-                                    TextSelection.collapsed(
-                                  offset: text.length,
-                                );
-                              },
-                            )
-                          : ListView.builder(
-                              controller: _scrollController,
-                              // WhatsApp-style reversed list: the newest
-                              // message renders at the BOTTOM, short
-                              // conversations bottom-anchor, and the view
-                              // stays glued to the streaming answer when the
-                              // keyboard opens. `messages` is oldest-first,
-                              // so the index maps as len-1-i (offset 0 =
-                              // the newest message).
-                              reverse: true,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              // +1 for the context-clipped note when older
-                              // messages fell out of the request window.
-                              itemCount: chatState.messages.length +
-                                  (chatState.contextDropped > 0 ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                final messages = chatState.messages;
-                                // The context note belongs at the VISUAL top
-                                // = the LAST index of the reversed list.
-                                if (index == messages.length) {
-                                  return _ContextNote(
-                                    dropped: chatState.contextDropped,
-                                  );
-                                }
-                                final i = messages.length - 1 - index;
-                                final message = messages[i];
-                                if (message.role == AiRole.system) {
-                                  return const SizedBox.shrink();
-                                }
-                                return _MessageBubble(
-                                  key: ValueKey(message.id),
-                                  message: message,
-                                  isStreaming: chatState.isStreaming &&
-                                      i == messages.length - 1,
-                                );
-                              },
-                            ),
-                    ),
-                    if (selectedModel != null)
-                      _InputBar(
-                        controller: _inputController,
-                        model: selectedModel,
-                        isStreaming: chatState.isStreaming,
-                        onSend: (text) {
-                          notifier.send(text, model: selectedModel);
-                          _inputController.clear();
-                          _scrollToEnd();
-                        },
-                        onStop: notifier.stopStreaming,
-                      ),
-                  ],
+          ? const EmptyState(
+              icon: Icons.smart_toy_outlined,
+              title: 'AI not configured',
+              subtitle: 'This build has no AI provider key. Run with --dart-define-from-file=.env',
+            )
+          : Column(
+              children: [
+                if (!_privacyNoticeShown && chatState.messages.isEmpty)
+                  const _PrivacyBanner(),
+                // Unified header: the Chat/Agent mode toggle AND the
+                // model picker in ONE card — the "how does the AI
+                // answer" choice reads as a single clear control.
+                if (selectedModel != null)
+                  AiHeader(
+                    mode: chatState.mode,
+                    onModeChanged: notifier.setMode,
+                    model: selectedModel,
+                  ),
+                Expanded(
+                  child: chatState.messages.isEmpty
+                      ? _WelcomeView(
+                          onPrompt: (prompt) {
+                            if (selectedModel != null) {
+                              notifier.send(prompt, model: selectedModel);
+                            }
+                          },
+                          onFill: (text) {
+                            // Suggestions that need user input (a note
+                            // link) prefill the composer instead of
+                            // sending an instruction as the message.
+                            _inputController.text = text;
+                            _inputController.selection =
+                                TextSelection.collapsed(offset: text.length);
+                          },
+                        )
+                      : ListView.builder(
+                          controller: _scrollController,
+                          // WhatsApp-style reversed list: the newest
+                          // message renders at the BOTTOM, short
+                          // conversations bottom-anchor, and the view
+                          // stays glued to the streaming answer when the
+                          // keyboard opens. `messages` is oldest-first,
+                          // so the index maps as len-1-i (offset 0 =
+                          // the newest message).
+                          reverse: true,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          // +1 for the context-clipped note when older
+                          // messages fell out of the request window.
+                          itemCount:
+                              chatState.messages.length +
+                              (chatState.contextDropped > 0 ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            final messages = chatState.messages;
+                            // The context note belongs at the VISUAL top
+                            // = the LAST index of the reversed list.
+                            if (index == messages.length) {
+                              return _ContextNote(
+                                dropped: chatState.contextDropped,
+                              );
+                            }
+                            final i = messages.length - 1 - index;
+                            final message = messages[i];
+                            if (message.role == AiRole.system) {
+                              return const SizedBox.shrink();
+                            }
+                            return _MessageBubble(
+                              key: ValueKey(message.id),
+                              message: message,
+                              isStreaming:
+                                  chatState.isStreaming &&
+                                  i == messages.length - 1,
+                            );
+                          },
+                        ),
                 ),
+                // The live agent-steps panel — the Grok-style "what it's
+                // doing" manager (current step highlighted, done steps
+                // collapsed, pulsing header) as the loop works.
+                if (chatState.isStreaming &&
+                    chatState.liveAgentSteps.isNotEmpty)
+                  AgentStepsPanel(steps: chatState.liveAgentSteps),
+                if (selectedModel != null)
+                  _InputBar(
+                    controller: _inputController,
+                    model: selectedModel,
+                    isStreaming: chatState.isStreaming,
+                    onSend: (text) {
+                      // Route by mode: Chat streams a normal completion;
+                      // Agent runs the tool-calling loop (Grok-style).
+                      if (chatState.mode == AiChatMode.agent) {
+                        notifier.sendAgent(text, model: selectedModel);
+                      } else {
+                        notifier.send(text, model: selectedModel);
+                      }
+                      _inputController.clear();
+                      _scrollToEnd();
+                    },
+                    onStop: notifier.stopStreaming,
+                  ),
+              ],
+            ),
     );
   }
 
@@ -228,9 +265,7 @@ class _ContextNote extends StatelessWidget {
         child: Text(
           '$dropped older ${dropped == 1 ? 'message' : 'messages'} out of '
           'context — clear chat to reset',
-          style: Theme.of(context)
-              .textTheme
-              .labelSmall
+          style: Theme.of(context).textTheme.labelSmall
               ?.copyWith(color: scheme.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
@@ -261,9 +296,7 @@ class _PrivacyBanner extends StatelessWidget {
             child: Text(
               'Messages are processed by third-party AI providers. '
               'Never share your nsec or secrets.',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
+              style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: scheme.onSurface),
             ),
           ),
@@ -293,12 +326,7 @@ class _WelcomeView extends StatelessWidget {
       'Summarize the top posts on #bitcoin today in 5 bullet points',
       false,
     ),
-    (
-      'link',
-      'Summarize a thread',
-      'Summarize this thread: ',
-      true,
-    ),
+    ('link', 'Summarize a thread', 'Summarize this thread: ', true),
     (
       'edit',
       'Draft a post',
@@ -321,8 +349,9 @@ class _WelcomeView extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'Ask me anything',
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -330,8 +359,9 @@ class _WelcomeView extends StatelessWidget {
               'relays, translate, draft, generate images and video, '
               'or just chat. Paid in tokens — only for what you use.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 24),
             for (final (icon, label, prompt, prefillOnly) in _suggestions) ...[
@@ -340,10 +370,9 @@ class _WelcomeView extends StatelessWidget {
                 label: label,
                 prompt: prefillOnly
                     ? 'Paste a note1… / nevent1… link — I\'ll fetch the '
-                        'thread from your relays'
+                          'thread from your relays'
                     : prompt,
-                onTap: () =>
-                    prefillOnly ? onFill(prompt) : onPrompt(prompt),
+                onTap: () => prefillOnly ? onFill(prompt) : onPrompt(prompt),
               ),
               const SizedBox(height: 8),
             ],
@@ -376,7 +405,9 @@ class _SuggestionChip extends StatelessWidget {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm + 2, vertical: AppSpacing.sm - 1),
+          horizontal: AppSpacing.sm + 2,
+          vertical: AppSpacing.sm - 1,
+        ),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest,
           borderRadius: AppShapes.radiusMd,
@@ -391,83 +422,21 @@ class _SuggestionChip extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
+                    style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   Text(
                     prompt,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
+                    style: Theme.of(context).textTheme.labelSmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                 ],
               ),
             ),
-            AppIcon('back',
-                size: 14, color: scheme.onSurfaceVariant),
+            AppIcon('back', size: 14, color: scheme.onSurfaceVariant),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Compact bar showing the active model — taps open the full picker sheet.
-class _ModelSelectorButton extends ConsumerWidget {
-  final AiModelEntry model;
-
-  const _ModelSelectorButton({required this.model});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final price = ref.watch(aiModelPriceProvider(model));
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
-      child: InkWell(
-        borderRadius: AppShapes.radiusMd,
-        onTap: () => showAiModelPicker(context),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest,
-            borderRadius: AppShapes.radiusMd,
-          ),
-          child: Row(
-            children: [
-              AppIcon('sparkle', size: 16, color: scheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  model.label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              AppIcon('zap', size: 13, color: scheme.primary),
-              Text(
-                '~$price tokens/msg',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurfaceVariant,
-                    ),
-              ),
-              const SizedBox(width: 4),
-              AppIcon('chevron_r',
-                  size: AppIconSize.sm, color: scheme.onSurfaceVariant),
-            ],
-          ),
         ),
       ),
     );
@@ -490,7 +459,9 @@ class _BalanceChip extends ConsumerWidget {
         onTap: () => showAiTopUpSheet(context),
         child: Container(
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm - 2, vertical: AppSpacing.xxs),
+            horizontal: AppSpacing.sm - 2,
+            vertical: AppSpacing.xxs,
+          ),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHighest,
             borderRadius: AppShapes.radiusFull,
@@ -502,9 +473,7 @@ class _BalanceChip extends ConsumerWidget {
               const SizedBox(width: 2),
               Text(
                 trialLeft > 0 ? '$trialLeft free · $balance' : '$balance',
-                style: Theme.of(context)
-                    .textTheme
-                    .labelMedium
+                style: Theme.of(context).textTheme.labelMedium
                     ?.copyWith(fontWeight: FontWeight.w600),
               ),
             ],
@@ -539,97 +508,100 @@ class _MessageBubble extends StatelessWidget {
             ? null
             : () => _showActions(context, message),
         child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.82,
-        ),
-        decoration: BoxDecoration(
-          // Mine = flat tertiary (the accent); theirs = surfaceContainerHighest.
-          // Same 8 dp + 2 dp tail-corner language as the DM bubbles.
-          color: isUser ? scheme.tertiary : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(AppShapes.sm),
-            topRight: const Radius.circular(AppShapes.sm),
-            bottomLeft: Radius.circular(isUser ? AppShapes.sm : 2),
-            bottomRight: Radius.circular(isUser ? 2 : AppShapes.sm),
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.82,
+          ),
+          decoration: BoxDecoration(
+            // Mine = flat tertiary (the accent); theirs = surfaceContainerHighest.
+            // Same 8 dp + 2 dp tail-corner language as the DM bubbles.
+            color: isUser ? scheme.tertiary : scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(AppShapes.sm),
+              topRight: const Radius.circular(AppShapes.sm),
+              bottomLeft: Radius.circular(isUser ? AppShapes.sm : 2),
+              bottomRight: Radius.circular(isUser ? 2 : AppShapes.sm),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Agent steps that produced this answer (permanent record, the
+              // Grok-style "searched X, read the thread" trail above the reply).
+              if (message.agentSteps.isNotEmpty) ...[
+                _AgentStepsTrail(steps: message.agentSteps),
+                const SizedBox(height: 6),
+              ],
+              if (isUser)
+                Text(
+                  message.content,
+                  style: Theme.of(context).textTheme.bodyLarge
+                      ?.copyWith(color: scheme.onTertiary),
+                )
+              else ...[
+                if (message.images.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: AiGeneratedImage(urlOrDataUrl: message.images.first),
+                  ),
+                if (message.videos.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: AiGeneratedVideo(url: message.videos.first),
+                  ),
+                MarkdownBody(
+                  data: message.content.isEmpty && isStreaming
+                      ? '…'
+                      : message.content,
+                  styleSheet: MarkdownStyleSheet(
+                    p: Theme.of(context).textTheme.bodyLarge
+                        ?.copyWith(color: scheme.onSurface),
+                    code: TextStyle(
+                      backgroundColor: scheme.surfaceContainer,
+                      color: scheme.onSurface,
+                      fontFamily: 'monospace',
+                    ),
+                    codeblockDecoration: BoxDecoration(
+                      color: scheme.surfaceContainer,
+                      borderRadius: AppShapes.radiusSm,
+                    ),
+                  ),
+                ),
+              ],
+              if (!isUser && !isStreaming && message.model != null) ...[
+                const SizedBox(height: 4),
+                Builder(
+                  builder: (context) {
+                    final tokens = message.costTokens ?? 0;
+                    final zapColor = AppActionColors.zapFor(
+                      Theme.of(context).brightness,
+                    );
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (tokens > 0) ...[
+                          AppIcon('zap', size: AppIconSize.xs, color: zapColor),
+                          const SizedBox(width: 2),
+                        ],
+                        Text(
+                          '${message.model} · ${tokens == 0 ? "trial" : "$tokens tokens"}'
+                          '${message.agentSteps.isNotEmpty ? ' · agent ×${message.agentSteps.length}' : ''}',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: tokens == 0
+                                    ? scheme.onSurfaceVariant
+                                    : zapColor,
+                              ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ],
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (isUser)
-              Text(
-                message.content,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyLarge
-                    ?.copyWith(color: scheme.onTertiary),
-              )
-            else ...[
-              if (message.images.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: AiGeneratedImage(
-                    urlOrDataUrl: message.images.first,
-                  ),
-                ),
-              if (message.videos.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: AiGeneratedVideo(url: message.videos.first),
-                ),
-              MarkdownBody(
-                data: message.content.isEmpty && isStreaming
-                    ? '…'
-                    : message.content,
-                styleSheet: MarkdownStyleSheet(
-                  p: Theme.of(context)
-                      .textTheme
-                      .bodyLarge
-                      ?.copyWith(color: scheme.onSurface),
-                  code: TextStyle(
-                    backgroundColor: scheme.surfaceContainer,
-                    color: scheme.onSurface,
-                    fontFamily: 'monospace',
-                  ),
-                  codeblockDecoration: BoxDecoration(
-                    color: scheme.surfaceContainer,
-                    borderRadius: AppShapes.radiusSm,
-                  ),
-                ),
-              ),
-            ],
-            if (!isUser && !isStreaming && message.model != null) ...[
-              const SizedBox(height: 4),
-              Builder(
-                builder: (context) {
-                  final tokens = message.costTokens ?? 0;
-                  final zapColor =
-                      AppActionColors.zapFor(Theme.of(context).brightness);
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (tokens > 0) ...[
-                        AppIcon('zap', size: AppIconSize.xs, color: zapColor),
-                        const SizedBox(width: 2),
-                      ],
-                      Text(
-                        '${message.model} · ${tokens == 0 ? "trial" : "$tokens tokens"}',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: tokens == 0
-                                  ? scheme.onSurfaceVariant
-                                  : zapColor,
-                            ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ],
-          ],
-        ),
-      ),
       ),
     );
   }
@@ -659,9 +631,7 @@ class _MessageBubble extends StatelessWidget {
               title: const Text('Share…'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                SharePlus.instance.share(
-                  ShareParams(text: message.content),
-                );
+                SharePlus.instance.share(ShareParams(text: message.content));
               },
             ),
             const SizedBox(height: 8),
@@ -737,8 +707,9 @@ class _InputBar extends ConsumerWidget {
                         tooltip: 'Stop',
                       )
                     : IconButton.filled(
-                        onPressed:
-                            canSend ? () => onSend(controller.text) : null,
+                        onPressed: canSend
+                            ? () => onSend(controller.text)
+                            : null,
                         icon: const AppIcon('send'),
                         tooltip: 'Send',
                       ),
@@ -749,11 +720,79 @@ class _InputBar extends ConsumerWidget {
               showTrial
                   ? '$trialLeft free messages left today · then ~$price tokens/msg'
                   : '≈ $price tokens per message on ${model.label}',
-              style: Theme.of(context)
-                  .textTheme
-                  .labelSmall
+              style: Theme.of(context).textTheme.labelSmall
                   ?.copyWith(color: scheme.onSurfaceVariant),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Chat / Agent mode toggle ─────────────────────────────────────────
+
+/// The compact agent-steps trail inside an answer bubble — the permanent
+/// "searched X, read the thread" record (Grok-style), collapsed by default
+/// into a quiet tappable summary.
+class _AgentStepsTrail extends StatefulWidget {
+  final List<AgentStepEntry> steps;
+  const _AgentStepsTrail({required this.steps});
+
+  @override
+  State<_AgentStepsTrail> createState() => _AgentStepsTrailState();
+}
+
+class _AgentStepsTrailState extends State<_AgentStepsTrail> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return GestureDetector(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainer,
+          borderRadius: AppShapes.radiusSm,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                AppIcon('sparkle', size: AppIconSize.xs, color: scheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Agent · ${widget.steps.length} step${widget.steps.length == 1 ? '' : 's'}',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                AppIcon(
+                  _expanded ? 'arrow_up' : 'arrow_down',
+                  size: AppIconSize.xs,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+            if (_expanded)
+              for (final s in widget.steps)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    '• ${s.status}',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
           ],
         ),
       ),

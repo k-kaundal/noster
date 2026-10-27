@@ -26,7 +26,10 @@ class ListsScreen extends ConsumerWidget {
       title: 'Lists',
       body: AsyncFeedList<NostrList>(
         value: listsAsync,
-        onRefresh: () => ref.refresh(followSetsProvider.future),
+        onRefresh: () {
+          ref.invalidate(listsProvider);
+          return ref.refresh(followSetsProvider.future);
+        },
         emptyState: EmptyState(
           icon: Icons.list_alt_rounded,
           title: 'No lists yet',

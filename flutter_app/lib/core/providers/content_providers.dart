@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -232,6 +233,31 @@ class NotificationsNotifier extends AsyncNotifier<List<NostrEvent>> {
 
     final auth = ref.watch(authStateProvider);
     if (!auth.isLoggedIn || auth.pubkey == null) return current ?? [];
+
+    // ADR-0008 P2/UI: paint from the `notifications` STORE instantly (the
+    // durable history — never an empty skeleton while the relay fetch runs),
+    // then the relay fetch merges in behind it (offline-first, like the feed).
+    // The store is the source of truth; the network is the freshness layer.
+    List<NostrEvent> stored = const [];
+    try {
+      final rows = await EventStore.instance.notifications.notificationsFor(
+        auth.pubkey!,
+        limit: 100,
+      );
+      stored = [
+        for (final n in rows)
+          NostrEvent.fromJson(_decodeEventJson(n.eventJson)),
+      ];
+    } catch (_) {
+      // Store read failed — fall through to the relay path with no paint.
+    }
+    if (stored.isNotEmpty) {
+      // Refresh behind the instant paint (fire-and-forget; the next natural
+      // rebuild merges). This keeps the first frame instant AND current.
+      _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+      return stored;
+    }
+
     final nostr = await initNostr(ref);
     final fresh = await nostr.fetchNotifications(auth.pubkey!);
     if (fresh.isNotEmpty) {
@@ -239,6 +265,16 @@ class NotificationsNotifier extends AsyncNotifier<List<NostrEvent>> {
       _fetchedAt = DateTime.now().millisecondsSinceEpoch;
     }
     return fresh.isNotEmpty ? fresh : (current ?? fresh);
+  }
+}
+
+/// Decode a stored notification's event_json back to a map (store rows carry
+/// the full event for rendering).
+Map<String, dynamic> _decodeEventJson(String json) {
+  try {
+    return jsonDecode(json) as Map<String, dynamic>;
+  } catch (_) {
+    return const {};
   }
 }
 
@@ -251,30 +287,123 @@ const _browseTtl = Duration(minutes: 5);
 ///  - `#tag` or `tag` prefixed with '#' → hashtag tag-filter query
 ///  - npub/nprofile → profile fetch by pubkey (future enhancement)
 ///  - anything else → NIP-50 full-text search
+///
+/// LOCAL-FIRST: the store is queried first (instant, works offline), the
+/// relay search merges behind (discovery). A store hit never waits on the
+/// relay round-trip.
 final searchProvider = FutureProvider.family
     .autoDispose<List<NostrEvent>, String>((ref, query) async {
       if (query.isEmpty) return [];
-      final nostr = await initNostr(ref);
 
-      // Hashtag search: "#bitcoin" → filter by 't' tag
+      // Hashtag search: "#bitcoin" → filter by 't' tag (local + relay).
       if (query.startsWith('#') && query.length > 1) {
-        final tag = query.substring(1).trim();
+        final tag = query.substring(1).trim().toLowerCase();
         if (tag.isEmpty) return [];
-        return nostr.fetchHashtagFeed(tag, limit: 50);
+        // Local tag query first.
+        final local = await EventStore.instance.queryByFilters([
+          NostrFilter(
+            kinds: const [1],
+            tagFilters: {
+              't': [tag],
+            },
+            limit: 50,
+          ),
+        ]);
+        try {
+          final nostr = await initNostr(ref);
+          final fresh = await nostr.fetchHashtagFeed(tag, limit: 50);
+          if (fresh.isNotEmpty) {
+            unawaited(EventStore.instance.ingest(fresh));
+            if (local.isNotEmpty) {
+              final seen = local.map((e) => e.id).toSet();
+              return [...local, ...fresh.where((e) => !seen.contains(e.id))]
+                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            }
+            return fresh;
+          }
+        } catch (_) {}
+        return local;
       }
 
-      return nostr.search(query);
+      // Text search: local content match first, relay NIP-50 behind.
+      final local = await _localSearch(query);
+      try {
+        final nostr = await initNostr(ref);
+        final fresh = await nostr.search(query);
+        if (fresh.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(fresh));
+          if (local.isNotEmpty) {
+            final seen = local.map((e) => e.id).toSet();
+            return [...local, ...fresh.where((e) => !seen.contains(e.id))]
+              ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          }
+          return fresh;
+        }
+      } catch (_) {}
+      return local;
     });
+
+/// Local content search: LIKE-match on stored events (instant, offline).
+Future<List<NostrEvent>> _localSearch(String query) async {
+  final q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+  // Query recent kind-1 events and filter by content match (bounded).
+  final candidates = await EventStore.instance.queryByFilters([
+    NostrFilter(kinds: const [1], limit: 500),
+  ]);
+  return candidates.where((e) => e.content.toLowerCase().contains(q)).toList();
+}
 
 /// Search users
 ///
-/// Combines NIP-50 search (if relay supports it) with local filtering on
-/// name/display_name so partial matches work even on relays without search.
+/// LOCAL-FIRST: FTS5 profile search (indexed MATCH) paints instantly; the
+/// relay NIP-50 user search merges behind for discovery of profiles not
+/// yet in the store.
 final userSearchProvider = FutureProvider.family
     .autoDispose<List<NostrEvent>, String>((ref, query) async {
       if (query.isEmpty) return [];
-      final nostr = await initNostr(ref);
-      return nostr.searchUsers(query);
+
+      // Local FTS5 search (indexed, instant).
+      final localProfiles = await EventStore.instance.searchProfiles(query);
+      // Convert profiles to kind-0-shaped events for the UI (PersonTile
+      // expects NostrEvent with profile JSON in content).
+      final localEvents = <NostrEvent>[
+        for (final p in localProfiles)
+          NostrEvent(
+            id: '',
+            pubkey: p.pubkey,
+            createdAt: 0,
+            kind: 0,
+            content: jsonEncode({
+              'name': p.profile.name,
+              'display_name': p.profile.displayName,
+              'picture': p.profile.picture,
+              'about': p.profile.about,
+              'nip05': p.profile.nip05,
+              'lud16': p.profile.lud16,
+              'banner': p.profile.banner,
+            }),
+            tags: const [],
+            sig: '',
+          ),
+      ];
+
+      try {
+        final nostr = await initNostr(ref);
+        final fresh = await nostr.searchUsers(query);
+        if (fresh.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(fresh));
+          if (localEvents.isNotEmpty) {
+            final seen = localEvents.map((e) => e.pubkey).toSet();
+            return [
+              ...localEvents,
+              ...fresh.where((e) => !seen.contains(e.pubkey)),
+            ];
+          }
+          return fresh;
+        }
+      } catch (_) {}
+      return localEvents;
     });
 
 /// Hashtag feed — STREAM (local paints instantly, relay backfills), with a
@@ -384,18 +513,98 @@ final repliesProvider = FutureProvider.family
 
 /// NIP-22 comments for an addressable event (article, etc.)
 /// Key is the `kind:pubkey:d` coordinate.
+///
+/// STORE-FIRST: kind-1111 comments `a`-tagging the coordinate already in the
+/// store render instantly; the relay fetch merges behind.
 final articleCommentsProvider = FutureProvider.family
     .autoDispose<List<NostrEvent>, String>((ref, coordinate) async {
-      final nostr = await initNostr(ref);
-      return nostr.fetchComments(coordinate, isAddressable: true);
+      final filter = NostrFilter(
+        kinds: const [1111],
+        tagFilters: {
+          'a': [coordinate],
+        },
+        limit: 200,
+      );
+      final stored = await EventStore.instance.queryByFilters([filter]);
+      try {
+        final nostr = await initNostr(ref);
+        final fresh = await nostr.fetchComments(
+          coordinate,
+          isAddressable: true,
+        );
+        if (fresh.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(fresh));
+          final seen = stored.map((e) => e.id).toSet();
+          return [...stored, ...fresh.where((e) => !seen.contains(e.id))]
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        }
+      } catch (_) {
+        // Offline — the stored paint (if any) stands.
+      }
+      return stored..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     });
 
 /// Engagement for an addressable event (article, etc.)
 /// Key is the `kind:pubkey:d` coordinate.
+///
+/// STORE-FIRST: engagement events `a`-tagging the coordinate in the store
+/// tally instantly (offline-correct); the relay fetch merges behind and the
+/// tally re-runs on the next rebuild. The store indexes single-letter `a`
+/// tags, so the local leg uses the same scope as the repository's query
+/// (the repository's uppercase `A` scope stays relay-only by design).
 final addressableEngagementProvider = FutureProvider.family
     .autoDispose<EventEngagement, String>((ref, coordinate) async {
-      final nostr = await initNostr(ref);
-      return nostr.fetchEngagementForAddress(coordinate);
+      final filter = NostrFilter(
+        kinds: const [1, 6, 7, 16, 9735, 1111],
+        tagFilters: {
+          'a': [coordinate],
+        },
+        limit: 500,
+      );
+      final stored = await EventStore.instance.queryByFilters([filter]);
+      // Refresh behind: relay merge lands on the next rebuild (the tally
+      // re-runs from the store then).
+      if (stored.isNotEmpty) {
+        unawaited(() async {
+          try {
+            final nostr = await initNostr(ref);
+            await nostr.fetchEngagementForAddress(coordinate);
+          } catch (_) {}
+        }());
+      } else {
+        // Store miss (first view): the relay leg IS the answer, ingested
+        // for next time via the repository's query path.
+        try {
+          final nostr = await initNostr(ref);
+          final fresh = await nostr.fetchEngagementForAddress(coordinate);
+          if (fresh.score > 0) return fresh;
+        } catch (_) {}
+      }
+      // Local tally from the stored events (same kinds as the repository).
+      var replies = 0, reactions = 0, reposts = 0, zaps = 0;
+      final engagers = <String>{};
+      for (final e in stored) {
+        engagers.add(e.pubkey);
+        switch (e.kind) {
+          case 1:
+          case 1111:
+            replies++;
+          case 6:
+          case 16:
+            reposts++;
+          case 7:
+            reactions++;
+          case 9735:
+            zaps++;
+        }
+      }
+      return EventEngagement(
+        replies: replies,
+        reactions: reactions,
+        reposts: reposts,
+        zaps: zaps,
+        uniqueEngagers: engagers.length,
+      );
     });
 
 /// Reactions for an event
@@ -434,13 +643,59 @@ class CommunitiesNotifier extends AsyncNotifier<List<NostrEvent>> {
         _browseTtl.inMilliseconds;
     final current = state.valueOrNull;
     if (!stale && current != null && current.isNotEmpty) return current;
-    final nostr = await initNostr(ref);
-    final fresh = await nostr.fetchCommunities();
-    if (fresh.isNotEmpty) {
-      unawaited(EventStore.instance.ingest(fresh));
-      _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+
+    // Store-first paint: kind-34550 community definitions already in the
+    // store render instantly (like the feed cold-start); the relay fetch
+    // refreshes behind. Never a skeleton while the store has data.
+    final stored = await EventStore.instance.queryByFilters([
+      NostrFilter(kinds: const [34550], limit: 100),
+    ]);
+    if (stored.isNotEmpty && !stale) {
+      // Fresh enough in store — refresh behind, return stored now.
+      _refreshBehind();
+      return stored;
     }
-    return fresh.isNotEmpty ? fresh : (current ?? fresh);
+
+    try {
+      final nostr = await initNostr(ref);
+      final fresh = await nostr.fetchCommunities();
+      if (fresh.isNotEmpty) {
+        unawaited(EventStore.instance.ingest(fresh));
+        _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+        // Merge stored + fresh (dedup by id, newest-first) so the relay
+        // backfill ADDS to the store paint instead of replacing it.
+        if (stored.isNotEmpty) {
+          final seen = stored.map((e) => e.id).toSet();
+          return [...stored, ...fresh.where((e) => !seen.contains(e.id))]
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        }
+        return fresh;
+      }
+    } catch (_) {
+      // Offline / dead relays — the stored paint (if any) stands.
+    }
+    return stored.isNotEmpty ? stored : (current ?? stored);
+  }
+
+  /// Fire-and-forget relay refresh behind the instant store paint.
+  void _refreshBehind() {
+    Future.microtask(() async {
+      try {
+        final nostr = await initNostr(ref);
+        final fresh = await nostr.fetchCommunities();
+        if (fresh.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(fresh));
+          _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+          final current = state.valueOrNull ?? [];
+          final seen = current.map((e) => e.id).toSet();
+          final merged = [
+            ...current,
+            ...fresh.where((e) => !seen.contains(e.id)),
+          ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          state = AsyncData(merged);
+        }
+      } catch (_) {}
+    });
   }
 }
 
@@ -460,13 +715,51 @@ class ArticlesNotifier extends AsyncNotifier<List<NostrEvent>> {
         _browseTtl.inMilliseconds;
     final current = state.valueOrNull;
     if (!stale && current != null && current.isNotEmpty) return current;
-    final nostr = await initNostr(ref);
-    final fresh = await nostr.fetchArticles();
-    if (fresh.isNotEmpty) {
-      unawaited(EventStore.instance.ingest(fresh));
-      _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+
+    // Store-first paint: kind-30023 articles in the store render instantly.
+    final stored = await EventStore.instance.queryByFilters([
+      NostrFilter(kinds: const [30023], limit: 100),
+    ]);
+    if (stored.isNotEmpty && !stale) {
+      _refreshBehind();
+      return stored;
     }
-    return fresh.isNotEmpty ? fresh : (current ?? fresh);
+
+    try {
+      final nostr = await initNostr(ref);
+      final fresh = await nostr.fetchArticles();
+      if (fresh.isNotEmpty) {
+        unawaited(EventStore.instance.ingest(fresh));
+        _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+        if (stored.isNotEmpty) {
+          final seen = stored.map((e) => e.id).toSet();
+          return [...stored, ...fresh.where((e) => !seen.contains(e.id))]
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        }
+        return fresh;
+      }
+    } catch (_) {}
+    return stored.isNotEmpty ? stored : (current ?? stored);
+  }
+
+  void _refreshBehind() {
+    Future.microtask(() async {
+      try {
+        final nostr = await initNostr(ref);
+        final fresh = await nostr.fetchArticles();
+        if (fresh.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(fresh));
+          _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+          final current = state.valueOrNull ?? [];
+          final seen = current.map((e) => e.id).toSet();
+          final merged = [
+            ...current,
+            ...fresh.where((e) => !seen.contains(e.id)),
+          ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          state = AsyncData(merged);
+        }
+      } catch (_) {}
+    });
   }
 }
 
@@ -487,14 +780,23 @@ class BookmarksNotifier extends AsyncNotifier<List<NostrEvent>> {
     final current = state.valueOrNull;
     if (!stale && current != null && current.isNotEmpty) return current;
 
-    final nostr = await initNostr(ref);
     final auth = ref.watch(authStateProvider);
     if (!auth.isLoggedIn || auth.pubkey == null) return current ?? [];
-    // The merged id set (every relay revision + optimistic write), NOT
-    // fetchBookmarks' single stale revision.
+
+    // Store-first: resolve bookmarked events from the store by id (the
+    // bookmark ids come from the bookmark list, the events themselves were
+    // ingested when the user bookmarked them or scrolled past).
+    final nostr = await initNostr(ref);
     final ids = await nostr.fetchBookmarkedIds(auth.pubkey!);
     if (ids.isEmpty) return [];
-    // Fetch the bookmarked events
+    final stored = await EventStore.instance.eventsById(ids.toList());
+    if (stored.isNotEmpty && !stale) {
+      stored.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _refreshBehind(ids);
+      return stored;
+    }
+
+    // Fetch the bookmarked events from relays.
     final events = await nostr.relayPool.query([
       NostrFilter(ids: ids.toList(), limit: 100),
     ], timeout: const Duration(seconds: 8));
@@ -503,7 +805,26 @@ class BookmarksNotifier extends AsyncNotifier<List<NostrEvent>> {
       unawaited(EventStore.instance.ingest(events));
       _fetchedAt = DateTime.now().millisecondsSinceEpoch;
     }
-    return events.isNotEmpty ? events : (current ?? events);
+    return events.isNotEmpty
+        ? events
+        : (stored.isNotEmpty ? stored : (current ?? events));
+  }
+
+  void _refreshBehind(Set<String> ids) {
+    Future.microtask(() async {
+      try {
+        final nostr = await initNostr(ref);
+        final events = await nostr.relayPool.query([
+          NostrFilter(ids: ids.toList(), limit: 100),
+        ], timeout: const Duration(seconds: 8));
+        if (events.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(events));
+          events.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+          state = AsyncData(events);
+        }
+      } catch (_) {}
+    });
   }
 }
 
@@ -588,13 +909,51 @@ class CalendarNotifier extends AsyncNotifier<List<NostrEvent>> {
         _browseTtl.inMilliseconds;
     final current = state.valueOrNull;
     if (!stale && current != null && current.isNotEmpty) return current;
-    final nostr = await initNostr(ref);
-    final fresh = await nostr.fetchCalendarEvents();
-    if (fresh.isNotEmpty) {
-      unawaited(EventStore.instance.ingest(fresh));
-      _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+
+    // Store-first paint: kind-31922/31923 calendar events render instantly.
+    final stored = await EventStore.instance.queryByFilters([
+      NostrFilter(kinds: const [31922, 31923], limit: 100),
+    ]);
+    if (stored.isNotEmpty && !stale) {
+      _refreshBehind();
+      return stored;
     }
-    return fresh.isNotEmpty ? fresh : (current ?? fresh);
+
+    try {
+      final nostr = await initNostr(ref);
+      final fresh = await nostr.fetchCalendarEvents();
+      if (fresh.isNotEmpty) {
+        unawaited(EventStore.instance.ingest(fresh));
+        _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+        if (stored.isNotEmpty) {
+          final seen = stored.map((e) => e.id).toSet();
+          return [...stored, ...fresh.where((e) => !seen.contains(e.id))]
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        }
+        return fresh;
+      }
+    } catch (_) {}
+    return stored.isNotEmpty ? stored : (current ?? stored);
+  }
+
+  void _refreshBehind() {
+    Future.microtask(() async {
+      try {
+        final nostr = await initNostr(ref);
+        final fresh = await nostr.fetchCalendarEvents();
+        if (fresh.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(fresh));
+          _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+          final current = state.valueOrNull ?? [];
+          final seen = current.map((e) => e.id).toSet();
+          final merged = [
+            ...current,
+            ...fresh.where((e) => !seen.contains(e.id)),
+          ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          state = AsyncData(merged);
+        }
+      } catch (_) {}
+    });
   }
 }
 
@@ -612,13 +971,51 @@ class MarketNotifier extends AsyncNotifier<List<NostrEvent>> {
         _browseTtl.inMilliseconds;
     final current = state.valueOrNull;
     if (!stale && current != null && current.isNotEmpty) return current;
-    final nostr = await initNostr(ref);
-    final fresh = await nostr.fetchMarketListings();
-    if (fresh.isNotEmpty) {
-      unawaited(EventStore.instance.ingest(fresh));
-      _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+
+    // Store-first paint: kind-30402 listings in the store render instantly.
+    final stored = await EventStore.instance.queryByFilters([
+      NostrFilter(kinds: const [30402], limit: 100),
+    ]);
+    if (stored.isNotEmpty && !stale) {
+      _refreshBehind();
+      return stored;
     }
-    return fresh.isNotEmpty ? fresh : (current ?? fresh);
+
+    try {
+      final nostr = await initNostr(ref);
+      final fresh = await nostr.fetchMarketListings();
+      if (fresh.isNotEmpty) {
+        unawaited(EventStore.instance.ingest(fresh));
+        _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+        if (stored.isNotEmpty) {
+          final seen = stored.map((e) => e.id).toSet();
+          return [...stored, ...fresh.where((e) => !seen.contains(e.id))]
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        }
+        return fresh;
+      }
+    } catch (_) {}
+    return stored.isNotEmpty ? stored : (current ?? stored);
+  }
+
+  void _refreshBehind() {
+    Future.microtask(() async {
+      try {
+        final nostr = await initNostr(ref);
+        final fresh = await nostr.fetchMarketListings();
+        if (fresh.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(fresh));
+          _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+          final current = state.valueOrNull ?? [];
+          final seen = current.map((e) => e.id).toSet();
+          final merged = [
+            ...current,
+            ...fresh.where((e) => !seen.contains(e.id)),
+          ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          state = AsyncData(merged);
+        }
+      } catch (_) {}
+    });
   }
 }
 
@@ -639,13 +1036,53 @@ class LiveStreamsNotifier extends AsyncNotifier<List<NostrEvent>> {
         _ttl.inMilliseconds;
     final current = state.valueOrNull;
     if (!stale && current != null && current.isNotEmpty) return current;
-    final nostr = await initNostr(ref);
-    final fresh = await nostr.fetchLiveStreams();
-    if (fresh.isNotEmpty) {
-      unawaited(EventStore.instance.ingest(fresh));
-      _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+
+    // Store-first paint: kind-30311 live activities in the store render
+    // instantly (the relay fetch refreshes behind — live data goes stale
+    // fast, but the first frame never waits on a relay round-trip).
+    final stored = await EventStore.instance.queryByFilters([
+      NostrFilter(kinds: const [30311], limit: 60),
+    ]);
+    if (stored.isNotEmpty && !stale) {
+      _refreshBehind();
+      return stored;
     }
-    return fresh.isNotEmpty ? fresh : (current ?? fresh);
+
+    try {
+      final nostr = await initNostr(ref);
+      final fresh = await nostr.fetchLiveStreams();
+      if (fresh.isNotEmpty) {
+        unawaited(EventStore.instance.ingest(fresh));
+        _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+        if (stored.isNotEmpty) {
+          final seen = stored.map((e) => e.id).toSet();
+          return [...stored, ...fresh.where((e) => !seen.contains(e.id))]
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        }
+        return fresh;
+      }
+    } catch (_) {}
+    return stored.isNotEmpty ? stored : (current ?? stored);
+  }
+
+  void _refreshBehind() {
+    Future.microtask(() async {
+      try {
+        final nostr = await initNostr(ref);
+        final fresh = await nostr.fetchLiveStreams();
+        if (fresh.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(fresh));
+          _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+          final current = state.valueOrNull ?? [];
+          final seen = current.map((e) => e.id).toSet();
+          final merged = [
+            ...current,
+            ...fresh.where((e) => !seen.contains(e.id)),
+          ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          state = AsyncData(merged);
+        }
+      } catch (_) {}
+    });
   }
 }
 
@@ -664,13 +1101,51 @@ class VideosNotifier extends AsyncNotifier<List<NostrEvent>> {
         _browseTtl.inMilliseconds;
     final current = state.valueOrNull;
     if (!stale && current != null && current.isNotEmpty) return current;
-    final nostr = await initNostr(ref);
-    final fresh = await nostr.fetchVideos();
-    if (fresh.isNotEmpty) {
-      unawaited(EventStore.instance.ingest(fresh));
-      _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+
+    // Store-first paint: kind-21/22 videos in the store render instantly.
+    final stored = await EventStore.instance.queryByFilters([
+      NostrFilter(kinds: const [21, 22], limit: 100),
+    ]);
+    if (stored.isNotEmpty && !stale) {
+      _refreshBehind();
+      return stored;
     }
-    return fresh.isNotEmpty ? fresh : (current ?? fresh);
+
+    try {
+      final nostr = await initNostr(ref);
+      final fresh = await nostr.fetchVideos();
+      if (fresh.isNotEmpty) {
+        unawaited(EventStore.instance.ingest(fresh));
+        _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+        if (stored.isNotEmpty) {
+          final seen = stored.map((e) => e.id).toSet();
+          return [...stored, ...fresh.where((e) => !seen.contains(e.id))]
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        }
+        return fresh;
+      }
+    } catch (_) {}
+    return stored.isNotEmpty ? stored : (current ?? stored);
+  }
+
+  void _refreshBehind() {
+    Future.microtask(() async {
+      try {
+        final nostr = await initNostr(ref);
+        final fresh = await nostr.fetchVideos();
+        if (fresh.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(fresh));
+          _fetchedAt = DateTime.now().millisecondsSinceEpoch;
+          final current = state.valueOrNull ?? [];
+          final seen = current.map((e) => e.id).toSet();
+          final merged = [
+            ...current,
+            ...fresh.where((e) => !seen.contains(e.id)),
+          ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          state = AsyncData(merged);
+        }
+      } catch (_) {}
+    });
   }
 }
 

@@ -386,6 +386,21 @@ Raised to **2000** in `/etc/strfry.conf` (this hub serves our own app; the
 value is per-connection, not global). The app also stopped registering
 one-shot queries as reconnect-replayed persistent subs (the burst source).
 
+### Geo endpoint (2026-10-27) — country detection for the For You tab
+
+`GET https://relay.nostrfeed.com/api/geo` → `{"country":"IN"}` (ISO 3166-1
+alpha-2, or null). Country-level ONLY — never city/lat-lon (personalization
+needs a country, not a location; no GPS permission ever requested).
+
+- Service: `geoip-endpoint.service` → `/usr/local/bin/geoip-endpoint.py`
+  (tiny Python http server on `127.0.0.1:8787`).
+- Upstream: `ip-api.com` (free, 45 req/min) behind a 7-day in-process LRU
+  (50k entries) so repeat lookups never hit the upstream.
+- nginx: `location = /api/geo` on the relay vhost, `limit_req zone=geo`
+  10 req/min per IP (`limit_req_zone` lives in `nginx.conf` http block).
+- The relay sees the client's IP anyway (it terminates the websocket) —
+  answering "what country is this connection from" adds no new data exposure.
+
 ### Key finding — negentropy on public relays
 
 Public relays (damus, nos.lol, nostr.mom) **disable NIP-77** server-side to

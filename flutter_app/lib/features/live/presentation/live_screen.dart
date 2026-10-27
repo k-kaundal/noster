@@ -11,10 +11,11 @@ import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_badge.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
+
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
-import 'package:nostrfeed_mobile/features/live/application/live_providers.dart';
 import 'package:nostrfeed_mobile/features/live/domain/live_event.dart';
 import 'package:nostrfeed_mobile/features/live/go_live_sheet.dart';
 
@@ -24,20 +25,23 @@ class LiveScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final eventsAsync = ref.watch(liveEventsProvider);
+    // Core keepAlive+TTL+store-warm provider (1-min TTL — live data goes
+    // stale fast, but re-entry within the minute is instant from cache).
+    final liveStreamsAsync = ref.watch(liveStreamsProvider);
+    final eventsAsync = liveStreamsAsync.whenData(_toLiveEvents);
     final auth = ref.watch(authStateProvider);
 
     return DetailScaffold(
       title: 'Live',
       body: eventsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const SkeletonList(itemCount: 4),
         error: (err, _) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text('Failed to load live streams'),
               TextButton(
-                onPressed: () => ref.invalidate(liveEventsProvider),
+                onPressed: () => ref.invalidate(liveStreamsProvider),
                 child: const Text('Retry'),
               ),
             ],
@@ -81,25 +85,13 @@ class LiveScreen extends ConsumerWidget {
           }
 
           return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(liveEventsProvider),
-            child: ListView(
+            onRefresh: () async => ref.invalidate(liveStreamsProvider),
+            // ListView.builder (was a non-builder ListView) — virtualizes
+            // card build/dispose over the live/planned/ended sections.
+            child: ListView.builder(
               padding: const EdgeInsets.all(12),
-              children: [
-                if (live.isNotEmpty) ...[
-                  _SectionHeader(title: 'Live Now (${live.length})'),
-                  for (final e in live) _LiveCard(event: e),
-                  const SizedBox(height: 16),
-                ],
-                if (planned.isNotEmpty) ...[
-                  _SectionHeader(title: 'Upcoming (${planned.length})'),
-                  for (final e in planned) _LiveCard(event: e),
-                  const SizedBox(height: 16),
-                ],
-                if (ended.isNotEmpty) ...[
-                  const _SectionHeader(title: 'Recent'),
-                  for (final e in ended.take(10)) _LiveCard(event: e),
-                ],
-              ],
+              itemCount: _liveItems(live, planned, ended).length,
+              itemBuilder: (context, i) => _liveItems(live, planned, ended)[i],
             ),
           );
         },
@@ -118,6 +110,58 @@ class LiveScreen extends ConsumerWidget {
           : null,
     );
   }
+}
+
+/// Parse NostrEvents (kind 30311) to LiveEvents — dedupe by d-tag
+/// (addressable, newest version wins), sorted: live first, then planned
+/// (soonest), then ended (most recent).
+List<LiveEvent> _toLiveEvents(List<NostrEvent> events) {
+  final byD = <String, NostrEvent>{};
+  for (final e in events) {
+    final d = e.getTag('d') ?? '';
+    final existing = byD[d];
+    if (existing == null || e.createdAt > existing.createdAt) byD[d] = e;
+  }
+  final lives = byD.values.map(LiveEvent.fromEvent).toList();
+  lives.sort((a, b) {
+    int rank(LiveEvent e) => switch (e.status) {
+          LiveStatus.live => 0,
+          LiveStatus.planned => 1,
+          LiveStatus.ended => 2,
+        };
+    final r = rank(a).compareTo(rank(b));
+    if (r != 0) return r;
+    if (a.status == LiveStatus.planned) {
+      return (a.starts ?? 0).compareTo(b.starts ?? 0); // soonest first
+    }
+    return b.updatedAt.compareTo(a.updatedAt);
+  });
+  return lives;
+}
+
+/// The flat widget list over the live/planned/ended sections — computed
+/// once so ListView.builder can virtualize card build/dispose.
+List<Widget> _liveItems(
+  List<LiveEvent> live,
+  List<LiveEvent> planned,
+  List<LiveEvent> ended,
+) {
+  return [
+    if (live.isNotEmpty) ...[
+      _SectionHeader(title: 'Live Now (${live.length})'),
+      for (final e in live) _LiveCard(key: ValueKey(e.id), event: e),
+      const SizedBox(height: 16),
+    ],
+    if (planned.isNotEmpty) ...[
+      _SectionHeader(title: 'Upcoming (${planned.length})'),
+      for (final e in planned) _LiveCard(key: ValueKey(e.id), event: e),
+      const SizedBox(height: 16),
+    ],
+    if (ended.isNotEmpty) ...[
+      const _SectionHeader(title: 'Recent'),
+      for (final e in ended.take(10)) _LiveCard(key: ValueKey(e.id), event: e),
+    ],
+  ];
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -142,7 +186,7 @@ class _SectionHeader extends StatelessWidget {
 
 class _LiveCard extends ConsumerWidget {
   final LiveEvent event;
-  const _LiveCard({required this.event});
+  const _LiveCard({super.key, required this.event});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -174,6 +218,8 @@ class _LiveCard extends ConsumerWidget {
                           httpHeaders: kImageHttpHeaders,
                           imageUrl: event.image!,
                           fit: BoxFit.cover,
+                          // ADR-0004: decode-cap the 150dp thumbnail.
+                          memCacheWidth: 800,
                           errorWidget: (_, _, _) =>
                               _ThumbFallback(scheme: scheme),
                         )

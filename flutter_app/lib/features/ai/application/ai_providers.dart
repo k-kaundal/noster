@@ -6,6 +6,8 @@ import 'package:nostrfeed_mobile/core/providers/auth_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/nostr_service_providers.dart';
 import 'package:nostrfeed_mobile/features/ai/data/ai_chat_store.dart';
 import 'package:nostrfeed_mobile/features/ai/data/ai_config_service.dart';
+import 'package:nostrfeed_mobile/features/ai/data/ai_agent_service.dart';
+import 'package:nostrfeed_mobile/features/ai/data/ai_agent_tools.dart';
 import 'package:nostrfeed_mobile/features/ai/data/ai_context_service.dart';
 import 'package:nostrfeed_mobile/features/ai/data/ai_credits_backup_service.dart';
 import 'package:nostrfeed_mobile/features/ai/data/ai_credits_service.dart';
@@ -30,6 +32,18 @@ final aiConfigServiceProvider = Provider<AiConfigService>(
 /// so the assistant can actually summarize/discuss relay content.
 final aiContextServiceProvider = Provider<AiContextService>(
   (ref) => AiContextService(ref.watch(nostrServiceProvider)),
+);
+
+/// Read-only tools the agent can call in its loop (search/thread/profile/
+/// hashtag) — grounded in real relay data, no writes.
+final aiAgentToolsProvider = Provider<AiAgentTools>(
+  (ref) => AiAgentTools(ref.watch(nostrServiceProvider)),
+);
+
+/// The agent (Grok-style tool-calling loop) — bounded rounds, read-only
+/// tools, the model never sees a key.
+final aiAgentServiceProvider = Provider<AiAgentService>(
+  (ref) => AiAgentService(ref.watch(aiAgentToolsProvider)),
 );
 
 final aiCreditsServiceProvider = Provider<AiCreditsService>(

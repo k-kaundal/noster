@@ -42,9 +42,7 @@ class ExploreScreen extends ConsumerWidget {
 
             // Browse — the discovery & community features that used to live
             // in the drawer (killed). One chip row, no second home.
-            const SliverToBoxAdapter(
-              child: _SectionHeader('Browse'),
-            ),
+            const SliverToBoxAdapter(child: _SectionHeader('Browse')),
             SliverToBoxAdapter(
               child: SizedBox(
                 height: 44,
@@ -52,14 +50,38 @@ class ExploreScreen extends ConsumerWidget {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: const [
-                    _BrowseChip(icon: 'trending', label: 'Trending', route: '/trending'),
+                    _BrowseChip(
+                      icon: 'trending',
+                      label: 'Trending',
+                      route: '/trending',
+                    ),
                     _BrowseChip(icon: 'video', label: 'Reels', route: '/reels'),
-                    _BrowseChip(icon: 'article', label: 'Articles', route: '/articles'),
-                    _BrowseChip(icon: 'calendar', label: 'Calendar', route: '/calendar'),
-                    _BrowseChip(icon: 'group', label: 'Communities', route: '/communities'),
-                    _BrowseChip(icon: 'group', label: 'Groups', route: '/groups'),
+                    _BrowseChip(
+                      icon: 'article',
+                      label: 'Articles',
+                      route: '/articles',
+                    ),
+                    _BrowseChip(
+                      icon: 'calendar',
+                      label: 'Calendar',
+                      route: '/calendar',
+                    ),
+                    _BrowseChip(
+                      icon: 'group',
+                      label: 'Communities',
+                      route: '/communities',
+                    ),
+                    _BrowseChip(
+                      icon: 'group',
+                      label: 'Groups',
+                      route: '/groups',
+                    ),
                     _BrowseChip(icon: 'live', label: 'Live', route: '/live'),
-                    _BrowseChip(icon: 'shopping', label: 'Market', route: '/market'),
+                    _BrowseChip(
+                      icon: 'shopping',
+                      label: 'Market',
+                      route: '/market',
+                    ),
                     _BrowseChip(icon: 'users', label: 'Lists', route: '/lists'),
                   ],
                 ),
@@ -74,7 +96,21 @@ class ExploreScreen extends ConsumerWidget {
               child: hashtagsAsync.when(
                 loading: () => const SizedBox(
                   height: 44,
-                  child: Center(child: CircularProgressIndicator()),
+                  // Skeleton chips (never a bare spinner on a data surface).
+                  child: SkeletonTheme(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          SkeletonBox(height: 32, width: 90),
+                          SizedBox(width: 8),
+                          SkeletonBox(height: 32, width: 110),
+                          SizedBox(width: 8),
+                          SkeletonBox(height: 32, width: 80),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
                 error: (_, _) => const SizedBox.shrink(),
                 data: (stats) {
@@ -85,10 +121,8 @@ class ExploreScreen extends ConsumerWidget {
                       child: Text(
                         'No trending hashtags right now',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     );
                   }
@@ -105,7 +139,8 @@ class ExploreScreen extends ConsumerWidget {
                           avatar: const AppIcon('hash', size: 16),
                           label: Text('${stat.tag} (${stat.count})'),
                           onPressed: () => context.push(
-                              '/hashtag/${Uri.encodeComponent(stat.tag)}'),
+                            '/hashtag/${Uri.encodeComponent(stat.tag)}',
+                          ),
                         );
                       },
                     ),
@@ -173,7 +208,9 @@ class ExploreScreen extends ConsumerWidget {
   /// Trending hashtags with NSFW ones removed — an explicit tag is not a
   /// discovery surface, however many bots posted it this hour.
   static List<HashtagStat> _visibleHashtags(
-      WidgetRef ref, List<HashtagStat> stats) {
+    WidgetRef ref,
+    List<HashtagStat> stats,
+  ) {
     final nsfwOn = ref.watch(nsfwFilterProvider);
     if (!nsfwOn) return stats;
     final filter = ref.watch(contentFilterProvider);
@@ -190,14 +227,14 @@ class ExploreScreen extends ConsumerWidget {
 /// Build a minimal kind-1-shaped object for the filter to judge a hashtag.
 /// The filter only ever reads `.content`, `.hashtags` and `.getTag` from it.
 NostrEvent _tagAsEvent(String tag) => NostrEvent(
-      id: '',
-      pubkey: '',
-      createdAt: 0,
-      kind: 1,
-      tags: const [],
-      content: '#$tag',
-      sig: '',
-    );
+  id: '',
+  pubkey: '',
+  createdAt: 0,
+  kind: 1,
+  tags: const [],
+  content: '#$tag',
+  sig: '',
+);
 
 /// The AI discovery card on top of Explore: search-shaped (users arrive
 /// with intent), opens the AI chat. Shows the remaining free-trial count
@@ -216,13 +253,19 @@ class _AskAiCard extends ConsumerWidget {
     // the only color. Discovery intent, not an ad.
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md, AppSpacing.sm, AppSpacing.md, 0),
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        0,
+      ),
       child: InkWell(
         borderRadius: AppShapes.radiusMd,
         onTap: () => context.push('/ai'),
         child: Container(
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm + 2, vertical: AppSpacing.sm + 1),
+            horizontal: AppSpacing.sm + 2,
+            vertical: AppSpacing.sm + 1,
+          ),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerLowest,
             border: Border.all(color: scheme.outlineVariant),
@@ -263,7 +306,11 @@ class _AskAiCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              AppIcon('chevron_r', size: AppIconSize.xs, color: scheme.onSurfaceVariant),
+              AppIcon(
+                'chevron_r',
+                size: AppIconSize.xs,
+                color: scheme.onSurfaceVariant,
+              ),
             ],
           ),
         ),
@@ -278,7 +325,11 @@ class _BrowseChip extends StatelessWidget {
   final String icon;
   final String label;
   final String route;
-  const _BrowseChip({required this.icon, required this.label, required this.route});
+  const _BrowseChip({
+    required this.icon,
+    required this.label,
+    required this.route,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -302,9 +353,8 @@ class _BrowseChip extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(context).textTheme.labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -329,10 +379,10 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: colorScheme.primary,
-              letterSpacing: 1.2,
-            ),
+          fontWeight: FontWeight.w700,
+          color: colorScheme.primary,
+          letterSpacing: 1.2,
+        ),
       ),
     );
   }
@@ -389,13 +439,11 @@ class _PersonCard extends ConsumerWidget {
 
     // Filtered profiles don't get recommended.
     final filter = ref.watch(contentFilterProvider);
-    if (filter.verdictForProfile(profile, pubkey).action !=
-        FilterAction.show) {
+    if (filter.verdictForProfile(profile, pubkey).action != FilterAction.show) {
       return const SizedBox.shrink();
     }
 
-    final name = profile?.displayNameOrName ??
-        '${pubkey.substring(0, 8)}…';
+    final name = profile?.displayNameOrName ?? '${pubkey.substring(0, 8)}…';
 
     final textTheme = Theme.of(context).textTheme;
 
@@ -437,8 +485,7 @@ class _PersonCard extends ConsumerWidget {
             child: FilledButton.tonal(
               onPressed: () => context.push('/profile/$pubkey'),
               style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                    vertical: AppSpacing.xxs),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
                 minimumSize: const Size(0, 30),
               ),
               child: Text('View', style: textTheme.labelMedium),

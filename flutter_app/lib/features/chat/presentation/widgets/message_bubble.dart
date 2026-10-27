@@ -1,5 +1,7 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
+import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
 
 /// Renders one chat message. The plaintext is already resolved by the
@@ -115,21 +117,27 @@ class MessageBubble extends StatelessWidget {
                 borderRadius: AppShapes.radiusMd,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 280),
-                  child: Image.network(
-                    message.text,
+                  // ADR-0004 + Android quirk: CachedNetworkImage with headers
+                  // (some hosts 403 the default Dart UA on Android) + a
+                  // decode cap (a 280dp bubble never needs full-res).
+                  child: CachedNetworkImage(
+                    imageUrl: message.text,
+                    httpHeaders: kImageHttpHeaders,
                     fit: BoxFit.contain,
-                    loadingBuilder: (context, child, progress) =>
-                        progress == null
-                            ? child
-                            : Container(
-                                height: 120,
-                                width: 200,
-                                color: colorScheme.surfaceContainer,
-                                child: const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              ),
-                    errorBuilder: (_, _, _) => Text(
+                    memCacheWidth: 800,
+                    placeholder: (_, _) => Container(
+                      height: 120,
+                      width: 200,
+                      color: colorScheme.surfaceContainer,
+                      child: const Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                    errorWidget: (_, _, _) => Text(
                       displayText,
                       style: TextStyle(
                         fontSize: 15,

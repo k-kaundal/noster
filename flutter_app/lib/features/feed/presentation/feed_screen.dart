@@ -1,4 +1,3 @@
-
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -7,10 +6,13 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
+import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/connectivity_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/utils/text_sanitize.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
@@ -18,6 +20,7 @@ import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_notifier.dart';
+import 'package:nostrfeed_mobile/features/feed/presentation/widgets/ai_feed_bar.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 
@@ -35,7 +38,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    // Three tabs: For You (personalized) | Following | Global (firehose).
+    // For You is FIRST — it's the default home (personalized like FB/X),
+    // Global is the unfiltered everything-feed (the old For You).
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -65,27 +71,74 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                         tabs: const [
                           Tab(text: 'For You'),
                           Tab(text: 'Following'),
+                          Tab(text: 'Global'),
                         ],
                       ),
                     ),
-                    // Home AI shortcut — a compact ✨ chip on the tab row. The
-                    // avatar lives in the shell AppBar now (→/you), so it's
-                    // removed here — just the AI icon remains.
+                    // Home AI shortcut — a LABELED "✨ AI" pill on the tab
+                    // row, not a bare icon: users must SEE it's a tappable AI
+                    // link (a lone sparkle read as decoration). Quiet pill in
+                    // the accent container, clearly a button.
                     if (aiAvailable)
                       Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: IconButton(
-                          icon: AppIcon(
-                            'sparkle',
-                            size: AppIconSize.lg,
-                            color: colorScheme.primary,
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Semantics(
+                          button: true,
+                          label: 'Open AI assistant',
+                          child: Material(
+                            color: colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(18),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(18),
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                context.push('/ai');
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: colorScheme.primary.withValues(
+                                      alpha: 0.4,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    AppIcon(
+                                      'sparkle',
+                                      size: AppIconSize.md,
+                                      color: colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'Ask AI',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge
+                                          ?.copyWith(
+                                            color: colorScheme.primary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 3),
+                                    AppIcon(
+                                      'chevron_r',
+                                      size: AppIconSize.xs,
+                                      color: colorScheme.primary.withValues(
+                                        alpha: 0.7,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
-                          tooltip: 'AI Assistant',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () {
-                            HapticFeedback.lightImpact();
-                            context.push('/ai');
-                          },
                         ),
                       ),
                   ],
@@ -95,8 +148,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
                 child: TabBarView(
                   controller: _tabController,
                   children: const [
-                    _FeedTab(following: false),
-                    _FeedTab(following: true),
+                    _FeedTab(mode: FeedMode.forYou),
+                    _FeedTab(mode: FeedMode.following),
+                    _FeedTab(mode: FeedMode.global),
                   ],
                 ),
               ),
@@ -194,10 +248,10 @@ class _SupportSideShortcutState extends State<_SupportSideShortcut> {
                   Text(
                     'Support',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: scheme.onSurfaceVariant,
-                          fontSize: 10,
-                        ),
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   GestureDetector(
@@ -224,8 +278,10 @@ class _SupportSideShortcutState extends State<_SupportSideShortcut> {
 // ─── One feed tab (offline-first, no flicker) ────────────────────────
 
 class _FeedTab extends ConsumerStatefulWidget {
-  final bool following;
-  const _FeedTab({required this.following});
+  final FeedMode mode;
+  const _FeedTab({required this.mode});
+
+  bool get following => mode == FeedMode.following;
 
   @override
   ConsumerState<_FeedTab> createState() => _FeedTabState();
@@ -270,10 +326,7 @@ class _FeedTabState extends ConsumerState<_FeedTab>
     // maxScrollExtent during an over-fling) can't re-fire it mid-load.
     if (pos.pixels > pos.maxScrollExtent - 800 &&
         pos.pixels <= pos.maxScrollExtent + 1) {
-      final notifier = widget.following
-          ? ref.read(followingFeedNotifierProvider.notifier)
-          : ref.read(globalFeedProvider.notifier);
-      notifier.loadMore();
+      ref.read(_provider.notifier).loadMore();
     }
     _schedulePrefetch();
   }
@@ -299,8 +352,9 @@ class _FeedTabState extends ConsumerState<_FeedTab>
     if (!mounted || !_scrollController.hasClients) return;
     final events = ref.read(_provider).events;
     if (events.isEmpty) return;
-    final firstVisible =
-        (_scrollController.offset / _avgCardExtent).floor().clamp(0, events.length - 1);
+    final firstVisible = (_scrollController.offset / _avgCardExtent)
+        .floor()
+        .clamp(0, events.length - 1);
     // Only do the work when we've moved ~5+ items since the last warm —
     // avoids re-walking the same window on small scrolls.
     if ((firstVisible - _lastPrefetchIndex).abs() < 5) return;
@@ -331,9 +385,12 @@ class _FeedTabState extends ConsumerState<_FeedTab>
     }
   }
 
-  NotifierProvider<FeedNotifier, FeedState> get _provider => widget.following
-      ? followingFeedNotifierProvider
-      : globalFeedProvider;
+  NotifierProvider<FeedNotifier, FeedState> get _provider =>
+      switch (widget.mode) {
+        FeedMode.global => globalFeedProvider,
+        FeedMode.forYou => forYouFeedProvider,
+        FeedMode.following => followingFeedNotifierProvider,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -371,6 +428,11 @@ class _FeedTabState extends ConsumerState<_FeedTab>
             switchOutCurve: AppMotion.curve,
             child: feed.events.isEmpty && feed.isRefreshing
                 ? const SkeletonList(key: ValueKey('skeleton'))
+                : feed.events.isEmpty && widget.following
+                ? _FollowingEmptyState(
+                    feed: feed,
+                    onRefresh: () => ref.read(_provider.notifier).refresh(),
+                  )
                 : feed.events.isEmpty
                 ? ListView(
                     key: const ValueKey('empty'),
@@ -378,23 +440,11 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                     children: [
                       SizedBox(
                         height: 420,
-                        // Empty state → ACTION, never a dead end (NN/g empty-
-                        // state rule): an error gets retry; a brand-new
-                        // Following tab gets "discover people" (the feed
-                        // fills from who you follow — a dead message here
-                        // was the new-user retention leak).
                         child: EmptyState(
-                          icon: widget.following
-                              ? Icons.people_outline
-                              : Icons.feed_outlined,
+                          icon: Icons.feed_outlined,
                           title: feed.error != null
                               ? 'Could not load the feed — pull to retry'
-                              : (widget.following
-                                  ? 'Your feed is quiet'
-                                  : 'No posts yet'),
-                          subtitle: widget.following && feed.error == null
-                              ? 'Follow some people and their posts show up here.'
-                              : null,
+                              : 'No posts yet',
                           iconColor: Colors.grey,
                           action: feed.error != null
                               ? FilledButton.tonalIcon(
@@ -403,57 +453,69 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                                   icon: const AppIcon('repost'),
                                   label: const Text('Refresh'),
                                 )
-                              : (widget.following
-                                  ? FilledButton.tonalIcon(
-                                      onPressed: () => context.go('/explore'),
-                                      icon: const AppIcon('sparkle'),
-                                      label: const Text('Discover people'),
-                                    )
-                                  : FilledButton.tonalIcon(
-                                      onPressed: () =>
-                                          ref.read(_provider.notifier).refresh(),
-                                      icon: const AppIcon('repost'),
-                                      label: const Text('Refresh'),
-                                    )),
+                              : FilledButton.tonalIcon(
+                                  onPressed: () =>
+                                      ref.read(_provider.notifier).refresh(),
+                                  icon: const AppIcon('repost'),
+                                  label: const Text('Refresh'),
+                                ),
                         ),
                       ),
                     ],
                   )
-                : ListView.builder(
-                    key: const ValueKey('feed'),
-                    controller: _scrollController,
-                    padding: const EdgeInsets.only(top: 4, bottom: 180),
-                    // Always-scrollable so pull-to-refresh works even on a
-                    // short feed; bouncing on iOS, clamping on Android —
-                    // the platform default reads naturally on each. Explicit
-                    // physics avoids the "scroll gets stuck" Android quirk
-                    // where an unset physics + heavy cards lock the thread.
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    // Build a little ahead of the viewport so media/cards are
-                    // ready before they scroll in — smooths fast flings.
-                    scrollCacheExtent: const ScrollCacheExtent.pixels(800),
-                    itemCount:
-                        feed.events.length + (feed.isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      // The trailing "loading more" spinner is last.
-                      if (index >= feed.events.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(
-                            child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                        );
-                      }
-                      return PostCard(
-                        // A stable key lets Flutter reuse the card's element +
-                        // optimistic-like state as the list grows, instead of
-                        // rebuilding every card from scratch on each page.
-                        key: ValueKey(feed.events[index].id),
-                        event: feed.events[index],
+                : Builder(
+                    builder: (context) {
+                      // +1 for the AI bar pinned at the top of the For You
+                      // tab (never in Following or Global — a feature entry
+                      // point, not a promo card; see AiFeedBar).
+                      final hasAiBar = widget.mode == FeedMode.forYou;
+                      return ListView.builder(
+                        key: const ValueKey('feed'),
+                        controller: _scrollController,
+                        padding: const EdgeInsets.only(top: 4, bottom: 180),
+                        // Always-scrollable so pull-to-refresh works even on a
+                        // short feed; bouncing on iOS, clamping on Android —
+                        // the platform default reads naturally on each.
+                        // Explicit physics avoids the "scroll gets stuck"
+                        // Android quirk where an unset physics + heavy cards
+                        // lock the thread.
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        // Build a little ahead of the viewport so media/cards
+                        // are ready before they scroll in — smooths flings.
+                        scrollCacheExtent: const ScrollCacheExtent.pixels(800),
+                        itemCount:
+                            feed.events.length +
+                            (hasAiBar ? 1 : 0) +
+                            (feed.isLoadingMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (hasAiBar && index == 0) {
+                            return const AiFeedBar();
+                          }
+                          final postIndex = hasAiBar ? index - 1 : index;
+                          // The trailing "loading more" spinner is last.
+                          if (postIndex >= feed.events.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          return PostCard(
+                            // A stable key lets Flutter reuse the card's
+                            // element + optimistic-like state as the list
+                            // grows, instead of rebuilding every card from
+                            // scratch on each page.
+                            key: ValueKey(feed.events[postIndex].id),
+                            event: feed.events[postIndex],
+                          );
+                        },
                       );
                     },
                   ),
@@ -476,6 +538,10 @@ class _FeedTabState extends ConsumerState<_FeedTab>
             ),
 
           // "N new posts" pill — live arrivals, folded in only on tap.
+          // Shown on ALL THREE tabs (For You / Following / Global): each
+          // tab's notifier has its own live tail + pending buffer, so a new
+          // post pops the pill on whichever tab is live. For You re-ranks
+          // the pending batch with personalization before merging.
           if (feed.newCount > 0)
             Positioned(
               top: 12,
@@ -486,6 +552,7 @@ class _FeedTabState extends ConsumerState<_FeedTab>
                   count: feed.newCount,
                   authorPubkeys: feed.newPostAuthors,
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     ref.read(_provider.notifier).showNewPosts();
                     // Return to the top so the new posts are visible.
                     if (_scrollController.hasClients) {
@@ -552,8 +619,11 @@ class _OfflineBanner extends StatelessWidget {
 }
 
 /// The "N new posts" pill — tap to fold the live arrivals into the feed.
-/// Primal's NewPostsButton: a primary-colored pill with up to 3 stacked
-/// author avatars (`AvatarThumbnailsRow`) + a bold count capped at "20+".
+///
+/// Primal's NewPostsButton: a primary pill with up to 3 stacked author
+/// avatars + an accurate count capped at "20+". The avatar pictures resolve
+/// from the shared `profileProvider` cache (the live tail's authors were
+/// prefetched with their page — no extra relay queries per pill).
 class _NewPostsPill extends StatelessWidget {
   final int count;
   final List<String> authorPubkeys;
@@ -567,36 +637,40 @@ class _NewPostsPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.primary,
-      borderRadius: BorderRadius.circular(20),
-      elevation: 4,
-      child: InkWell(
-        onTap: onTap,
+    return Semantics(
+      button: true,
+      label: 'Show $count new posts',
+      child: Material(
+        color: scheme.primary,
         borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (authorPubkeys.isNotEmpty) ...[
-                _AvatarStack(pubkeys: authorPubkeys),
-                const SizedBox(width: 8),
-              ] else ...[
-                const AppIcon('arrow_up', size: 16, color: Colors.white),
-                const SizedBox(width: 6),
-              ],
-              Text(
-                count > 20
-                    ? '20+ new posts'
-                    : '$count new post${count == 1 ? '' : 's'}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
+        elevation: 4,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (authorPubkeys.isNotEmpty) ...[
+                  _AvatarStack(pubkeys: authorPubkeys),
+                  const SizedBox(width: 8),
+                ] else ...[
+                  const AppIcon('arrow_up', size: 16, color: Colors.white),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  count > 20
+                      ? '20+ new posts'
+                      : '$count new post${count == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -604,8 +678,8 @@ class _NewPostsPill extends StatelessWidget {
   }
 }
 
-/// Up to 3 overlapping author avatars (Primal's AvatarThumbnailsRow) —
-/// each resolves its picture from the shared profile cache.
+/// Up to 3 overlapping author avatars — each resolves its picture from the
+/// shared profile cache (no extra fetches).
 class _AvatarStack extends ConsumerWidget {
   final List<String> pubkeys;
   const _AvatarStack({required this.pubkeys});
@@ -644,6 +718,204 @@ class _AvatarStack extends ConsumerWidget {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The Following tab's empty state: shows "Your feed is quiet" + a list of
+/// trending authors worth following (People to follow). Never a dead end —
+/// the user can tap a profile and follow them, filling their feed.
+class _FollowingEmptyState extends ConsumerWidget {
+  final FeedState feed;
+  final VoidCallback onRefresh;
+
+  const _FollowingEmptyState({required this.feed, required this.onRefresh});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final auth = ref.watch(authStateProvider);
+
+    // Proper per-user context: does this user actually follow anyone? The
+    // empty state's job changes by answer — a user with ZERO follows needs
+    // "discover people"; a user WITH follows but no posts yet needs "pull
+    // to refresh" (the hub may just not have synced their authors yet —
+    // telling them to follow MORE people is the wrong nudge).
+    final follows = ref.watch(followsProvider).valueOrNull;
+    final followCount = follows?.length ?? 0;
+
+    return ListView(
+      key: const ValueKey('following-empty'),
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        // NO fixed-height SizedBox — the EmptyState sizes itself (the 200px
+        // box OVERFLOWED the column: icon + title + subtitle + retry button
+        // ≈ 220px, flagged by DevTools as a RenderFlex overflow).
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 40),
+          child: EmptyState(
+            icon: Icons.people_outline,
+            title: feed.error != null
+                ? 'Could not load the feed — pull to retry'
+                : followCount == 0
+                ? 'Your feed is quiet'
+                : 'No posts from people you follow yet',
+            subtitle: feed.error != null
+                ? null
+                : followCount == 0
+                ? 'Follow some people and their posts show up here.'
+                : 'You follow $followCount ${followCount == 1 ? 'person' : 'people'} — their posts appear here as they arrive.',
+            iconColor: Colors.grey,
+            action: feed.error != null || followCount > 0
+                ? FilledButton.tonalIcon(
+                    onPressed: onRefresh,
+                    icon: const AppIcon('repost'),
+                    label: const Text('Refresh'),
+                  )
+                : FilledButton.tonalIcon(
+                    onPressed: () => context.go('/explore'),
+                    icon: const AppIcon('sparkle'),
+                    label: const Text('Discover people'),
+                  ),
+          ),
+        ),
+        // People to follow — only when the user follows nobody (a user who
+        // already follows people doesn't need discovery pushed at them).
+        if (feed.error == null && auth.isLoggedIn && followCount == 0) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Text(
+              'PEOPLE TO FOLLOW',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: colorScheme.primary,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          const _FollowingPeopleToFollow(),
+        ],
+      ],
+    );
+  }
+}
+
+/// Trending authors worth following: the authors of trending posts in the
+/// global feed, deduplicated, profiles checked against the content filter.
+/// Same source as Explore's People-to-follow (trendingProvider).
+class _FollowingPeopleToFollow extends ConsumerWidget {
+  const _FollowingPeopleToFollow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final trending = ref.watch(trendingProvider(24)).valueOrNull ?? [];
+    final follows = ref.watch(followsProvider).valueOrNull ?? [];
+    final auth = ref.watch(authStateProvider);
+
+    // Authors of trending posts, most-posting first, excluding self/follows.
+    final counts = <String, int>{};
+    for (final e in trending) {
+      counts[e.pubkey] = (counts[e.pubkey] ?? 0) + 1;
+    }
+    final candidates = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final pubkeys = candidates
+        .map((e) => e.key)
+        .where((pk) => pk != auth.pubkey && !follows.contains(pk))
+        .take(8)
+        .toList();
+
+    if (pubkeys.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Text(
+          'No suggestions right now — check back soon.',
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 176,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: pubkeys.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (context, i) => _FollowPersonCard(pubkey: pubkeys[i]),
+      ),
+    );
+  }
+}
+
+/// A person card in the "People to follow" list — avatar, name, NIP-05,
+/// and a View button that opens their profile.
+class _FollowPersonCard extends ConsumerWidget {
+  final String pubkey;
+  const _FollowPersonCard({required this.pubkey});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final profileAsync = ref.watch(profileProvider(pubkey));
+    final profile = profileAsync.valueOrNull;
+
+    // Filtered profiles don't get recommended.
+    final filter = ref.watch(contentFilterProvider);
+    if (filter.verdictForProfile(profile, pubkey).action != FilterAction.show) {
+      return const SizedBox.shrink();
+    }
+
+    final name = profile?.displayNameOrName ?? '${pubkey.substring(0, 8)}…';
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
+      width: 132,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          SafeAvatar(
+            imageUrl: profile?.picture,
+            radius: 26,
+            fallback: Text(
+              firstGrapheme(name),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          if (profile?.nip05 != null && profile!.nip05!.isNotEmpty)
+            Text(
+              profile.nip05!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.labelSmall?.copyWith(color: scheme.primary),
+            ),
+          const Spacer(),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: () => context.push('/profile/$pubkey'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                minimumSize: const Size(0, 30),
+              ),
+              child: Text('View', style: textTheme.labelMedium),
+            ),
+          ),
         ],
       ),
     );

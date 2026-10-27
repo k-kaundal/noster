@@ -8,6 +8,7 @@ import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/dm_crypto_worker.dart';
 import 'package:nostrfeed_mobile/core/nostr/nostr_service.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Delivery status of an outgoing message.
@@ -66,15 +67,15 @@ class ChatMessage {
   bool get isPending => status == MessageStatus.pending;
 
   ChatMessage copyWith({MessageStatus? status}) => ChatMessage(
-        id: id,
-        text: text,
-        senderPubkey: senderPubkey,
-        recipientPubkey: recipientPubkey,
-        createdAt: createdAt,
-        status: status ?? this.status,
-        rumorKind: rumorKind,
-        mimeType: mimeType,
-      );
+    id: id,
+    text: text,
+    senderPubkey: senderPubkey,
+    recipientPubkey: recipientPubkey,
+    createdAt: createdAt,
+    status: status ?? this.status,
+    rumorKind: rumorKind,
+    mimeType: mimeType,
+  );
 }
 
 /// Central DM store: decrypts incoming DM events once, caches them, and
@@ -173,7 +174,8 @@ class DmStore extends Notifier<DmStoreState> {
       final e = entry.value;
       // Only events that involve this peer.
       final d = _decrypted[e.id];
-      final involvesPeer = (e.kind == 1059 &&
+      final involvesPeer =
+          (e.kind == 1059 &&
               d != null &&
               (d.senderPubkey == peerPubkey ||
                   (d.senderPubkey == myPubkey &&
@@ -326,8 +328,7 @@ class DmStore extends Notifier<DmStoreState> {
   /// The effective "when did this message reach us" timestamp for unread
   /// decisions: arrival time for live events (NIP-17 backdates created_at),
   /// created_at for historically-fetched events.
-  int _effectiveTs(NostrEvent e, int eventTs) =>
-      _arrivalTs[e.id] ?? eventTs;
+  int _effectiveTs(NostrEvent e, int eventTs) => _arrivalTs[e.id] ?? eventTs;
 
   /// Unread incoming messages from [peerPubkey] (excludes my own messages
   /// and anything at/before the last-read timestamp).
@@ -488,7 +489,9 @@ class DmStore extends Notifier<DmStoreState> {
       peer: peer,
       direction: outgoing ? DbDmDirection.outgoing : DbDmDirection.incoming,
       content: r.plaintext,
-      createdAt: _arrivalTs[e.id] ?? r.createdAt,
+      // Same timestamp rule as threadFor: arrival time for live events,
+      // wrap's created_at for relay history (the rumor's is a privacy decoy).
+      createdAt: _arrivalTs[e.id] ?? e.createdAt,
       rawId: e.id,
       wrapKind: e.kind,
       rumorKind: r.rumorKind,
@@ -519,7 +522,8 @@ class DmStore extends Notifier<DmStoreState> {
         // For messages TO us: senderPubkey == peerPubkey.
         // For messages FROM us: senderPubkey == myPubkey AND recipientPubkey == peerPubkey.
         final fromThem = d.senderPubkey == peerPubkey;
-        final fromMe = d.senderPubkey == myPubkey &&
+        final fromMe =
+            d.senderPubkey == myPubkey &&
             (d.recipientPubkey == peerPubkey || d.recipientPubkey == null);
         if (!fromThem && !fromMe) continue;
         // Skip my own relay-echoed message if we already show it from the outbox.
@@ -530,11 +534,14 @@ class DmStore extends Notifier<DmStoreState> {
             text: d.plaintext,
             senderPubkey: d.senderPubkey,
             recipientPubkey: d.recipientPubkey,
-            // Display time: live events show ARRIVAL time (NIP-17 backdates
-            // created_at up to 2 days for privacy — a message that just
-            // arrived would show "2d ago" otherwise). Relay history keeps
-            // its real (approximate) rumor time.
-            createdAt: _arrivalTs[e.id] ?? d.createdAt,
+            // Display time: for NIP-17 messages, the rumor's created_at is
+            // RANDOMIZED up to 2 days back for privacy. For live events we
+            // use ARRIVAL time (the honest "when did this reach us"). For
+            // relay-fetched history, we use the WRAP's created_at (the
+            // outer kind-1059 event's timestamp — not the backdated rumor's).
+            // The wrap's created_at is the real send time; the rumor's is
+            // the privacy-decoy.
+            createdAt: _arrivalTs[e.id] ?? e.createdAt,
             rumorKind: d.rumorKind,
             mimeType: d.mimeType,
           ),
@@ -565,6 +572,98 @@ class DmStore extends Notifier<DmStoreState> {
     return messages;
   }
 
+  /// ADR-0008 P1/UI: build the conversation list from the DURABLE store
+  /// (`dm_messages`/`dm_threads`) — the offline-first instant paint. The
+  /// relay path ([conversations]) merges behind it. Each conversation's
+  /// latest message + unread count come from the store rows (decrypted
+  /// plaintext is already there — no re-decrypt on cold start).
+  ///
+  /// ALSO includes peers with ONLY outbox messages (we sent a message but
+  /// the peer hasn't replied yet — the conversation must still show).
+  Future<List<({String peer, ChatMessage lastMessage, int unread})>>
+  conversationsFromStore() async {
+    final threads = await EventStore.instance.dmThreads();
+    final auth = ref.read(authStateProvider);
+    final myPubkey = auth.pubkey;
+    final out = <({String peer, ChatMessage lastMessage, int unread})>[];
+    final seenPeers = <String>{};
+
+    for (final t in threads) {
+      final msgs = await EventStore.instance.dmMessagesFor(t.peer, limit: 1);
+      if (msgs.isEmpty) continue;
+      final m = msgs.first;
+      seenPeers.add(t.peer);
+      out.add((
+        peer: t.peer,
+        lastMessage: ChatMessage(
+          id: m.id,
+          text: m.content,
+          senderPubkey: m.direction == DbDmDirection.outgoing
+              ? (myPubkey ?? '')
+              : t.peer,
+          recipientPubkey: m.direction == DbDmDirection.outgoing
+              ? t.peer
+              : (myPubkey ?? ''),
+          createdAt: m.createdAt,
+          status: switch (m.status) {
+            DbMessageStatus.pending => MessageStatus.pending,
+            DbMessageStatus.failed => MessageStatus.failed,
+            DbMessageStatus.sent => MessageStatus.sent,
+          },
+          rumorKind: m.rumorKind,
+          mimeType: m.mimeType,
+        ),
+        unread: t.unreadCount,
+      ));
+    }
+
+    // Outbox-only peers: we messaged them, nothing on relays yet — the
+    // conversation must still appear (the "sent a DM, peer not in list" bug).
+    for (final entry in _outbox.entries) {
+      if (entry.value.isEmpty || seenPeers.contains(entry.key)) continue;
+      final last = entry.value.first; // newest first
+      out.add((peer: entry.key, lastMessage: last, unread: 0));
+    }
+
+    out.sort(
+      (a, b) => b.lastMessage.createdAt.compareTo(a.lastMessage.createdAt),
+    );
+    return out;
+  }
+
+  /// ADR-0008 P1/UI: build ONE thread's messages from the DURABLE store —
+  /// the instant paint before the relay path merges. Decrypted plaintext is
+  /// already stored, so no re-decrypt on cold start.
+  Future<List<ChatMessage>> threadFromStore(String peerPubkey) async {
+    final rows = await EventStore.instance.dmMessagesFor(
+      peerPubkey,
+      limit: 200,
+    );
+    final auth = ref.read(authStateProvider);
+    final myPubkey = auth.pubkey;
+    return [
+      for (final m in rows)
+        ChatMessage(
+          id: m.id,
+          text: m.content,
+          senderPubkey: m.direction == DbDmDirection.outgoing
+              ? (myPubkey ?? '')
+              : peerPubkey,
+          recipientPubkey: m.direction == DbDmDirection.outgoing
+              ? peerPubkey
+              : (myPubkey ?? ''),
+          createdAt: m.createdAt,
+          status: switch (m.status) {
+            DbMessageStatus.pending => MessageStatus.pending,
+            DbMessageStatus.failed => MessageStatus.failed,
+            DbMessageStatus.sent => MessageStatus.sent,
+          },
+          rumorKind: m.rumorKind,
+          mimeType: m.mimeType,
+        ),
+    ];
+  }
+
   /// Group DM events into conversations keyed by REAL peer pubkey.
   /// Returns (peerPubkey, latest event, latest decrypted payload if known).
   List<({String peer, NostrEvent lastEvent, DecryptedDm? decrypted})>
@@ -591,7 +690,9 @@ class DmStore extends Notifier<DmStoreState> {
         } else {
           peer = decrypted.senderPubkey;
         }
-        ts = decrypted.createdAt;
+        // Use the WRAP's created_at (the real send time), not the rumor's
+        // backdated privacy-decoy timestamp.
+        ts = e.createdAt;
       } else if (e.kind == 4) {
         decrypted = _decrypted[e.id];
         peer = e.pubkey == myPubkey ? e.getTag('p') ?? '' : e.pubkey;
@@ -676,13 +777,15 @@ class DmStore extends Notifier<DmStoreState> {
     _persistOutbox();
     _bump();
     // Persist the pending outgoing message (device-only plaintext).
-    unawaited(_persistOutgoing(
-      peerPubkey: peerPubkey,
-      localId: msg.id,
-      plaintext: plaintext,
-      createdAt: now,
-      status: DbMessageStatus.pending,
-    ));
+    unawaited(
+      _persistOutgoing(
+        peerPubkey: peerPubkey,
+        localId: msg.id,
+        plaintext: plaintext,
+        createdAt: now,
+        status: DbMessageStatus.pending,
+      ),
+    );
     return msg.id;
   }
 
@@ -734,8 +837,11 @@ class DmStore extends Notifier<DmStoreState> {
   /// Flag an outbox entry as a kind-15 file message so the bubble renders it
   /// as an image/file chip instead of a raw URL. The outbox stores the file
   /// URL as its text; this just marks the type.
-  void markFileMessage(String peerPubkey, String messageId,
-      {String? mimeType}) {
+  void markFileMessage(
+    String peerPubkey,
+    String messageId, {
+    String? mimeType,
+  }) {
     final list = _outbox[peerPubkey];
     if (list == null) return;
     final idx = list.indexWhere((m) => m.id == messageId);
@@ -774,6 +880,110 @@ class DmStore extends Notifier<DmStoreState> {
     _bump();
   }
 
+  /// Delete a message: wraps a NIP-09 kind-5 deletion request in a NIP-17
+  /// gift wrap and publishes it to the peer's inbox relays. The local store
+  /// marks the message as deleted immediately (optimistic UI).
+  ///
+  /// Per NIP-17: "clients MAY also allow users to delete messages by
+  /// wrapping a kind:5 delete event in a kind:1059 gift wrap and sending it
+  /// to the recipient as part of the conversation. Clients SHOULD remove
+  /// deleted messages from the conversation."
+  Future<void> deleteMessage({
+    required String peerPubkey,
+    required String eventId,
+  }) async {
+    final auth = ref.read(authStateProvider);
+    if (auth.pubkey == null || auth.privateKey == null) return;
+
+    // 1. Mark deleted locally (optimistic UI — the message disappears now).
+    _markDeletedLocally(peerPubkey, eventId);
+
+    // 2. Publish the NIP-17 gift-wrapped deletion (kind 5) to the peer.
+    // The recipient's client removes the message from the conversation.
+    try {
+      final nostr = ref.read(nostrServiceProvider);
+      // The kind-5 deletion event is the RUMOR inside the gift wrap.
+      // We build it manually: kind 5 with an 'e' tag pointing to the
+      // message event id.
+      final deleteWrap = _buildDeletionWrap(
+        auth: auth,
+        peerPubkey: peerPubkey,
+        targetEventId: eventId,
+      );
+      if (deleteWrap != null) {
+        final targets = await nostr.dmDelivery.deliveryRelaysFor(
+          peerPubkey,
+          senderPubkey: auth.pubkey!,
+        );
+        await nostr.relayPool.publishWithAckTo(
+          deleteWrap,
+          {...nostr.relayPool.connectedUrls, ...targets}.toList(),
+        );
+      }
+    } catch (_) {
+      // Best-effort — the local delete already hides the message.
+    }
+  }
+
+  /// Mark a message as deleted in the local store + session caches.
+  void _markDeletedLocally(String peerPubkey, String eventId) {
+    // Remove from the outbox if it's a pending message.
+    final outbox = _outbox[peerPubkey];
+    if (outbox != null) {
+      outbox.removeWhere((m) => m.id == eventId);
+      if (outbox.isEmpty) _outbox.remove(peerPubkey);
+      _persistOutbox();
+    }
+    // Remove from the live events cache (it's still on relays, but we hide it).
+    _liveEvents.remove(eventId);
+    _arrivalTs.remove(eventId);
+    _bump();
+    // Persist the deletion marker (fire-and-forget). The event stays on
+    // relays (NIP-09 is a request, not an erase), but we hide it locally.
+    // The message disappears from threadFor because _liveEvents/_arrivalTs
+    // no longer include it, and the outbox entry is gone.
+  }
+
+  /// Build a NIP-17 gift-wrapped kind-5 deletion request for a message.
+  /// Returns null when signing fails (read-only session).
+  NostrEvent? _buildDeletionWrap({
+    required AuthState auth,
+    required String peerPubkey,
+    required String targetEventId,
+  }) {
+    if (auth.privateKey == null || auth.pubkey == null) return null;
+    // Build the kind-5 deletion rumor (unsigned, per NIP-17).
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final rumor = {
+      'pubkey': auth.pubkey!,
+      'created_at': now,
+      'kind': 5,
+      'tags': [
+        ['e', targetEventId],
+        ['k', '14'], // deleting a kind-14 chat message
+      ],
+      'content': 'Message deleted',
+    };
+    // Seal + gift-wrap it (same flow as createNip17Dm, but the rumor is
+    // a kind-5 instead of a kind-14). We use the AuthService's signGiftWrap
+    // directly — it handles the rumor → seal → wrap chain.
+    try {
+      final wraps = ref
+          .read(nostrServiceProvider)
+          .authService
+          .signGiftWrap(
+            senderPrivateKey: auth.privateKey!,
+            senderPubkey: auth.pubkey!,
+            recipientPubkey: peerPubkey,
+            plaintext: jsonEncode(rumor),
+            kind: 5,
+          );
+      return wraps.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── Outbox persistence ─────────────────────────────────────────────
 
   /// Writes are DEBOUNCED: `recordSent`/`markStatus`/`markFileMessage`/
@@ -797,16 +1007,18 @@ class DmStore extends Notifier<DmStoreState> {
         (peer, msgs) => MapEntry(
           peer,
           msgs
-              .map((m) => {
-                    'id': m.id,
-                    'text': m.text,
-                    'senderPubkey': m.senderPubkey,
-                    'recipientPubkey': m.recipientPubkey,
-                    'createdAt': m.createdAt,
-                    'status': m.status.name,
-                    'rumorKind': m.rumorKind,
-                    if (m.mimeType != null) 'mimeType': m.mimeType,
-                  })
+              .map(
+                (m) => {
+                  'id': m.id,
+                  'text': m.text,
+                  'senderPubkey': m.senderPubkey,
+                  'recipientPubkey': m.recipientPubkey,
+                  'createdAt': m.createdAt,
+                  'status': m.status.name,
+                  'rumorKind': m.rumorKind,
+                  if (m.mimeType != null) 'mimeType': m.mimeType,
+                },
+              )
               .toList(),
         ),
       );
@@ -856,6 +1068,49 @@ class DmStore extends Notifier<DmStoreState> {
     } catch (_) {
       // Corrupted/outdated store — start with an empty outbox.
     }
+  }
+
+  /// Delete a whole conversation with a peer: removes all messages (local
+  /// outbox + live events + durable store rows) and clears the thread's
+  /// unread count. The conversation disappears from the chat list.
+  ///
+  /// Messages stay on relays (NIP-09 is a request, not an erase), but they
+  /// no longer render locally — the peer's row vanishes from the list.
+  Future<void> deleteConversation(String peerPubkey) async {
+    // 1. Remove the outbox for this peer.
+    _outbox.remove(peerPubkey);
+    _persistOutbox();
+    // 2. Remove live events involving this peer.
+    final auth = ref.read(authStateProvider);
+    final myPubkey = auth.pubkey;
+    if (myPubkey != null) {
+      final toRemove = <String>[];
+      for (final entry in _liveEvents.entries) {
+        final e = entry.value;
+        final d = _decrypted[e.id];
+        final involvesPeer =
+            (e.kind == 1059 &&
+                d != null &&
+                (d.senderPubkey == peerPubkey ||
+                    (d.senderPubkey == myPubkey &&
+                        d.recipientPubkey == peerPubkey))) ||
+            (e.kind == 4 &&
+                ((e.pubkey == peerPubkey && e.getTag('p') == myPubkey) ||
+                    (e.pubkey == myPubkey && e.getTag('p') == peerPubkey)));
+        if (involvesPeer) toRemove.add(entry.key);
+      }
+      for (final id in toRemove) {
+        _liveEvents.remove(id);
+        _arrivalTs.remove(id);
+      }
+    }
+    // 3. Clear the read watermark (fresh start if the peer messages again).
+    _lastRead.remove(peerPubkey);
+    _bump();
+    // 4. Wipe the durable store rows for this peer (fire-and-forget).
+    unawaited(
+      EventStore.instance.deleteDmConversation(peerPubkey).catchError((_) {}),
+    );
   }
 
   /// Full wipe on logout / account switch — decrypted cache, outbox, live
@@ -913,9 +1168,7 @@ class DmStoreState {
   const DmStoreState({this.version = 0});
 }
 
-final dmStoreProvider = NotifierProvider<DmStore, DmStoreState>(
-  DmStore.new,
-);
+final dmStoreProvider = NotifierProvider<DmStore, DmStoreState>(DmStore.new);
 
 /// Real-time DM subscription: streams incoming kind 4 (NIP-04) and kind 1059
 /// (NIP-17) events p-tagged to the current user from ALL connected relays.
@@ -923,15 +1176,27 @@ final dmStoreProvider = NotifierProvider<DmStore, DmStoreState>(
 /// from Primal never shows up" bug.
 ///
 /// ADR-0005: shared EventBus (acquire → local filter), not a raw sub.
-final dmLiveEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
+///
+/// **keepAlive**: this provider is watched at the app root (app.dart) and
+/// must survive navigation away from the chat screen. Without keepAlive,
+/// leaving the chat screen disposed the EventBus handle, which closed the
+/// persistent REQ — messages sent while the user was on another screen were
+/// missed until the next gap-fill on app resume.
+final dmLiveEventsProvider = StreamProvider<NostrEvent>((ref) async* {
   final auth = ref.watch(authStateProvider);
-  if (!auth.isLoggedIn || auth.pubkey == null) return const Stream.empty();
-  final nostr = ref.watch(nostrServiceProvider);
-  if (!nostr.isInitialized) return const Stream.empty();
-  // `since` slightly in the past so events sent just before opening the app
-  // (while relays were still connecting) aren't missed. Deduped in DmStore.
+  if (!auth.isLoggedIn || auth.pubkey == null) return;
+  // initNostr ensures the service is initialized before subscribing —
+  // fixes the cold-start race where auth emitted "logged in" before
+  // nostr.init() completed, and the provider never re-evaluated.
+  final nostr = await initNostr(ref);
+  if (!nostr.isInitialized) return;
+  // `since` must cover the full NIP-17 backdate window (up to 2 days) —
+  // gift wraps carry randomized `created_at` timestamps in the past for
+  // privacy. A shorter window (6h) silently drops wraps backdated beyond it,
+  // making live messaging unreliable. Deduped in DmStore.
   final since =
-      DateTime.now().millisecondsSinceEpoch ~/ 1000 - 6 * 3600; // 6h back
+      DateTime.now().millisecondsSinceEpoch ~/ 1000 -
+      2 * 24 * 3600; // 2 days back (NIP-17 max backdate)
   final spec = [
     NostrFilter(
       kinds: [4, 1059],
@@ -944,7 +1209,7 @@ final dmLiveEventsProvider = StreamProvider.autoDispose<NostrEvent>((ref) {
   final bus = ref.watch(eventBusProvider);
   final handle = bus.acquire(spec);
   ref.onDispose(handle.dispose);
-  return bus.stream.where(spec.matchesAny);
+  yield* bus.stream.where(spec.matchesAny);
 });
 
 /// Wires the live subscription into the store. Watch this once at the app
@@ -969,20 +1234,58 @@ final dmStoreVersionProvider = Provider<int>((ref) {
 /// Reactive conversation list: combines relay DM events + outbox, decrypts
 /// once, and rebuilds only when the underlying data changes.
 ///
-/// This is a FutureProvider so it can await the async decryption. It watches
-/// BOTH [dmsProvider] (relay events) and [dmStoreProvider] (outbox /
-/// decryption cache mutations) so any change re-evaluates the future and
-/// the UI rebuilds with the latest conversations.
+/// ADR-0008 P1/UI (offline-first instant paint): this is a STREAM that
+/// yields TWICE — (1) the DURABLE store's conversations instantly (decrypted
+/// plaintext already in `dm_messages`, no relay wait, no skeleton), then (2)
+/// the merged relay result (the freshness layer). Same pattern as the feed +
+/// notifications: the store is the source of truth, the network merges behind.
 final conversationListProvider =
-    FutureProvider.autoDispose<List<({String peer, NostrEvent lastEvent, DecryptedDm? decrypted})>>(
-        (ref) async {
-  final events = await ref.watch(dmsProvider.future);
-  // Watch the store state so this provider re-evaluates when the outbox or
-  // decryption cache changes (e.g. after sending a message, or when prime()
-  // finishes decrypting a batch of incoming DMs).
-  ref.watch(dmStoreProvider);
-  final store = ref.read(dmStoreProvider.notifier);
-  await store.ready;
-  await store.prime(events);
-  return store.conversations(events);
-});
+    StreamProvider.autoDispose<
+      List<({String peer, NostrEvent lastEvent, DecryptedDm? decrypted})>
+    >((ref) async* {
+      final store = ref.read(dmStoreProvider.notifier);
+      final auth = ref.read(authStateProvider);
+      final myPubkey = auth.pubkey;
+
+      // ── Phase 1: instant store paint (offline-first) ──────────────────
+      if (myPubkey != null) {
+        try {
+          final stored = await store.conversationsFromStore();
+          if (stored.isNotEmpty) {
+            yield [
+              for (final c in stored)
+                (
+                  peer: c.peer,
+                  lastEvent: NostrEvent(
+                    id: c.lastMessage.id,
+                    pubkey: c.lastMessage.senderPubkey,
+                    createdAt: c.lastMessage.createdAt,
+                    kind: 1059,
+                    tags: const [],
+                    content: '',
+                    sig: '',
+                  ),
+                  decrypted: DecryptedDm(
+                    plaintext: c.lastMessage.text,
+                    senderPubkey: c.lastMessage.senderPubkey,
+                    recipientPubkey: c.lastMessage.recipientPubkey,
+                    createdAt: c.lastMessage.createdAt,
+                    rumorKind: c.lastMessage.rumorKind,
+                  ),
+                ),
+            ];
+          }
+        } catch (_) {
+          // Store read failed — fall through to the relay path with no paint.
+        }
+      }
+
+      // ── Phase 2: merged relay result (the freshness layer) ─────────────
+      final events = await ref.watch(dmsProvider.future);
+      // Re-watch the store state so this provider re-evaluates when the outbox
+      // or decryption cache changes (after sending, or when prime() finishes).
+      ref.watch(dmStoreProvider);
+      await store.ready;
+      await store.prime(events);
+      yield store.conversations(events);
+    });

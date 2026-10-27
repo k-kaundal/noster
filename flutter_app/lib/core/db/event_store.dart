@@ -435,8 +435,7 @@ class EventStore implements StoreHost {
   Future<T> enqueueWrite<T>(
     Future<T> Function() op, {
     Set<StoreTable>? touches,
-  }) =>
-      _enqueueWrite(op, touches: touches);
+  }) => _enqueueWrite(op, touches: touches);
 
   /// ADR-0008 P3 schema: relay fleet scoring + author→relay affinity.
   /// IDEMPOTENT (IF NOT EXISTS).
@@ -601,10 +600,9 @@ class EventStore implements StoreHost {
     String column,
     String definition,
   ) async {
-    final cols = await db.rawQuery(
-      "SELECT name FROM pragma_table_info(?)",
-      [table],
-    );
+    final cols = await db.rawQuery("SELECT name FROM pragma_table_info(?)", [
+      table,
+    ]);
     final exists = cols.any((r) => r['name'] == column);
     if (!exists) {
       await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
@@ -613,8 +611,12 @@ class EventStore implements StoreHost {
 
   /// Backfill order_ts + expires_at for events stored before v4.
   static Future<void> _backfillV4(Database db) async {
-    final rows = await db.query('events', columns: ['id', 'created_at', 'tags']);
-    final clampTo = DateTime.now().millisecondsSinceEpoch ~/ 1000 +
+    final rows = await db.query(
+      'events',
+      columns: ['id', 'created_at', 'tags'],
+    );
+    final clampTo =
+        DateTime.now().millisecondsSinceEpoch ~/ 1000 +
         EventStore._futureToleranceSeconds;
     final batch = db.batch();
     for (final row in rows) {
@@ -624,7 +626,10 @@ class EventStore implements StoreHost {
       try {
         final tags = jsonDecode(row['tags'] as String) as List;
         for (final t in tags) {
-          if (t is List && t.isNotEmpty && t[0] == 'expiration' && t.length > 1) {
+          if (t is List &&
+              t.isNotEmpty &&
+              t[0] == 'expiration' &&
+              t.length > 1) {
             expiresAt = int.tryParse('${t[1]}');
             break;
           }
@@ -823,10 +828,7 @@ class EventStore implements StoreHost {
     final hasEngagement = events.any((e) => engagementKinds.contains(e.kind));
     return _enqueueWrite(
       () => _ingestImpl(events),
-      touches: {
-        StoreTable.events,
-        if (hasEngagement) StoreTable.eventRefs,
-      },
+      touches: {StoreTable.events, if (hasEngagement) StoreTable.eventRefs},
     );
   }
 
@@ -1614,8 +1616,8 @@ class EventStore implements StoreHost {
   /// ORDER BY is an index walk. A future-dated/boosted post sorts with the
   /// genuinely-new posts instead of pinning to the top forever.
   static int _orderTsFor(NostrEvent e) {
-    final clampTo = DateTime.now().millisecondsSinceEpoch ~/ 1000 +
-        _futureToleranceSeconds;
+    final clampTo =
+        DateTime.now().millisecondsSinceEpoch ~/ 1000 + _futureToleranceSeconds;
     return e.createdAt < clampTo ? e.createdAt : clampTo;
   }
 
@@ -1715,6 +1717,15 @@ class EventStore implements StoreHost {
       WHERE target_id IN ($placeholders)
       GROUP BY target_id, kind
       ''', targetIds);
+    // Unique engagers per target across ALL kinds (a liker who also reposted
+    // counts ONCE) — the anti-manipulation signal FeedRanking ranks on. One
+    // grouped query, same index path as the per-kind counts above.
+    final uniqueRows = await database.rawQuery('''
+      SELECT target_id, COUNT(DISTINCT pubkey) AS u
+      FROM event_refs
+      WHERE target_id IN ($placeholders)
+      GROUP BY target_id
+      ''', targetIds);
     final result = <String, EventCounts>{};
     for (final row in rows) {
       final target = row['target_id'] as String;
@@ -1722,6 +1733,13 @@ class EventStore implements StoreHost {
       final n = (row['n'] as num).toInt();
       final counts = result.putIfAbsent(target, EventCounts.new);
       counts.add(kind, n);
+    }
+    for (final row in uniqueRows) {
+      final target = row['target_id'] as String;
+      final counts = result[target];
+      if (counts != null) {
+        counts.uniqueEngagers = (row['u'] as num).toInt();
+      }
     }
     return result;
   }
@@ -1774,6 +1792,27 @@ class EventStore implements StoreHost {
       JOIN event_refs r ON r.event_id = e.id
       WHERE r.target_id = ? AND r.kind = 1
       ORDER BY e.created_at ASC
+      LIMIT ?
+      ''',
+      [targetId, limit],
+    );
+    return rows.map(_rowToEvent).toList();
+  }
+
+  /// Zap receipts (kind 9735) targeting [targetId], newest first — from the
+  /// local store (the engagement batch ingested them), so a post card's sats
+  /// total is a local read, NOT a per-card relay query.
+  Future<List<NostrEvent>> receiptsFor(
+    String targetId, {
+    int limit = 200,
+  }) async {
+    final database = await db;
+    final rows = await database.rawQuery(
+      '''
+      SELECT e.* FROM events e
+      JOIN event_refs r ON r.event_id = e.id
+      WHERE r.target_id = ? AND r.kind = 9735
+      ORDER BY e.created_at DESC
       LIMIT ?
       ''',
       [targetId, limit],
@@ -1888,15 +1927,13 @@ class EventStore implements StoreHost {
       profiles.profileFor(pubkey, maxAge: maxAge);
   Future<({NostrProfile profile, int fetchedAtMs})?> profileRowFor(
     String pubkey,
-  ) =>
-      profiles.profileRowFor(pubkey);
+  ) => profiles.profileRowFor(pubkey);
   Future<void> saveProfile(String pubkey, NostrProfile profile) =>
       profiles.saveProfile(pubkey, profile);
   Future<List<({String pubkey, NostrProfile profile})>> searchProfiles(
     String query, {
     int limit = 20,
-  }) =>
-      profiles.searchProfiles(query, limit: limit);
+  }) => profiles.searchProfiles(query, limit: limit);
   // Maintenance → MaintenanceStore (God-object split).
   static const int maxEventRows = MaintenanceStore.maxEventRows;
   static const int maxStoreBytes = MaintenanceStore.maxStoreBytes;
@@ -1915,8 +1952,7 @@ class EventStore implements StoreHost {
     String peer, {
     int limit = 100,
     int? until,
-  }) =>
-      messages.dmMessagesFor(peer, limit: limit, until: until);
+  }) => messages.dmMessagesFor(peer, limit: limit, until: until);
   Future<DbMessage?> dmMessageById(String id) => messages.dmMessageById(id);
   Future<List<DbThread>> dmThreads() => messages.dmThreads();
   Future<int> dmThreadLastRead(String peer) => messages.dmThreadLastRead(peer);
@@ -1932,16 +1968,19 @@ class EventStore implements StoreHost {
   // Durable outbox → MessageStore.
   Future<void> enqueueDmOutbox(DbOutboxMessage entry) =>
       messages.enqueueDmOutbox(entry);
-  Future<List<DbOutboxMessage>> dmOutboxPending() =>
-      messages.dmOutboxPending();
+  Future<List<DbOutboxMessage>> dmOutboxPending() => messages.dmOutboxPending();
   Future<void> updateDmOutboxState(
     String id,
     DbMessageStatus state, {
     bool bumpAttempts = false,
-  }) =>
-      messages.updateDmOutboxState(id, state, bumpAttempts: bumpAttempts);
+  }) => messages.updateDmOutboxState(id, state, bumpAttempts: bumpAttempts);
   Future<void> removeDmOutbox(String id) => messages.removeDmOutbox(id);
   Future<void> clearDmData() => messages.clearDmData();
+
+  /// Delete one conversation with [peer]: all its messages, its thread row,
+  /// and its outbox entries (the chat-list delete action).
+  Future<void> deleteDmConversation(String peer) =>
+      messages.deleteDmConversation(peer);
   // Notifications → NotificationStore (God-object split).
   Future<void> upsertNotification(DbNotification n) =>
       notifications.upsertNotification(n);
@@ -1951,8 +1990,7 @@ class EventStore implements StoreHost {
     String recipient, {
     int limit = 100,
     int? until,
-  }) =>
-      notifications.notificationsFor(recipient, limit: limit, until: until);
+  }) => notifications.notificationsFor(recipient, limit: limit, until: until);
   Future<int> unreadNotificationCount(String recipient) =>
       notifications.unreadNotificationCount(recipient);
   Future<int> notificationWatermark(String recipient) =>
@@ -1992,9 +2030,12 @@ class EventStore implements StoreHost {
     DbPublishState state, {
     bool bumpAttempts = false,
     String? lastError,
-  }) =>
-      publishOutbox.updatePublishJobState(id, state,
-          bumpAttempts: bumpAttempts, lastError: lastError);
+  }) => publishOutbox.updatePublishJobState(
+    id,
+    state,
+    bumpAttempts: bumpAttempts,
+    lastError: lastError,
+  );
   Future<void> removePublishJob(String id) =>
       publishOutbox.removePublishJob(id);
   // DM full-text search → MessageStore (God-object split).
@@ -2002,8 +2043,7 @@ class EventStore implements StoreHost {
     String query, {
     String? peer,
     int limit = 50,
-  }) =>
-      messages.searchDmMessages(query, peer: peer, limit: limit);
+  }) => messages.searchDmMessages(query, peer: peer, limit: limit);
 
   static NostrEvent _rowToEvent(Map<String, Object?> row) {
     return NostrEvent.fromJson({
@@ -2046,6 +2086,11 @@ class EventCounts {
   int reactions = 0;
   int reposts = 0;
   int zaps = 0;
+
+  /// DISTINCT engagers across all kinds (a liker who also reposted counts
+  /// once) — the anti-manipulation signal FeedRanking ranks on. Populated
+  /// by `engagementFor`'s distinct-pubkey query.
+  int uniqueEngagers = 0;
 
   void add(int kind, int n) {
     switch (kind) {

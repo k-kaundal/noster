@@ -15,6 +15,7 @@ import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/utils/markdown.dart';
+import 'package:nostrfeed_mobile/core/utils/share_links.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_badge.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
@@ -140,6 +141,10 @@ class _ArticleCard extends ConsumerWidget {
                     height: 160,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    // ADR-0004: decode-cap the cover (a 160dp strip never
+                    // needs a 4000px original → full-res decode thrashes the
+                    // image cache).
+                    memCacheWidth: 800,
                     placeholder: (_, _) => Container(
                       height: 160,
                       color: scheme.surfaceContainerHigh,
@@ -754,7 +759,9 @@ class _ArticleReaderScreenState extends ConsumerState<ArticleReaderScreen> {
       kind: event.kind,
       relays: const ['wss://relay.nostrfeed.com', 'wss://relay.damus.io'],
     );
-    final url = 'https://njump.me/$naddr';
+    // Share OUR universal link (opens the app → article, or the web preview),
+    // not njump's third-party redirect.
+    final url = ShareLinks.forNote(naddr);
 
     final box = context.findRenderObject() as RenderBox?;
     final origin = box != null

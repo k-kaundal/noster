@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
@@ -6,6 +7,7 @@ import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/communities/presentation/community_detail_screen.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 import 'package:nostrfeed_mobile/features/profile/application/profile_providers.dart';
@@ -20,7 +22,11 @@ class ProfileMetadata extends StatelessWidget {
   final NostrProfile? profile;
   final String pubkey;
 
-  const ProfileMetadata({super.key, required this.profile, required this.pubkey});
+  const ProfileMetadata({
+    super.key,
+    required this.profile,
+    required this.pubkey,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -30,49 +36,55 @@ class ProfileMetadata extends StatelessWidget {
 
     // NIP-05 verified identifier
     if (profile?.nip05 != null && profile!.nip05!.isNotEmpty) {
-      items.add(MetadataRow(
-        icon: Icons.verified_outlined,
-        text: profile!.nip05!,
-        color: scheme.primary,
-      ));
+      items.add(
+        MetadataRow(
+          icon: Icons.verified_outlined,
+          text: profile!.nip05!,
+          color: scheme.primary,
+        ),
+      );
     }
 
     // Lightning address
     if (profile?.lud16 != null && profile!.lud16!.isNotEmpty) {
-      items.add(MetadataRow(
-        icon: Icons.bolt_outlined,
-        text: profile!.lud16!,
-        color: AppActionColors.zap,
-      ));
+      items.add(
+        MetadataRow(
+          icon: Icons.bolt_outlined,
+          text: profile!.lud16!,
+          color: AppActionColors.zap,
+        ),
+      );
     }
 
     // Website
     if (profile?.website != null && profile!.website!.isNotEmpty) {
-      items.add(MetadataRow(
-        icon: Icons.link_outlined,
-        text: profile!.website!,
-        color: scheme.primary,
-      ));
+      items.add(
+        MetadataRow(
+          icon: Icons.link_outlined,
+          text: profile!.website!,
+          color: scheme.primary,
+        ),
+      );
     }
 
     // Public key (shortened)
     final npub = pubkey.length > 16
         ? '${pubkey.substring(0, 8)}…${pubkey.substring(pubkey.length - 4)}'
         : pubkey;
-    items.add(MetadataRow(
-      icon: Icons.key_outlined,
-      text: npub,
-      color: scheme.onSurfaceVariant,
-    ));
+    items.add(
+      MetadataRow(
+        icon: Icons.key_outlined,
+        text: npub,
+        color: scheme.onSurfaceVariant,
+      ),
+    );
 
     if (items.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: items
-          .expand((w) => [w, const SizedBox(height: 6)])
-          .toList()
-          ..removeLast(),
+      children: items.expand((w) => [w, const SizedBox(height: 6)]).toList()
+        ..removeLast(),
     );
   }
 }
@@ -170,11 +182,11 @@ class ProfileTabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: color,
-      child: tabBar,
-    );
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(color: color, child: tabBar);
   }
 
   @override
@@ -206,20 +218,17 @@ class ProfileCommunitiesTab extends ConsumerWidget {
         joinedAsync.when(
           loading: () => const Padding(
             padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator()),
+            child: SkeletonList(itemCount: 3),
           ),
           error: (_, _) => const Text('Failed to load'),
           data: (communities) => communities.isEmpty
               ? const Padding(
                   padding: EdgeInsets.all(24),
-                  child: Center(
-                    child: Text('No communities joined yet'),
-                  ),
+                  child: Center(child: Text('No communities joined yet')),
                 )
               : Column(
                   children: [
-                    for (final c in communities)
-                      ProfileCommunityTile(event: c),
+                    for (final c in communities) ProfileCommunityTile(event: c),
                   ],
                 ),
         ),
@@ -239,10 +248,10 @@ class ProfileSectionHeader extends StatelessWidget {
       child: Text(
         title.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.4,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.4,
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
@@ -256,23 +265,67 @@ class ProfileCommunityTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = event.getTag('name') ?? 'Unnamed';
     final desc = event.getTag('description') ?? '';
-    return Card(
+    final scheme = Theme.of(context).colorScheme;
+    // Refined hairline row (was Card+ListTile — the only old-style row left
+    // in the profile tabs, inconsistent with every other screen).
+    return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: AppShapes.radiusMd),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: AppIcon('group', color: Theme.of(context).colorScheme.onPrimaryContainer,
-          ),
-        ),
-        title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: desc.isNotEmpty
-            ? Text(desc, maxLines: 1, overflow: TextOverflow.ellipsis)
-            : null,
-        trailing: const AppIcon('chevron_r'),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLowest,
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: AppShapes.radiusMd,
+      ),
+      child: InkWell(
+        borderRadius: AppShapes.radiusMd,
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => CommunityDetailScreen(community: event),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: AppIcon(
+                    'group',
+                    size: 20,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    if (desc.isNotEmpty)
+                      Text(
+                        desc,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                  ],
+                ),
+              ),
+              AppIcon('chevron_r', size: 18, color: scheme.onSurfaceVariant),
+            ],
           ),
         ),
       ),
@@ -292,7 +345,7 @@ class ProfileLikedPostsTab extends ConsumerWidget {
     final likedAsync = ref.watch(userLikedPostsProvider(pubkey));
 
     return likedAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const SkeletonList(itemCount: 4),
       error: (_, _) => const Center(child: Text('Failed to load likes')),
       data: (posts) {
         if (posts.isEmpty) {
@@ -318,11 +371,25 @@ class ProfilePostsTab extends ConsumerWidget {
   final String pubkey;
   final bool Function(NostrEvent) filter;
 
-  const ProfilePostsTab({super.key, required this.pubkey, required this.filter});
+  const ProfilePostsTab({
+    super.key,
+    required this.pubkey,
+    required this.filter,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final postsAsync = ref.watch(userPostsProvider(pubkey));
+
+    // Pull-to-refresh: profile tabs had NO refresh gesture (the "profile is
+    // stale until restart" complaint) — a pull invalidates the posts provider
+    // and re-fetches from relays, same as the feed.
+    Future<void> onRefresh() async {
+      HapticFeedback.mediumImpact();
+      ref.invalidate(userPostsProvider(pubkey));
+      ref.invalidate(profileProvider(pubkey));
+      await ref.read(userPostsProvider(pubkey).future);
+    }
 
     return postsAsync.when(
       data: (events) {
@@ -330,27 +397,48 @@ class ProfilePostsTab extends ConsumerWidget {
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
         if (userPosts.isEmpty) {
-          return const EmptyState(
-            icon: Icons.article_outlined,
-            title: 'No posts yet',
-            subtitle: 'Posts will appear here',
+          // Empty state must still be pullable (RefreshIndicator needs a
+          // scrollable child) — a user can pull to retry a failed fetch.
+          return RefreshIndicator(
+            onRefresh: onRefresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: const [
+                SizedBox(height: 300),
+                EmptyState(
+                  icon: Icons.article_outlined,
+                  title: 'No posts yet',
+                  subtitle: 'Posts will appear here — pull to refresh',
+                ),
+              ],
+            ),
           );
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.only(top: 8, bottom: 180),
-          itemCount: userPosts.length,
-          itemBuilder: (context, index) {
-            final event = userPosts[index];
-            return PostCard(event: event);
-          },
+        return RefreshIndicator(
+          onRefresh: onRefresh,
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(top: 8, bottom: 180),
+            itemCount: userPosts.length,
+            itemBuilder: (context, index) {
+              final event = userPosts[index];
+              return PostCard(event: event);
+            },
+          ),
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text('Failed to load posts: $error'),
+      loading: () => const SkeletonList(itemCount: 4),
+      error: (error, stack) => RefreshIndicator(
+        onRefresh: onRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Failed to load posts: $error'),
+            ),
+          ],
         ),
       ),
     );

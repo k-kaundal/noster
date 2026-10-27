@@ -15,6 +15,8 @@ import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+
 import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/auth/data/auth_service.dart';
 import 'package:nostrfeed_mobile/features/chat/application/dm_store.dart';
@@ -52,6 +54,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// swiping a bubble, cleared after send or via the cancel button.
   ChatMessage? _replyingTo;
 
+  /// Scroll-position preservation: when the thread list changes (new message
+  /// at index 0 in the reversed list), the scroll offset shifts by the new
+  /// item's height. We capture the offset BEFORE the rebuild and restore it
+  /// AFTER, adjusted for the new item count. Without this, reading history
+  /// while a message arrives yanks the scroll position.
+  double? _preRebuildOffset;
+  int _preRebuildItemCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +94,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       duration: AppMotion.normal,
       curve: AppMotion.curve,
     );
+  }
+
+  /// Capture scroll state BEFORE a thread rebuild — called from build when
+  /// the thread list is about to change. The reversed list's offset shifts
+  /// by (newItemCount - oldItemCount) × avgItemHeight when items are
+  /// inserted at index 0 (the bottom).
+  void _captureScrollState(int currentItemCount) {
+    if (!_scrollController.hasClients) return;
+    _preRebuildOffset = _scrollController.offset;
+    _preRebuildItemCount = currentItemCount;
+  }
+
+  /// Restore scroll state AFTER a thread rebuild — adjusts the captured
+  /// offset by the item count delta × average item height. Without this,
+  /// inserting a new message at index 0 (bottom) shifts every visible item
+  /// up by one position, making the user think they scrolled.
+  void _restoreScrollState(int newItemCount) {
+    final capturedOffset = _preRebuildOffset;
+    final capturedCount = _preRebuildItemCount;
+    if (capturedOffset == null || capturedCount == newItemCount) return;
+    // Estimate the height of the new items (average ~80px per message).
+    final delta = newItemCount - capturedCount;
+    if (delta <= 0) return; // items removed — offset stays valid
+    const avgItemHeight = 80.0;
+    final adjusted = capturedOffset + (delta * avgItemHeight);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scrollController.hasClients) {
+        _scrollController.jumpTo(adjusted);
+      }
+    });
+    _preRebuildOffset = null;
   }
 
   @override
@@ -287,7 +328,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final unread = ref.read(dmStoreProvider.notifier).unreadFor(dms, conv.peer);
     final hasUnread = unread > 0;
 
-    return Material(
+    final tile = Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
@@ -407,6 +448,67 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
       ),
     );
+
+    // Swipe left → delete the whole conversation (WhatsApp muscle memory).
+    // confirmDismiss returns false — the tile springs back, only the delete
+    // confirmation fires. The threshold keeps vertical-scroll-vs-swipe
+    // unambiguous.
+    return Dismissible(
+      key: ValueKey('conv-${conv.peer}'),
+      direction: DismissDirection.endToStart,
+      dismissThresholds: const {DismissDirection.endToStart: 0.35},
+      confirmDismiss: (_) async {
+        HapticFeedback.mediumImpact();
+        final confirmed = await _confirmDeleteConversation(conv.peer);
+        return confirmed; // true → the tile dismisses; false → springs back
+      },
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        color: colorScheme.error,
+        child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+      ),
+      child: tile,
+    );
+  }
+
+  /// Confirm + delete a whole conversation (all messages with a peer).
+  Future<bool> _confirmDeleteConversation(String peerPubkey) async {
+    final colorScheme = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete conversation?'),
+        content: const Text(
+          'This deletes ALL messages with this person from your device. '
+          'Messages already on relays may still exist.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return false;
+    try {
+      await ref.read(dmStoreProvider.notifier).deleteConversation(peerPubkey);
+      if (mounted) {
+        AppToast.success(context, 'Conversation deleted');
+      }
+      return true;
+    } catch (e) {
+      if (mounted) {
+        AppToast.error(context, 'Delete failed: $e');
+      }
+      return false;
+    }
   }
 
   /// Conversation-list timestamp: HH:mm today, weekday this week, date older.
@@ -484,9 +586,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       profile?.displayNameOrName ?? _shortKey(peerPubkey),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
+                      style: Theme.of(context).textTheme.titleMedium
                           ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 1),
@@ -507,9 +607,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           const SizedBox(width: 3),
                           Text(
                             'End-to-end encrypted',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
+                            style: Theme.of(context).textTheme.labelSmall
                                 ?.copyWith(
                                   fontSize: 10,
                                   color: colorScheme.primary,
@@ -584,8 +682,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: ref
                 .watch(dmThreadProvider(peerPubkey))
                 .when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
+                  loading: () {
+                    // Cold start: paint from the DURABLE store instantly
+                    // (no skeleton while the merged result resolves).
+                    final stored = ref.watch(dmThreadStoreProvider(peerPubkey));
+                    return stored.when(
+                      loading: () => const SkeletonList(itemCount: 6),
+                      error: (_, _) => const SkeletonList(itemCount: 6),
+                      data: (thread) {
+                        if (thread.isEmpty) {
+                          return const SkeletonList(itemCount: 6);
+                        }
+                        return _buildThreadList(thread, auth, peerPubkey);
+                      },
+                    );
+                  },
                   error: (err, _) => ErrorView.fromError(
                     err,
                     onRetry: () => ref.invalidate(dmThreadProvider(peerPubkey)),
@@ -599,92 +710,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             'Say hello! Messages are end-to-end encrypted.',
                       );
                     }
-                    // WhatsApp-style reversed list (the standard Flutter chat
-                    // pattern): `thread` is newest-first and item 0 renders
-                    // at the BOTTOM. Short conversations bottom-anchor with
-                    // NO spacer hack, the list stays glued to the newest
-                    // message when the keyboard opens, and sending scrolls
-                    // to offset 0. A jump-to-latest pill appears when the
-                    // user scrolls up into history.
-                    return Stack(
-                      children: [
-                        ListView.builder(
-                          controller: _scrollController,
-                          reverse: true,
-                          // Same list padding as the AI chat page.
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          itemCount: thread.length,
-                          itemBuilder: (context, index) {
-                            final msg = thread[index];
-                            final isSent = msg.senderPubkey == auth.pubkey;
-                            // The date separator attaches to the OLDEST
-                            // message of each day (the next item in the list
-                            // is older in time).
-                            final showDateSeparator =
-                                index == thread.length - 1 ||
-                                !_isSameDay(
-                                  thread[index].createdAt,
-                                  thread[index + 1].createdAt,
-                                );
-                            // Grouping: this message CONTINUES a group when
-                            // the next (older) message is from the same
-                            // sender.
-                            final continuesGroup =
-                                index < thread.length - 1 &&
-                                thread[index + 1].senderPubkey ==
-                                    msg.senderPubkey;
-                            return Column(
-                              children: [
-                                if (showDateSeparator)
-                                  ChatDateSeparator(timestamp: msg.createdAt),
-                                // Swipe right → reply to this message (NIP-17
-                                // 'e' tag reply). Only for text messages.
-                                GestureDetector(
-                                  onHorizontalDragEnd: msg.text.isNotEmpty
-                                      ? (_) {
-                                          HapticFeedback.lightImpact();
-                                          setState(() => _replyingTo = msg);
-                                        }
-                                      : null,
-                                  child: MessageBubble(
-                                    key: ValueKey(msg.id),
-                                    message: msg,
-                                    isSent: isSent,
-                                    isGroupContinuation: continuesGroup,
-                                    onRetry: msg.status == MessageStatus.failed
-                                        ? () => _retryMessage(peerPubkey, msg)
-                                        : null,
-                                    onDelete: msg.status == MessageStatus.failed
-                                        ? () => _deleteFailed(peerPubkey, msg)
-                                        : null,
-                                    // Long-press → copy/share, same as the
-                                    // AI chat bubble actions.
-                                    onLongPress:
-                                        msg.text.isNotEmpty && !msg.isFile
-                                        ? () => _showMessageActions(msg)
-                                        : null,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                        // WhatsApp's round ↓ button — floats above the input
-                        // bar when the user has scrolled away from the
-                        // newest message.
-                        if (_showJumpToLatest)
-                          Positioned(
-                            right: 16,
-                            bottom: 12,
-                            child: _JumpToLatestButton(
-                              onTap: _scrollToLatest,
-                            ),
-                          ),
-                      ],
-                    );
+                    // Capture scroll state BEFORE building the new list —
+                    // inserting a new message at index 0 (bottom) shifts
+                    // every visible item up by one position.
+                    _captureScrollState(thread.length);
+                    final list = _buildThreadList(thread, auth, peerPubkey);
+                    // Restore AFTER the frame builds, adjusted for the new
+                    // item count.
+                    _restoreScrollState(thread.length);
+                    return list;
                   },
                 ),
           ),
@@ -698,6 +732,95 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final d1 = DateTime.fromMillisecondsSinceEpoch(ts1 * 1000);
     final d2 = DateTime.fromMillisecondsSinceEpoch(ts2 * 1000);
     return d1.year == d2.year && d1.month == d2.month && d1.day == d2.day;
+  }
+
+  /// The thread's message list — extracted so the cold-start store paint
+  /// and the merged provider result share ONE list builder (no duplicate
+  /// logic drift between the two paths).
+  Widget _buildThreadList(
+    List<ChatMessage> thread,
+    AuthState auth,
+    String peerPubkey,
+  ) {
+    // WhatsApp-style reversed list (the standard Flutter chat pattern):
+    // `thread` is newest-first and item 0 renders at the BOTTOM. Short
+    // conversations bottom-anchor with NO spacer hack, the list stays glued
+    // to the newest message when the keyboard opens, and sending scrolls to
+    // offset 0. A jump-to-latest pill appears when the user scrolls up.
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: _scrollController,
+          reverse: true,
+          // Same list padding as the AI chat page.
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          itemCount: thread.length,
+          itemBuilder: (context, index) {
+            final msg = thread[index];
+            final isSent = msg.senderPubkey == auth.pubkey;
+            // The date separator attaches to the OLDEST message of each day
+            // (the next item in the list is older in time).
+            final showDateSeparator =
+                index == thread.length - 1 ||
+                !_isSameDay(
+                  thread[index].createdAt,
+                  thread[index + 1].createdAt,
+                );
+            // Grouping: this message CONTINUES a group when the next (older)
+            // message is from the same sender.
+            final continuesGroup =
+                index < thread.length - 1 &&
+                thread[index + 1].senderPubkey == msg.senderPubkey;
+            return Column(
+              children: [
+                if (showDateSeparator)
+                  ChatDateSeparator(timestamp: msg.createdAt),
+                // Swipe right → reply to this message (NIP-17 'e' tag reply).
+                // Only for text messages.
+                GestureDetector(
+                  // Only trigger reply on a deliberate rightward swipe
+                  // (velocity > threshold). Leftward swipes and slow drags
+                  // are ignored — they conflict with vertical scrolling.
+                  onHorizontalDragEnd: msg.text.isNotEmpty
+                      ? (details) {
+                          final velocity = details.primaryVelocity ?? 0;
+                          if (velocity > 300) {
+                            HapticFeedback.lightImpact();
+                            setState(() => _replyingTo = msg);
+                          }
+                        }
+                      : null,
+                  child: MessageBubble(
+                    key: ValueKey(msg.id),
+                    message: msg,
+                    isSent: isSent,
+                    isGroupContinuation: continuesGroup,
+                    onRetry: msg.status == MessageStatus.failed
+                        ? () => _retryMessage(peerPubkey, msg)
+                        : null,
+                    onDelete: msg.status == MessageStatus.failed
+                        ? () => _deleteFailed(peerPubkey, msg)
+                        : null,
+                    // Long-press → copy/share, same as the AI chat bubble.
+                    onLongPress: msg.text.isNotEmpty && !msg.isFile
+                        ? () => _showMessageActions(msg)
+                        : null,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        // WhatsApp's round ↓ button — floats above the input bar when the
+        // user has scrolled away from the newest message.
+        if (_showJumpToLatest)
+          Positioned(
+            right: 16,
+            bottom: 12,
+            child: _JumpToLatestButton(onTap: _scrollToLatest),
+          ),
+      ],
+    );
   }
 
   Widget _buildInputBar(
@@ -868,14 +991,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       // Opening this thread marked incoming messages read; sending also
       // implies read.
       store.markThreadRead(peerPubkey);
-      await Future.delayed(const Duration(milliseconds: 100));
-      if (_scrollController.hasClients) {
-        // Reversed list: offset 0 = the newest message (bottom).
-        _scrollController.animateTo(
-          0,
-          duration: AppMotion.normal,
-          curve: AppMotion.curve,
-        );
+      // Only auto-scroll when the user is already near the bottom — yanking
+      // them to the newest message while they're reading history is the
+      // "scroll up, list jumps down" bug. 400 px ≈ the same threshold as
+      // the jump-to-latest pill.
+      if (_scrollController.hasClients && _scrollController.offset < 400) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: AppMotion.normal,
+            curve: AppMotion.curve,
+          );
+        }
       }
 
       // ── Tier-aware targeted delivery (NIP-17: 1–3 relays, not a spray) ──
@@ -896,13 +1024,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ...deliveryTargets,
         ...DmDelivery.fallbackDmRelays,
       }.toList();
-      final delivered = await nostr.relayPool.publishWithAckTo(
+      var delivered = await nostr.relayPool.publishWithAckTo(
         recipientWrap,
         immediateTargets,
       );
       if (selfWrap != null) {
         // Self copy — fire and forget, not on the critical path.
         nostr.publishWithAck(selfWrap).ignore();
+      }
+      // Retry once on failure before marking failed — a transient relay
+      // blip (socket reconnecting, ad-hoc connection still establishing)
+      // shouldn't permanently fail the message.
+      if (!delivered && mounted) {
+        await Future.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+        delivered = await nostr.relayPool.publishWithAckTo(
+          recipientWrap,
+          immediateTargets,
+        );
       }
       if (!mounted) return;
       store.markStatus(
@@ -991,8 +1130,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       // Mark the outbox entry as a file so the bubble renders the image.
       store.markFileMessage(peerPubkey, localId, mimeType: 'image/');
       store.markThreadRead(peerPubkey);
-      if (_scrollController.hasClients) {
-        // Reversed list: offset 0 = the newest message (bottom).
+      // Only auto-scroll when the user is already near the bottom (same
+      // rule as _send — don't yank them out of history).
+      if (_scrollController.hasClients && _scrollController.offset < 400) {
         _scrollController.animateTo(
           0,
           duration: AppMotion.normal,
@@ -1042,11 +1182,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  /// Long-press actions on a message — copy the text or share it out
-  /// (mirrors the AI chat bubble actions).
+  /// Long-press actions on a message — copy the text, share it out, or
+  /// delete it (own messages only, per NIP-17 gift-wrapped kind-5).
   void _showMessageActions(ChatMessage msg) {
     final colorScheme = Theme.of(context).colorScheme;
     HapticFeedback.lightImpact();
+    // Only own messages can be deleted (NIP-17: delete is a kind-5 wrap
+    // from the sender — you can't delete someone else's message).
+    final isOwn = msg.senderPubkey == ref.read(authStateProvider).pubkey;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -1071,11 +1214,65 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 SharePlus.instance.share(ShareParams(text: msg.text));
               },
             ),
+            // Delete (own messages only) — NIP-17 gift-wrapped kind-5.
+            if (isOwn)
+              ListTile(
+                leading: AppIcon('eye_off', color: colorScheme.error),
+                title: Text(
+                  'Delete message',
+                  style: TextStyle(color: colorScheme.error),
+                ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _confirmDeleteMessage(msg);
+                },
+              ),
             const SizedBox(height: 8),
           ],
         ),
       ),
     );
+  }
+
+  /// Confirm + delete a message (NIP-17 gift-wrapped kind-5).
+  Future<void> _confirmDeleteMessage(ChatMessage msg) async {
+    final colorScheme = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete message?'),
+        content: const Text(
+          'This will delete the message for you and notify the recipient. '
+          'The message may still exist on relays that already stored it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final peerPubkey = widget.peerNpub;
+    if (peerPubkey == null) return;
+    try {
+      await ref
+          .read(dmStoreProvider.notifier)
+          .deleteMessage(peerPubkey: peerPubkey, eventId: msg.id);
+      if (mounted) {
+        AppToast.success(context, 'Message deleted');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppToast.error(context, 'Delete failed: $e');
+      }
+    }
   }
 
   /// Re-publish a failed message: remove the old entry and send again.
@@ -1086,8 +1283,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     await _send(auth, peerPubkey);
   }
 
-  /// Discard a failed outgoing message.
+  /// Discard a failed outgoing message (also offers full NIP-17 delete for
+  /// sent messages).
   void _deleteFailed(String peerPubkey, ChatMessage msg) {
+    // For failed messages, just remove from outbox (they never reached a relay).
     ref.read(dmStoreProvider.notifier).removePending(peerPubkey, msg.id);
     AppToast.info(context, 'Message deleted');
   }

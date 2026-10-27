@@ -335,6 +335,8 @@ class _CommunityCard extends ConsumerWidget {
                       httpHeaders: kImageHttpHeaders,
                       imageUrl: image,
                       fit: BoxFit.cover,
+                      // ADR-0004: decode-cap the 90dp cover (no full-res decode).
+                      memCacheWidth: 800,
                       placeholder: (_, _) =>
                           Container(color: scheme.surfaceContainerHighest),
                       errorWidget: (_, _, _) => _BannerFallback(scheme: scheme),

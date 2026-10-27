@@ -7,12 +7,16 @@ import 'package:nostrfeed_mobile/core/moderation/content_filter.dart';
 import 'package:nostrfeed_mobile/core/moderation/moderation_providers.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
+import 'package:nostrfeed_mobile/core/utils/share_links.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/empty_state.dart';
 import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
+import 'package:nostrfeed_mobile/features/feed/application/post_actions.dart';
 import 'package:nostrfeed_mobile/features/reels/data/reel_uploader.dart';
 import 'package:nostrfeed_mobile/features/zap/presentation/zap_sheet.dart';
 import 'package:share_plus/share_plus.dart';
@@ -101,8 +105,9 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen>
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
       body: videosAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: Colors.white54), // token-guard: allow — immersive video surface
+        loading: () => Container(
+          color: Colors.black, // token-guard: allow — immersive video surface
+          child: const SkeletonList(itemCount: 3),
         ),
         error: (err, _) => ErrorView(
           message: 'Failed to load reels',
@@ -113,35 +118,55 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen>
               .where((e) => _ReelVideoSource.of(e) != null)
               .toList();
           if (playable.isEmpty) {
-            return EmptyState(
-              icon: Icons.video_library_outlined,
-              title: 'No reels yet',
-              subtitle: 'Short videos from Nostr will appear here.',
-              iconColor: Colors.white54, // token-guard: allow — immersive video surface
-              action: canPost
-                  ? FilledButton.icon(
-                      onPressed: () => ReelUploader.show(context),
-                      icon: const AppIcon('video'),
-                      label: const Text('Upload the first reel'),
-                    )
-                  : null,
+            return RefreshIndicator(
+              onRefresh: () async => ref.invalidate(videosProvider),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  SizedBox(
+                    height: 420,
+                    child: EmptyState(
+                      icon: Icons.video_library_outlined,
+                      title: 'No reels yet',
+                      subtitle: 'Short videos from Nostr will appear here — pull to refresh.',
+                      iconColor: Colors.white54, // token-guard: allow — immersive video surface
+                      action: canPost
+                          ? FilledButton.icon(
+                              onPressed: () => ReelUploader.show(context),
+                              icon: const AppIcon('video'),
+                              label: const Text('Upload the first reel'),
+                            )
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
             );
           }
-          return PageView.builder(
-            controller: _pageController,
-            scrollDirection: Axis.vertical,
-            // AlwaysScrollable ensures the page view takes drags even when a
-            // child gesture arena is competing for them (the tap-to-pause
-            // detector inside each reel page)
-            physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: playable.length,
-            onPageChanged: (i) => setState(() => _currentIndex = i),
-            itemBuilder: (context, i) => _ReelPage(
-              key: ValueKey(playable[i].id),
-              event: playable[i],
-              // Only the reel on screen plays — the rest pause to save
-              // bandwidth and battery, same as Instagram
-              isActive: i == _currentIndex,
+          // Pull-to-refresh on the reel page itself: a downward pull on the
+          // first reel reloads the videos list (the "reels are stale"
+          // complaint) — a PageView already takes vertical drags, so wrap
+          // the FIRST page's overscroll only.
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(videosProvider),
+            // The indicator measures the PageView's overscroll at the top.
+            notificationPredicate: (_) => _currentIndex == 0,
+            child: PageView.builder(
+              controller: _pageController,
+              scrollDirection: Axis.vertical,
+              // AlwaysScrollable ensures the page view takes drags even when a
+              // child gesture arena is competing for them (the tap-to-pause
+              // detector inside each reel page)
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: playable.length,
+              onPageChanged: (i) => setState(() => _currentIndex = i),
+              itemBuilder: (context, i) => _ReelPage(
+                key: ValueKey(playable[i].id),
+                event: playable[i],
+                // Only the reel on screen plays — the rest pause to save
+                // bandwidth and battery, same as Instagram
+                isActive: i == _currentIndex,
+              ),
             ),
           );
         },
@@ -294,8 +319,11 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
   }
 
   Future<void> _share() async {
-    final source = _ReelVideoSource.of(widget.event);
-    final url = source?.url ?? 'nostr:${widget.event.id}';
+    // Share the universal app link to this reel (opens the app → reel, or a
+    // web preview), not a raw video URL or a `nostr:` string.
+    final nostr = ref.read(nostrServiceProvider);
+    final note1 = nostr.authService.encodeNote(widget.event.id);
+    final url = ShareLinks.forNote(note1);
     // sharePositionOrigin is required on iOS to anchor the share sheet
     final box = context.findRenderObject() as RenderBox?;
     final origin = box != null
@@ -310,10 +338,18 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
       _showLoginPrompt();
       return;
     }
-    final nostr = ref.read(nostrServiceProvider);
-    nostr.publishEvent(nostr.createReaction(widget.event));
-    ref.invalidate(reactionsProvider(widget.event.id));
-    ref.invalidate(engagementProvider(widget.event.id));
+    // PostActions ingests the reaction into the store so the local count
+    // moves instantly (raw publish left the count stale until a relay
+    // round-trip — the "liked but count stays" bug). The reel's local
+    // engagement check reads from the store, so currently-liked state comes
+    // from userInteractionsProvider.
+    final liked = ref.read(
+      userInteractionsProvider(widget.event.id),
+    ).valueOrNull?.likes[widget.event.id] ?? false;
+    ref.read(postActionsProvider).toggleLike(
+      event: widget.event,
+      currentlyLiked: liked,
+    );
   }
 
   void _handleComment() {
@@ -341,9 +377,13 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
   @override
   Widget build(BuildContext context) {
     // Content filter (Play compliance): spam/explicit reels hide — a reel is
-    // a video post and carries the same text/hashtag signals the filter
-    // judges; without this a NSFW video auto-played full-screen.
-    final verdict = filteredEventVerdict(ref, widget.event);
+    // a video post, judged on its caption + hashtags (isMediaPost: its URLs
+    // are the content, so the link-dump ratio doesn't apply — that rule hid
+    // EVERY reel).
+    final verdict = ref.watch(contentFilterProvider).verdictForEvent(
+          widget.event,
+          isMediaPost: true,
+        );
     if (verdict.action == FilterAction.hide) {
       return Container(
         color: Colors.black, // token-guard: allow — immersive video surface
@@ -356,7 +396,10 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
       );
     }
     final profileAsync = ref.watch(profileProvider(widget.event.pubkey));
-    final engagementAsync = ref.watch(engagementProvider(widget.event.id));
+    // localEngagementProvider reads counts from the SQLite event_refs index
+    // (a grouped COUNT, rebuilt only when engagement lands) — the per-reel
+    // relay query (engagementProvider) was a round-trip per visible reel.
+    final engagementAsync = ref.watch(localEngagementProvider(widget.event.id));
 
     final engagement = engagementAsync.valueOrNull;
     final likes = engagement?.reactions ?? 0;

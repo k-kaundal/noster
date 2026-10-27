@@ -125,10 +125,41 @@ class NostrService {
     }
 
     _initialized = true;
+
+    // Cold start with a stored session: publish our kind-10050 DM inbox
+    // relay list (setAuth isn't called on the restore path). Fire-and-forget.
+    if (_auth.isLoggedIn && !_auth.isReadOnly && _auth.privateKey != null) {
+      unawaited(_publishOwnDmInbox());
+    }
   }
 
   Future<void> setAuth(AuthState auth) async {
     _auth = auth;
+    // Publish our NIP-17 DM inbox relay list (kind 10050) so other clients
+    // know where to deliver gift-wrapped DMs addressed to us. Without this,
+    // senders fall back to guesswork — messages arrive late or never.
+    // Fire-and-forget; debounced per session by DmDelivery.
+    if (auth.isLoggedIn && !auth.isReadOnly && auth.privateKey != null) {
+      unawaited(_publishOwnDmInbox());
+    }
+  }
+
+  /// Build, sign, and publish our kind-10050 DM inbox relay list.
+  Future<void> _publishOwnDmInbox() async {
+    try {
+      final relays = dmDelivery.inboxRelaysToAdvertise(
+        relayPool.connectedUrls,
+      );
+      final event = authService.signEvent(
+        privateKey: _auth.privateKey!,
+        kind: 10050,
+        content: '',
+        tags: [for (final r in relays) ['relay', r]],
+      );
+      await dmDelivery.publishOwnInbox(event);
+    } catch (_) {
+      // Best-effort — DMs still arrive via fallback relays.
+    }
   }
 
   /// NIP-42 relay auth handler.

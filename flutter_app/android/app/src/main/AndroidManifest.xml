@@ -17,13 +17,15 @@
         <!-- largeHeap: the image-heavy feed decodes up-to-1200px bitmaps;
              Android's default heap (192-256 MB) GC-thrashed and evicted the
              whole 48-96 MB image cache mid-scroll (iOS has no such cap).
-             Rendering A/B: Impeller scroll-janks on many Android GPUs
-             (flutter/flutter#168788) — EnableImpeller=false pins Skia, which
-             measured smoother on affected devices. Flip to true/remove to
-             re-test on newer Flutter engines. -->
+             Rendering: Impeller (Vulkan) is the default + mature on Flutter
+             3.47 — it pre-compiles shaders ahead-of-time, so the first-scroll
+             shader-compile jank that plagued old Skia is gone. The old
+             `EnableImpeller=false` Skia pin (for a 2024 engine) was left over
+             and forced the slower legacy renderer on modern devices — removed
+             so Impeller is used. -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
-            android:value="false" />
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -44,6 +46,23 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Android App Links: https://nostrfeed.com/<nip19> opens the app
+                 directly to the shared thread/profile (verified against
+                 https://nostrfeed.com/.well-known/assetlinks.json). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="nostrfeed.com" />
+                <data android:scheme="https" android:host="www.nostrfeed.com" />
+            </intent-filter>
+            <!-- nostr: scheme deep links (nostr clients hand these around). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nostr" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

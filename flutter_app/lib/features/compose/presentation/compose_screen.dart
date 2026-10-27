@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
@@ -162,6 +165,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         }
       }
       nostr.publish(event);
+
+      // OPTIMISTIC INSERT: write the new post into the local store so it
+      // renders in the feed instantly (before the relay round trip), same
+      // pattern as replies — kills the "posted, but my post isn't there →
+      // post again → duplicate" bug.
+      unawaited(EventStore.instance.ingest([event]).catchError((_) {}));
 
       // Refresh all feeds so the new post shows up immediately everywhere.
       ref.read(globalFeedProvider.notifier).refresh();

@@ -50,23 +50,34 @@ class MembershipsScreen extends ConsumerWidget {
               label: const Text('New tier'),
             )
           : null,
-      body: ListView(
-        padding: AppSpacing.paddingMd,
-        children: [
-          if (!canSell) ...[
-            _PremiumGateCard(),
-            AppSpacing.gapLg,
-          ],
-          if (canSell) ...[
-            const _SectionLabel('Your tiers'),
+      body: RefreshIndicator(
+        // Pull-to-refresh: tiers + subscription standings are relay data —
+        // a pull re-fetches both (the "stale until restart" complaint).
+        onRefresh: () async {
+          ref.invalidate(myMembershipsProvider);
+          ref.invalidate(myTiersProvider);
+          ref.invalidate(mySubscriptionProvider);
+          await ref.read(myMembershipsProvider.future);
+        },
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: AppSpacing.paddingMd,
+          children: [
+            if (!canSell) ...[
+              _PremiumGateCard(),
+              AppSpacing.gapLg,
+            ],
+            if (canSell) ...[
+              const _SectionLabel('Your tiers'),
+              AppSpacing.gapSm,
+              const _CreatorSection(),
+              AppSpacing.gapLg,
+            ],
+            const _SectionLabel('Your subscriptions'),
             AppSpacing.gapSm,
-            const _CreatorSection(),
-            AppSpacing.gapLg,
+            const _SubscribingSection(),
           ],
-          const _SectionLabel('Your subscriptions'),
-          AppSpacing.gapSm,
-          const _SubscribingSection(),
-        ],
+        ),
       ),
     );
   }

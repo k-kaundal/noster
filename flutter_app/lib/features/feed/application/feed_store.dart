@@ -24,12 +24,14 @@ class FeedStore {
 
   static const _globalKey = 'feed_cache:global_v1';
   static const _followingKey = 'feed_cache:following_v1';
+  static const _forYouKey = 'feed_cache:for_you_v1';
 
   final String _key;
   const FeedStore._(this._key);
 
   static const global = FeedStore._(_globalKey);
   static const following = FeedStore._(_followingKey);
+  static const forYou = FeedStore._(_forYouKey);
 
   /// The cached events, newest first, or empty. Malformed entries are
   /// dropped rather than failing the whole read.

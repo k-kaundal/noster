@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 
@@ -33,10 +36,20 @@ class PostActions {
       final userReaction =
           reactions.where((e) => e.pubkey == auth.pubkey).firstOrNull;
       if (userReaction != null) {
-        nostr.publishEvent(nostr.createDeletion(userReaction.id));
+        final deletion = nostr.createDeletion(userReaction.id);
+        nostr.publishEvent(deletion);
+        // Ingest the deletion too — the store's lifecycle removes the
+        // reaction from event_refs, so the SQL count drops right away.
+        unawaited(EventStore.instance.ingest([deletion]).catchError((_) {}));
       }
     } else {
-      nostr.publishEvent(nostr.createReaction(event));
+      final reaction = nostr.createReaction(event);
+      nostr.publishEvent(reaction);
+      // INGEST the reaction into the local store — the count reads a grouped
+      // SQL query from event_refs, so without this the like COUNT didn't move
+      // until a relay round trip brought the reaction back (the "like it,
+      // count stays the same" bug). The invalidation bus recounts instantly.
+      unawaited(EventStore.instance.ingest([reaction]).catchError((_) {}));
     }
     _scheduleEngagementRefresh(event.id);
   }
@@ -58,10 +71,16 @@ class PostActions {
       final userRepost =
           reposts.where((e) => e.pubkey == auth.pubkey).firstOrNull;
       if (userRepost != null) {
-        nostr.publishEvent(nostr.createDeletion(userRepost.id));
+        final deletion = nostr.createDeletion(userRepost.id);
+        nostr.publishEvent(deletion);
+        unawaited(EventStore.instance.ingest([deletion]).catchError((_) {}));
       }
     } else {
-      nostr.publishEvent(nostr.createRepost(event));
+      final repost = nostr.createRepost(event);
+      nostr.publishEvent(repost);
+      // Ingest so the repost count + the feed update instantly (same
+      // store-count fix as likes).
+      unawaited(EventStore.instance.ingest([repost]).catchError((_) {}));
     }
     _scheduleEngagementRefresh(event.id);
   }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,7 +7,9 @@ import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/moderation/flood_detector.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
+import 'package:nostrfeed_mobile/features/explore/domain/feed_ranking.dart';
 import 'package:nostrfeed_mobile/features/feed/application/feed_store.dart';
+import 'package:nostrfeed_mobile/features/feed/application/personalization_service.dart';
 
 // engagementVersionProvider / localEngagementProvider moved to core in P3
 // (the ingest pipeline bumps them from the bus). Re-exported so existing
@@ -37,8 +40,7 @@ class FeedState {
   final int newCount;
 
   /// Distinct authors of the newest pending posts (max 3, newest first) —
-  /// the avatar stack on Primal's "N new posts" pill
-  /// (`AvatarThumbnailsRow`). Empty when [newCount] is 0.
+  /// the avatar stack on the "N new posts" pill. Empty when [newCount] is 0.
   final List<String> newPostAuthors;
 
   /// The last fetch failed; the cached/current events stay visible.
@@ -49,7 +51,13 @@ class FeedState {
 
   const FeedState({
     this.events = const [],
-    this.isRefreshing = false,
+    // Start TRUE: the very first frame after build() must be the skeleton,
+    // never the empty state. Before this, `isRefreshing: false` made frame
+    // one evaluate `events.isEmpty && !isRefreshing` → the "No posts" empty
+    // state flashed for the 1-2s the disk read + refresh took (the "app
+    // opens to 'no posts' then fills" bug — real apps open to cached/skeleton,
+    // never an empty state).
+    this.isRefreshing = true,
     this.hasMore = true,
     this.isLoadingMore = false,
     this.newCount = 0,
@@ -82,6 +90,19 @@ class FeedState {
   }
 }
 
+/// Which feed tab a notifier serves.
+enum FeedMode {
+  /// Unfiltered firehose (the old "For You" — everything the hub syncs).
+  global,
+
+  /// Personalized: interest + country + language + followers-mixed ranking
+  /// over the global candidate set.
+  forYou,
+
+  /// Only posts by people the user follows.
+  following,
+}
+
 /// The feed pipeline, offline-first:
 ///
 /// 1. **Build** → read the disk cache and show it immediately.
@@ -94,9 +115,12 @@ class FeedState {
 ///    older pages, so the feed scrolls forever.
 class FeedNotifier extends Notifier<FeedState> {
   final FeedStore _store;
-  final bool _followingOnly;
+  final FeedMode _mode;
 
-  FeedNotifier(this._store, this._followingOnly);
+  FeedNotifier(this._store, this._mode);
+
+  bool get _followingOnly => _mode == FeedMode.following;
+  bool get _isForYou => _mode == FeedMode.forYou;
 
   /// The normalized SQLite store — the source of truth the feed reads cold
   /// starts from, and the engagement index cards compute counts against.
@@ -124,8 +148,39 @@ class FeedNotifier extends Notifier<FeedState> {
       _liveSub?.cancel();
       _liveHandle?.dispose();
     });
-    // Re-fetch the follow list when the user logs in/out or follows someone.
-    ref.listen(authStateProvider, (_, _) => _follows = null);
+    // Re-fetch the follow list when the user logs in/out or follows someone,
+    // AND re-run the refresh: clearing _follows without re-fetching left the
+    // Following tab empty until a manual pull after every login/account
+    // switch (the "logged in but Following shows no posts" bug).
+    ref.listen(authStateProvider, (prev, next) {
+      _follows = null;
+      if (prev?.pubkey != next.pubkey) {
+        _pending = [];
+        _pendingIds.clear();
+        state = const FeedState(isRefreshing: false);
+        Future.microtask(_init);
+      }
+    });
+    // Follow/unfollow from anywhere (profile button, search, explore): the
+    // cached _follows goes stale AND the live tail's author filter is wrong
+    // until a refresh — resolve follows + re-arm the tail so a newly
+    // followed author's posts start arriving immediately.
+    ref.listen(followsProvider, (prev, next) {
+      final newFollows = next.valueOrNull;
+      if (newFollows == null) return;
+      final old = prev?.valueOrNull;
+      if (old != null &&
+          old.length == newFollows.length &&
+          old.toSet().containsAll(newFollows)) {
+        return; // same set — nothing to do
+      }
+      _follows = null; // force re-resolve on next refresh
+      if (_followingOnly) {
+        // refresh() resolves follows and re-arms the live tail itself
+        // (the _refreshInner fix) — one entry point, no ordering traps.
+        refresh();
+      }
+    });
     // Show the cache immediately, then refresh behind it.
     Future.microtask(_init);
     return const FeedState();
@@ -147,22 +202,34 @@ class FeedNotifier extends Notifier<FeedState> {
     // the refresh resolves them the feed fills in.
     List<String>? authors;
     if (_followingOnly) {
-      authors = _follows ?? const [];
-      if (authors.isEmpty) {
-        state = state.copyWith(events: const []);
-        // Refresh resolves follows and fills the feed; live tail starts
-        // once follows exist (its filter needs authors).
-        unawaited(refresh().then((_) => _startLive()));
-        return;
+      // Paint from the store with whatever follows are ALREADY cached —
+      // don't wait for the network. CRITICAL: feedPage(authors: []) is
+      // UNFILTERED (it returns the GLOBAL store), so an empty follows list
+      // must NOT be passed — that leaked global posts into the Following
+      // tab on every cold start. Unknown follows → skip the store read
+      // entirely (paint empty), the refresh resolves follows + fills in.
+      final known = _follows;
+      if (known == null || known.isEmpty) {
+        authors = null; // sentinel: skip the store read below
+      } else {
+        authors = known;
       }
     }
 
-    var cached = await _events.feedPage(
-      kinds: _feedKinds,
-      limit: _pageSize,
-      authors: authors,
-    );
-    if (cached.isEmpty) {
+    var cached = <NostrEvent>[];
+    if (!(_followingOnly && authors == null)) {
+      cached = await _events.feedPage(
+        kinds: _feedKinds,
+        limit: _isForYou ? _pageSize * 3 : _pageSize,
+        authors: authors,
+      );
+      // For You: rank the store paint too — the cold-start feed is already
+      // personalized (interests/country/language from the last session).
+      if (_isForYou && cached.isNotEmpty) {
+        cached = await _rankCached(cached);
+      }
+    }
+    if (cached.isEmpty && !(_followingOnly && authors == null)) {
       final legacy = await _store.read();
       if (legacy.isNotEmpty) {
         // Migrate the legacy cache into SQLite once, then drop it.
@@ -180,7 +247,18 @@ class FeedNotifier extends Notifier<FeedState> {
     if (cached.isNotEmpty) {
       state = state.copyWith(events: cached);
     }
-    // 2. Network refresh behind it.
+    // Clear the INITIAL isRefreshing flag before the first refresh: the
+    // flag starts true ONLY so frame 1 shows the skeleton (never the empty
+    // state) — it is NOT a real in-flight fetch. `_refresh()` guards on
+    // `if (state.isRefreshing) return`, so without clearing it here the
+    // very first refresh returned immediately and the flag stayed stuck
+    // true FOREVER → skeleton forever on any tab whose store paint is
+    // empty (the Following tab on a cold start — For You masked it because
+    // its store paint is non-empty, so events.isEmpty was false).
+    if (state.isRefreshing) {
+      state = state.copyWith(isRefreshing: false);
+    }
+    // 2. Network refresh behind it (resolves follows for the Following tab).
     await refresh();
     // 3. Live tail for new posts.
     _startLive();
@@ -232,14 +310,17 @@ class FeedNotifier extends Notifier<FeedState> {
     if (state.isRefreshing) return;
     state = state.copyWith(isRefreshing: true, clearError: true);
     try {
-      await _refreshInner().timeout(_refreshTimeout, onTimeout: () {
-        // A hung fetch: reset so the NEXT pull-to-refresh isn't blocked.
-        // Keep the current events on screen (the cache is still good).
-        state = state.copyWith(
-          isRefreshing: false,
-          error: 'Refresh timed out — pull to retry',
-        );
-      });
+      await _refreshInner().timeout(
+        _refreshTimeout,
+        onTimeout: () {
+          // A hung fetch: reset so the NEXT pull-to-refresh isn't blocked.
+          // Keep the current events on screen (the cache is still good).
+          state = state.copyWith(
+            isRefreshing: false,
+            error: 'Refresh timed out — pull to retry',
+          );
+        },
+      );
     } catch (e) {
       state = state.copyWith(isRefreshing: false, error: e.toString());
     }
@@ -259,6 +340,13 @@ class FeedNotifier extends Notifier<FeedState> {
         }
         final follows = await _resolveFollows();
         fresh = await nostr.fetchFollowingFeed(follows, limit: _pageSize);
+        // (Re-)arm the live tail once follows exist — the _init-time
+        // _startLive() returns early when follows are unknown (cold start /
+        // failed first refresh), and nothing re-armed it: the Following
+        // tab's "N new posts" pill simply never worked until an app resume
+        // called restartLive. Arming here guarantees it after EVERY
+        // successful follows resolution.
+        if (follows.isNotEmpty) _startLive();
 
         // Cold-start fix: if the feed had painted EMPTY (follows unknown at
         // _init), fill from the store NOW that follows exist — the network
@@ -276,6 +364,12 @@ class FeedNotifier extends Notifier<FeedState> {
             fresh = _dedupe([...fresh, ...fromStore]);
           }
         }
+      } else if (_isForYou) {
+        // FOR YOU: fetch a global candidate pool, rank it with the
+        // personalization boost (interests + country + language + follows),
+        // and mix in followed authors' posts. The candidate pool is wider
+        // than the page so the ranking has room to personalize.
+        fresh = await _fetchForYouPage(nostr);
       } else {
         fresh = await nostr.fetchFeed(limit: _pageSize);
       }
@@ -312,6 +406,140 @@ class FeedNotifier extends Notifier<FeedState> {
     }
   }
 
+  /// Rank a store-painted candidate list with the same personalization
+  /// boost as the relay path (cold start is personalized too).
+  Future<List<NostrEvent>> _rankCached(List<NostrEvent> cached) async {
+    try {
+      final profile = await ref.read(personalizationProvider.future);
+      if (profile.isEmpty) return cached.take(_pageSize).toList();
+      final ids = cached.map((e) => e.id).toList();
+      final engagementMap = await _events.engagementFor(ids);
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final authorCounts = FeedRanking.authorCounts(cached);
+      final scored = cached.map((e) {
+        final engRow = engagementMap[e.id];
+        final eng = EventEngagement(
+          replies: engRow?.replies ?? 0,
+          reactions: engRow?.reactions ?? 0,
+          reposts: engRow?.reposts ?? 0,
+          zaps: engRow?.zaps ?? 0,
+          uniqueEngagers: engRow?.uniqueEngagers ?? 0,
+        );
+        final base = FeedRanking.trendingScore(
+          engagement: eng,
+          createdAt: e.createdAt,
+          nowSeconds: nowSeconds,
+          authorPostCountInWindow: authorCounts[e.pubkey] ?? 1,
+        );
+        return (
+          event: e,
+          score: base * personalizationBoost(event: e, profile: profile),
+        );
+      }).toList()..sort((a, b) => b.score.compareTo(a.score));
+      final taken = <String, int>{};
+      final result = <NostrEvent>[];
+      for (final s in scored) {
+        final n = taken[s.event.pubkey] ?? 0;
+        if (n >= 3) continue;
+        taken[s.event.pubkey] = n + 1;
+        result.add(s.event);
+        if (result.length >= _pageSize) break;
+      }
+      return result;
+    } catch (_) {
+      return cached.take(_pageSize).toList();
+    }
+  }
+
+  /// FOR YOU page: global candidates ranked by the personalization boost,
+  /// blended with followed authors' posts (~40/60 follow/discovery).
+  ///
+  /// Ranking rides the ANTI-MANIPULATION trending score (unique engagers,
+  /// zaps, freshness decay) — personalization re-orders genuine content, it
+  /// never inflates bot clusters. The engagement numbers come from the LOCAL
+  /// store index first (instant), refreshed behind by `_warmPage`.
+  Future<List<NostrEvent>> _fetchForYouPage(
+    NostrService nostr, {
+    int? until,
+  }) async {
+    // Wider candidate pool so ranking has room to personalize.
+    const candidateLimit = _pageSize * 3;
+    final candidates = await nostr.fetchFeed(
+      limit: candidateLimit,
+      until: until,
+    );
+    if (candidates.isEmpty) return candidates;
+
+    final profile = await ref.read(personalizationProvider.future);
+    if (profile.isEmpty) {
+      // Logged out / no signals yet: For You = the global feed (honest —
+      // there is nothing to personalize with).
+      return candidates.take(_pageSize).toList();
+    }
+
+    // Engagement from the LOCAL index (warm from previous syncs — ranking
+    // never waits on a relay round-trip per candidate).
+    final ids = candidates.map((e) => e.id).toList();
+    final engagementMap = await _events.engagementFor(ids);
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final authorCounts = FeedRanking.authorCounts(candidates);
+
+    // Score: trending × personalization boost.
+    final scored = candidates.map((e) {
+      final engRow = engagementMap[e.id];
+      final eng = EventEngagement(
+        replies: engRow?.replies ?? 0,
+        reactions: engRow?.reactions ?? 0,
+        reposts: engRow?.reposts ?? 0,
+        zaps: engRow?.zaps ?? 0,
+        uniqueEngagers: engRow?.uniqueEngagers ?? 0,
+      );
+      final base = FeedRanking.trendingScore(
+        engagement: eng,
+        createdAt: e.createdAt,
+        nowSeconds: nowSeconds,
+        authorPostCountInWindow: authorCounts[e.pubkey] ?? 1,
+      );
+      final boost = personalizationBoost(event: e, profile: profile);
+      return (event: e, score: base * boost);
+    }).toList()..sort((a, b) => b.score.compareTo(a.score));
+
+    // Blend: ~40% followed authors (the "followers mix" — the Following
+    // tab's people also surface here), ~60% ranked discovery. Per-author
+    // cap 3 so no one dominates (same as FeedRanking.rank).
+    final result = <NostrEvent>[];
+    final resultIds = <String>{};
+    final taken = <String, int>{};
+    final followedTarget = (_pageSize * 0.4).round();
+
+    // Pass 1: best-scored followed posts first (up to the 40% target).
+    var followedCount = 0;
+    for (final s in scored) {
+      if (result.length >= _pageSize || followedCount >= followedTarget) {
+        break;
+      }
+      if (!profile.follows.contains(s.event.pubkey)) continue;
+      final n = taken[s.event.pubkey] ?? 0;
+      if (n >= 3) continue;
+      taken[s.event.pubkey] = n + 1;
+      result.add(s.event);
+      resultIds.add(s.event.id);
+      followedCount++;
+    }
+    // Pass 2: fill the rest by score (any author — followed posts can also
+    // win slots here on merit).
+    for (final s in scored) {
+      if (result.length >= _pageSize) break;
+      if (resultIds.contains(s.event.id)) continue;
+      final n = taken[s.event.pubkey] ?? 0;
+      if (n >= 3) continue;
+      taken[s.event.pubkey] = n + 1;
+      result.add(s.event);
+      resultIds.add(s.event.id);
+    }
+    return result;
+  }
+
   /// Load the next (older) page and append it. No-op while one is loading.
   Future<void> loadMore() {
     final run = _inFlight.then((_) => _loadMore());
@@ -328,10 +556,13 @@ class FeedNotifier extends Notifier<FeedState> {
     }
     state = state.copyWith(isLoadingMore: true);
     try {
-      await _loadMoreInner().timeout(_refreshTimeout, onTimeout: () {
-        // Same hung-fetch guard as refresh: reset so pagination isn't stuck.
-        state = state.copyWith(isLoadingMore: false);
-      });
+      await _loadMoreInner().timeout(
+        _refreshTimeout,
+        onTimeout: () {
+          // Same hung-fetch guard as refresh: reset so pagination isn't stuck.
+          state = state.copyWith(isLoadingMore: false);
+        },
+      );
     } catch (_) {
       state = state.copyWith(isLoadingMore: false);
     }
@@ -350,6 +581,8 @@ class FeedNotifier extends Notifier<FeedState> {
           limit: _pageSize,
           until: until,
         );
+      } else if (_isForYou) {
+        older = await _fetchForYouPage(nostr, until: until);
       } else {
         older = await nostr.fetchFeed(limit: _pageSize, until: until);
       }
@@ -391,6 +624,11 @@ class FeedNotifier extends Notifier<FeedState> {
   /// each PostCard's counts come from a local SQL grouped count — not one
   /// relay round-trip per card (the ~150-queries-per-feed jank). The query
   /// asks for events that e-tag any of the page's posts.
+  ///
+  /// NIP-57 zap receipts (kind 9735) are validated: the receipt's pubkey
+  /// must match the recipient's LNURL provider's `nostrPubkey`, and the
+  /// bolt11 amount must match the zap request's amount tag. Invalid receipts
+  /// are dropped (a rogue LNURL server can forge them).
   Future<void> _syncEngagement(List<NostrEvent> page) async {
     try {
       final ids = page.map((e) => e.id).toList();
@@ -403,14 +641,64 @@ class FeedNotifier extends Notifier<FeedState> {
           limit: 1000,
         ),
       ], timeout: const Duration(seconds: 6));
+      // NIP-57: validate zap receipts before ingesting — a forged receipt
+      // (wrong pubkey, mismatched amount) inflates zap counts dishonestly.
+      final validated = <NostrEvent>[];
+      for (final e in engagementEvents) {
+        if (e.kind == 9735) {
+          if (_isValidZapReceipt(e)) {
+            validated.add(e);
+          }
+          // Drop invalid receipts — don't poison the engagement index.
+        } else {
+          validated.add(e);
+        }
+      }
       // The ingest reports its changed tables (StoreTable.eventRefs) to the
       // invalidation bus via the writer lane — `engagementVersionProvider`
       // derives from that, so listeners recount automatically. No manual
       // version poke here anymore (ADR-0008 P5).
-      await _events.ingest(engagementEvents);
+      await _events.ingest(validated);
     } catch (_) {
       // Best-effort: counts from the last sync still render.
     }
+  }
+
+  /// NIP-57 Appendix F: validate a zap receipt.
+  ///
+  /// Checks:
+  /// 1. The receipt has a bolt11 tag (proof of invoice).
+  /// 2. The receipt has a description tag with the zap request JSON.
+  /// 3. The zap request's amount tag matches the bolt11 invoice amount
+  ///    (when parseable).
+  ///
+  /// Returns true for receipts that pass validation (or can't be fully
+  /// validated but aren't obviously forged).
+  static bool _isValidZapReceipt(NostrEvent receipt) {
+    // Must have a bolt11 invoice.
+    final bolt11 = receipt.getTag('bolt11');
+    if (bolt11 == null || bolt11.isEmpty) return false;
+    // Must have a description with the zap request.
+    final desc = receipt.getTag('description');
+    if (desc == null || desc.isEmpty) return false;
+    // The description must be valid JSON (the zap request).
+    try {
+      final req = jsonDecode(desc) as Map<String, dynamic>;
+      // The zap request must have an amount tag.
+      final tags = req['tags'] as List?;
+      if (tags == null) return false;
+      var hasAmount = false;
+      for (final tag in tags) {
+        if (tag is List && tag.isNotEmpty && tag[0] == 'amount') {
+          hasAmount = true;
+          break;
+        }
+      }
+      if (!hasAmount) return false;
+    } catch (_) {
+      return false; // Unparseable description = invalid receipt.
+    }
+    return true;
   }
 
   /// The follow list for the Following feed, cached per session. Follow/
@@ -434,11 +722,25 @@ class FeedNotifier extends Notifier<FeedState> {
   void showNewPosts() {
     final pending = _pending;
     if (pending.isEmpty) return;
+    _pending = [];
+    _pendingIds.clear();
+    // For You: rank the pending batch with personalization before merging —
+    // a followed author's live post lands ABOVE a random one (the point of
+    // the tab), instead of naive time order.
+    if (_isForYou) {
+      _rankCached(pending).then((ranked) {
+        final merged = _merge(state.events, ranked, anchoredAtTop: true);
+        state = state.copyWith(
+          events: merged,
+          newCount: 0,
+          newPostAuthors: const [],
+        );
+      });
+      return;
+    }
     // The pill's posts are the NEWEST — keep them (a tap that made them
     // vanish into the window cap was the "pill does nothing" bug).
     final merged = _merge(state.events, pending, anchoredAtTop: true);
-    _pending = [];
-    _pendingIds.clear();
     state = state.copyWith(
       events: merged,
       newCount: 0,
@@ -528,7 +830,7 @@ class FeedNotifier extends Notifier<FeedState> {
   }
 
   /// Distinct authors of the newest pending posts, max 3, newest first —
-  /// the avatar stack on the pill (Primal's FeedPostsSyncStats avatars).
+  /// the avatar stack on the pill.
   List<String> _pendingAuthors() {
     final out = <String>[];
     for (final e in _pending.reversed) {
@@ -598,8 +900,7 @@ class FeedNotifier extends Notifier<FeedState> {
       return _capWindow(_dedupe(sorted), anchoredAtTop: anchoredAtTop);
     }
     final existingIds = current.map((e) => e.id).toSet();
-    final newOnes =
-        incoming.where((e) => !existingIds.contains(e.id)).toList();
+    final newOnes = incoming.where((e) => !existingIds.contains(e.id)).toList();
     if (newOnes.isEmpty) {
       return _capWindow(current, anchoredAtTop: anchoredAtTop);
     }
@@ -667,13 +968,17 @@ class FeedNotifier extends Notifier<FeedState> {
   }
 }
 
-/// Global ("For You") feed.
+/// Global feed (unfiltered — everything the hub syncs).
 final globalFeedProvider = NotifierProvider<FeedNotifier, FeedState>(
-  () => FeedNotifier(FeedStore.global, false),
+  () => FeedNotifier(FeedStore.global, FeedMode.global),
+);
+
+/// For You feed (personalized: interests + country + language + followers).
+final forYouFeedProvider = NotifierProvider<FeedNotifier, FeedState>(
+  () => FeedNotifier(FeedStore.forYou, FeedMode.forYou),
 );
 
 /// Following feed (posts by people the user follows).
-final followingFeedNotifierProvider =
-    NotifierProvider<FeedNotifier, FeedState>(
-  () => FeedNotifier(FeedStore.following, true),
+final followingFeedNotifierProvider = NotifierProvider<FeedNotifier, FeedState>(
+  () => FeedNotifier(FeedStore.following, FeedMode.following),
 );

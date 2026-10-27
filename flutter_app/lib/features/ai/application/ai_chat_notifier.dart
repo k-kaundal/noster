@@ -8,6 +8,10 @@ import 'package:nostrfeed_mobile/features/ai/data/ai_gateway_service.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_gateway.dart';
 import 'package:nostrfeed_mobile/features/ai/domain/ai_models.dart';
 
+/// Chat vs Agent — the two AI modes. Chat is a normal assistant; Agent is
+/// the Grok-style tool-calling loop (search/read/summarize with live steps).
+enum AiChatMode { chat, agent }
+
 /// State for the AI chat screen.
 class AiChatState {
   final List<AiMessage> messages;
@@ -28,12 +32,21 @@ class AiChatState {
   /// of a retype.
   final String? failedText;
 
+  /// Chat vs Agent mode (the screen's segmented toggle).
+  final AiChatMode mode;
+
+  /// Live agent steps for the in-flight agent run (the "what it's doing"
+  /// panel — search/fetch lines as they happen).
+  final List<AgentStepEntry> liveAgentSteps;
+
   const AiChatState({
     this.messages = const [],
     this.isStreaming = false,
     this.error,
     this.contextDropped = 0,
     this.failedText,
+    this.mode = AiChatMode.chat,
+    this.liveAgentSteps = const [],
   });
 
   AiChatState copyWith({
@@ -42,8 +55,11 @@ class AiChatState {
     String? error,
     int? contextDropped,
     String? failedText,
+    AiChatMode? mode,
+    List<AgentStepEntry>? liveAgentSteps,
     bool clearError = false,
     bool clearFailedText = false,
+    bool clearLiveSteps = false,
   }) {
     return AiChatState(
       messages: messages ?? this.messages,
@@ -51,6 +67,10 @@ class AiChatState {
       error: clearError ? null : (error ?? this.error),
       contextDropped: contextDropped ?? this.contextDropped,
       failedText: clearFailedText ? null : (failedText ?? this.failedText),
+      mode: mode ?? this.mode,
+      liveAgentSteps: clearLiveSteps
+          ? const []
+          : (liveAgentSteps ?? this.liveAgentSteps),
     );
   }
 }
@@ -77,6 +97,14 @@ const _systemPrompt =
 class AiChatNotifier extends Notifier<AiChatState> {
   StreamSubscription<AiStreamChunk>? _activeStream;
   var _idCounter = 0;
+
+  /// Agent-mode reserve multiplier: the loop makes several billed API calls
+  /// (one per tool round + the final answer), so reserve 2x a single message
+  /// up front (a typical 1-2 step run). The settle-to-exact-cost uses the
+  /// SUMMED usage across rounds, which lands at ~2x for 1-2 steps and ~3x
+  /// for 3+ steps — the charged amount scales with the steps taken, capped
+  /// by reserve × 2 (the maxSettleOverage bound).
+  static const _agentReserveMultiplier = 2;
 
   String _nextId(String prefix) =>
       '$prefix-${DateTime.now().microsecondsSinceEpoch}-${_idCounter++}';
@@ -126,6 +154,171 @@ class AiChatNotifier extends Notifier<AiChatState> {
     _activeStream = null;
     if (state.isStreaming) {
       state = state.copyWith(isStreaming: false);
+    }
+  }
+
+  /// Switch between Chat and Agent modes (the screen's segmented toggle).
+  void setMode(AiChatMode mode) {
+    if (state.mode != mode) {
+      state = state.copyWith(mode: mode, clearLiveSteps: true);
+    }
+  }
+
+  /// Sends [text] in AGENT mode — the Grok-style tool-calling loop: the
+  /// model calls read-only Nostr tools (search/thread/profile/hashtag), the
+  /// app executes them locally, results feed back, and the model answers
+  /// grounded in the real data it just read. The steps stream into
+  /// [AiChatState.liveAgentSteps] for the "what it's doing" panel.
+  Future<void> sendAgent(String text, {required AiModelEntry model}) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || state.isStreaming) return;
+
+    final config = ref.read(aiGatewayConfigProvider).value;
+    if (config == null || !config.enabled) {
+      state = state.copyWith(error: 'AI is not available right now.');
+      return;
+    }
+    final provider = config.provider(model.providerId);
+    if (provider == null) {
+      state = state.copyWith(error: 'Unknown AI provider for this model.');
+      return;
+    }
+    final gateway = ref.read(aiGatewayServiceProvider);
+    if (!gateway.isProviderConfigured(provider)) {
+      state = state.copyWith(
+        error: '${provider.name} is not configured in this build.',
+      );
+      return;
+    }
+
+    // Agent mode reserves MORE than a single message: the loop makes several
+    // billed API calls (one per tool round + the final answer), so a single
+    // message estimate under-reserves and hits insufficient_credits mid-run.
+    // 2x for a typical 1-2 step run; the summed exact usage settles to the
+    // real 2-3x cost (capped by reserve × 2 — see cappedSettleTokens).
+    final estimate = config.estimatePriceTokens(model) * _agentReserveMultiplier;
+
+    // Gate: trial first, then credits (same billing as chat).
+    final trialLeft = ref.read(aiTrialRemainingProvider);
+    var usedTrial = false;
+    var reserved = 0;
+    if (model.trialEligible && trialLeft > 0) {
+      usedTrial = true;
+    } else {
+      final ok = await ref.read(aiCreditsProvider.notifier).debit(estimate);
+      if (!ok) {
+        state = state.copyWith(error: 'insufficient_credits');
+        return;
+      }
+      reserved = estimate;
+    }
+
+    final userMessage = AiMessage(
+      id: _nextId('u'),
+      role: AiRole.user,
+      content: trimmed,
+      createdAt: DateTime.now(),
+    );
+    final assistantMessage = AiMessage(
+      id: _nextId('a'),
+      role: AiRole.assistant,
+      content: '',
+      createdAt: DateTime.now(),
+    );
+    state = state.copyWith(
+      messages: [...state.messages, userMessage, assistantMessage],
+      isStreaming: true,
+      clearError: true,
+      clearFailedText: true,
+      clearLiveSteps: true,
+    );
+
+    try {
+      final result = await ref.read(aiAgentServiceProvider).run(
+            trimmed,
+            provider: provider,
+            modelId: model.id,
+            onStep: (step) {
+              // The step list updates LIVE as the loop works (the Grok-style
+              // "Searching… / Reading…" panel above the answer).
+              if (!step.done) {
+                state = state.copyWith(
+                  liveAgentSteps: [
+                    ...state.liveAgentSteps,
+                    AgentStepEntry(tool: step.tool, status: step.status),
+                  ],
+                );
+              }
+            },
+          );
+
+      if (usedTrial) {
+        await ref.read(aiTrialUsedProvider.notifier).increment();
+      }
+
+      // Settle to exact cost (usage.cost × margin), refund the difference.
+      var charged = usedTrial ? 0 : reserved;
+      if (!usedTrial && result.usage != null) {
+        final exact = config.settlePriceTokens(result.usage!.costUsd);
+        final balance = ref.read(aiCreditsProvider).valueOrNull?.balance ?? 0;
+        final capped = config.cappedSettleTokens(exact, reserved);
+        final settle = capped > reserved + balance ? reserved + balance : capped;
+        final delta = reserved - settle;
+        if (delta > 0) {
+          await ref.read(aiCreditsProvider.notifier).credit(delta);
+        } else if (delta < 0) {
+          await ref.read(aiCreditsProvider.notifier).debit(-delta);
+        }
+        charged = settle;
+      }
+
+      final settled = assistantMessage.copyWith(
+        content: result.answer,
+        costTokens: charged,
+        costUsd: result.usage?.costUsd ?? 0,
+        model: result.usage?.model ?? model.id,
+        agentSteps: [
+          for (final s in result.steps)
+            AgentStepEntry(tool: s.tool, status: s.status),
+        ],
+      );
+      final messages = [...state.messages];
+      final idx = messages.indexWhere((m) => m.id == assistantMessage.id);
+      if (idx >= 0) messages[idx] = settled;
+      state = state.copyWith(
+        messages: messages,
+        isStreaming: false,
+        clearLiveSteps: true,
+      );
+      await ref.read(aiChatStoreProvider).save(messages);
+
+      if (model.trialEligible) ref.invalidate(aiFreeQuotaProvider);
+    } on AiGatewayException catch (e) {
+      if (!usedTrial && reserved > 0) {
+        await ref.read(aiCreditsProvider.notifier).credit(reserved);
+      }
+      final messages = [...state.messages]
+        ..removeWhere((m) => m.id == assistantMessage.id);
+      state = state.copyWith(
+        messages: messages,
+        isStreaming: false,
+        error: e.message,
+        failedText: trimmed,
+        clearLiveSteps: true,
+      );
+    } catch (e) {
+      if (!usedTrial && reserved > 0) {
+        await ref.read(aiCreditsProvider.notifier).credit(reserved);
+      }
+      final messages = [...state.messages]
+        ..removeWhere((m) => m.id == assistantMessage.id);
+      state = state.copyWith(
+        messages: messages,
+        isStreaming: false,
+        error: 'Agent failed: $e',
+        failedText: trimmed,
+        clearLiveSteps: true,
+      );
     }
   }
 

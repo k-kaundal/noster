@@ -5,13 +5,11 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/features/lists/domain/nostr_list.dart';
 
 /// The current user's follow sets (NIP-51 kind 30000), parsed to models.
-final followSetsProvider =
-    FutureProvider.autoDispose<List<NostrList>>((ref) async {
-  final nostr = ref.read(nostrServiceProvider);
-  if (!nostr.isInitialized) await nostr.init();
-  final auth = ref.watch(authStateProvider);
-  if (!auth.isLoggedIn || auth.pubkey == null) return [];
-  final events = await nostr.fetchFollowSets(auth.pubkey!);
+///
+/// Delegates to the core keepAlive+TTL `listsProvider` — the autoDispose
+/// provider re-fetched the list on every screen visit.
+final followSetsProvider = FutureProvider<List<NostrList>>((ref) async {
+  final events = await ref.watch(listsProvider.future);
   return events.map(NostrList.fromEvent).toList();
 });
 
@@ -114,6 +112,7 @@ class ListController {
   }
 
   void _invalidate() {
+    _ref.invalidate(listsProvider);
     _ref.invalidate(followSetsProvider);
   }
 }

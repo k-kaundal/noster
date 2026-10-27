@@ -120,6 +120,40 @@ class DmDelivery {
     }
   }
 
+  /// Publish OUR OWN kind-10050 DM inbox relay list (NIP-17) so other
+  /// clients know where to deliver gift-wrapped DMs addressed to us.
+  ///
+  /// Per NIP-17: "Clients MUST only publish events to the relays listed in
+  /// the recipient's kind 10050 event." — if we never publish ours, senders
+  /// fall back to guesswork (or skip us entirely).
+  ///
+  /// The caller builds + signs the event (NostrService owns the keys); this
+  /// class just decides WHICH relays to advertise and debounces per session.
+  bool _publishedInboxThisSession = false;
+
+  /// The relay list to advertise for this session (home relay + what the
+  /// user actually reads + Primal for cross-client reach, capped at 3 per
+  /// NIP-17's "keep it small").
+  List<String> inboxRelaysToAdvertise(List<String> connectedRelays) {
+    return <String>{
+      'wss://relay.nostrfeed.com',
+      ...connectedRelays.take(2),
+      'wss://relay.primal.net',
+    }.take(3).toList();
+  }
+
+  /// Publish a pre-signed kind-10050 event (debounced — kind 10050 is
+  /// replaceable, one publish per session is enough).
+  Future<void> publishOwnInbox(NostrEvent signedEvent) async {
+    if (_publishedInboxThisSession) return;
+    _publishedInboxThisSession = true;
+    try {
+      await relayPool.publishWithAck(signedEvent);
+    } catch (_) {
+      // Best-effort — DMs still arrive via the fallback set + live sub.
+    }
+  }
+
   /// Invalidate cached routing (e.g. user says "retry delivery" or a key
   /// just bought admission — the next DM should discover the premium lane).
   void invalidate(String peerPubkey) {

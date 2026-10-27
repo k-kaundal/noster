@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.nostrfeed.nostrfeed_mobile",
+      "sha256_cert_fingerprints": [
+        "77:3E:8B:CA:62:F9:6F:51:88:0B:89:D1:BE:9A:1A:23:5A:CD:5F:8A:E2:A7:97:41:4A:50:DD:BC:0A:9A:CE:06"
+      ]
+    }
+  }
+]

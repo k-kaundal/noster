@@ -5,6 +5,21 @@
 library;
 
 /// One message in an AI chat thread.
+/// One step of an agent run (Grok-style "what it's doing") — a tool call
+/// with a short status line, shown above the final answer.
+class AgentStepEntry {
+  final String tool;
+  final String status;
+  const AgentStepEntry({required this.tool, required this.status});
+
+  Map<String, dynamic> toJson() => {'tool': tool, 'status': status};
+  factory AgentStepEntry.fromJson(Map<String, dynamic> json) =>
+      AgentStepEntry(
+        tool: json['tool'] as String? ?? '',
+        status: json['status'] as String? ?? '',
+      );
+}
+
 class AiMessage {
   final String id;
   final AiRole role;
@@ -26,6 +41,9 @@ class AiMessage {
   /// Generated video URLs (video-gen models — hosted mp4 URLs).
   final List<String> videos;
 
+  /// Agent-mode steps that produced this answer (empty for plain chat).
+  final List<AgentStepEntry> agentSteps;
+
   const AiMessage({
     required this.id,
     required this.role,
@@ -36,6 +54,7 @@ class AiMessage {
     this.model,
     this.images = const [],
     this.videos = const [],
+    this.agentSteps = const [],
   });
 
   AiMessage copyWith({
@@ -45,6 +64,7 @@ class AiMessage {
     String? model,
     List<String>? images,
     List<String>? videos,
+    List<AgentStepEntry>? agentSteps,
   }) {
     return AiMessage(
       id: id,
@@ -56,6 +76,7 @@ class AiMessage {
       model: model ?? this.model,
       images: images ?? this.images,
       videos: videos ?? this.videos,
+      agentSteps: agentSteps ?? this.agentSteps,
     );
   }
 
@@ -69,6 +90,8 @@ class AiMessage {
         if (model != null) 'model': model,
         if (images.isNotEmpty) 'images': images,
         if (videos.isNotEmpty) 'videos': videos,
+        if (agentSteps.isNotEmpty)
+          'agentSteps': [for (final s in agentSteps) s.toJson()],
       };
 
   factory AiMessage.fromJson(Map<String, dynamic> json) => AiMessage(
@@ -92,6 +115,10 @@ class AiMessage {
         ],
         videos: [
           for (final url in (json['videos'] as List? ?? const [])) '$url',
+        ],
+        agentSteps: [
+          for (final s in (json['agentSteps'] as List? ?? const []))
+            if (s is Map<String, dynamic>) AgentStepEntry.fromJson(s),
         ],
       );
 }

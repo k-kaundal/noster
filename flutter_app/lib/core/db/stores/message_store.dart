@@ -21,15 +21,18 @@ class MessageStore {
   /// (`dm_threads.last_msg_at`, `unread_count`). One transaction on the
   /// writer lane. Incoming messages bump unread; `markDmThreadRead` resets it.
   Future<void> upsertDmMessage(DbMessage msg) => _host.enqueueWrite(
-        () => _upsertDmMessageImpl(msg),
-        touches: {StoreTable.dmMessages, StoreTable.dmThreads},
-      );
+    () => _upsertDmMessageImpl(msg),
+    touches: {StoreTable.dmMessages, StoreTable.dmThreads},
+  );
 
   Future<void> _upsertDmMessageImpl(DbMessage msg) async {
     final database = await _host.db;
     await database.transaction((txn) async {
-      txn.insert('dm_messages', msg.toRow(),
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      txn.insert(
+        'dm_messages',
+        msg.toRow(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
       final isIncoming = msg.direction == DbDmDirection.incoming;
       txn.rawInsert(
         '''
@@ -64,27 +67,35 @@ class MessageStore {
   /// A single message by id (dedup / status updates).
   Future<DbMessage?> dmMessageById(String id) async {
     final database = await _host.db;
-    final rows = await database.query('dm_messages',
-        where: 'id = ?', whereArgs: [id], limit: 1);
+    final rows = await database.query(
+      'dm_messages',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     return rows.isEmpty ? null : DbMessage.fromRow(rows.first);
   }
 
   /// All conversations, newest activity first (the chat-list projection).
   Future<List<DbThread>> dmThreads() async {
     final database = await _host.db;
-    final rows =
-        await database.query('dm_threads', orderBy: 'last_msg_at DESC');
+    final rows = await database.query(
+      'dm_threads',
+      orderBy: 'last_msg_at DESC',
+    );
     return rows.map(DbThread.fromRow).toList();
   }
 
   /// The last-read watermark for [peer] (0 = nothing read).
   Future<int> dmThreadLastRead(String peer) async {
     final database = await _host.db;
-    final rows = await database.query('dm_threads',
-        columns: ['last_read_at'],
-        where: 'peer = ?',
-        whereArgs: [peer],
-        limit: 1);
+    final rows = await database.query(
+      'dm_threads',
+      columns: ['last_read_at'],
+      where: 'peer = ?',
+      whereArgs: [peer],
+      limit: 1,
+    );
     return rows.isEmpty ? 0 : (rows.first['last_read_at'] as int);
   }
 
@@ -118,8 +129,12 @@ class MessageStore {
   Future<void> updateDmMessageStatus(String id, DbMessageStatus status) =>
       _host.enqueueWrite(() async {
         final database = await _host.db;
-        await database.update('dm_messages', {'status': status.v},
-            where: 'id = ?', whereArgs: [id]);
+        await database.update(
+          'dm_messages',
+          {'status': status.v},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
       }, touches: {StoreTable.dmMessages});
 
   /// Delete the optimistic `local-{eventId}` pending row once the REAL event
@@ -128,30 +143,35 @@ class MessageStore {
   Future<void> deleteLocalPendingDm(String localId) =>
       _host.enqueueWrite(() async {
         final database = await _host.db;
-        await database.delete('dm_messages',
-            where: 'id = ? AND status = ?',
-            whereArgs: [localId, DbMessageStatus.pending.v]);
+        await database.delete(
+          'dm_messages',
+          where: 'id = ? AND status = ?',
+          whereArgs: [localId, DbMessageStatus.pending.v],
+        );
       }, touches: {StoreTable.dmMessages});
 
   /// Recompute + persist a thread's unread count from the messages table.
   Future<void> recomputeDmUnread(String peer) => _host.enqueueWrite(() async {
-        final database = await _host.db;
-        final n = Sqflite.firstIntValue(await database.rawQuery(
-              'SELECT COUNT(*) FROM dm_messages WHERE peer = ? '
-              'AND direction = 0 AND created_at > '
-              '(SELECT COALESCE((SELECT last_read_at FROM dm_threads WHERE peer = ?),0))',
-              [peer, peer],
-            )) ??
-            0;
-        await database.rawInsert(
-          '''
+    final database = await _host.db;
+    final n =
+        Sqflite.firstIntValue(
+          await database.rawQuery(
+            'SELECT COUNT(*) FROM dm_messages WHERE peer = ? '
+            'AND direction = 0 AND created_at > '
+            '(SELECT COALESCE((SELECT last_read_at FROM dm_threads WHERE peer = ?),0))',
+            [peer, peer],
+          ),
+        ) ??
+        0;
+    await database.rawInsert(
+      '''
           INSERT INTO dm_threads (peer, last_msg_at, last_read_at, unread_count)
           VALUES (?, 0, 0, ?)
           ON CONFLICT(peer) DO UPDATE SET unread_count = ?
           ''',
-          [peer, n, n],
-        );
-      }, touches: {StoreTable.dmThreads});
+      [peer, n, n],
+    );
+  }, touches: {StoreTable.dmThreads});
 
   // ── Durable outbox ────────────────────────────────────────────────────
 
@@ -159,8 +179,11 @@ class MessageStore {
   Future<void> enqueueDmOutbox(DbOutboxMessage entry) =>
       _host.enqueueWrite(() async {
         final database = await _host.db;
-        await database.insert('dm_outbox', entry.toRow(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+        await database.insert(
+          'dm_outbox',
+          entry.toRow(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       });
 
   /// All pending/failed outbox entries, oldest first (retry order).
@@ -180,30 +203,42 @@ class MessageStore {
     String id,
     DbMessageStatus state, {
     bool bumpAttempts = false,
-  }) =>
-      _host.enqueueWrite(() async {
-        final database = await _host.db;
-        await database.rawUpdate(
-          'UPDATE dm_outbox SET state = ?'
-          '${bumpAttempts ? ', attempts = attempts + 1' : ''} '
-          'WHERE id = ?',
-          [state.v, id],
-        );
-      });
+  }) => _host.enqueueWrite(() async {
+    final database = await _host.db;
+    await database.rawUpdate(
+      'UPDATE dm_outbox SET state = ?'
+      '${bumpAttempts ? ', attempts = attempts + 1' : ''} '
+      'WHERE id = ?',
+      [state.v, id],
+    );
+  });
 
   /// Drop an outbox entry (acked and echoed, or user discarded).
   Future<void> removeDmOutbox(String id) => _host.enqueueWrite(() async {
-        final database = await _host.db;
-        await database
-            .delete('dm_outbox', where: 'id = ?', whereArgs: [id]);
-      });
+    final database = await _host.db;
+    await database.delete('dm_outbox', where: 'id = ?', whereArgs: [id]);
+  });
 
   /// Wipe ALL messaging state (logout / account switch).
   Future<void> clearDmData() => _host.enqueueWrite(() async {
+    final database = await _host.db;
+    await database.delete('dm_messages');
+    await database.delete('dm_threads');
+    await database.delete('dm_outbox');
+  }, touches: {StoreTable.dmMessages, StoreTable.dmThreads});
+
+  /// Delete one conversation with [peer]: all its messages, its thread row
+  /// (unread count + watermark), and its outbox entries. The conversation
+  /// disappears from the chat list; messages stay on relays (NIP-09 is a
+  /// request, not an erase).
+  Future<void> deleteDmConversation(String peer) =>
+      _host.enqueueWrite(() async {
         final database = await _host.db;
-        await database.delete('dm_messages');
-        await database.delete('dm_threads');
-        await database.delete('dm_outbox');
+        await database.transaction((txn) async {
+          await txn.delete('dm_messages', where: 'peer = ?', whereArgs: [peer]);
+          await txn.delete('dm_threads', where: 'peer = ?', whereArgs: [peer]);
+          await txn.delete('dm_outbox', where: 'peer = ?', whereArgs: [peer]);
+        });
       }, touches: {StoreTable.dmMessages, StoreTable.dmThreads});
 
   // ── DM full-text search ───────────────────────────────────────────────

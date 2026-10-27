@@ -3,13 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_motion.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
+
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/note_content.dart';
 import 'package:nostrfeed_mobile/features/groups/application/group_providers.dart';
 import 'package:nostrfeed_mobile/features/groups/group_info_sheet.dart';
@@ -55,10 +58,37 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
   }
 
   Future<void> _load() async {
+    // STORE-FIRST: group chat messages (kind 9/11/1 h-tagged) already in the
+    // store paint instantly — a re-opened room never re-waits on the relay
+    // (the old memory-only list was empty on every visit until the fetch).
+    try {
+      final stored = await EventStore.instance.queryByFilters([
+        NostrFilter(
+          kinds: const [9, 11, 1],
+          tagFilters: {
+            'h': [_groupId],
+          },
+          limit: 200,
+        ),
+      ]);
+      if (stored.isNotEmpty && mounted) {
+        setState(() {
+          for (final e in stored) {
+            if (_seen.add(e.id)) _messages.add(e);
+          }
+          _messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _loading = false;
+        });
+      }
+    } catch (_) {}
+
+    // Relay fetch: merges into the store-backed list (deduped by id) and
+    // persists for the next visit.
     try {
       final nostr = ref.read(nostrServiceProvider);
       if (!nostr.isInitialized) await nostr.init();
       final events = await nostr.fetchGroupChat(_groupId);
+      if (events.isNotEmpty) unawaited(EventStore.instance.ingest(events));
       if (!mounted) return;
       setState(() {
         for (final e in events) {
@@ -76,6 +106,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
     final nostr = ref.read(nostrServiceProvider);
     if (!nostr.isInitialized) return;
     _liveSub = nostr.subscribeGroupChat(_groupId).listen((event) {
+      // Persist every live message so the room re-opens from the store.
+      unawaited(EventStore.instance.ingest([event]).catchError((_) {}));
       if (!mounted) return;
       if (_seen.add(event.id)) {
         setState(() {
@@ -114,7 +146,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
       final event = nostr.createGroupChatMessage(_groupId, text);
       nostr.publishEvent(event);
       _messageController.clear();
-      // Optimistic insert (the live sub will dedupe on echo).
+      // Optimistic insert + persist (the live sub dedupes on echo).
+      unawaited(EventStore.instance.ingest([event]).catchError((_) {}));
       if (_seen.add(event.id)) {
         setState(() => _messages.insert(0, event));
       }
@@ -158,9 +191,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                     _groupName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
+                    style: Theme.of(context).textTheme.titleMedium
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   if (about.isNotEmpty)
@@ -168,9 +199,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                       about,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
+                      style: Theme.of(context).textTheme.labelSmall
                           ?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                 ],
@@ -189,8 +218,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
               builder: (_) => Container(
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(AppShapes.xl)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(AppShapes.xl),
+                  ),
                 ),
                 child: GroupInfoSheet(groupEvent: widget.groupEvent),
               ),
@@ -202,60 +232,56 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
         children: [
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const SkeletonList(itemCount: 6)
                 : _messages.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AppIcon('chat', size: AppIconSize.xl, color: colorScheme.onSurfaceVariant),
-                            const SizedBox(height: 12),
-                            Text(
-                              'No messages yet',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Start the conversation',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: colorScheme.onSurfaceVariant
-                                        .withValues(alpha: 0.7),
-                                  ),
-                            ),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AppIcon(
+                          'chat',
+                          size: AppIconSize.xl,
+                          color: colorScheme.onSurfaceVariant,
                         ),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          reverse: true,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          itemCount: _messages.length,
-                          itemBuilder: (context, index) => _ChatBubble(
-                            event: _messages[index],
-                            isMine:
-                                _messages[index].pubkey == auth.pubkey,
-                            canDelete: ref
-                                    .watch(isGroupAdminProvider(_groupId))
-                                    .value ??
-                                false,
-                            onDelete: () =>
-                                _deleteMessage(_messages[index]),
-                          ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No messages yet',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Start the conversation',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: colorScheme.onSurfaceVariant.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                        ),
+                      ],
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      reverse: true,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) => _ChatBubble(
+                        event: _messages[index],
+                        isMine: _messages[index].pubkey == auth.pubkey,
+                        canDelete:
+                            ref.watch(isGroupAdminProvider(_groupId)).value ??
+                            false,
+                        onDelete: () => _deleteMessage(_messages[index]),
+                      ),
+                    ),
+                  ),
           ),
           // Input bar
           Container(
@@ -349,16 +375,17 @@ class _ChatBubble extends ConsumerWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final profileAsync = ref.watch(profileProvider(event.pubkey));
     final profile = profileAsync.valueOrNull;
-    final name = profile?.displayNameOrName ??
-        '${event.pubkey.substring(0, 8)}…';
+    final name =
+        profile?.displayNameOrName ?? '${event.pubkey.substring(0, 8)}…';
     final time = DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000);
 
     final bubble = Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isMine
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         children: [
           if (!isMine) ...[
             SafeAvatar(
@@ -373,8 +400,9 @@ class _ChatBubble extends ConsumerWidget {
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment:
-                  isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: isMine
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 if (!isMine)
                   Padding(
@@ -382,9 +410,9 @@ class _ChatBubble extends ConsumerWidget {
                     child: Text(
                       name,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.primary,
-                          ),
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.primary,
+                      ),
                     ),
                   ),
                 Container(
@@ -399,20 +427,22 @@ class _ChatBubble extends ConsumerWidget {
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(AppShapes.lg),
                       topRight: const Radius.circular(AppShapes.lg),
-                      bottomLeft:
-                          Radius.circular(isMine ? AppShapes.lg : AppShapes.xs),
-                      bottomRight:
-                          Radius.circular(isMine ? AppShapes.xs : AppShapes.lg),
+                      bottomLeft: Radius.circular(
+                        isMine ? AppShapes.lg : AppShapes.xs,
+                      ),
+                      bottomRight: Radius.circular(
+                        isMine ? AppShapes.xs : AppShapes.lg,
+                      ),
                     ),
                   ),
                   child: NoteContent(
                     event: event,
                     textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          height: 1.35,
-                          color: isMine
-                              ? colorScheme.onTertiary
-                              : colorScheme.onSurface,
-                        ),
+                      height: 1.35,
+                      color: isMine
+                          ? colorScheme.onTertiary
+                          : colorScheme.onSurface,
+                    ),
                   ),
                 ),
                 Padding(
@@ -420,9 +450,10 @@ class _ChatBubble extends ConsumerWidget {
                   child: Text(
                     timeago.format(time, locale: 'en_short'),
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant
-                              .withValues(alpha: 0.6),
-                        ),
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.6,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -434,10 +465,7 @@ class _ChatBubble extends ConsumerWidget {
 
     // Admin: long-press a bubble → delete (NIP-29 kind 9005).
     if (canDelete && onDelete != null) {
-      return GestureDetector(
-        onLongPress: onDelete,
-        child: bubble,
-      );
+      return GestureDetector(onLongPress: onDelete, child: bubble);
     }
     return bubble;
   }

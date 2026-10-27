@@ -51,7 +51,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -119,7 +119,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       }
 
       if (mounted) {
-        AppToast.success(context, '${isBanner ? 'Banner' : 'Profile picture'} updated');
+        AppToast.success(
+          context,
+          '${isBanner ? 'Banner' : 'Profile picture'} updated',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -156,11 +159,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     // Content filter: a blocked account, or one whose name/bio is explicit,
     // gets a placeholder — never its content. Your own profile always shows.
     final filter = ref.watch(contentFilterProvider);
-    final isBlocked =
-        ref.watch(blockedAuthorsProvider).contains(targetPubkey);
+    final isBlocked = ref.watch(blockedAuthorsProvider).contains(targetPubkey);
     final profile = profileAsync.valueOrNull;
-    if (!isOwnProfile &&
-        (isBlocked || filter.isExplicitProfile(profile))) {
+    if (!isOwnProfile && (isBlocked || filter.isExplicitProfile(profile))) {
       return Scaffold(
         appBar: AppBar(title: const Text('Profile')),
         body: Center(
@@ -177,9 +178,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 const SizedBox(height: 16),
                 Text(
                   isBlocked ? 'Account blocked' : 'Profile hidden',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -209,7 +209,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
     return Scaffold(
       body: profileAsync.when(
-        data: (profile) => _buildProfile(context, targetPubkey, profile, isOwnProfile),
+        data: (profile) =>
+            _buildProfile(context, targetPubkey, profile, isOwnProfile),
         loading: () => _buildSkeleton(context),
         error: (error, stack) => Scaffold(
           appBar: AppBar(title: const Text('Profile')),
@@ -234,17 +235,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final followersAsync = ref.watch(followersProvider(pubkey));
     final userPostsAsync = ref.watch(userPostsProvider(pubkey));
     final auth = ref.watch(authStateProvider);
-    final isBlockedAuthor =
-        ref.watch(blockedAuthorsProvider).contains(pubkey);
+    final isBlockedAuthor = ref.watch(blockedAuthorsProvider).contains(pubkey);
 
     final isFollowing = followsAsync.value?.contains(pubkey) ?? false;
     final followersCount = followersAsync.valueOrNull ?? 0;
     // Posts count = notes + picture posts (kind 20) — the displayable set.
-    final postsCount = userPostsAsync.valueOrNull
+    final postsCount =
+        userPostsAsync.valueOrNull
             ?.where((e) => e.kind == 1 || e.kind == 20)
             .length ??
         0;
 
+    // Pull-to-refresh lives ONLY inside each tab (the tabs' own
+    // RefreshIndicator). The profile header (banner, name, bio, counts) does
+    // NOT refresh on pull — a pull at the top should only refresh the TAB's
+    // posts, not the whole profile (the "pull at the top re-fetched
+    // everything" complaint). The header refreshes when you navigate back
+    // to it or when the profile provider naturally re-resolves.
     return NestedScrollView(
       headerSliverBuilder: (context, innerBoxIsScrolled) {
         return [
@@ -261,11 +268,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             leading: Container(
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.4), // token-guard: allow — cover-photo scrim
+                color: Colors.black.withValues(
+                  alpha: 0.4,
+                ), // token-guard: allow — cover-photo scrim
                 shape: BoxShape.circle,
               ),
               child: IconButton(
-                icon: const AppIcon('back', size: AppIconSize.lg, color: Colors.white), // token-guard: allow — cover-photo scrim
+                icon: const AppIcon(
+                  'back',
+                  size: AppIconSize.lg,
+                  color: Colors.white,
+                ), // token-guard: allow — cover-photo scrim
                 onPressed: () {
                   HapticFeedback.lightImpact();
                   if (Navigator.of(context).canPop()) {
@@ -290,11 +303,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 Container(
                   margin: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.4), // token-guard: allow — cover-photo scrim
+                    color: Colors.black.withValues(
+                      alpha: 0.4,
+                    ), // token-guard: allow — cover-photo scrim
                     shape: BoxShape.circle,
                   ),
                   child: IconButton(
-                    icon: const AppIcon('edit', size: AppIconSize.lg, color: Colors.white), // token-guard: allow — cover-photo scrim
+                    icon: const AppIcon(
+                      'edit',
+                      size: AppIconSize.lg,
+                      color: Colors.white,
+                    ), // token-guard: allow — cover-photo scrim
                     tooltip: 'Edit Profile',
                     onPressed: () {
                       HapticFeedback.lightImpact();
@@ -306,12 +325,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 Container(
                   margin: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.4), // token-guard: allow — cover-photo scrim
+                    color: Colors.black.withValues(
+                      alpha: 0.4,
+                    ), // token-guard: allow — cover-photo scrim
                     shape: BoxShape.circle,
                   ),
                   child: PopupMenuButton<String>(
-                    icon: const AppIcon('more', size: AppIconSize.lg,
-                        color: Colors.white), // token-guard: allow — cover-photo scrim
+                    icon: const AppIcon(
+                      'more',
+                      size: AppIconSize.lg,
+                      color: Colors.white,
+                    ), // token-guard: allow — cover-photo scrim
                     tooltip: 'Profile options',
                     onSelected: (value) async {
                       if (value == 'report') {
@@ -326,8 +350,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       } else if (value == 'block') {
                         final pk = widget.pubkey;
                         if (pk == null) return;
-                        final notifier =
-                            ref.read(blockedAuthorsProvider.notifier);
+                        final notifier = ref.read(
+                          blockedAuthorsProvider.notifier,
+                        );
                         if (isBlockedAuthor) {
                           await notifier.remove(pk);
                           if (context.mounted) {
@@ -349,7 +374,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         value: 'report',
                         child: Row(
                           children: [
-                            AppIcon('eye_off',
+                            AppIcon(
+                              'eye_off',
                               size: 18,
                               color: Theme.of(context).colorScheme.error,
                             ),
@@ -371,9 +397,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                 ? const AppIcon('plus', size: 18)
                                 : const AppIcon('eye_off', size: 18),
                             const SizedBox(width: 10),
-                            Text(isBlockedAuthor
-                                ? 'Unblock account'
-                                : 'Block account'),
+                            Text(
+                              isBlockedAuthor
+                                  ? 'Unblock account'
+                                  : 'Block account',
+                            ),
                           ],
                         ),
                       ),
@@ -427,7 +455,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               // memCache matches every working image in the
                               // app — the cover decodes at screen width and
                               // BoxFit.cover crops the height.
-                              final dpr = MediaQuery.devicePixelRatioOf(context);
+                              final dpr = MediaQuery.devicePixelRatioOf(
+                                context,
+                              );
                               return CachedNetworkImage(
                                 // Keyed on the URL so a re-upload to the same
                                 // path still re-resolves (stale-pixels guard).
@@ -468,7 +498,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     height: bannerHeight,
                     child: IgnorePointer(
                       child: Container(
-                        color: Colors.black.withValues( // token-guard: allow — cover-photo scrim
+                        color: Colors.black.withValues(
+                          // token-guard: allow — cover-photo scrim
                           alpha: innerBoxIsScrolled ? 0.7 : 0.0,
                         ),
                       ),
@@ -491,7 +522,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       right: 12,
                       top: bannerHeight - 12 - 24, // 12 margin + 24 button
                       child: Material(
-                        color: Colors.black.withValues(alpha: 0.5), // token-guard: allow — cover-photo scrim
+                        color: Colors.black.withValues(
+                          alpha: 0.5,
+                        ), // token-guard: allow — cover-photo scrim
                         shape: const CircleBorder(),
                         clipBehavior: Clip.antiAlias,
                         child: InkWell(
@@ -506,12 +539,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                     height: 18,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor:
-                                          AlwaysStoppedAnimation<Color>(
-                                              Colors.white), // token-guard: allow — cover-photo scrim
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ), // token-guard: allow — cover-photo scrim
                                     ),
                                   )
-                                : const AppIcon('image',
+                                : const AppIcon(
+                                    'image',
                                     color: Colors.white, // token-guard: allow — cover-photo scrim
                                     size: 18,
                                   ),
@@ -531,10 +565,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         Container(
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: scheme.surface,
-                              width: 4,
-                            ),
+                            border: Border.all(color: scheme.surface, width: 4),
                           ),
                           child: ProfileAvatar(
                             profile: profile,
@@ -553,8 +584,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               child: InkWell(
                                 onTap: _isUploadingAvatar
                                     ? null
-                                    : () => _quickUpdateImage(
-                                        isBanner: false),
+                                    : () => _quickUpdateImage(isBanner: false),
                                 customBorder: const CircleBorder(),
                                 child: Padding(
                                   padding: const EdgeInsets.all(6),
@@ -562,15 +592,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       ? const SizedBox(
                                           width: 14,
                                           height: 14,
-                                          child:
-                                              CircularProgressIndicator(
+                                          child: CircularProgressIndicator(
                                             strokeWidth: 2,
                                             valueColor:
-                                                AlwaysStoppedAnimation<
-                                                    Color>(Colors.white), // token-guard: allow — cover-photo scrim
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ), // token-guard: allow — cover-photo scrim
                                           ),
                                         )
-                                      : const AppIcon('image',
+                                      : const AppIcon(
+                                          'image',
                                           color: Colors.white, // token-guard: allow — cover-photo scrim
                                           size: 14,
                                         ),
@@ -583,36 +614,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   ),
 
                   // Action buttons — sits to the right, vertically centered
-                  // in the overlap zone like X
+                  // in the overlap zone like X. ONE consistent row:
+                  // own profile → Edit profile; other profile → Zap +
+                  // Message + Follow (uniform IconButton size).
                   Positioned(
                     right: 16,
                     top: bannerHeight + 8,
                     child: isOwnProfile
-                        ? OutlinedButton(
+                        ? FilledButton.tonal(
                             onPressed: () {
                               HapticFeedback.lightImpact();
                               EditProfileScreen.show(context);
                             },
-                            style: OutlinedButton.styleFrom(
+                            style: FilledButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 8,
                               ),
-                              side: BorderSide(color: scheme.outline),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
                               ),
                             ),
-                            child: const Text('Edit profile',
-                                style: TextStyle(fontSize: 13)),
+                            child: const Text(
+                              'Edit profile',
+                              style: TextStyle(fontSize: 13),
+                            ),
                           )
                         : Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // Zap button
+                              // Zap button (only when the user has a
+                              // lightning address set).
                               if (profile?.lud16 != null &&
                                   profile!.lud16!.isNotEmpty)
-                                IconButton(
+                                _ProfileActionButton(
+                                  icon: 'zap',
+                                  color: AppActionColors.zap,
+                                  backgroundColor: AppActionColors.zap
+                                      .withValues(alpha: 0.15),
                                   onPressed: auth.isLoggedIn
                                       ? () {
                                           HapticFeedback.lightImpact();
@@ -621,7 +660,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                             targetEvent: NostrEvent(
                                               id: '',
                                               pubkey: pubkey,
-                                              createdAt: DateTime.now()
+                                              createdAt:
+                                                  DateTime.now()
                                                       .millisecondsSinceEpoch ~/
                                                   1000,
                                               kind: 0,
@@ -634,39 +674,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                           );
                                         }
                                       : null,
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: AppActionColors.zap
-                                        .withValues(alpha: 0.15),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                  ),
-                                  icon: const AppIcon('zap', size: 20, color: AppActionColors.zap),
                                 ),
                               if (profile?.lud16 != null &&
                                   profile!.lud16!.isNotEmpty)
                                 const SizedBox(width: 8),
 
-                              // Message button
+                              // Message button.
                               if (auth.isLoggedIn && !auth.isReadOnly)
-                                IconButton(
+                                _ProfileActionButton(
+                                  icon: 'chat',
+                                  color: scheme.primary,
+                                  backgroundColor: scheme.primary.withValues(
+                                    alpha: 0.1,
+                                  ),
                                   onPressed: () {
                                     HapticFeedback.lightImpact();
                                     context.push('/chat/$pubkey');
                                   },
-                                  style: IconButton.styleFrom(
-                                    backgroundColor:
-                                        scheme.primary.withValues(alpha: 0.1),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                  ),
-                                  icon: AppIcon('chat', size: 20, color: scheme.primary),
                                 ),
                               if (auth.isLoggedIn && !auth.isReadOnly)
                                 const SizedBox(width: 8),
 
-                              // Follow button
+                              // Follow button.
                               FilledButton(
                                 onPressed: auth.isLoggedIn && !auth.isReadOnly
                                     ? () {
@@ -701,7 +730,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-
                 // Name, handle, bio, stats — X layout
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -723,7 +751,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           if (profile?.nip05 != null &&
                               profile!.nip05!.isNotEmpty) ...[
                             const SizedBox(width: 4),
-                            AppIcon('verified',
+                            AppIcon(
+                              'verified',
                               size: 18,
                               color: scheme.primary,
                             ),
@@ -774,36 +803,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
                       // Stats — X style: bold count + label, horizontal.
                       // Following/Followers are TAPPABLE → user list screens.
+                      // Uniform spacing (20) and a chevron hint on tappable
+                      // stats so the user knows they open a list.
                       Row(
                         children: [
-                          XStat(
-                            count: postsCount,
-                            label: 'Posts',
-                          ),
-                          const SizedBox(width: 16),
-                          GestureDetector(
+                          XStat(count: postsCount, label: 'Posts'),
+                          const SizedBox(width: 20),
+                          _TappableStat(
+                            count: followsAsync.value?.length ?? 0,
+                            label: 'Following',
                             onTap: () => _openUserList(
                               context,
                               ref,
                               title: 'Following',
                               provider: followingListProvider(pubkey),
                             ),
-                            child: XStat(
-                              count: followsAsync.value?.length ?? 0,
-                              label: 'Following',
-                            ),
                           ),
-                          const SizedBox(width: 16),
-                          GestureDetector(
+                          const SizedBox(width: 20),
+                          _TappableStat(
+                            count: followersCount,
+                            label: 'Followers',
                             onTap: () => _openUserList(
                               context,
                               ref,
                               title: 'Followers',
                               provider: followersListProvider(pubkey),
-                            ),
-                            child: XStat(
-                              count: followersCount,
-                              label: 'Followers',
                             ),
                           ),
                         ],
@@ -842,7 +866,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   Tab(text: 'Articles'),
                   Tab(text: 'Media'),
                   Tab(text: 'Likes'),
-                  Tab(text: 'Communities'),
                 ],
               ),
               color: scheme.surface,
@@ -853,15 +876,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          // Posts: notes + picture posts (kind 20), not replies. Picture-
-          // first accounts post kind 20 — filtering kind==1 alone hid them.
+          // Posts: notes + picture posts, not replies. Picture-first
+          // accounts post kind 20 — filtering kind==1 alone hid them.
           ProfilePostsTab(
             pubkey: pubkey,
             filter: (e) =>
                 (e.kind == 1 && !e.isReply) || e.kind == 20 || e.kind == 6,
           ),
-          ProfilePostsTab(pubkey: pubkey, filter: (e) => e.kind == 1 && e.isReply),
-          // NIP-23 long-form articles are kind 30023
+          ProfilePostsTab(
+            pubkey: pubkey,
+            filter: (e) => e.kind == 1 && e.isReply,
+          ),
+          // NIP-23 long-form articles are kind 30023 — their own tab.
           ProfilePostsTab(pubkey: pubkey, filter: (e) => e.kind == 30023),
           // Media: picture/video kinds + notes that carry media URLs.
           ProfilePostsTab(
@@ -875,7 +901,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           // Likes = posts the USER liked (their kind-7 targets), not kind-7
           // in their own feed (which is always empty).
           ProfileLikedPostsTab(pubkey: pubkey),
-          ProfileCommunitiesTab(pubkey: pubkey),
         ],
       ),
     );
@@ -912,27 +937,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   Future<void> _toggleFollow(String pubkey, bool isFollowing) async {
     try {
-      final nostr = ref.read(nostrServiceProvider);
-      final currentFollows = await ref.read(followsProvider.future);
-
-      final updated = isFollowing
-          ? currentFollows.where((pk) => pk != pubkey).toList()
-          : [...currentFollows, pubkey];
-
-      final event = nostr.updateFollows(updated);
-      nostr.publish(event);
-
-      // The service's followsCache was already updated inside updateFollows
-      // with the new list, so this invalidate refetches and returns the fresh
-      // data immediately (rather than racing relay propagation, which is what
-      // made the button flip back to "Follow").
-      ref.invalidate(followsProvider);
-
+      // Optimistic toggle: the button flips INSTANTLY (the notifier updates
+      // state before the kind-3 leaves the device), the publish happens
+      // behind, a failure rolls the flip back.
+      await ref.read(followsProvider.notifier).toggleFollow(pubkey);
       if (mounted) {
-        AppToast.success(
-          context,
-          isFollowing ? 'Unfollowed' : 'Followed',
-        );
+        AppToast.success(context, isFollowing ? 'Unfollowed' : 'Followed');
       }
     } catch (e) {
       if (mounted) {
@@ -941,16 +951,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
-
-/// Whether the profile has a usable banner URL (non-empty after trim and a
-/// parseable http(s) URI) — guards against whitespace/garbage URLs that
-/// would hand the loader a raw invalid string.
-bool _hasBanner(NostrProfile? profile) {
-  final banner = profile?.banner?.trim();
-  if (banner == null || banner.isEmpty) return false;
-  final uri = Uri.tryParse(banner);
-  return uri != null && (uri.isScheme('http') || uri.isScheme('https'));
-}
+  /// Whether the profile has a usable banner URL (non-empty after trim and a
+  /// parseable http(s) URI) — guards against whitespace/garbage URLs that
+  /// would hand the loader a raw invalid string.
+  bool _hasBanner(NostrProfile? profile) {
+    final banner = profile?.banner?.trim();
+    if (banner == null || banner.isEmpty) return false;
+    final uri = Uri.tryParse(banner);
+    return uri != null && (uri.isScheme('http') || uri.isScheme('https'));
+  }
 
   Widget _buildSkeleton(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -1099,7 +1108,103 @@ bool _hasBanner(NostrProfile? profile) {
   }
 }
 
+// ─── Tappable stat (Following / Followers) ──────────────────────────
+
+/// A stat (count + label) that's tappable to open a user list. Shows a
+/// chevron hint so the user knows it navigates (the old GestureDetector
+/// had no visual affordance — users didn't know Following/Followers
+/// opened a list).
+class _TappableStat extends StatelessWidget {
+  final int count;
+  final String label;
+  final VoidCallback onTap;
+
+  const _TappableStat({
+    required this.count,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _formatCount(count),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 2),
+            AppIcon(
+              'chevron_r',
+              size: 12,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return '$n';
+  }
+}
+
+// ─── Profile action button (Zap / Message) ──────────────────────────
+
+/// A uniform circular action button for the profile header — same size and
+/// style for Zap and Message (the old IconButton.styleFrom had inconsistent
+/// sizing between the two).
+class _ProfileActionButton extends StatelessWidget {
+  final String icon;
+  final Color color;
+  final Color backgroundColor;
+  final VoidCallback? onPressed;
+
+  const _ProfileActionButton({
+    required this.icon,
+    required this.color,
+    required this.backgroundColor,
+    this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: backgroundColor,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const CircleBorder(),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: AppIcon(icon, size: 20, color: color),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Profile metadata details ───────────────────────────────────────
 
 /// NIP-05, lightning address, website, join date — X style icon + text rows.
-

@@ -49,7 +49,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       title: 'Calendar',
       body: AsyncFeedList<NostrEvent>(
         value: eventsAsync,
-        onRefresh: () => ref.refresh(calendarEventsProvider.future),
+        onRefresh: () {
+          ref.invalidate(calendarProvider);
+          return ref.refresh(calendarEventsProvider.future);
+        },
         emptyState: EmptyState(
           icon: Icons.calendar_month_outlined,
           title: 'No upcoming events',
@@ -473,6 +476,7 @@ class _NewEventSheetState extends ConsumerState<_NewEventSheet> {
       );
       await nostr.publishEvent(event);
       if (!mounted) return;
+      ref.invalidate(calendarProvider);
       ref.invalidate(calendarEventsProvider);
       Navigator.of(context).pop();
       AppToast.success(context, 'Event published');

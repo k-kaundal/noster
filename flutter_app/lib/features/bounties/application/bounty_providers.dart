@@ -6,11 +6,12 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 /// Bounties — NIP-99 classified listings (kind 30402) that carry a `t:
 /// bounty` tag, newest first. A bounty is a classified listing whose price
 /// is the reward; the `bounty` hashtag keeps them out of the general market.
-final bountiesProvider =
-    FutureProvider.autoDispose<List<NostrEvent>>((ref) async {
-  final nostr = ref.read(nostrServiceProvider);
-  if (!nostr.isInitialized) await nostr.init();
-  final events = await nostr.fetchMarketListings(limit: 100);
+///
+/// Delegates to the core keepAlive+TTL+store-first `marketProvider` (the
+/// same kind-30402 dataset, already warm) — the old autoDispose provider
+/// re-fetched the whole market listing set on every visit just to filter it.
+final bountiesProvider = FutureProvider<List<NostrEvent>>((ref) async {
+  final events = await ref.watch(marketProvider.future);
   // Dedupe by d tag (addressable — newest version wins), active + bounty-
   // tagged only.
   final byD = <String, NostrEvent>{};
@@ -19,12 +20,15 @@ final bountiesProvider =
     final existing = byD[d];
     if (existing == null || e.createdAt > existing.createdAt) byD[d] = e;
   }
-  final bounties = byD.values
-      .where((e) =>
-          e.getTag('status') != 'sold' &&
-          e.getTags('t').any((t) => t.toLowerCase() == 'bounty'))
-      .toList()
-    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  final bounties =
+      byD.values
+          .where(
+            (e) =>
+                e.getTag('status') != 'sold' &&
+                e.getTags('t').any((t) => t.toLowerCase() == 'bounty'),
+          )
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   return bounties;
 });
 
@@ -55,6 +59,7 @@ class BountyController {
       hashtags: const ['bounty'],
     );
     await nostr.publishEvent(event);
+    _ref.invalidate(marketProvider);
     _ref.invalidate(bountiesProvider);
   }
 }

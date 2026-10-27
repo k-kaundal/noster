@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:nostrfeed_mobile/core/config/env.dart';
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/core/nostr/usecases/zap_receipts.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
@@ -52,235 +55,308 @@ class StudioEarnings {
 
 /// Earnings over [days] for the signed-in user: every receipt naming them,
 /// validated and split into notes / articles / profile / subscriptions.
-final studioEarningsProvider =
-    FutureProvider.autoDispose.family<StudioEarnings, int>((ref, days) async {
-  final auth = ref.watch(authStateProvider);
-  final pubkey = auth.pubkey;
-  if (pubkey == null) {
-    return StudioEarnings(
-      days: days,
-      sats: 0,
-      payments: 0,
-      zappers: 0,
-      repeatZappers: 0,
-      previousSats: 0,
-      daily: const [],
-      received: 0,
-      refused: 0,
-    );
-  }
+final studioEarningsProvider = FutureProvider.autoDispose
+    .family<StudioEarnings, int>((ref, days) async {
+      final auth = ref.watch(authStateProvider);
+      final pubkey = auth.pubkey;
+      if (pubkey == null) {
+        return StudioEarnings(
+          days: days,
+          sats: 0,
+          payments: 0,
+          zappers: 0,
+          repeatZappers: 0,
+          previousSats: 0,
+          daily: const [],
+          received: 0,
+          refused: 0,
+        );
+      }
 
-  final nostr = ref.read(nostrServiceProvider);
-  if (!nostr.isInitialized) await nostr.init();
+      final nostr = ref.read(nostrServiceProvider);
+      if (!nostr.isInitialized) await nostr.init();
 
-  final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-  final since = now - (days * 2 * 86400);
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final since = now - (days * 2 * 86400);
 
-  // Every receipt naming the user in the window (current + previous period,
-  // so the % change is real). A subscriber's client picks the relays, so the
-  // pool asks every connected one.
-  final receipts = await nostr.relayPool.query(
-    [
-      NostrFilter(
+      // STORE-FIRST: zap receipts naming the user already in the store paint
+      // instantly (earnings render offline); the relay fetch merges behind and
+      // lands on the next rebuild. The old path awaited the relay round-trip
+      // (up to 10s) before the dashboard showed anything.
+      final filter = NostrFilter(
         kinds: [zapReceiptKind],
         pTags: [pubkey],
         since: since,
         limit: 400,
-      ),
-    ],
-    timeout: const Duration(seconds: 10),
-  );
+      );
+      final stored = await EventStore.instance.queryByFilters([filter]);
 
-  // Dedupe on receipt id — the same receipt arrives from every relay.
-  final seen = <String>{};
-  final unique = receipts.where((r) => seen.add(r.id)).toList();
+      List<NostrEvent> receipts;
+      if (stored.isNotEmpty) {
+        // Refresh behind: relay merge lands on the next rebuild (pull-to-
+        // refresh invalidates this provider → fresh relay leg on that build).
+        unawaited(() async {
+          try {
+            final fresh = await nostr.relayPool.query([
+              filter,
+            ], timeout: const Duration(seconds: 10));
+            if (fresh.isNotEmpty) await EventStore.instance.ingest(fresh);
+          } catch (_) {}
+        }());
+        receipts = stored;
+      } else {
+        // Store miss (first run): relay fetch, ingested for next time.
+        receipts = await nostr.relayPool.query([
+          filter,
+        ], timeout: const Duration(seconds: 10));
+        if (receipts.isNotEmpty) {
+          unawaited(EventStore.instance.ingest(receipts));
+        }
+      }
 
-  // Validate. Provider key unknown is a doubt, not a disproof — counted but
-  // flagged, per the web's 'prefer' policy for the dashboard figure.
-  final summary = summarizeZaps(
-    unique,
-    check: ReceiptCheck(recipientPubkey: [pubkey]),
-    providerPolicy: 'prefer',
-  );
+      // Dedupe on receipt id — the same receipt arrives from every relay.
+      final seen = <String>{};
+      final unique = receipts.where((r) => seen.add(r.id)).toList();
 
-  final periodStart = now - (days * 86400);
-  final previousStart = now - (days * 2 * 86400);
+      // Validate. Provider key unknown is a doubt, not a disproof — counted but
+      // flagged, per the web's 'prefer' policy for the dashboard figure.
+      final summary = summarizeZaps(
+        unique,
+        check: ReceiptCheck(recipientPubkey: [pubkey]),
+        providerPolicy: 'prefer',
+      );
 
-  var sats = 0;
-  var payments = 0;
-  var previousSats = 0;
-  final byZapper = <String, int>{};
-  final byDay = <String, int>{};
+      final periodStart = now - (days * 86400);
+      final previousStart = now - (days * 2 * 86400);
 
-  for (final z in summary.zappers) {
-    if (z.at >= periodStart) {
-      sats += z.sats;
-      payments++;
-      byZapper[z.pubkey] = (byZapper[z.pubkey] ?? 0) + 1;
-      final day = DateTime.fromMillisecondsSinceEpoch(z.at * 1000);
-      final key = '${day.year}-${day.month}-${day.day}';
-      byDay[key] = (byDay[key] ?? 0) + z.sats;
-    } else if (z.at >= previousStart) {
-      previousSats += z.sats;
-    }
-  }
+      var sats = 0;
+      var payments = 0;
+      var previousSats = 0;
+      final byZapper = <String, int>{};
+      final byDay = <String, int>{};
 
-  final repeatZappers = byZapper.values.where((c) => c > 1).length;
+      for (final z in summary.zappers) {
+        if (z.at >= periodStart) {
+          sats += z.sats;
+          payments++;
+          byZapper[z.pubkey] = (byZapper[z.pubkey] ?? 0) + 1;
+          final day = DateTime.fromMillisecondsSinceEpoch(z.at * 1000);
+          final key = '${day.year}-${day.month}-${day.day}';
+          byDay[key] = (byDay[key] ?? 0) + z.sats;
+        } else if (z.at >= previousStart) {
+          previousSats += z.sats;
+        }
+      }
 
-  // Fill every day of the window so the chart has no holes.
-  final daily = <DailyEarning>[];
-  for (var i = days - 1; i >= 0; i--) {
-    final day = DateTime.now().subtract(Duration(days: i));
-    final key = '${day.year}-${day.month}-${day.day}';
-    daily.add(
-      DailyEarning(
-        day: DateTime(day.year, day.month, day.day),
-        sats: byDay[key] ?? 0,
-      ),
-    );
-  }
+      final repeatZappers = byZapper.values.where((c) => c > 1).length;
 
-  int? changePercent;
-  if (previousSats > 0) {
-    changePercent = (((sats - previousSats) / previousSats) * 100).round();
-  }
+      // Fill every day of the window so the chart has no holes.
+      final daily = <DailyEarning>[];
+      for (var i = days - 1; i >= 0; i--) {
+        final day = DateTime.now().subtract(Duration(days: i));
+        final key = '${day.year}-${day.month}-${day.day}';
+        daily.add(
+          DailyEarning(
+            day: DateTime(day.year, day.month, day.day),
+            sats: byDay[key] ?? 0,
+          ),
+        );
+      }
 
-  return StudioEarnings(
-    days: days,
-    sats: sats,
-    payments: payments,
-    zappers: byZapper.length,
-    repeatZappers: repeatZappers,
-    previousSats: previousSats,
-    changePercent: changePercent,
-    daily: daily,
-    received: summary.received,
-    refused: summary.rejected.length,
-  );
-});
+      int? changePercent;
+      if (previousSats > 0) {
+        changePercent = (((sats - previousSats) / previousSats) * 100).round();
+      }
+
+      return StudioEarnings(
+        days: days,
+        sats: sats,
+        payments: payments,
+        zappers: byZapper.length,
+        repeatZappers: repeatZappers,
+        previousSats: previousSats,
+        changePercent: changePercent,
+        daily: daily,
+        received: summary.received,
+        refused: summary.rejected.length,
+      );
+    });
 
 /// The user's open zap goals with live progress (NIP-75).
 final myGoalsProvider =
-    FutureProvider.autoDispose<List<({ZapGoal goal, GoalProgress progress})>>(
-        (ref) async {
-  final auth = ref.watch(authStateProvider);
-  final pubkey = auth.pubkey;
-  if (pubkey == null) return const [];
+    FutureProvider.autoDispose<List<({ZapGoal goal, GoalProgress progress})>>((
+      ref,
+    ) async {
+      final auth = ref.watch(authStateProvider);
+      final pubkey = auth.pubkey;
+      if (pubkey == null) return const [];
 
-  final nostr = ref.read(nostrServiceProvider);
-  if (!nostr.isInitialized) await nostr.init();
+      final nostr = ref.read(nostrServiceProvider);
+      if (!nostr.isInitialized) await nostr.init();
 
-  final events = await nostr.relayPool.query(
-    [
-      NostrFilter(kinds: [goalKind], authors: [pubkey], limit: 50),
-    ],
-    timeout: const Duration(seconds: 8),
-  );
-
-  // Newest revision per goal id; skip malformed (no amount / no relays).
-  final goals = <ZapGoal>[];
-  final byId = <String, ZapGoal>{};
-  for (final event in events) {
-    final goal = parseZapGoal(event);
-    if (goal == null) continue;
-    final existing = byId[event.id];
-    if (existing == null || goal.event.createdAt > existing.event.createdAt) {
-      byId[event.id] = goal;
-    }
-  }
-  goals.addAll(byId.values);
-
-  final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-
-  final result = <({ZapGoal goal, GoalProgress progress})>[];
-  for (final goal in goals) {
-    // Tally the receipts naming this goal, from the goal's own relays AND
-    // the reader's — a funded goal reading zero is the bug this avoids.
-    final filters = <NostrFilter>[
-      NostrFilter(kinds: [zapReceiptKind], eTags: [goal.event.id], limit: 200),
-    ];
-    final receipts = await nostr.relayPool.query(
-      filters,
-      timeout: const Duration(seconds: 8),
-    );
-
-    final seen = <String>{};
-    final tallied = <({int amountMsat, String? senderPubkey, int createdAt})>[];
-    for (final receipt in receipts) {
-      if (!seen.add(receipt.id)) continue;
-      // Validate before counting: a kind 9735 naming this goal and an amount
-      // is not proof — the recipient's lightning server must have signed it.
-      final rejection = explainZapReceipt(
-        receipt,
-        ReceiptCheck(eventId: [goal.event.id], recipientPubkey: null),
+      // STORE-FIRST: the user's goal events (kind 9041) render instantly from
+      // the store; the relay fetch backfills.
+      final goalFilter = NostrFilter(
+        kinds: [goalKind],
+        authors: [pubkey],
+        limit: 50,
       );
-      if (rejection != null) continue;
-      final parsed = parseZapReceipt(receipt);
-      final sats = parsed.amountSats;
-      if (sats == null || sats <= 0) continue;
-      tallied.add((
-        amountMsat: sats * 1000,
-        senderPubkey: parsed.senderPubkey,
-        createdAt: receipt.createdAt,
-      ));
-    }
+      final storedGoals = await EventStore.instance.queryByFilters([
+        goalFilter,
+      ]);
+      List<NostrEvent> events;
+      if (storedGoals.isNotEmpty) {
+        unawaited(() async {
+          try {
+            final fresh = await nostr.relayPool.query([
+              goalFilter,
+            ], timeout: const Duration(seconds: 8));
+            if (fresh.isNotEmpty) await EventStore.instance.ingest(fresh);
+          } catch (_) {}
+        }());
+        events = storedGoals;
+      } else {
+        events = await nostr.relayPool.query([
+          goalFilter,
+        ], timeout: const Duration(seconds: 8));
+        if (events.isNotEmpty) unawaited(EventStore.instance.ingest(events));
+      }
 
-    result.add((goal: goal, progress: goalProgress(goal, tallied, now: now)));
-  }
+      // Newest revision per goal id; skip malformed (no amount / no relays).
+      final goals = <ZapGoal>[];
+      final byId = <String, ZapGoal>{};
+      for (final event in events) {
+        final goal = parseZapGoal(event);
+        if (goal == null) continue;
+        final existing = byId[event.id];
+        if (existing == null ||
+            goal.event.createdAt > existing.event.createdAt) {
+          byId[event.id] = goal;
+        }
+      }
+      goals.addAll(byId.values);
 
-  // Open goals first, then by target.
-  result.sort((a, b) {
-    final aClosed = a.progress.isClosed ? 1 : 0;
-    final bClosed = b.progress.isClosed ? 1 : 0;
-    if (aClosed != bClosed) return aClosed.compareTo(bClosed);
-    return b.progress.targetMsat.compareTo(a.progress.targetMsat);
-  });
-  return result;
-});
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+      final result = <({ZapGoal goal, GoalProgress progress})>[];
+      for (final goal in goals) {
+        // Tally the receipts naming this goal — store first (a funded goal
+        // renders progress instantly), relay backfills behind.
+        final receiptFilter = NostrFilter(
+          kinds: [zapReceiptKind],
+          eTags: [goal.event.id],
+          limit: 200,
+        );
+        final storedReceipts = await EventStore.instance.queryByFilters([
+          receiptFilter,
+        ]);
+        List<NostrEvent> receipts;
+        if (storedReceipts.isNotEmpty) {
+          unawaited(() async {
+            try {
+              final fresh = await nostr.relayPool.query([
+                receiptFilter,
+              ], timeout: const Duration(seconds: 8));
+              if (fresh.isNotEmpty) {
+                await EventStore.instance.ingest(fresh);
+              }
+            } catch (_) {}
+          }());
+          receipts = storedReceipts;
+        } else {
+          receipts = await nostr.relayPool.query([
+            receiptFilter,
+          ], timeout: const Duration(seconds: 8));
+          if (receipts.isNotEmpty) {
+            unawaited(EventStore.instance.ingest(receipts));
+          }
+        }
+
+        final seen = <String>{};
+        final tallied =
+            <({int amountMsat, String? senderPubkey, int createdAt})>[];
+        for (final receipt in receipts) {
+          if (!seen.add(receipt.id)) continue;
+          // Validate before counting: a kind 9735 naming this goal and an amount
+          // is not proof — the recipient's lightning server must have signed it.
+          final rejection = explainZapReceipt(
+            receipt,
+            ReceiptCheck(eventId: [goal.event.id], recipientPubkey: null),
+          );
+          if (rejection != null) continue;
+          final parsed = parseZapReceipt(receipt);
+          final sats = parsed.amountSats;
+          if (sats == null || sats <= 0) continue;
+          tallied.add((
+            amountMsat: sats * 1000,
+            senderPubkey: parsed.senderPubkey,
+            createdAt: receipt.createdAt,
+          ));
+        }
+
+        result.add((
+          goal: goal,
+          progress: goalProgress(goal, tallied, now: now),
+        ));
+      }
+
+      // Open goals first, then by target.
+      result.sort((a, b) {
+        final aClosed = a.progress.isClosed ? 1 : 0;
+        final bClosed = b.progress.isClosed ? 1 : 0;
+        if (aClosed != bClosed) return aClosed.compareTo(bClosed);
+        return b.progress.targetMsat.compareTo(a.progress.targetMsat);
+      });
+      return result;
+    });
 
 /// Publish (or replace) a zap goal (NIP-75 kind 9041).
-final publishGoalProvider = Provider<
-    Future<bool> Function({
-      required int amountSats,
-      String summary,
-      String description,
-      String? image,
-      String? url,
-      int? closedAt,
-    })>((ref) {
-  return ({
-    required amountSats,
-    summary = '',
-    description = '',
-    image,
-    url,
-    closedAt,
-  }) async {
-    final nostr = ref.read(nostrServiceProvider);
-    if (!nostr.isInitialized) await nostr.init();
-    final connected = nostr.relayPool.connectedUrls;
-    final relays = connected.isNotEmpty ? connected : Env.defaultRelays;
+final publishGoalProvider =
+    Provider<
+      Future<bool> Function({
+        required int amountSats,
+        String summary,
+        String description,
+        String? image,
+        String? url,
+        int? closedAt,
+      })
+    >((ref) {
+      return ({
+        required amountSats,
+        summary = '',
+        description = '',
+        image,
+        url,
+        closedAt,
+      }) async {
+        final nostr = ref.read(nostrServiceProvider);
+        if (!nostr.isInitialized) await nostr.init();
+        final connected = nostr.relayPool.connectedUrls;
+        final relays = connected.isNotEmpty ? connected : Env.defaultRelays;
 
-    final event = nostr.createEvent(
-      kind: goalKind,
-      content: description,
-      tags: buildGoalTags(
-        relays: relays.take(6).toList(),
-        amountMsat: amountSats * 1000,
-        closedAt: closedAt,
-        image: image,
-        summary: summary.isEmpty ? null : summary,
-        url: url,
-      ),
-    );
-    final ok = await nostr.publishEvent(event);
-    ref.invalidate(myGoalsProvider);
-    return ok;
-  };
-});
+        final event = nostr.createEvent(
+          kind: goalKind,
+          content: description,
+          tags: buildGoalTags(
+            relays: relays.take(6).toList(),
+            amountMsat: amountSats * 1000,
+            closedAt: closedAt,
+            image: image,
+            summary: summary.isEmpty ? null : summary,
+            url: url,
+          ),
+        );
+        final ok = await nostr.publishEvent(event);
+        ref.invalidate(myGoalsProvider);
+        return ok;
+      };
+    });
 
 /// Retire a goal (NIP-09 deletion request on the kind 9041 id).
-final retireGoalProvider = Provider<Future<bool> Function(String goalId)>((ref) {
+final retireGoalProvider = Provider<Future<bool> Function(String goalId)>((
+  ref,
+) {
   return (goalId) async {
     final nostr = ref.read(nostrServiceProvider);
     final event = nostr.createEvent(
@@ -300,19 +376,23 @@ final retireGoalProvider = Provider<Future<bool> Function(String goalId)>((ref) 
 /// zaps on the note count toward the goal.
 final announceGoalProvider =
     Provider<Future<bool> Function(ZapGoal goal, String content)>((ref) {
-  return (goal, content) async {
-    final nostr = ref.read(nostrServiceProvider);
-    final event = nostr.createPost(
-      content,
-      tags: [
-        ['goal', goal.event.id, if (goal.relays.isNotEmpty) goal.relays.first],
-      ],
-    );
-    final ok = await nostr.publishEvent(event);
-    ref.invalidate(myGoalsProvider);
-    return ok;
-  };
-});
+      return (goal, content) async {
+        final nostr = ref.read(nostrServiceProvider);
+        final event = nostr.createPost(
+          content,
+          tags: [
+            [
+              'goal',
+              goal.event.id,
+              if (goal.relays.isNotEmpty) goal.relays.first,
+            ],
+          ],
+        );
+        final ok = await nostr.publishEvent(event);
+        ref.invalidate(myGoalsProvider);
+        return ok;
+      };
+    });
 
 /// The memberships half of Studio, re-exported so the Studio screen reads
 /// one providers file. (Tiers, standings, summary live in

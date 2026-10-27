@@ -377,6 +377,11 @@ class ContentFilter {
   FilterVerdict verdictForEvent(
     NostrEvent event, {
     NostrProfile? authorProfile,
+    // Media posts (reels kind 21/22, pictures kind 20) carry URLs as their
+    // CONTENT — the video/poster URL is the whole point, so the link-dump
+    // ratio must not judge them (a lone video URL is 100% "mostly-links" and
+    // every reel hid — the "all reels hidden by content filter" bug).
+    bool isMediaPost = false,
   }) {
     if (blockedAuthors.contains(event.pubkey)) {
       return const FilterVerdict(FilterAction.hide, 'blocked-author');
@@ -396,11 +401,14 @@ class ContentFilter {
       }
     }
 
-    // 2. Spam hides outright — links and hashtag anchors.
-    if (spamLinksEnabled) {
+    // 2. Spam hides outright — links and hashtag anchors. Media posts skip
+    //    the LINK-ratio rules (their URLs are the content); the hashtag
+    //    rules still apply (a stuffed/anchor reel is still spam).
+    if (spamLinksEnabled && !isMediaPost) {
       final spam = _spamLinkReason(event.content);
       if (spam != null) return FilterVerdict(FilterAction.hide, spam);
-
+    }
+    if (spamLinksEnabled) {
       final hashtagSpam = _hashtagSpamReason(event);
       if (hashtagSpam != null) {
         return FilterVerdict(FilterAction.hide, hashtagSpam);

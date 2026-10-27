@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_theme.dart';
-import 'package:nostrfeed_mobile/core/utils/text_sanitize.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
 import 'package:nostrfeed_mobile/core/widgets/detail_scaffold.dart';
@@ -15,6 +14,7 @@ import 'package:nostrfeed_mobile/core/widgets/error_view.dart';
 import 'package:nostrfeed_mobile/core/widgets/safe_image.dart';
 import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
 import 'package:nostrfeed_mobile/core/widgets/smart_network_image.dart';
+import 'package:nostrfeed_mobile/core/models/nostr_models.dart';
 import 'package:nostrfeed_mobile/features/compose/application/upload_providers.dart';
 import 'package:nostrfeed_mobile/features/market/application/market_providers.dart';
 import 'package:nostrfeed_mobile/features/market/domain/listing.dart';
@@ -26,9 +26,20 @@ class MarketScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final listingsAsync = ref.watch(listingsProvider);
-    final myListingsAsync = ref.watch(myListingsProvider);
+    // Core keepAlive+TTL+store-warm provider — instant paint on re-entry,
+    // no re-fetch per visit (the autoDispose listingsProvider threw the list
+    // away every time the screen was left).
+    final marketAsync = ref.watch(marketProvider);
     final auth = ref.watch(authStateProvider);
+    // Parse the core provider's NostrEvents to Listings once — dedupe by
+    // d-tag (addressable, newest wins), active only, newest first.
+    final listingsAsync = marketAsync.whenData(_toListings);
+    final myListingsAsync = marketAsync.whenData((events) {
+      if (!auth.isLoggedIn || auth.pubkey == null) return <Listing>[];
+      return _toListings(events)
+          .where((l) => l.sellerPubkey == auth.pubkey)
+          .toList();
+    });
 
     return DetailScaffold(
       title: 'Market',
@@ -36,7 +47,7 @@ class MarketScreen extends ConsumerWidget {
         loading: () => const SkeletonList(),
         error: (err, _) => ErrorView.fromError(
           err,
-          onRetry: () => ref.invalidate(listingsProvider),
+          onRetry: () => ref.invalidate(marketProvider),
         ),
         data: (listings) {
           final mine = myListingsAsync.valueOrNull ?? [];
@@ -46,34 +57,17 @@ class MarketScreen extends ConsumerWidget {
 
           return RefreshIndicator(
             onRefresh: () async {
-              ref.invalidate(listingsProvider);
-              ref.invalidate(myListingsProvider);
+              ref.invalidate(marketProvider);
             },
-            child: ListView(
+            // ListView.builder (was a non-builder ListView with for-loops) —
+            // virtualizes card build/dispose so a long listings feed doesn't
+            // compose every card eagerly. The flat widget list is computed
+            // once here (cheap) and only visible items are built.
+            child: ListView.builder(
               padding: const EdgeInsets.all(12),
-              children: [
-                if (mine.isNotEmpty) ...[
-                  _SectionHeader(title: 'My listings (${mine.length})'),
-                  for (final l in mine) _ListingCard(listing: l, isMine: true),
-                  const SizedBox(height: 16),
-                ],
-                _SectionHeader(
-                  title: mine.isEmpty ? 'Listings' : 'Discover',
-                ),
-                if (listings.isEmpty)
-                  const EmptyState(
-                    icon: Icons.storefront_outlined,
-                    title: 'No listings yet',
-                    subtitle: 'Products and services listed on Nostr will appear here.',
-                  )
-                else if (discover.isEmpty && mine.isNotEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: Text('Nothing new to discover')),
-                  )
-                else
-                  for (final l in discover) _ListingCard(listing: l),
-              ],
+              itemCount: _marketItems(mine, discover, listings).length,
+              itemBuilder: (context, i) =>
+                  _marketItems(mine, discover, listings)[i],
             ),
           );
         },
@@ -117,7 +111,7 @@ class _SectionHeader extends StatelessWidget {
 class _ListingCard extends ConsumerWidget {
   final Listing listing;
   final bool isMine;
-  const _ListingCard({required this.listing, this.isMine = false});
+  const _ListingCard({super.key, required this.listing, this.isMine = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -149,6 +143,8 @@ class _ListingCard extends ConsumerWidget {
                           httpHeaders: kImageHttpHeaders,
                           imageUrl: listing.image!,
                           fit: BoxFit.cover,
+                          // ADR-0004: decode-cap the 140dp card (no full-res).
+                          memCacheWidth: 800,
                           errorWidget: (_, _, _) =>
                               _ImageFallback(scheme: scheme),
                         )
@@ -310,6 +306,8 @@ class _ListingDetailSheet extends ConsumerWidget {
                 height: 200,
                 width: double.infinity,
                 fit: BoxFit.cover,
+                // ADR-0004: decode-cap the 200dp detail image.
+                memCacheWidth: 1000,
                 errorWidget: (_, _, _) => const SizedBox.shrink(),
               ),
             ),
@@ -432,6 +430,54 @@ class _ListingDetailSheet extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// The flat widget list for the market feed (section headers + listing
+/// cards) — computed once so ListView.builder can virtualize build/dispose.
+List<Widget> _marketItems(
+  List<Listing> mine,
+  List<Listing> discover,
+  List<Listing> listings,
+) {
+  return [
+    if (mine.isNotEmpty) ...[
+      _SectionHeader(title: 'My listings (${mine.length})'),
+      for (final l in mine)
+        _ListingCard(key: ValueKey(l.id), listing: l, isMine: true),
+      const SizedBox(height: 16),
+    ],
+    _SectionHeader(title: mine.isEmpty ? 'Listings' : 'Discover'),
+    if (listings.isEmpty)
+      const EmptyState(
+        icon: Icons.storefront_outlined,
+        title: 'No listings yet',
+        subtitle: 'Products and services listed on Nostr will appear here.',
+      )
+    else if (discover.isEmpty && mine.isNotEmpty)
+      const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: Text('Nothing new to discover')),
+      )
+    else
+      for (final l in discover)
+        _ListingCard(key: ValueKey(l.id), listing: l),
+  ];
+}
+
+/// Parse NostrEvents (kind 30402) to active Listings — dedupe by d-tag
+/// (addressable, newest version wins), sorted newest first.
+List<Listing> _toListings(List<NostrEvent> events) {
+  final byD = <String, NostrEvent>{};
+  for (final e in events) {
+    final d = e.getTag('d') ?? '';
+    final existing = byD[d];
+    if (existing == null || e.createdAt > existing.createdAt) byD[d] = e;
+  }
+  return byD.values
+      .map(Listing.fromEvent)
+      .where((l) => l.isActive)
+      .toList()
+    ..sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
 }
 
 class _ImageFallback extends StatelessWidget {
@@ -664,12 +710,15 @@ class _CreateListingSheetState extends ConsumerState<_CreateListingSheet> {
                 padding: const EdgeInsets.only(top: 8),
                 child: ClipRRect(
                   borderRadius: AppShapes.radiusMd,
-                  child: Image.network(
-                    _imageCtrl.text.trim(),
+                  child: CachedNetworkImage(
+                    imageUrl: _imageCtrl.text.trim(),
+                    httpHeaders: kImageHttpHeaders,
                     height: 90,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    // ADR-0004: decode-cap the 90dp preview.
+                    memCacheWidth: 800,
+                    errorWidget: (_, _, _) => const SizedBox.shrink(),
                   ),
                 ),
               ),

@@ -246,7 +246,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/memberships', builder: (_, _) => const MembershipsScreen()),
       GoRoute(path: '/sats-drops', builder: (_, _) => const SatsDropsScreen()),
       GoRoute(path: '/docs', builder: (_, _) => const DocsScreen()),
-      GoRoute(path: '/ai', builder: (_, _) => const AiChatScreen()),
+      GoRoute(
+        path: '/ai',
+        builder: (_, state) => AiChatScreen(
+          initialPrompt: (state.extra is Map)
+              ? (state.extra as Map)['prompt'] as String?
+              : null,
+        ),
+      ),
     ],
   );
 });

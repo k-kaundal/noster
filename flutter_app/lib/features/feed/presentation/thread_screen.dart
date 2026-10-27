@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nostrfeed_mobile/core/db/event_store.dart';
@@ -7,6 +8,8 @@ import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_icon.dart';
 import 'package:nostrfeed_mobile/core/widgets/app_toast.dart';
+import 'package:nostrfeed_mobile/core/widgets/skeleton.dart';
+import 'package:nostrfeed_mobile/features/ai/application/ai_providers.dart';
 import 'package:nostrfeed_mobile/features/feed/presentation/widgets/post_card.dart';
 
 /// Resolve the event a reply points to (its direct parent), store-first then
@@ -150,6 +153,28 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
           icon: const AppIcon('back'),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          // AI "Summarize thread" — the context-aware AI fetches the whole
+          // conversation (root + replies via the note1 reference) and digests
+          // it. Shown only when the feature is configured.
+          if (ref.watch(aiAvailableProvider))
+            IconButton(
+              icon: AppIcon('sparkle', size: AppIconSize.lg, color: colorScheme.primary),
+              tooltip: 'Summarize thread with AI',
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                final root = widget.rootEvent.rootId ?? widget.rootEvent.id;
+                final note1 = ref
+                    .read(nostrServiceProvider)
+                    .authService
+                    .encodeNote(root);
+                context.push('/ai', extra: {
+                  'prompt':
+                      'Summarize this thread — the key points and the different views in it: nostr:$note1',
+                });
+              },
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -162,40 +187,62 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
           // (each with 6 action buttons + provider watches) on open and
           // froze the screen. ListView.builder builds only what's visible.
           Expanded(
-            child: ListView.builder(
-              // Header + replies, or header + a single status item while
-              // loading / on error / when empty.
-              itemCount: 1 +
-                  (repliesAsync.hasValue && sortedReplies.isNotEmpty
-                      ? sortedReplies.length
-                      : 1),
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return _buildHeader(
-                    colorScheme,
-                    // The opened post connects DOWN to the first reply —
-                    // Primal's chain starts at the focused note.
-                    drawLineBelow:
-                        repliesAsync.hasValue && sortedReplies.isNotEmpty,
-                  );
+            // Pull-to-refresh: re-fetches the freshest root + the replies
+            // (store-first, so the list stays on screen behind the spinner
+            // and the relay backfill merges in — never a skeleton flash on
+            // an already-painted thread).
+            child: RefreshIndicator(
+              color: colorScheme.primary,
+              onRefresh: () async {
+                HapticFeedback.mediumImpact();
+                ref.invalidate(_freshRootProvider(widget.rootEvent));
+                ref.invalidate(repliesProvider(threadRootId));
+                // Wait for the replies to land so the indicator completes
+                // honestly (not a fake fixed-duration spin).
+                try {
+                  await ref.read(repliesProvider(threadRootId).future);
+                } catch (_) {
+                  // A failed refresh keeps the current replies on screen.
                 }
-                if (repliesAsync.hasValue && sortedReplies.isNotEmpty) {
-                  final reply = sortedReplies[index - 1];
-                  return PostCard(
-                    key: ValueKey(reply.id),
-                    event: reply,
-                    // Chain lines (Primal drawLineAbove/BelowAvatar): every
-                    // reply links up to the card above it; every reply but
-                    // the last links down to the next one. Replies keep
-                    // isThreadView=false so they stay tappable (open as a
-                    // new thread) and skip the entrance fade (the feed-perf
-                    // rule — no per-card fades in a list).
-                    drawLineAboveAvatar: true,
-                    drawLineBelowAvatar: index - 1 < sortedReplies.length - 1,
-                  );
-                }
-                return _buildStatusItem(colorScheme, repliesAsync);
               },
+              child: ListView.builder(
+                // Always-scrollable so pull-to-refresh works even on a short
+                // thread (few replies / no replies yet).
+                physics: const AlwaysScrollableScrollPhysics(),
+                // Header + replies, or header + a single status item while
+                // loading / on error / when empty.
+                itemCount: 1 +
+                    (repliesAsync.hasValue && sortedReplies.isNotEmpty
+                        ? sortedReplies.length
+                        : 1),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return _buildHeader(
+                      colorScheme,
+                      // The opened post connects DOWN to the first reply —
+                      // Primal's chain starts at the focused note.
+                      drawLineBelow:
+                          repliesAsync.hasValue && sortedReplies.isNotEmpty,
+                    );
+                  }
+                  if (repliesAsync.hasValue && sortedReplies.isNotEmpty) {
+                    final reply = sortedReplies[index - 1];
+                    return PostCard(
+                      key: ValueKey(reply.id),
+                      event: reply,
+                      // Chain lines (Primal drawLineAbove/BelowAvatar): every
+                      // reply links up to the card above it; every reply but
+                      // the last links down to the next one. Replies keep
+                      // isThreadView=false so they stay tappable (open as a
+                      // new thread) and skip the entrance fade (the feed-perf
+                      // rule — no per-card fades in a list).
+                      drawLineAboveAvatar: true,
+                      drawLineBelowAvatar: index - 1 < sortedReplies.length - 1,
+                    );
+                  }
+                  return _buildStatusItem(colorScheme, repliesAsync);
+                },
+              ),
             ),
           ),
 
@@ -315,8 +362,16 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
   ) {
     return repliesAsync.when(
       loading: () => const Padding(
-        padding: EdgeInsets.all(32),
-        child: Center(child: CircularProgressIndicator()),
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            SkeletonListTile(),
+            SizedBox(height: 8),
+            SkeletonListTile(),
+            SizedBox(height: 8),
+            SkeletonListTile(),
+          ],
+        ),
       ),
       error: (_, _) => Padding(
         padding: const EdgeInsets.all(16),
