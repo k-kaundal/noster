@@ -23,11 +23,21 @@
 library;
 
 /// Explicit-adult terms for POST CONTENT. A match hides the post.
+///
+/// 2026-10-27 false-positive pass (the "real posts vanish" complaint):
+/// everyday words that collide with normal speech were REMOVED from every
+/// language — a term on this list must be unambiguous in its own language
+/// ('meme', 'queue', 'bite', 'chatter', 'corridas', 'janda', 'dewasa',
+/// '떡' (rice cake!), '오피' (officetel), 'นม' (milk), 'privacy',
+/// 'link in bio', 'sexting' discourse, 'topless' fashion, 'nipples'
+/// breastfeeding… all hid genuine posts). Explicit compounds and
+/// unambiguous vulgarity stay — store compliance is about explicit adult
+/// content, which the remaining terms still catch.
 const kExplicitTerms = <String>[
   // ── English ──────────────────────────────────────────────────────
   'nsfw', 'porn', 'porno', 'pornography', 'xxx', 'onlyfans', 'fansly',
   'chaturbate', 'xvideos', 'xnxx', 'xhamster', 'pornhub', 'redtube',
-  'camgirl', 'cam boy', 'camboy', 'webcam sex', 'sexting', 'sextoy',
+  'camgirl', 'cam boy', 'camboy', 'webcam sex', 'sextoy',
   'sex toy', 'dildo', 'vibrator', 'fleshlight', 'blowjob', 'handjob',
   'footjob', 'rimjob', 'cumshot', 'creampie', 'gangbang', 'orgy',
   'threesome', 'bdsm', 'bondage', 'hentai', 'ecchi', 'ahegao', 'rule34',
@@ -37,7 +47,7 @@ const kExplicitTerms = <String>[
   'fuckbuddy', 'fuck buddy', 'one night stand', 'meet and fuck',
   'horny girls', 'horny singles', 'nude pics', 'nudes', 'nude photos',
   'leaked nudes', 'free nudes', 'sell nudes', 'buy nudes', 'dickpic',
-  'dick pic', 'pussy pic', 'tits', 'boobs', 'nipples', 'topless',
+  'dick pic', 'pussy pic', 'tits', 'boobs',
   'nude selfie', 'xxx video', 'adult video', 'adult content',
   '18+ content', 'erotic massage', 'happy ending massage',
 
@@ -59,39 +69,52 @@ const kExplicitTerms = <String>[
   'フェラ', '素人AV', '裏垢', '裏アカ', 'エロ垢', 'オフパコ', 'ハメ撮り',
 
   // ── Spanish / Portuguese ─────────────────────────────────────────
+  // Trimmed of everyday words that hid genuine posts: 'escorts' (police
+  // escorts), 'corridas' (bullfights/running races), 'coño'→"cono" (a
+  // cone), 'caralho' (the most common PT interjection), 'peladas'
+  // (peeled), 'tetas' (also a place name). Unambiguous vulgarity stays.
   'porno', 'pornografía', 'sexo gratis', 'sexo en vivo', 'cámara web sexo',
-  'escorts', 'putas', 'prostitutas', 'chicas calientes', 'maduras cachondas',
+  'putas', 'prostitutas', 'chicas calientes', 'maduras cachondas',
   'desnudas', 'fotos desnudas', 'videos caseros xxx', 'sexo anal',
-  'corridas', 'mamadas', 'folladas', 'coño', 'polla', 'tetas',
+  'mamadas', 'folladas', 'polla',
   'pornô', 'sexo ao vivo', 'acompanhantes', 'garotas de programa',
-  'buceta', 'caralho', 'gozada', 'suruba', 'novinhas', 'peladas',
+  'buceta', 'gozada', 'suruba', 'novinhas',
   'fotos peladas', 'nudes gratis', 'pack do pezinho',
 
   // ── German / Dutch ───────────────────────────────────────────────
-  'porno', 'pornos', 'ficken', 'fick', 'ficktreffen', 'sextreffen',
+  // Trimmed: 'fick' (common German surname), 'blasen' (also the normal
+  // verb for playing wind instruments), 'hoeren' (collides with the
+  // Dutch "to hear" conjugations). 'ficken' stays (unambiguous).
+  'porno', 'pornos', 'ficken', 'ficktreffen', 'sextreffen',
   'sexchat', 'sex cam', 'livecam sex', 'nutten', 'huren', 'escortservice',
-  'callgirls', 'gangbang', 'blasen', 'cumshot', 'titten', 'fotze',
+  'callgirls', 'gangbang', 'cumshot', 'titten', 'fotze',
   'schwanz', 'muschi', 'nacktfotos', 'nacktbilder', 'geile frauen',
   'geile girls', 'amateursex', 'hardcore porno',
   'neuken', 'sexdate', 'sexdating', 'geile meiden', 'naaktfoto',
-  'pijpen', 'kutje', 'lul', 'tieten', 'hoeren', 'escortservice',
+  'pijpen', 'kutje', 'lul', 'tieten', 'escortservice',
 
   // ── French / Italian ─────────────────────────────────────────────
+  // Trimmed: 'bite' (English "bite"), 'queue' (English "queue"), 'chatte'
+  // (prefix-matched "chatter"), 'baiser' (also "a kiss"), 'seins' (only
+  // adult in the right company, common in anatomy), 'culo' (collides
+  // with names). Compounds and unambiguous vulgarity stay.
   'porno', 'salope', 'salopes', 'pute', 'putes', 'plan cul',
   'rencontre coquine', 'femmes nues', 'photos nues', 'vidéos x',
   'film x', 'sexe gratuit', 'sexe en direct', 'webcam sexe', 'escort girl',
-  'baise', 'baiser', 'sodomie', 'fellation', 'éjaculation', 'seins',
-  'chatte', 'bite', 'queue', 'gang bang',
-  'porno', 'troie', 'puttane', 'escort', 'incontri sesso', 'sesso gratis',
+  'baise', 'sodomie', 'fellation', 'éjaculation', 'gang bang',
+  'porno', 'troie', 'puttane', 'incontri sesso', 'sesso gratis',
   'donne nude', 'foto nude', 'video porno', 'scopare', 'scopata',
-  'pompino', 'sborrata', 'tette', 'figa', 'cazzo', 'culo', 'gang bang',
+  'pompino', 'sborrata', 'tette', 'figa', 'cazzo', 'gang bang',
 
   // ── Turkish ──────────────────────────────────────────────────────
-  'porno', 'seks', 'sex izle', 'porno izle', 'sikiş', 'sikis',
+  // Trimmed: 'seks' (the standard word — sex-ed hid; English "sex" is
+  // allowed), 'meme'/'memeler' (the English "meme" collision), 'ifşa'
+  // (used for legitimate exposure of wrongdoing).
+  'porno', 'sex izle', 'porno izle', 'sikiş', 'sikis',
   'escort bayan', 'bayan escort', 'eskort', 'orospu', 'oruspular',
   'çıplak kadın', 'çıplak kız', 'kızlık bozma', 'türk porno',
-  'türk ifşa', 'ifşa', 'liseli ifşa', 'amcık', 'amcıq', 'yarak',
-  'yarrak', 'göt', 'meme', 'memeler', 'sevişme', 'azgın', 'azgin',
+  'türk ifşa', 'liseli ifşa', 'amcık', 'amcıq', 'yarak',
+  'yarrak', 'göt', 'sevişme', 'azgın', 'azgin',
   'seks sohbet', 'canlı seks', 'götten', 'sakso',
 
   // ── Russian ──────────────────────────────────────────────────────
@@ -104,27 +127,41 @@ const kExplicitTerms = <String>[
   'частное фото', 'слитые фото', 'интим фото',
 
   // ── Hindi / Arabic / Thai / Vietnamese / Korean / Indonesian ─────
+  // Trimmed of everyday words that hid genuine posts (CJK/squashed
+  // substring matching made these especially brutal):
+  // 'भाभी' (sister-in-law — basic family word), 'سحاق' (also "grinding"),
+  // 'นม' (milk), 'รับงาน' (freelance "taking jobs"), 'ไซด์ไลน์'
+  // (sideline business), 'ngực' (chest — "chest pain" hid), 'cu'
+  // (Vietnamese common word + "cu"=see you), 'nude' (fashion/makeup/
+  // art), 'khỏa thân' (nude as in art), '가슴' (chest), '몸매' (figure),
+  // '오피' (오피스텔/officetel = apartment!), '떡' (RICE CAKE — every
+  // tteokbokki post hid), '섹스'/'쎅스'/'เซ็กส์'/'seks' (the standard
+  // word — sex education content hid), 'janda' (widow/divorcee),
+  // 'dewasa' ("adult" — completely standard), 'telanjang' ("naked eye").
   'चुदाई', 'चुत', 'लंड', 'बूब्स', 'नंगी', 'नग्न', 'सेक्स वीडियो',
-  'देसी सेक्स', 'भाभी', 'रंडी', 'एस्कॉर्ट',
+  'देसी सेक्स', 'रंडी', 'एस्कॉर्ट',
   'سكس', 'نيك', 'زب', 'كس', 'طيز', 'بزاز', 'عاهرة', 'شرموطة',
-  'قحبة', 'سكس عربي', 'افلام سكس', 'صور سكس', 'سحاق', 'نياكة',
-  'หนังโป๊', 'โป๊', 'เย็ด', 'ควย', 'หี', 'นม', 'เซ็กส์', 'ขายตัว',
-  'ไซด์ไลน์', 'รับงาน', 'น้องรับงาน',
-  'phim sex', 'sex việt', 'địt nhau', 'đụ', 'lồn', 'cu', 'ngực',
-  'gái gọi', 'gái bao', 'mại dâm', 'chịch', 'nude', 'khỏa thân',
-  '야동', '야한', '섹스', '쎅스', '보지', '자지', '가슴', '유두',
-  '성인영상', '성인방송', '몸매', '벗방', '조건만남', '오피', '출장안마',
-  '런피플', '섹파', '떡',
+  'قحبة', 'سكس عربي', 'افلام سكس', 'صور سكس', 'نياكة',
+  'หนังโป๊', 'โป๊', 'เย็ด', 'ควย', 'หี', 'ขายตัว',
+  'น้องรับงาน',
+  'phim sex', 'sex việt', 'địt nhau', 'đụ', 'lồn',
+  'gái gọi', 'gái bao', 'mại dâm', 'chịch',
+  '야동', '야한', '보지', '자지', '유두',
+  '성인영상', '성인방송', '벗방', '조건만남', '출장안마',
+  '런피플', '섹파',
   'bokep', 'film bokep', 'ngentot', 'memek', 'kontol', 'toket',
-  'tetek', 'bugil', 'telanjang', 'janda', 'abg bugil', 'open bo',
-  'bispak', 'jablay', 'colmek', 'seks', 'dewasa',
+  'tetek', 'bugil', 'abg bugil', 'open bo',
+  'bispak', 'jablay', 'colmek',
 
   // ── Polish / Czech ───────────────────────────────────────────────
-  'porno', 'dziwki', 'kurwy', 'prostytutki', 'sex randki', 'seks',
-  'gołe', 'nagie', 'nago', 'cipki', 'cipka', 'chuja', 'chuj',
+  // Trimmed: 'kozy' ("goats" — every Polish farm post hid), 'nago'
+  // (also "Nago", a place name in Okinawa/Brazil). 'dupa' stays —
+  // genuinely vulgar, the name collision is rare.
+  'porno', 'dziwki', 'kurwy', 'prostytutki', 'sex randki',
+  'gołe', 'nagie', 'cipki', 'cipka', 'chuja', 'chuj',
   'fiuty', 'fiut', 'cycki', 'rżnięcie', 'jebanie', 'dupa',
   'kurva', 'kurvy', 'šukat', 'šoustat', 'nahý', 'nahé', 'prsa',
-  'kozy', 'píča', 'čůrat', 'sex seznamka',
+  'píča', 'čůrat', 'sex seznamka',
 ];
 
 /// Explicit-adult terms for PROFILE FIELDS (name / display name / bio /
@@ -135,21 +172,21 @@ const kExplicitTerms = <String>[
 const kExplicitProfileTerms = <String>[
   ...kExplicitTerms,
   // Username-shaped patterns
-  'sexy', 'sexygirl', 'hotgirl', 'hotgirls', 'hot guys', 'hotguys',
-  'naughtygirl', 'naughty',
-  'wetgirl', 'kinky', 'slut', 'slutty', 'whore', 'hoe', 'thot',
+  'sexygirl', 'hotgirl', 'hotgirls', 'hotguys',
+  'naughtygirl',
+  'wetgirl', 'kinky', 'slut', 'slutty',
   'cumslut', 'fuckgirl', 'fuckme', 'sexyme', 'xxxgirl', 'girlnude',
   'nudegirl', 'nudegirls', 'nudewomen', 'milf', 'gilf', 'dilf',
   'daddykink', 'sugardaddy', 'sugarbaby', 'findom', 'paypig',
-  'footfetish', 'feetpics', 'sellfeet', 'domme', 'mistress',
-  'submissive', 'goddessworship', 'assworship', 'sph', 'joi', 'cei',
+  'footfetish', 'feetpics', 'sellfeet', 'domme',
+  'goddessworship', 'assworship', 'sph', 'joi', 'cei',
   // Escort/hookup solicitation in bios
-  'dm for nudes', 'dm for sex', 'dm for fun', 'dm to buy', 'selling content',
+  'dm for nudes', 'dm for sex', 'dm to buy',
   'buy my content', 'premium snap', 'premium snapchat', 'private snap',
-  'link in bio', 'check my bio', 'spicy link', 'spicy content',
-  'uncensored', 'no ppv', 'free trial link', 'cam model', 'adult model',
-  'adult performer', 'xxx model', 'xxx creator', 'content seller',
-  'sugar baby wanted', 'hookups only', 'down to fuck', 'dtf',
+  'spicy link', 'spicy content',
+  'no ppv', 'free trial link', 'cam model', 'adult model',
+  'adult performer', 'xxx model', 'xxx creator',
+  'sugar baby wanted', 'hookups only', 'down to fuck',
   // Chinese name/bio patterns from spam waves
   '约吗', '可加', '看主页', '主页有', '私信有', '加v', '加微', '联系方式',
   '外围', '楼凤', '学生妹', '嫩模', '美女上门', '同城服务', '兼职女',
@@ -157,8 +194,8 @@ const kExplicitProfileTerms = <String>[
   '裏垢女子', '裏垢男子', 'えろ垢', 'エロ垢', 'オナ電', '通話募集',
   'ママ活', 'パパ募集', '円募集', 'ホ別', 'プチ援',
   // Other-language solicitation
-  'contenido adulto', 'vendo contenido', 'fotos privadas', 'pack',
-  'conteúdo adulto', 'vendo pack', 'privacy', 'close friends',
+  'contenido adulto', 'vendo contenido', 'fotos privadas',
+  'conteúdo adulto', 'vendo pack',
   'privat für mehr', 'link in der bio', 'contenu privé', 'mym',
   'içerik satıyorum', 'özel içerik', 'link profilde',
   'пиши в лс', 'ссылка в шапке', 'контент 18', 'продам интим',

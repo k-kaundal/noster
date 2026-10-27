@@ -183,6 +183,80 @@ export function notePostingSchema(note: NoteInput): JsonLd {
   };
 }
 
+/**
+ * The site itself, as schema.org sees it.
+ *
+ * Emitted two ways, because the two readers differ. `useSiteStructuredData`
+ * writes it from React for Google, which runs JavaScript; `seo-build.mjs`
+ * bakes the same block into the served HTML, because a chat app or an
+ * assistant fetching a URL never runs a line of it — and the front page is
+ * the URL they fetch most.
+ */
+export function siteSchema(): JsonLd {
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'WebSite',
+        '@id': `${SITE_URL}/#website`,
+        url: SITE_URL,
+        name: SITE_NAME,
+        alternateName: 'nostrfeed.com',
+        description:
+          'A fast, open Nostr client for reading and publishing on the decentralized social network.',
+        keywords:
+          'nostr, nostr client, decentralized social network, zaps, bitcoin lightning, censorship resistant social media',
+        potentialAction: {
+          '@type': 'SearchAction',
+          target: {
+            '@type': 'EntryPoint',
+            urlTemplate: `${SITE_URL}/?q={search_term_string}`,
+          },
+          'query-input': 'required name=search_term_string',
+        },
+      },
+      {
+        '@type': 'WebApplication',
+        '@id': `${SITE_URL}/#app`,
+        name: SITE_NAME,
+        url: SITE_URL,
+        applicationCategory: 'SocialNetworkingApplication',
+        operatingSystem: 'Any',
+        browserRequirements: 'Requires JavaScript',
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        featureList:
+          'Nostr feed, short videos, long-form articles, Lightning wallet, zaps, live streams, marketplace, communities',
+      },
+    ],
+  };
+}
+
+/**
+ * A question the docs answer, as rich-result data.
+ *
+ * `FAQPage` earns an expandable listing on the search result itself — the
+ * question shows under the link with the answer a tap away. The questions are
+ * the ones a person asks a search engine ("what is a nostr key", "what is a
+ * zap"), and each answer points at the doc page that answers it properly.
+ */
+export function faqSchema(
+  questions: { question: string; answer: string }[]
+): JsonLd {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    '@id': `${SITE_URL}/docs#faq`,
+    mainEntity: questions.map(({ question, answer }) => ({
+      '@type': 'Question',
+      name: question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: answer,
+      },
+    })),
+  };
+}
+
 /** Unix seconds to an ISO date, or nothing when the timestamp is unusable. */
 function isoDate(seconds: number | undefined): string | undefined {
   if (!seconds || !Number.isFinite(seconds)) return undefined;

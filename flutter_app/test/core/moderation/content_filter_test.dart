@@ -76,11 +76,12 @@ void main() {
     // judge it, or every reel hides (the "all reels hidden by content
     // filter" bug).
     test('video + poster URLs do NOT hide a media post', () {
-      // The reel-content case: 2 links covering ~98% of the post — this IS
-      // the one the link-dump ratio catches without the media flag.
+      // The reel-content case: 3 links covering ~98% of the post — this IS
+      // the one the link-dump ratio catches without the media flag
+      // (mostly-links requires ≥3 links).
       final e = event(
         content:
-            'https://cdn.example/v/abc.mp4 https://cdn.example/v/abc.jpg',
+            'https://cdn.example/v/abc.mp4 https://cdn.example/v/abc.jpg https://cdn.example/v/abc.m3u8',
       );
       expect(
         filter.verdictForEvent(e, isMediaPost: true).action,
@@ -102,8 +103,9 @@ void main() {
     });
 
     test('hashtag stuffing on a reel still hides', () {
+      // >8 combined hashtags is stuffing (raised from >5).
       final e = event(
-        content: '#a #b #c #d #e #f https://cdn.example/x.mp4',
+        content: '#a #b #c #d #e #f #g #h #i https://cdn.example/x.mp4',
         tags: const [],
       );
       expect(
@@ -215,14 +217,27 @@ void main() {
     });
 
     test('link dump hides', () {
+      // >4 links hides (raised from >3: a genuine 4-link share shows).
       expect(
         filter.verdictForEvent(
           event(
             content:
-                'a https://a.com b https://b.com c https://c.com d https://d.com',
+                'a https://a.com b https://b.com c https://c.com d https://d.com e https://e.com',
           ),
         ).reason,
         'link-dump',
+      );
+    });
+
+    test('a genuine four-link share shows', () {
+      expect(
+        filter.verdictForEvent(
+          event(
+            content:
+                'my recent posts: https://a.com/x https://b.com/y https://c.com/z and this thread https://d.com/w — feedback welcome',
+          ),
+        ).action,
+        FilterAction.show,
       );
     });
 
@@ -283,6 +298,65 @@ void main() {
         FilterAction.show,
       );
     });
+
+    group('everyday words never hide (false-positive regressions)', () {
+      // Each of these was on a term list and hid genuine posts — the
+      // 2026-10-27 "real posts vanish" complaint. Pinned so they can't
+      // come back.
+      final innocent = <String>[
+        'look at this meme',           // meme (Turkish "breast" collided with the internet word)
+        'standing in the queue',       // queue (French slang collided with English)
+        'take a bite of this',         // bite (French slang collided with English)
+        'the chatter in the room',     // chatte prefix-matched "chatter"
+        'the corridas de toros this weekend', // corridas (bullfights/races)
+        'my mother is a janda',        // janda (Indonesian widow/divorcee)
+        'orang dewasa saja',           // dewasa (Indonesian "adult")
+        'dilihat dengan mata telanjang', // telanjang ("naked eye")
+        'I want tteokbokki 떡볶이 so bad', // 떡 (rice cake!)
+        '오피스텔에서 살아요',            // 오피 (officetel = apartment)
+        '가슴이 아파요',                 // 가슴 (chest — "my chest hurts")
+        'my bhabhi cooked dinner भाभी', // भाभी (sister-in-law)
+        'นม กินนมเด็ก',               // นม (milk)
+        'รับงานออกแบบ',               // รับงาน (freelance "taking design jobs")
+        'đau ngực quá',               // ngực (chest pain)
+        'nude lipstick is my favorite', // nude (fashion/makeup)
+        'privacy advocate, building tools', // privacy (profiles/bios)
+        'escorted by the police',      // escorts (police escorts)
+        'sexting laws vary by state',  // sexting (discourse)
+        'topless beaches in europe',   // topless (travel/fashion)
+        'breastfeeding nipples hurt',  // nipples (anatomy)
+        'playing the trumpet blasen',  // blasen (German wind instruments)
+        'my goats kozy on the farm',   // kozy (Polish "goats")
+        'un baiser pour toi',          // baiser (French "a kiss")
+        'el cono de helado',           // cono (Spanish "cone")
+        'batatas peladas',             // peladas (Portuguese "peeled")
+      ];
+      for (final text in innocent) {
+        test('shows: "$text"', () {
+          expect(
+            filter.verdictForEvent(event(content: text)).action,
+            FilterAction.show,
+          );
+        });
+      }
+
+      // The unambiguous vulgarity MUST keep hiding (store compliance).
+      final explicit = <String>[
+        'check out my onlyfans link',
+        'watch p0rn here',
+        '全国同城约炮，点击链接',
+        '裏垢女子 オフパコ募集',
+        'my 0nlyf4ns',
+      ];
+      for (final text in explicit) {
+        test('hides: "$text"', () {
+          expect(
+            filter.verdictForEvent(event(content: text)).action,
+            FilterAction.hide,
+          );
+        });
+      }
+    });
   });
 
   group('hashtag spam', () {
@@ -318,7 +392,7 @@ void main() {
             .verdictForEvent(
               event(
                 content:
-                    'what a wonderful morning everyone #bitcoin #nostr #zap #gm #art #photo #music #news',
+                    'what a wonderful morning everyone #bitcoin #nostr #zap #gm #art #photo #music #news #crypto #btc',
               ),
             )
             .reason,
@@ -339,6 +413,9 @@ void main() {
                   ['t', 'd'],
                   ['t', 'e'],
                   ['t', 'f'],
+                  ['t', 'g'],
+                  ['t', 'h'],
+                  ['t', 'i'],
                 ],
               ),
             )
@@ -356,11 +433,27 @@ void main() {
       );
     });
 
-    test('a post with five hashtags shows (limit is >5)', () {
+    test('a post with five hashtags shows (limit is >8)', () {
       expect(
         filter
             .verdictForEvent(
               event(content: '#a #b #c #d #e check this out everyone'),
+            )
+            .action,
+        FilterAction.show,
+      );
+    });
+
+    test('a genuine post with six hashtags shows', () {
+      // The over-blocking case users hit: six real topic tags hid as
+      // "stuffing" under the old >5 rule.
+      expect(
+        filter
+            .verdictForEvent(
+              event(
+                content:
+                    'gm! building today #bitcoin #nostr #zap #gm #art #photo',
+              ),
             )
             .action,
         FilterAction.show,

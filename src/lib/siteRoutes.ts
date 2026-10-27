@@ -16,6 +16,21 @@ export interface SiteRoute {
   title: string;
   description: string;
   /**
+   * Words people search for when this page is the answer, baked in as the
+   * page's `keywords` meta tag.
+   *
+   * Google has ignored `meta keywords` for ranking since 2009 and says so
+   * often. They are still emitted — Bing and smaller engines read them, they
+   * cost one tag, and writing them is a useful discipline: if the words a
+   * person would search for are not on this list or in the description, the
+   * page is not findable by the person it is for.
+   *
+   * Kept on the route rather than sprinkled through the app for the same
+   * reason the description is: the table is the one place that has to stay
+   * true, because everything reads from it.
+   */
+  keywords?: string[];
+  /**
    * Sitemap priority, and the rough order of importance. Left off a route
    * that should not be in the sitemap at all.
    */
@@ -48,6 +63,16 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 1,
     changefreq: 'hourly',
     summary: 'The feed: notes from the relays you choose.',
+    keywords: [
+      'nostr',
+      'nostr client',
+      'decentralized social network',
+      'nostr web app',
+      'zaps',
+      'bitcoin lightning social',
+      'censorship resistant social media',
+      'nostr feed',
+    ],
   },
   {
     path: '/explore',
@@ -57,6 +82,13 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.8,
     changefreq: 'hourly',
     summary: 'Search people, hashtags and communities.',
+    keywords: [
+      'nostr search',
+      'nostr hashtags',
+      'find people on nostr',
+      'nostr explore',
+      'nostr communities',
+    ],
   },
   {
     path: '/articles',
@@ -66,6 +98,14 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.8,
     changefreq: 'daily',
     summary: 'Long-form writing, laid out for reading.',
+    keywords: [
+      'nostr articles',
+      'nostr long form',
+      'NIP-23',
+      'decentralized blogging',
+      'nostr essays',
+      'publish on nostr',
+    ],
   },
   {
     path: '/trending',
@@ -75,6 +115,13 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.8,
     changefreq: 'hourly',
     summary: 'Notes being read and zapped right now.',
+    keywords: [
+      'trending on nostr',
+      'nostr trending',
+      'viral nostr notes',
+      'most zapped nostr',
+      'nostr news',
+    ],
   },
   {
     path: '/discovery',
@@ -84,6 +131,12 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.7,
     changefreq: 'daily',
     summary: 'People worth following, from your own network.',
+    keywords: [
+      'who to follow on nostr',
+      'nostr accounts',
+      'nostr influencers',
+      'discover nostr users',
+    ],
   },
   {
     path: '/reels',
@@ -93,6 +146,14 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.9,
     changefreq: 'hourly',
     summary: 'Short vertical video, published to relays.',
+    keywords: [
+      'nostr reels',
+      'nostr videos',
+      'nostr tiktok',
+      'decentralized video',
+      'nostr short videos',
+      'uncensored video platform',
+    ],
   },
   {
     path: '/studio',
@@ -108,6 +169,14 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.6,
     changefreq: 'monthly',
     summary: 'The user manual: keys, relays, wallet, addresses, zaps and names.',
+    keywords: [
+      'nostr help',
+      'nostr guide',
+      'how to use nostr',
+      'nostr keys',
+      'nostr wallet',
+      'nostr tutorial',
+    ],
   },
   {
     path: '/docs/what-this-is',
@@ -217,6 +286,13 @@ export const SITE_ROUTES: SiteRoute[] = [
     changefreq: 'weekly',
     summary:
       'The lightning wallet, Cashu mint, standalone wallet and names at getzap.me.',
+    keywords: [
+      'lightning address',
+      'nostr wallet',
+      'cashu mint',
+      'nip-05 names',
+      'getzap',
+    ],
   },
   {
     path: '/premium',
@@ -226,6 +302,12 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.7,
     changefreq: 'weekly',
     summary: 'Paid relay access, bought in sats.',
+    keywords: [
+      'paid nostr relay',
+      'nostr relay hosting',
+      'premium nostr',
+      'private nostr relay',
+    ],
   },
   {
     path: '/relays',
@@ -235,6 +317,13 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.5,
     changefreq: 'weekly',
     summary: 'Pick the servers your notes come from and go to.',
+    keywords: [
+      'nostr relays',
+      'best nostr relays',
+      'nostr relay list',
+      'what is a nostr relay',
+      'choose nostr relays',
+    ],
   },
   {
     path: '/calendar',
@@ -244,6 +333,13 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.6,
     changefreq: 'daily',
     summary: 'Events published to Nostr, NIP-52.',
+    keywords: [
+      'nostr events',
+      'nostr calendar',
+      'NIP-52',
+      'bitcoin meetups',
+      'nostr meetups',
+    ],
   },
   {
     path: '/market',
@@ -253,6 +349,14 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.6,
     changefreq: 'daily',
     summary: 'Classified listings paid in sats.',
+    keywords: [
+      'nostr marketplace',
+      'buy with sats',
+      'nostr classifieds',
+      'bitcoin marketplace',
+      'NIP-99',
+      'peer to peer market',
+    ],
   },
   {
     path: '/communities',
@@ -262,6 +366,13 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.6,
     changefreq: 'daily',
     summary: 'Open groups, moderated by their members.',
+    keywords: [
+      'nostr communities',
+      'nostr groups',
+      'NIP-72',
+      'decentralized communities',
+      'nostr forums',
+    ],
   },
   {
     path: '/live',
@@ -271,6 +382,13 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.6,
     changefreq: 'hourly',
     summary: 'Live streams and their relay-hosted chat.',
+    keywords: [
+      'nostr live',
+      'nostr streaming',
+      'NIP-53',
+      'nostr zapstream',
+      'decentralized live stream',
+    ],
   },
   {
     path: '/ecash',
@@ -288,6 +406,13 @@ export const SITE_ROUTES: SiteRoute[] = [
     priority: 0.5,
     changefreq: 'daily',
     summary: 'Buy and sell sats directly with people.',
+    keywords: [
+      'p2p bitcoin',
+      'buy bitcoin p2p',
+      'sell sats peer to peer',
+      'nostr p2p',
+      'no kyc sats',
+    ],
   },
   {
     path: '/write',

@@ -35,6 +35,58 @@ const SITE_NAME = 'NostrFeed';
 const OG_IMAGE = `${SITE_URL}/og-image.png`;
 
 /**
+ * The site-level JSON-LD, baked into every page's HTML.
+ *
+ * A copy of `siteSchema()` from `src/lib/structuredData.ts`. Duplicated
+ * rather than imported: the build script already loads `siteRoutes.ts`
+ * through an esbuild transform, and pulling in the app's `lib` would drag the
+ * import graph along with it. The two are kept in step by
+ * `scripts/seo-build.test.mjs`, which builds both and compares them.
+ *
+ * Baked rather than left to React because the readers that matter most for
+ * this block — chat apps unfurling a link, assistants fetching a page — never
+ * run the app, so a JSON-LD block only React writes is one they never see.
+ */
+export function siteJsonLd() {
+  return JSON.stringify({
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'WebSite',
+        '@id': `${SITE_URL}/#website`,
+        url: SITE_URL,
+        name: SITE_NAME,
+        alternateName: 'nostrfeed.com',
+        description:
+          'A fast, open Nostr client for reading and publishing on the decentralized social network.',
+        keywords:
+          'nostr, nostr client, decentralized social network, zaps, bitcoin lightning, censorship resistant social media',
+        potentialAction: {
+          '@type': 'SearchAction',
+          target: {
+            '@type': 'EntryPoint',
+            urlTemplate: `${SITE_URL}/?q={search_term_string}`,
+          },
+          'query-input': 'required name=search_term_string',
+        },
+      },
+      {
+        '@type': 'WebApplication',
+        '@id': `${SITE_URL}/#app`,
+        name: SITE_NAME,
+        url: SITE_URL,
+        applicationCategory: 'SocialNetworkingApplication',
+        operatingSystem: 'Any',
+        browserRequirements: 'Requires JavaScript',
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        featureList:
+          'Nostr feed, short videos, long-form articles, Lightning wallet, zaps, live streams, marketplace, communities',
+      },
+    ],
+  });
+}
+
+/**
  * Reads the route table out of the app's own source.
  *
  * Compiled rather than duplicated. A second copy of this data in a build
@@ -89,7 +141,61 @@ function setMeta(html, attr, name, content) {
   return html.replace(pattern, `$1${escapeHtml(content)}$2`);
 }
 
-function pageHtml(template, route) {
+/**
+ * Questions a person asks a search engine that the docs answer.
+ *
+ * Emitted as `FAQPage` JSON-LD on the docs page, which earns an expandable
+ * listing on the search result — the question shows under the link with the
+ * answer a tap away. Each answer is one honest line and a pointer to the doc
+ * page, not the doc page repeated.
+ */
+const DOCS_FAQ = [
+  {
+    question: 'What is Nostr?',
+    answer:
+      'Nostr is an open protocol for social networking. Your account is a cryptographic key rather than a row in a company database, and your posts live on relays anyone can run — so no platform can suspend your account or own your audience.',
+  },
+  {
+    question: 'What is a Nostr key?',
+    answer:
+      'A Nostr account is a keypair. The public key (npub) is your name — share it freely. The secret key (nsec) is your account — anyone holding it is you, and losing it is permanent, with no reset.',
+  },
+  {
+    question: 'What is a zap?',
+    answer:
+      'A zap is a small bitcoin payment over the Lightning Network attached to a Nostr note or profile — a tip that is also a public signal of appreciation. NostrFeed has a Lightning wallet built in so zapping takes one tap.',
+  },
+  {
+    question: 'What is a Nostr relay?',
+    answer:
+      'A relay is a server that stores and serves Nostr notes. Your posts go to the relays you choose and your feed comes from them, so picking good relays is what makes the network yours rather than a platform’s.',
+  },
+  {
+    question: 'Is NostrFeed free to use?',
+    answer:
+      'Yes. Reading and publishing on NostrFeed is free — an account is a key, not a login, and the Lightning wallet, zaps, short videos and articles all work without payment.',
+  },
+];
+
+function faqJsonLd() {
+  return JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    '@id': `${SITE_URL}/docs#faq`,
+    mainEntity: DOCS_FAQ.map(({ question, answer }) => ({
+      '@type': 'Question',
+      name: question,
+      acceptedAnswer: { '@type': 'Answer', text: answer },
+    })),
+  });
+}
+
+/**
+ * Exported for the tests: which tags a page ends up with — keywords replaced,
+ * stripped, or left alone — is exactly the part that breaks silently when it
+ * breaks, so it is checked rather than assumed.
+ */
+export function pageHtml(template, route) {
   const title = fullTitle(route.title);
   const url = `${SITE_URL}${route.path === '/' ? '/' : route.path}`;
 
@@ -110,6 +216,22 @@ function pageHtml(template, route) {
   );
 
   html = setMeta(html, 'name', 'description', route.description);
+  /*
+   * Keywords belong to the page, so the template's own — the front page's,
+   * which is what the built `index.html` carries — has to come out either
+   * way: replaced where the route has a list, removed where it does not.
+   * Left in, `/wallet` would tell a crawler it is about "nostr client" when
+   * it is about somebody's balance.
+   *
+   * Google ignores the tag for ranking and says so; Bing and the smaller
+   * engines still read it, and the list lives with the route so it cannot
+   * drift from what the page is.
+   */
+  if (route.keywords?.length) {
+    html = setMeta(html, 'name', 'keywords', route.keywords.join(', '));
+  } else {
+    html = html.replace(/[ \t]*<meta\s+name="keywords"\s[^>]*>\n?/i, '');
+  }
   html = setMeta(html, 'property', 'og:title', title);
   html = setMeta(html, 'property', 'og:description', route.description);
   html = setMeta(html, 'property', 'og:url', url);
@@ -129,6 +251,25 @@ function pageHtml(template, route) {
     'robots',
     route.noindex ? 'noindex, follow' : 'index, follow, max-image-preview:large'
   );
+
+  /*
+   * The site-level JSON-LD, baked in. A crawler that does not run JavaScript
+   * — a chat app unfurling a link, an assistant fetching a page — never sees
+   * the block React writes, so it is written here too. `JSON.stringify` never
+   * emits `</script>`, so the inline block is safe as-is.
+   */
+  html = html.replace(
+    '</head>',
+    `    <script type="application/ld+json">${siteJsonLd()}</script>\n  </head>`
+  );
+
+  /* The docs page also carries the FAQ, for the expandable rich result. */
+  if (route.path === '/docs') {
+    html = html.replace(
+      '</head>',
+      `    <script type="application/ld+json">${faqJsonLd()}</script>\n  </head>`
+    );
+  }
 
   return html;
 }
@@ -399,7 +540,24 @@ async function loadArticles() {
 
 async function main() {
   const routes = await loadRoutes();
-  const template = await readFile(join(dist, 'index.html'), 'utf8');
+  const builtIndex = await readFile(join(dist, 'index.html'), 'utf8');
+
+  /*
+   * The built `index.html` is the front page — the words `/` describes —
+   * and the template the other pages are written from. Those are different
+   * jobs, so they get different files: `pageHtml` starts from the plain
+   * build, because starting from the front page would put its keywords tag
+   * on every page and its JSON-LD on twice. The front page gets its own
+   * JSON-LD written over the built file afterwards, which the route loop
+   * below deliberately leaves alone.
+   */
+  await writeFile(
+    join(dist, 'index.html'),
+    builtIndex.replace(
+      '</head>',
+      `    <script type="application/ld+json">${siteJsonLd()}</script>\n  </head>`
+    )
+  );
 
   let written = 0;
 
@@ -410,7 +568,7 @@ async function main() {
 
     const directory = join(dist, route.path.replace(/^\//, ''));
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, 'index.html'), pageHtml(template, route));
+    await writeFile(join(directory, 'index.html'), pageHtml(builtIndex, route));
     written += 1;
   }
 
@@ -428,7 +586,7 @@ async function main() {
   for (const article of articles) {
     const directory = join(dist, article.path.replace(/^\//, ''));
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, 'index.html'), pageHtml(template, article));
+    await writeFile(join(directory, 'index.html'), pageHtml(builtIndex, article));
   }
 
   const indexed = [...routes, ...articles];

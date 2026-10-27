@@ -23,10 +23,10 @@ door's title, description and image, whatever had actually been shared.
 
 `scripts/seo-build.mjs` runs after `vite build`. For each entry in
 `src/lib/siteRoutes.ts` it writes `dist/<route>/index.html` — a copy of the
-built HTML with that route's title, description, canonical URL and card tags
-substituted in. A static host serves that file before falling back to the SPA
-rewrite, so a crawler is handed real metadata and the app still boots normally
-for a person.
+built HTML with that route's title, description, canonical URL, keywords and
+card tags substituted in. A static host serves that file before falling back
+to the SPA rewrite, so a crawler is handed real metadata and the app still
+boots normally for a person.
 
 The same script writes `dist/sitemap.xml` and `dist/llms.txt` from the same
 table, so the three cannot drift.
@@ -34,6 +34,35 @@ table, so the three cannot drift.
 `src/lib/siteRoutes.ts` is the single source. It is plain data with no imports
 because the build script compiles and imports it directly — **do not add
 imports to that file.** Pages read it through `useRouteSeo('/path')`.
+
+#### Keywords
+
+Each route may carry a `keywords` list — the words a person searches for when
+that page is the answer (`nostr reels`, `nostr marketplace`, `what is a nostr
+relay`). Google ignores `meta keywords` for ranking and says so often; Bing
+and the smaller engines still read it, it costs one tag, and writing the list
+is a discipline: if the words somebody would search for are not in the list or
+the description, the page is not findable by the person it is for.
+
+The built `index.html` is the front page, so its keywords belong to `/` alone
+— the build replaces them on routes that have their own and strips them where
+a route has none, or `/wallet` would tell a crawler it is about "nostr
+client". This is the part that breaks silently, so it is tested in
+`scripts/seo-build.test.mjs`.
+
+#### Structured data in the served HTML
+
+`useSiteStructuredData` writes the site-level JSON-LD from React — which
+Google sees and a chat app or assistant fetching a URL never does, because
+neither runs the app. The same block is therefore baked into every page's HTML
+at build time (`siteJsonLd()` in the build script), and the docs page carries
+a `FAQPage` block answering the questions people actually search for ("what
+is a zap", "what is a Nostr key"), which earns an expandable listing on the
+search result.
+
+The build-script copy is a deliberate duplicate of `siteSchema()` in
+`src/lib/structuredData.ts` — the build cannot import the app — and the two
+are compared in the test suite so they cannot drift.
 
 ### Notes, profiles and articles: served by a function
 
@@ -121,13 +150,14 @@ are different things.
 1. Add it to `SITE_ROUTES` in `src/lib/siteRoutes.ts`, with a description
    written for a search result rather than for the page — it has to make sense
    next to nine other results, to somebody who has never heard of this site.
-   Under 160 characters, or Google cuts it mid-sentence.
+   Under 160 characters, or Google cuts it mid-sentence. Give it a `keywords`
+   list: the words a person searches for when this page is the answer.
 2. Call `useRouteSeo('/your-path')` in the page component.
 3. Mark it `noindex: true` if it is behind a login or is somebody's private
    business. It stays out of the sitemap and keeps its card tags.
 
-Nothing else needs touching: the sitemap, the static HTML and `llms.txt` all
-come from that entry.
+Nothing else needs touching: the sitemap, the static HTML, the baked keywords
+and `llms.txt` all come from that entry.
 
 ## Checking it
 
@@ -135,6 +165,8 @@ come from that entry.
 npm run build           # includes the SEO step
 cat dist/sitemap.xml
 head -20 dist/services/index.html
+grep -o '<meta name="keywords"[^>]*>' dist/reels/index.html
+grep -c 'ld+json' dist/index.html        # 1 — the baked site schema
 cat dist/llms.txt
 ```
 

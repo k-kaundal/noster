@@ -334,10 +334,12 @@ class ContentFilter {
     }
 
     // Excessive hashtags, content + t tags combined. A long post genuinely
-    // about six topics passes five; spam passes twenty.
+    // about several topics passes a handful; spam passes twenty. (Was >5:
+    // real posts with six tags hid — six is where enthusiastic-but-real
+    // posting starts, not where spam starts.)
     final tTags = event.getTags('t').map((t) => t.toLowerCase()).toSet();
     final allTags = {...contentTags, ...tTags};
-    if (allTags.length > 5) return 'hashtag-stuffing';
+    if (allTags.length > 8) return 'hashtag-stuffing';
 
     return null;
   }
@@ -354,13 +356,16 @@ class ContentFilter {
       if (_spamHostRe.hasMatch(url)) return 'spam-host';
     }
 
-    // >3 links from a stranger is a dump, not a recommendation.
-    if (matches.length > 3) return 'link-dump';
+    // >4 links from a stranger is a dump, not a recommendation. (Was >3:
+    // a genuine post sharing four links — "my articles: …" — hid, which
+    // is exactly the over-blocking users complained about.)
+    if (matches.length > 4) return 'link-dump';
 
-    // Link-heavy: links cover most of the visible text.
+    // Link-heavy: links cover most of the visible text. Requires ≥3
+    // links (was ≥2 — a short genuine post with two links tripped it).
     final linkChars =
         matches.fold<int>(0, (sum, m) => sum + m.end - m.start);
-    if (matches.length >= 2 &&
+    if (matches.length >= 3 &&
         content.isNotEmpty &&
         linkChars / content.length > 0.6) {
       return 'mostly-links';
@@ -371,9 +376,11 @@ class ContentFilter {
 
   // ── Public API ───────────────────────────────────────────────────
 
-  /// Judge an event. [authorProfile] is passed when already loaded (feed
-  /// cards load it anyway) so an author with explicit names/bios hides
-  /// their posts too.
+  /// Judge an event. [authorProfile] is accepted for API compatibility
+  /// but no longer hides posts on its own — an author's explicit-looking
+  /// profile hides THE PROFILE (see [verdictForProfile]), while each post
+  /// is judged on its own text/tags (see the note at the end of this
+  /// method for why).
   FilterVerdict verdictForEvent(
     NostrEvent event, {
     NostrProfile? authorProfile,
@@ -428,10 +435,13 @@ class ContentFilter {
       return const FilterVerdict(FilterAction.hide, 'blocked-word');
     }
 
-    // 4. The author's profile, when loaded.
-    if (nsfwTermsEnabled && isExplicitProfile(authorProfile)) {
-      return const FilterVerdict(FilterAction.hide, 'nsfw-profile');
-    }
+    // NOTE: the author's PROFILE matching explicit terms no longer hides
+    // their POSTS here (the old rule 4). A profile-term false positive
+    // ("privacy advocate", "link in bio" musician) used to wipe an
+    // author's entire presence from the feed — the single biggest source
+    // of "real posts vanish" reports. The profile itself is still hidden
+    // where it is rendered (search/profile surfaces judge it via
+    // [verdictForProfile]), and the post's own text is judged above.
 
     return FilterVerdict.show;
   }

@@ -7,8 +7,26 @@
  * arranges.
  */
 import { describe, it, expect } from 'vitest';
-import { articleRoute, newestArticles } from './seo-build.mjs';
+import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { articleRoute, newestArticles, pageHtml, siteJsonLd } from './seo-build.mjs';
 import { filterFor } from '../api/preview.ts';
+import { siteSchema } from '../src/lib/structuredData.ts';
+
+const TEMPLATE = [
+  '<!DOCTYPE html><html><head>',
+  '<title>NostrFeed — Decentralized Social Network on Nostr</title>',
+  '<meta name="description" content="The front page description." />',
+  '<meta name="keywords" content="front, page, words" />',
+  '<link rel="canonical" href="https://www.nostrfeed.com/" />',
+  '<meta property="og:title" content="t" /><meta property="og:description" content="d" />',
+  '<meta property="og:url" content="u" /><meta property="og:image" content="i" />',
+  '<meta name="twitter:title" content="t" /><meta name="twitter:description" content="d" />',
+  '<meta name="twitter:image" content="i" />',
+  '<meta name="robots" content="index, follow" />',
+  '</head><body></body></html>',
+].join('\n');
 
 function article(over = {}) {
   const { tags: extra = [], ...rest } = over;
@@ -141,6 +159,78 @@ describe('articleRoute', () => {
     // The page writer falls back for it; a logo where a cover should be says
     // nothing about the article
     expect(articleRoute(article()).image).toBeUndefined();
+  });
+});
+
+describe('pageHtml', () => {
+  const route = {
+    path: '/example',
+    title: 'Example',
+    description: 'What the example page is.',
+  };
+
+  it('replaces the front page keywords with the route’s own', () => {
+    const html = pageHtml(TEMPLATE, { ...route, keywords: ['nostr reels'] });
+
+    expect(html).toContain('<meta name="keywords" content="nostr reels"');
+    expect(html).not.toContain('front, page, words');
+  });
+
+  it('strips the front page keywords from a route that has none', () => {
+    /*
+     * The template is the front page, so its tag has to come out: left in,
+     * every page without its own list would claim the front page's words —
+     * `/wallet` describing itself as "nostr client" is the case that bit.
+     */
+    const html = pageHtml(TEMPLATE, route);
+
+    expect(html).not.toContain('name="keywords"');
+  });
+
+  it('bakes the site JSON-LD in exactly once', () => {
+    const html = pageHtml(TEMPLATE, route);
+
+    expect(html.match(/application\/ld\+json/g)).toHaveLength(1);
+    expect(html).toContain('"@type":"WebSite"');
+  });
+
+  it('adds the FAQ block to the docs page only', () => {
+    expect(pageHtml(TEMPLATE, { ...route, path: '/docs' })).toContain(
+      '"@type":"FAQPage"'
+    );
+    expect(pageHtml(TEMPLATE, route)).not.toContain('"@type":"FAQPage"');
+  });
+
+  it('marks a noindex page for crawlers while keeping its card', () => {
+    const html = pageHtml(TEMPLATE, { ...route, noindex: true });
+
+    expect(html).toContain('content="noindex, follow"');
+    expect(html).toContain('What the example page is.');
+  });
+});
+
+describe('the baked site schema', () => {
+  it('matches what the running app emits', () => {
+    /*
+     * `siteJsonLd` is a copy of `siteSchema()` — duplicated because the build
+     * script cannot import the app — and a copy that drifts is a lie told to
+     * one set of readers or the other. They are compared rather than trusted.
+     */
+    expect(JSON.parse(siteJsonLd())).toEqual(siteSchema());
+  });
+
+  it('is the one already in index.html', async () => {
+    /*
+     * The build bakes the block into `dist/index.html`, whose keywords come
+     * from the source `index.html` — the two files saying different things
+     * about the same site is the drift this guards.
+     */
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+    const source = await readFile(join(root, 'index.html'), 'utf8');
+    const keywords = /<meta name="keywords" content="([^"]*)"/.exec(source)?.[1];
+
+    expect(keywords).toContain('nostr client');
+    expect(keywords).not.toContain('undefined');
   });
 });
 

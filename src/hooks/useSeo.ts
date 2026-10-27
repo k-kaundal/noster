@@ -1,7 +1,7 @@
 import { useHead, useSeoMeta } from '@unhead/react';
 import { useLocation } from 'react-router-dom';
 import { routeSeo } from '@/lib/siteRoutes';
-import type { JsonLd } from '@/lib/structuredData';
+import { siteSchema, type JsonLd } from '@/lib/structuredData';
 
 /** Canonical origin used for absolute URLs in metadata. */
 export const SITE_URL = 'https://www.nostrfeed.com';
@@ -11,6 +11,14 @@ export const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`;
 export interface SeoOptions {
   title: string;
   description: string;
+  /**
+   * The words a person searches for when this page is the answer.
+   *
+   * Google ignores the tag for ranking and says so; Bing and smaller engines
+   * still read it, and keeping the list with the route stops the words
+   * drifting from what the page actually is.
+   */
+  keywords?: string[];
   /** Absolute or root-relative image URL for the social card. */
   image?: string;
   /** Overrides the canonical path; defaults to the current route. */
@@ -70,6 +78,7 @@ function absolute(url: string | undefined): string {
 export function useSeo({
   title,
   description,
+  keywords,
   image,
   path,
   type = 'website',
@@ -93,6 +102,7 @@ export function useSeo({
   useSeoMeta({
     title: fullTitle,
     description,
+    keywords: keywords?.length ? keywords.join(', ') : undefined,
 
     ogType: type,
     ogTitle: fullTitle,
@@ -170,6 +180,7 @@ export function useRouteSeo(path: string, overrides?: Partial<SeoOptions>) {
   useSeo({
     title: route?.title ?? SITE_NAME,
     description: route?.description ?? '',
+    keywords: route?.keywords,
     path,
     noindex: route?.noindex,
     ...overrides,
@@ -177,44 +188,21 @@ export function useRouteSeo(path: string, overrides?: Partial<SeoOptions>) {
 }
 
 /**
- * Emits JSON-LD describing the site itself. Kept in React rather than
- * index.html because the HTML lint rules disallow inline scripts there.
+ * Emits JSON-LD describing the site itself.
+ *
+ * The schema comes from `siteSchema()` in `lib/structuredData.ts`, which the
+ * build script also bakes into the served HTML — this hook keeps the running
+ * app's copy in step with it rather than being the only place it exists.
+ * Nothing that reads HTML without running JavaScript ever saw the React-only
+ * version, which is most of the readers this is for.
  */
 export function useSiteStructuredData() {
   useHead({
     script: [
       {
+        id: 'site-jsonld',
         type: 'application/ld+json',
-        innerHTML: JSON.stringify({
-          '@context': 'https://schema.org',
-          '@graph': [
-            {
-              '@type': 'WebSite',
-              '@id': `${SITE_URL}/#website`,
-              url: SITE_URL,
-              name: SITE_NAME,
-              description:
-                'A fast, open Nostr client for reading and publishing on the decentralized social network.',
-              potentialAction: {
-                '@type': 'SearchAction',
-                target: {
-                  '@type': 'EntryPoint',
-                  urlTemplate: `${SITE_URL}/?q={search_term_string}`,
-                },
-                'query-input': 'required name=search_term_string',
-              },
-            },
-            {
-              '@type': 'WebApplication',
-              '@id': `${SITE_URL}/#app`,
-              name: SITE_NAME,
-              url: SITE_URL,
-              applicationCategory: 'SocialNetworkingApplication',
-              operatingSystem: 'Any',
-              offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-            },
-          ],
-        }),
+        innerHTML: JSON.stringify(siteSchema()),
       },
     ],
   });
