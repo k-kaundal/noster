@@ -339,6 +339,29 @@ over ~100 lines.
   `NostrProfile.fromJson` sanitize at the source, and `_extractContent` in
   `note_content.dart` sanitizes before parsing. Never render raw event
   strings without going through these paths.
+  **Thread history pagination (2026-10-27)**: `dmHistoryProvider`
+  (`dm_thread_provider.dart`) is a per-thread `DmHistoryNotifier` — the
+  newest live window stays on `dmThreadProvider`, older pages load via
+  `DmStore.threadFromStoreBefore(peer, beforeTs)` (keyset `until` cursor
+  on `dm_messages`), with a bounded RELAY backfill leg (`until` query +
+  `ingestBatch`) when the store page comes up short (months-old history
+  never fetched on this device). The scroll listener triggers `loadOlder`
+  within 600px of the top; appending older messages at the END of the
+  reversed ListView never shifts the viewport (ZERO scroll math for
+  pagination). For NEW incoming messages, the screen anchors by exact
+  `maxScrollExtent` delta (`_captureScrollExtent`/`_restoreScrollExtent`)
+  — the old 80px-per-message estimate caused visible jumps. **The re-anchor
+  is GATED on the newest message id changing** (`_newestRenderedId`) —
+  history pages also grow maxScrollExtent (at the top) and must never
+  shift the viewport; an ungated restore double-counted that growth (the
+  "scroll jumps while paging old chat" bug). `markThreadRead` is gated on
+  `latestTs > _lastMarkedReadTs` — the unguarded post-frame mark fired on
+  EVERY build, bumping the store and double-building the thread per
+  interaction. Store rows with `DbMessageStatus.pending` older than 10
+  minutes render as FAILED (app died between publish and markStatus —
+  hours-old spinners read as stuck sends). The trailing
+  list slot shows a spinner while paging and a "Beginning of conversation"
+  marker at the true end (`hasMore=false`).
   Delivery status is tracked via `MessageStatus` (pending → sent after
   `publishWithAck`, failed → tap to retry / long-press to delete). Unread
   counts use per-peer last-read watermarks (`markThreadRead`) — the chat tab
@@ -536,6 +559,12 @@ over ~100 lines.
   (their kind-7 targets — never filter their own feed for kind 7, that's
   always empty). Followers/Following stats are tappable → `UserListScreen`.
   Communities tab shows joined (kind 10004) + created (kind 34550).
+  **`userPostsProvider` uses TWO relay queries** (notes/media with `limit:50`
+  + articles kind 30023 with their own `limit:50`) — a single shared-limit
+  query returned the newest 50 events ACROSS all kinds, so a prolific
+  note-writer's articles fell off the limit and the Articles tab showed
+  EMPTY. Article publish ingests into the store (`article_editor_screen`)
+  so the profile paints it instantly.
 - **Nostr access**: go through `nostrServiceProvider` (facade). Repositories
   are also exposed as `nostr.feed`, `nostr.engagement`, `nostr.social`,
   `nostr.dms` — prefer those for new code.

@@ -1,6 +1,6 @@
 {
-  "version": "1.4.3",
-  "buildNumber": 14,
+  "version": "1.5.0",
+  "buildNumber": 15,
   "notes": "Fix profile & drawer banners, pull-to-refresh, feed stability on Android",
   "playStoreUrl": "https://play.google.com/store/apps/details?id=com.nostrfeed.nostrfeed_mobile",
   "appStoreUrl": "https://apps.apple.com/app/id0000000000"

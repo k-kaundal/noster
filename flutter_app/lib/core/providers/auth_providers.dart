@@ -320,13 +320,25 @@ final userPostsProvider = FutureProvider.family<List<NostrEvent>, String>((
   // 2. Relay backfill (network truth).
   try {
     final nostr = await initNostr(ref);
-    final fresh = await nostr.relayPool.query([
-      NostrFilter(
-        kinds: const [1, 6, 16, 20, 21, 22, 30023],
-        authors: [pubkey],
-        limit: 50,
-      ),
-    ], timeout: const Duration(seconds: 8));
+    // Two queries, not one shared-limit query: a single
+    // `kinds:[…,30023], limit:50` returns the newest 50 events ACROSS all
+    // kinds — for a prolific note-writer the articles (kind 30023, usually a
+    // minority) fall off the limit and the Articles tab shows EMPTY even
+    // though the user HAS articles. Articles get their own dedicated query
+    // so they ALWAYS come home regardless of the note volume.
+    final results = await Future.wait([
+      nostr.relayPool.query([
+        NostrFilter(
+          kinds: const [1, 6, 16, 20, 21, 22],
+          authors: [pubkey],
+          limit: 50,
+        ),
+      ], timeout: const Duration(seconds: 8)),
+      nostr.relayPool.query([
+        NostrFilter(kinds: const [30023], authors: [pubkey], limit: 50),
+      ], timeout: const Duration(seconds: 8)),
+    ]);
+    final fresh = [...results[0], ...results[1]];
     if (fresh.isNotEmpty) {
       unawaited(EventStore.instance.ingest(fresh));
       // Merge stored + fresh (dedup by id, newest-first).

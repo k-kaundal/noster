@@ -641,27 +641,63 @@ class DmStore extends Notifier<DmStoreState> {
     );
     final auth = ref.read(authStateProvider);
     final myPubkey = auth.pubkey;
-    return [
-      for (final m in rows)
-        ChatMessage(
-          id: m.id,
-          text: m.content,
-          senderPubkey: m.direction == DbDmDirection.outgoing
-              ? (myPubkey ?? '')
-              : peerPubkey,
-          recipientPubkey: m.direction == DbDmDirection.outgoing
-              ? peerPubkey
-              : (myPubkey ?? ''),
-          createdAt: m.createdAt,
-          status: switch (m.status) {
-            DbMessageStatus.pending => MessageStatus.pending,
-            DbMessageStatus.failed => MessageStatus.failed,
-            DbMessageStatus.sent => MessageStatus.sent,
-          },
-          rumorKind: m.rumorKind,
-          mimeType: m.mimeType,
-        ),
-    ];
+    return [for (final m in rows) _chatMessageFromRow(m, peerPubkey, myPubkey)];
+  }
+
+  /// Map a durable row to a [ChatMessage]. A `pending` row older than
+  /// [_stalePendingSecs] renders as FAILED, not "sending…": the app died (or
+  /// the ack never came) between publish and markStatus, and a hours-old
+  /// spinner reads as a stuck send (the "old messages show pending forever"
+  /// bug). The user can retry it like any failed message.
+  static const _stalePendingSecs = 10 * 60; // 10 minutes
+
+  ChatMessage _chatMessageFromRow(
+    DbMessage m,
+    String peerPubkey,
+    String? myPubkey,
+  ) {
+    var status = switch (m.status) {
+      DbMessageStatus.pending => MessageStatus.pending,
+      DbMessageStatus.failed => MessageStatus.failed,
+      DbMessageStatus.sent => MessageStatus.sent,
+    };
+    if (status == MessageStatus.pending) {
+      final age =
+          DateTime.now().millisecondsSinceEpoch ~/ 1000 - m.createdAt;
+      if (age > _stalePendingSecs) status = MessageStatus.failed;
+    }
+    return ChatMessage(
+      id: m.id,
+      text: m.content,
+      senderPubkey: m.direction == DbDmDirection.outgoing
+          ? (myPubkey ?? '')
+          : peerPubkey,
+      recipientPubkey: m.direction == DbDmDirection.outgoing
+          ? peerPubkey
+          : (myPubkey ?? ''),
+      createdAt: m.createdAt,
+      status: status,
+      rumorKind: m.rumorKind,
+      mimeType: m.mimeType,
+    );
+  }
+
+  /// Keyset-paged thread history: messages OLDER than [beforeTs] (strictly),
+  /// newest-first, for the scroll-up "load older" pagination. Same store
+  /// rows + mapping as [threadFromStore], just with an `until` cursor.
+  Future<List<ChatMessage>> threadFromStoreBefore(
+    String peerPubkey,
+    int beforeTs, {
+    int limit = 50,
+  }) async {
+    final rows = await EventStore.instance.dmMessagesFor(
+      peerPubkey,
+      limit: limit,
+      until: beforeTs,
+    );
+    final auth = ref.read(authStateProvider);
+    final myPubkey = auth.pubkey;
+    return [for (final m in rows) _chatMessageFromRow(m, peerPubkey, myPubkey)];
   }
 
   /// Group DM events into conversations keyed by REAL peer pubkey.

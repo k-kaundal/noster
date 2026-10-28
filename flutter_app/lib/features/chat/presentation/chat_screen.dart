@@ -54,13 +54,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// swiping a bubble, cleared after send or via the cancel button.
   ChatMessage? _replyingTo;
 
-  /// Scroll-position preservation: when the thread list changes (new message
-  /// at index 0 in the reversed list), the scroll offset shifts by the new
-  /// item's height. We capture the offset BEFORE the rebuild and restore it
-  /// AFTER, adjusted for the new item count. Without this, reading history
-  /// while a message arrives yanks the scroll position.
-  double? _preRebuildOffset;
-  int _preRebuildItemCount = 0;
+  /// Scroll anchoring for NEW messages arriving while the user reads
+  /// history: the reversed list's maxScrollExtent grows by exactly the new
+  /// item's height (items insert at index 0 = the offset-0 side). Capturing
+  /// the extent BEFORE the frame and restoring offset + (newMax − oldMax)
+  /// AFTER is EXACT — no per-message height estimate (the old 80px guess
+  /// caused the visible scroll jumps on long/short messages).
+  double? _preRebuildMaxExtent;
+
+  /// The newest message id of the CURRENT rendered thread — the re-anchor
+  /// gate. Only a change here (a genuinely new message at index 0) justifies
+  /// an extent-delta correction: history pages append at the TOP (end of the
+  /// reversed list), which also grows maxScrollExtent but must NEVER shift
+  /// the viewport (the "scroll jumps while paging old chat" bug).
+  String? _newestRenderedId;
+
+  /// The watermark we already marked this thread read to — the
+  /// markThreadRead gate. Without it the post-frame mark fired on EVERY
+  /// build (every store bump anywhere), bumping dmStoreVersionProvider and
+  /// rebuilding the thread a second time per interaction.
+  int _lastMarkedReadTs = 0;
 
   @override
   void initState() {
@@ -79,11 +92,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// away from the newest message (reversed list: bottom = offset 0).
   void _onScroll() {
     if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
     final show = _scrollController.offset > 400;
     if (show != _showJumpToLatest) {
       setState(() => _showJumpToLatest = show);
     }
+    // Scroll-up pagination: nearing the TOP (maxScrollExtent in a reversed
+    // list) → load the next older page. Appending older messages at the END
+    // of a reversed list does NOT move the viewport, so this needs no
+    // scroll-position correction at all.
+    if (pos.maxScrollExtent > 0 &&
+        _scrollController.offset > pos.maxScrollExtent - 600) {
+      final peer = _activePeer;
+      if (peer != null) {
+        final oldestTs = _oldestVisibleTs;
+        if (oldestTs != null) {
+          ref.read(dmHistoryProvider(peer).notifier).loadOlder(oldestTs);
+        }
+      }
+    }
   }
+
+  /// The peer whose thread is open (null on the conversation list).
+  String? _activePeer;
+
+  /// created_at of the oldest message currently rendered (the keyset
+  /// cursor for the next "load older" page). Tracked by _buildThreadList.
+  int? _oldestVisibleTs;
 
   /// Jump back to the newest message (bottom of the reversed list).
   void _scrollToLatest() {
@@ -96,35 +131,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  /// Capture scroll state BEFORE a thread rebuild — called from build when
-  /// the thread list is about to change. The reversed list's offset shifts
-  /// by (newItemCount - oldItemCount) × avgItemHeight when items are
-  /// inserted at index 0 (the bottom).
-  void _captureScrollState(int currentItemCount) {
+  /// Capture the scroll extent BEFORE a thread rebuild that may add items
+  /// at index 0 (a new incoming/sent message at the bottom).
+  void _captureScrollExtent() {
     if (!_scrollController.hasClients) return;
-    _preRebuildOffset = _scrollController.offset;
-    _preRebuildItemCount = currentItemCount;
+    _preRebuildMaxExtent = _scrollController.position.maxScrollExtent;
   }
 
-  /// Restore scroll state AFTER a thread rebuild — adjusts the captured
-  /// offset by the item count delta × average item height. Without this,
-  /// inserting a new message at index 0 (bottom) shifts every visible item
-  /// up by one position, making the user think they scrolled.
-  void _restoreScrollState(int newItemCount) {
-    final capturedOffset = _preRebuildOffset;
-    final capturedCount = _preRebuildItemCount;
-    if (capturedOffset == null || capturedCount == newItemCount) return;
-    // Estimate the height of the new items (average ~80px per message).
-    final delta = newItemCount - capturedCount;
-    if (delta <= 0) return; // items removed — offset stays valid
-    const avgItemHeight = 80.0;
-    final adjusted = capturedOffset + (delta * avgItemHeight);
+  /// Restore the scroll offset AFTER the rebuild: the extent grew by the
+  /// new items' exact total height, so shifting the offset by the same
+  /// delta keeps the SAME message anchored in the viewport. Skipped when
+  /// the user is already near the bottom (they want to follow new messages).
+  void _restoreScrollExtent() {
+    final oldMax = _preRebuildMaxExtent;
+    if (oldMax == null) return;
+    _preRebuildMaxExtent = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _scrollController.hasClients) {
-        _scrollController.jumpTo(adjusted);
+      if (!mounted || !_scrollController.hasClients) return;
+      final newMax = _scrollController.position.maxScrollExtent;
+      final grew = newMax - oldMax;
+      if (grew <= 0) return;
+      // Only re-anchor when the user scrolled UP into history — near the
+      // bottom the normal follow-newest behavior applies (no jump).
+      if (_scrollController.offset > 400) {
+        _scrollController.jumpTo(_scrollController.offset + grew);
       }
     });
-    _preRebuildOffset = null;
   }
 
   @override
@@ -531,6 +563,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // ─── Chat thread ───────────────────────────────────────────────────
 
   Widget _buildChatThread(BuildContext context, String peerPubkey) {
+    _activePeer = peerPubkey;
     final dmsAsync = ref.watch(dmsProvider);
     final profileAsync = ref.watch(profileProvider(peerPubkey));
     final auth = ref.watch(authStateProvider);
@@ -545,11 +578,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     for (final e in dmsForRead) {
       if (e.createdAt > latestTs) latestTs = e.createdAt;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        store.markThreadRead(peerPubkey, latestKnownTs: latestTs);
-      }
-    });
+    // Gate the read-mark: only when there is genuinely NEWER content than
+    // the last mark. Without this the post-frame mark fired on EVERY build
+    // (scrolls, history merges, unrelated store bumps) — each one bumped
+    // dmStoreVersionProvider and rebuilt the thread a second time.
+    if (latestTs > _lastMarkedReadTs) {
+      _lastMarkedReadTs = latestTs;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          store.markThreadRead(peerPubkey, latestKnownTs: latestTs);
+        }
+      });
+    }
     final colorScheme = Theme.of(context).colorScheme;
 
     // Chat threads are IMMERSIVE: AppShell hides its AppBar on /chat/<pubkey>,
@@ -710,14 +750,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             'Say hello! Messages are end-to-end encrypted.',
                       );
                     }
-                    // Capture scroll state BEFORE building the new list —
-                    // inserting a new message at index 0 (bottom) shifts
-                    // every visible item up by one position.
-                    _captureScrollState(thread.length);
+                    // Re-anchor ONLY when the newest message changed (a real
+                    // new message at index 0) — history pages landing at the
+                    // top must never shift the viewport.
+                    final newestId = thread.isEmpty ? null : thread.first.id;
+                    final isNewMessage =
+                        newestId != null && newestId != _newestRenderedId;
+                    if (isNewMessage) _captureScrollExtent();
+                    _newestRenderedId = newestId;
                     final list = _buildThreadList(thread, auth, peerPubkey);
-                    // Restore AFTER the frame builds, adjusted for the new
-                    // item count.
-                    _restoreScrollState(thread.length);
+                    if (isNewMessage) _restoreScrollExtent();
                     return list;
                   },
                 ),
@@ -742,8 +784,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     AuthState auth,
     String peerPubkey,
   ) {
+    // Merge the live window with the paged history (scroll-up "load older").
+    // The live window (`thread`) holds the newest messages; `history.older`
+    // holds pages fetched from the store beneath it. Dedupe by id — the
+    // first page overlaps the live window's tail.
+    final history = ref.watch(dmHistoryProvider(peerPubkey));
+    final List<ChatMessage> merged;
+    if (history.older.isEmpty) {
+      merged = thread;
+    } else {
+      final liveIds = thread.map((m) => m.id).toSet();
+      merged = [
+        ...thread,
+        ...history.older.where((m) => !liveIds.contains(m.id)),
+      ];
+    }
+    // Track the oldest rendered message — the keyset cursor for the next
+    // "load older" page (used by the scroll listener).
+    if (merged.isNotEmpty) {
+      _oldestVisibleTs = merged.last.createdAt;
+    }
+    final showHistorySpinner = history.isLoading;
+    final showEndOfHistory = !history.hasMore && merged.length > 30;
+
     // WhatsApp-style reversed list (the standard Flutter chat pattern):
-    // `thread` is newest-first and item 0 renders at the BOTTOM. Short
+    // `merged` is newest-first and item 0 renders at the BOTTOM. Short
     // conversations bottom-anchor with NO spacer hack, the list stays glued
     // to the newest message when the keyboard opens, and sending scrolls to
     // offset 0. A jump-to-latest pill appears when the user scrolls up.
@@ -754,23 +819,53 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           reverse: true,
           // Same list padding as the AI chat page.
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          itemCount: thread.length,
+          itemCount: merged.length +
+              (showHistorySpinner || showEndOfHistory ? 1 : 0),
           itemBuilder: (context, index) {
-            final msg = thread[index];
+            // Trailing slot (top of the reversed list): history spinner or
+            // the "beginning of conversation" marker.
+            if (index >= merged.length) {
+              if (showHistorySpinner) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: Text(
+                    'Beginning of conversation',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant,
+                        ),
+                  ),
+                ),
+              );
+            }
+            final msg = merged[index];
             final isSent = msg.senderPubkey == auth.pubkey;
             // The date separator attaches to the OLDEST message of each day
             // (the next item in the list is older in time).
             final showDateSeparator =
-                index == thread.length - 1 ||
+                index == merged.length - 1 ||
                 !_isSameDay(
-                  thread[index].createdAt,
-                  thread[index + 1].createdAt,
+                  merged[index].createdAt,
+                  merged[index + 1].createdAt,
                 );
             // Grouping: this message CONTINUES a group when the next (older)
             // message is from the same sender.
             final continuesGroup =
-                index < thread.length - 1 &&
-                thread[index + 1].senderPubkey == msg.senderPubkey;
+                index < merged.length - 1 &&
+                merged[index + 1].senderPubkey == msg.senderPubkey;
             return Column(
               children: [
                 if (showDateSeparator)

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:nostrfeed_mobile/core/config/env.dart';
 import 'package:nostrfeed_mobile/core/db/db_models.dart';
 import 'package:nostrfeed_mobile/core/db/event_store.dart';
@@ -106,6 +108,29 @@ class RelayConnection {
   bool _intentionallyClosed = false;
 
   RelayConnection(this.url, {this.processor});
+
+  /// Test seam (mirrors `EventStore.debugOpenOverride`): drive the frame
+  /// dispatch + inspect the pending-auth queue without a live socket.
+  /// Never use from app code — go through the socket.
+  @visibleForTesting
+  void debugDispatchFrame(RelayFrame frame) => _dispatchFrame(frame);
+
+  /// Count of REQs waiting for the NIP-42 handshake (test introspection).
+  @visibleForTesting
+  int get debugPendingAuthReqCount => _pendingReqsAfterAuth.length;
+
+  /// Register a persistent sub without a socket (test setup for the
+  /// auth-required CLOSED re-queue path).
+  @visibleForTesting
+  (String, Stream<NostrEvent>) debugRegisterPersistentSub(
+    List<NostrFilter> filters,
+  ) {
+    final id = _uuid.v4().substring(0, 8);
+    final controller = StreamController<NostrEvent>.broadcast();
+    _subs[id] = controller;
+    _persistentSubs[id] = _PersistentSub(id, filters, controller);
+    return (id, controller.stream);
+  }
 
   /// (The old `verifiedMarker` constructor param is GONE: cross-relay
   /// verify dedup now lives in the frame processor's per-worker LRU. The
@@ -267,11 +292,39 @@ class RelayConnection {
         if (completer != null && !completer.isCompleted) {
           completer.complete(accepted);
         }
+        // An OK for the AUTH event (accepted) means the relay has REGISTERED
+        // our pubkey — REQs that were CLOSED "auth-required" before this
+        // point (their CLOSED frames raced ahead) are safe to re-issue now.
+        if (accepted && _pendingReqsAfterAuth.isNotEmpty) {
+          _flushPendingReqs();
+        }
       case AuthRelayFrame(:final challenge):
         _authChallenge = challenge;
         _setState(RelayState.authRequired);
         _respondToAuth();
-      case ClosedRelayFrame(:final subId):
+      case ClosedRelayFrame(:final subId, :final message):
+        // strfry `restrictReadToInvolvedPubkey` answers any DM-kind REQ that
+        // raced the NIP-42 handshake with CLOSED "auth-required" — that REQ
+        // is dead, but the SUBSCRIPTION must NOT be torn down: it is exactly
+        // the live DM stream (kinds 4/1059) that keeps chat realtime. Queue
+        // it for re-issue once AUTH completes instead (the auth response
+        // flush in _respondToAuth sends it again, this time as an
+        // authenticated user the relay accepts).
+        if (message.startsWith('auth-required')) {
+          final persistent = _persistentSubs[subId];
+          if (persistent != null) {
+            // Dedupe: a repeated CLOSED for the same subId must not stack
+            // duplicate REQs in the flush queue.
+            if (!_pendingReqsAfterAuth.any((r) => r.$1 == subId)) {
+              // effectiveFilters() keeps the NIP-17 backdate window + the
+              // sliding-cursor optimization on the re-issue.
+              _pendingReqsAfterAuth.add((subId, persistent.effectiveFilters()));
+            }
+            // Do NOT complete EOSE / close the stream — the re-issued REQ
+            // (same subId, after auth) keeps delivering into it.
+            return;
+          }
+        }
         final completer = _eoseCompleters[subId];
         if (completer != null && !completer.isCompleted) {
           completer.complete();
@@ -282,24 +335,38 @@ class RelayConnection {
     }
   }
 
+  /// Send every REQ queued while the NIP-42 handshake was in flight. Called
+  /// from [_respondToAuth] (right after the AUTH event goes out — strfry
+  /// preserves socket order, so REQs sent after the AUTH are processed as an
+  /// authenticated user) AND from the AUTH's OK handler (covers a CLOSED
+  /// "auth-required" frame that raced in after the flush).
+  void _flushPendingReqs() {
+    final queued = List.of(_pendingReqsAfterAuth);
+    _pendingReqsAfterAuth.clear();
+    for (final (id, filters) in queued) {
+      try {
+        final msg = jsonEncode(['REQ', id, ...filters.map((f) => f.toJson())]);
+        _channel?.sink.add(msg);
+      } catch (_) {}
+    }
+  }
+
   Future<void> _respondToAuth() async {
     if (_authChallenge == null || onAuthChallenge == null) return;
     try {
       final authEvent = await onAuthChallenge!(_authChallenge!);
       _channel?.sink.add(jsonEncode(['AUTH', authEvent.toJson()]));
       _setState(RelayState.connected);
-      // Flush REQs queued during the AUTH handshake — the relay now knows
-      // our pubkey, so `restrictReadToInvolvedPubkey` lets our DM reads
-      // through (kind 4/1059).
-      final queued = List.of(_pendingReqsAfterAuth);
-      _pendingReqsAfterAuth.clear();
-      for (final (id, filters) in queued) {
-        try {
-          final msg = jsonEncode(['REQ', id, ...filters.map((f) => f.toJson())]);
-          _channel?.sink.add(msg);
-        } catch (_) {}
-      }
-      // Re-issue persistent subs too (they were silenced pre-auth as well).
+      // Flush REQs queued during the AUTH handshake — strfry processes frames
+      // in socket order, so these are evaluated AFTER the relay registers our
+      // auth (the "DMs never load on our hub while the same account works on
+      // Damus/Primal" bug was this REQ racing the handshake).
+      _flushPendingReqs();
+      // Persistent subs issued pre-auth were silenced by the relay too —
+      // re-issue them all as the now-authenticated user. A sub that was both
+      // queued above AND registered persistent gets its REQ sent twice;
+      // NIP-01 defines a duplicate REQ id as a sub RESTART (not a second
+      // sub), so no event is delivered twice.
       _resubscribeAll();
     } catch (_) {}
   }

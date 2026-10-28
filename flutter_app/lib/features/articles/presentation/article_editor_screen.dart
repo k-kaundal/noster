@@ -1,9 +1,12 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:nostrfeed_mobile/core/db/event_store.dart';
 import 'package:nostrfeed_mobile/core/providers/app_providers.dart';
 import 'package:nostrfeed_mobile/core/theme/app_shapes.dart';
 import 'package:nostrfeed_mobile/core/theme/app_spacing.dart';
@@ -122,8 +125,7 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
     );
     if (file == null || !mounted) return;
     try {
-      final url =
-          await ref.read(uploadProvider.notifier).uploadImage(file);
+      final url = await ref.read(uploadProvider.notifier).uploadImage(file);
       if (!mounted) return;
       _insertMarkdown('\n![image]($url)\n');
       AppToast.success(context, 'Image added');
@@ -141,8 +143,7 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
     if (file == null || !mounted) return;
     setState(() => _uploadingCover = true);
     try {
-      final url =
-          await ref.read(uploadProvider.notifier).uploadImage(file);
+      final url = await ref.read(uploadProvider.notifier).uploadImage(file);
       if (!mounted) return;
       _imageController.text = url;
       AppToast.success(context, 'Cover image set');
@@ -176,6 +177,12 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
         hashtags: _parseTags(),
       );
       await nostr.publishEvent(event);
+      // Ingest the published article into the local store — publishing to
+      // relays alone does nothing for the SQL projections, and the profile
+      // Articles tab paints store-first (the "published an article, profile
+      // shows nothing" bug). `touches:` events so the invalidation bus bumps
+      // only that table.
+      unawaited(EventStore.instance.ingest([event]));
       ref.invalidate(articlesProvider);
       final pk = auth.pubkey;
       if (pk != null) ref.invalidate(userPostsProvider(pk));
@@ -202,10 +209,7 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
         actions: [
           TextButton.icon(
             onPressed: () => setState(() => _preview = !_preview),
-            icon: AppIcon(
-              _preview ? 'edit' : 'eye',
-              size: AppIconSize.md,
-            ),
+            icon: AppIcon(_preview ? 'edit' : 'eye', size: AppIconSize.md),
             label: Text(_preview ? 'Edit' : 'Preview'),
           ),
           const SizedBox(width: 4),
@@ -239,16 +243,14 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
         TextField(
           controller: _titleController,
           textCapitalization: TextCapitalization.sentences,
-          style: Theme.of(context)
-              .textTheme
-              .headlineSmall
+          style: Theme.of(context).textTheme.headlineSmall
               ?.copyWith(fontWeight: FontWeight.bold),
           decoration: InputDecoration(
             hintText: 'Article title',
             border: InputBorder.none,
             hintStyle: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                ),
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
           ),
           onChanged: (_) => setState(() {}),
         ),
@@ -279,9 +281,8 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
                   prefixIcon: const AppIcon('image', size: 18),
                   border: InputBorder.none,
                   hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color:
-                            colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                      ),
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
                 ),
                 keyboardType: TextInputType.url,
                 onChanged: (_) => setState(() {}),
@@ -327,8 +328,8 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
             prefixIcon: const AppIcon('hash', size: 18),
             border: InputBorder.none,
             hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                ),
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
           ),
         ),
         Divider(color: colorScheme.outlineVariant),
@@ -347,10 +348,7 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
               color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
             ),
           ),
-          style: Theme.of(context)
-              .textTheme
-              .bodyLarge
-              ?.copyWith(height: 1.6),
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.6),
           onChanged: (_) => setState(() {}),
         ),
       ],
@@ -382,9 +380,7 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
         if (title.isNotEmpty)
           Text(
             title,
-            style: Theme.of(context)
-                .textTheme
-                .headlineMedium
+            style: Theme.of(context).textTheme.headlineMedium
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
         if (summary.isNotEmpty) ...[
@@ -392,9 +388,9 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
           Text(
             summary,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontStyle: FontStyle.italic,
-                  color: colorScheme.onSurfaceVariant,
-                ),
+              fontStyle: FontStyle.italic,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
         if (tags.isNotEmpty) ...[
@@ -406,9 +402,9 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
                 Text(
                   '#$t',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
             ],
           ),
@@ -417,41 +413,28 @@ class _ArticleEditorScreenState extends ConsumerState<ArticleEditorScreen> {
         content.isEmpty
             ? Text(
                 'Nothing to preview yet…',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
+                style: Theme.of(context).textTheme.bodyMedium
                     ?.copyWith(color: colorScheme.onSurfaceVariant),
               )
             : MarkdownBody(
                 data: content,
                 styleSheet: MarkdownStyleSheet(
-                  p: Theme.of(context)
-                      .textTheme
-                      .bodyLarge
+                  p: Theme.of(context).textTheme.bodyLarge
                       ?.copyWith(height: 1.6),
-                  h1: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
+                  h1: Theme.of(context).textTheme.headlineSmall
                       ?.copyWith(fontWeight: FontWeight.bold),
-                  h2: Theme.of(context)
-                      .textTheme
-                      .titleLarge
+                  h2: Theme.of(context).textTheme.titleLarge
                       ?.copyWith(fontWeight: FontWeight.bold),
-                  h3: Theme.of(context)
-                      .textTheme
-                      .titleMedium
+                  h3: Theme.of(context).textTheme.titleMedium
                       ?.copyWith(fontWeight: FontWeight.bold),
-                  blockquote: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        fontStyle: FontStyle.italic,
-                      ),
+                  blockquote: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontStyle: FontStyle.italic,
+                  ),
                   code: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        backgroundColor: colorScheme.surfaceContainerHighest,
-                        fontFamily: 'monospace',
-                      ),
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                    fontFamily: 'monospace',
+                  ),
                   codeblockDecoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
                     borderRadius: AppShapes.radiusSm,
@@ -490,9 +473,7 @@ class _LoginPrompt extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             Text(
               'Articles are signed with your key.',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
+              style: Theme.of(context).textTheme.bodyMedium
                   ?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ],
@@ -514,45 +495,81 @@ class _MarkdownToolbar extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerLowest,
-        border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant),
-        ),
+        border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: SafeArea(
         top: false,
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xs - 2, vertical: AppSpacing.xxs),
+            horizontal: AppSpacing.xs - 2,
+            vertical: AppSpacing.xxs,
+          ),
           child: Row(
             children: [
-              _Btn(icon: Icons.format_bold_rounded, tooltip: 'Bold',
-                  onTap: () => editor._wrapSelection('**')),
-              _Btn(icon: Icons.format_italic_rounded, tooltip: 'Italic',
-                  onTap: () => editor._wrapSelection('*')),
-              _Btn(icon: Icons.strikethrough_s_rounded, tooltip: 'Strikethrough',
-                  onTap: () => editor._wrapSelection('~~')),
+              _Btn(
+                icon: Icons.format_bold_rounded,
+                tooltip: 'Bold',
+                onTap: () => editor._wrapSelection('**'),
+              ),
+              _Btn(
+                icon: Icons.format_italic_rounded,
+                tooltip: 'Italic',
+                onTap: () => editor._wrapSelection('*'),
+              ),
+              _Btn(
+                icon: Icons.strikethrough_s_rounded,
+                tooltip: 'Strikethrough',
+                onTap: () => editor._wrapSelection('~~'),
+              ),
               const _Divider(),
-              _Btn(icon: Icons.title_rounded, tooltip: 'Heading 1',
-                  onTap: () => editor._prefixLine('# ')),
-              _Btn(icon: Icons.format_size_rounded, tooltip: 'Heading 2',
-                  onTap: () => editor._prefixLine('## ')),
+              _Btn(
+                icon: Icons.title_rounded,
+                tooltip: 'Heading 1',
+                onTap: () => editor._prefixLine('# '),
+              ),
+              _Btn(
+                icon: Icons.format_size_rounded,
+                tooltip: 'Heading 2',
+                onTap: () => editor._prefixLine('## '),
+              ),
               const _Divider(),
-              _Btn(icon: Icons.format_list_bulleted_rounded, tooltip: 'Bullet list',
-                  onTap: () => editor._prefixLine('- ')),
-              _Btn(icon: Icons.format_list_numbered_rounded, tooltip: 'Numbered list',
-                  onTap: () => editor._prefixLine('1. ')),
-              _Btn(icon: Icons.format_quote_rounded, tooltip: 'Quote',
-                  onTap: () => editor._prefixLine('> ')),
+              _Btn(
+                icon: Icons.format_list_bulleted_rounded,
+                tooltip: 'Bullet list',
+                onTap: () => editor._prefixLine('- '),
+              ),
+              _Btn(
+                icon: Icons.format_list_numbered_rounded,
+                tooltip: 'Numbered list',
+                onTap: () => editor._prefixLine('1. '),
+              ),
+              _Btn(
+                icon: Icons.format_quote_rounded,
+                tooltip: 'Quote',
+                onTap: () => editor._prefixLine('> '),
+              ),
               const _Divider(),
-              _Btn(icon: Icons.code_rounded, tooltip: 'Inline code',
-                  onTap: () => editor._wrapSelection('`')),
-              _Btn(icon: Icons.integration_instructions_rounded, tooltip: 'Code block',
-                  onTap: () => editor._insertMarkdown('\n```\n\n```\n', -5)),
-              _Btn(icon: Icons.link_rounded, tooltip: 'Link',
-                  onTap: () => editor._insertMarkdown('[text](url)')),
-              _Btn(icon: Icons.image_outlined, tooltip: 'Insert image',
-                  onTap: editor._insertImage),
+              _Btn(
+                icon: Icons.code_rounded,
+                tooltip: 'Inline code',
+                onTap: () => editor._wrapSelection('`'),
+              ),
+              _Btn(
+                icon: Icons.integration_instructions_rounded,
+                tooltip: 'Code block',
+                onTap: () => editor._insertMarkdown('\n```\n\n```\n', -5),
+              ),
+              _Btn(
+                icon: Icons.link_rounded,
+                tooltip: 'Link',
+                onTap: () => editor._insertMarkdown('[text](url)'),
+              ),
+              _Btn(
+                icon: Icons.image_outlined,
+                tooltip: 'Insert image',
+                onTap: editor._insertImage,
+              ),
             ],
           ),
         ),
@@ -617,21 +634,16 @@ class _PublishBar extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant),
-        ),
+        border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Row(
         children: [
-          AppIcon('article',
-              size: AppIconSize.md, color: colorScheme.primary),
+          AppIcon('article', size: AppIconSize.md, color: colorScheme.primary),
           const SizedBox(width: AppSpacing.xs),
           Expanded(
             child: Text(
               'Markdown · NIP-23',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
+              style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ),
